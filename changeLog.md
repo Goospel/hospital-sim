@@ -3,7 +3,7 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
-## 2026-07-16 · 경영 확장 로직 코어 (Part 1) — setup/receiving/session/ledger/dialogue (결정론·TDD) (PR #19)
+## 2026-07-16 · 경영 확장 로직 코어 (Part 1) — setup/receiving/session/ledger/dialogue (결정론·TDD) (PR #20)
 
 - **무엇을**: 경영 확장(spec #17)의 **결정론 순수 로직 코어**를 subagent-driven TDD(구현자+리뷰어 태스크별 게이트)로 구축. 5개 모듈 + types 추가, 전 테스트 92 green(+38), `tsc --noEmit` 0, 비파괴.
   - `setup.ts` — 과 카탈로그(수익 미용·검진 흑자 / 필수 순환기·흉부외과 등 적자·소송⚠) + `buildHospital(choices)`(위저드→플레이어 병원+경제) + 예산 헬퍼.

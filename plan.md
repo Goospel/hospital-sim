@@ -112,7 +112,7 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 
 - ✅ 설계 확정(브레인스토밍) → spec (PR #17)
 - ✅ 근거 리서치 — 필수과 소송·방어진료 리스크의 **부호(결과의 중대성 축)** → [essential-care-litigation-risk.md](docs/research/essential-care-litigation-risk.md) (PR #18)
-- ✅ **로직 코어(Part 1)** — `setup`(위저드·과 카탈로그·예산) / `receiving`(콜 큐·하드락/선택·장부·소송 누적) / `session`(5페이즈·2막 분기) / `ledger` 재배선(플레이어 병원) / `dialogue`(1막 다크코미디). 전부 결정론·TDD, 92 green·tsc 0·비파괴 (PR #19). 계획: [docs/superpowers/plans/2026-07-16-management-expansion-core.md](docs/superpowers/plans/2026-07-16-management-expansion-core.md)
+- ✅ **로직 코어(Part 1)** — `setup`(위저드·과 카탈로그·예산) / `receiving`(콜 큐·하드락/선택·장부·소송 누적) / `session`(5페이즈·2막 분기) / `ledger` 재배선(플레이어 병원) / `dialogue`(1막 다크코미디). 전부 결정론·TDD, 92 green·tsc 0·비파괴 (PR #20). 계획: [docs/superpowers/plans/2026-07-16-management-expansion-core.md](docs/superpowers/plans/2026-07-16-management-expansion-core.md)
 - 🔜 **UI 통합(Part 2)** — `SetupWizard`·`ReceivingPhase`·`SessionClient`·에필로그 배선 + 브라우저 검증. (로직 코어 Minor 4건 이연: essentialHires 다필수과 확장·도달불가 방어분기 커버·STEMI_SPECIALTY export·음수값 방어)
 - ⏸ (다음 주·`X8`) 실LLM 경영/협상 대사 — 폴백 대사 위에 얹음
 - ⏸ (구조 2·본선 이후) 재투자 루프([U4.5](#u45-병원-장부--필수의료-경제장부-에필로그-716--)의 B안)·병동 증설·장비 업그레이드·다회차 캠페인·다양한 환자 축·리치한 소송 이벤트 시스템
