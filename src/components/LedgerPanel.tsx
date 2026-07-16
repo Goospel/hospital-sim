@@ -2,7 +2,7 @@ import type { Ledger } from "@/game/ledger";
 import { formatSignedBillions, SPECIALTY_LABEL } from "@/game/labels";
 import SegmentTree from "./SegmentTree";
 
-// 결말 "올해 장부" 블록 — 장부 주체 병원의 부문 손익·신규 채용. GameClient에서 그대로 이관.
+// 결말 "올해 장부" 블록 — 장부 주체 병원의 부문 손익·신규 채용.
 export default function LedgerPanel({ ledger }: { ledger: Ledger }) {
   return (
     <div className="w-full max-w-sm">

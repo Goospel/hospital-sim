@@ -1,7 +1,7 @@
 import type { Debrief } from "@/game/debrief";
 import { formatClock, REJECTION_LABEL } from "@/game/labels";
 
-// 결말 "전원 기록" 블록 — 차가운 사실 영수증(해석 없음). GameClient에서 그대로 이관.
+// 결말 "전원 기록" 블록 — 차가운 사실 영수증(해석 없음).
 export default function Receipt({ debrief }: { debrief: Debrief }) {
   return (
     <div className="w-full max-w-sm">

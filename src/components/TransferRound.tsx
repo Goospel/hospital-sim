@@ -11,7 +11,7 @@ import EmergencyChrome from "./EmergencyChrome";
 // 전원 콜/매달리기 한 번이 잡아먹는 골든타임(초) — 실시간 소모에 더해 콜 자체의 비용.
 const CALL_COST_SECONDS = 12;
 // 헤더가 붉게 경고하기 시작하는 잔여 시간(초).
-export const LOW_TIME_THRESHOLD = 30;
+const LOW_TIME_THRESHOLD = 30;
 
 /**
  * 전원 라운드(IN_PROGRESS) 상호작용 전체를 캡슐화한다 — 골든타임 헤더·환자 카드·통화 내용·

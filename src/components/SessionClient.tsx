@@ -60,5 +60,9 @@ export default function SessionClient() {
           onRestart={() => setSession(startSession())}
         />
       );
+    default: {
+      const _exhaustive: never = session.phase;
+      return _exhaustive;
+    }
   }
 }
