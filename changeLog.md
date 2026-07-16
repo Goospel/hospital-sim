@@ -3,6 +3,11 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-16 · env 관리 체계 (기기 간 이어 작업)
+
+- **무엇을**: `.env.example`(커밋되는 변수 계약, 값 없음) 신설 · `.gitignore`에 `!.env.example` 예외 추가 · README에 "환경 변수 / 여러 기기에서 이어 작업" 섹션(파일 규칙표·렙탑 셋업·시크릿 규칙). 첫 변수로 `ANTHROPIC_API_KEY`(서버 전용) 문서화.
+- **왜**: 데스크톱↔렙탑을 오가며 작업하려면 "필요한 값 목록"은 git에 두되 실제 시크릿은 각 기기 `.env.local`(gitignore)에만 둬야 한다. 렙탑에서 템플릿 복사→값만 채우면 바로 이어감. 실제 코드 소비·검증(타입드 로더)은 키가 필요해지는 M2에서.
+
 ## 2026-07-16 · 한 판 상태기계 (PR #3)
 
 - **무엇을**: `round.ts` — startGame / attemptTransfer. 판정+타이머를 엮어 도착→전원 콜 반복→결과(ACCEPTED/DIED). 불변 업데이트, 종료 후 가드. TDD 6케이스. (M1 시뮬 코어 완료: 15 tests green)

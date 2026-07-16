@@ -19,6 +19,7 @@ NAN 2026 (NHN Game × AI 해커톤) **신청용 프로토타입** — "실시간
 - ✅ .gitignore에 `.commit-msg-tmp` 추가
 - ✅ vitest 도입(TDD 러너) + 첫 테스트 실행 확인
 - ✅ git init + 초기 임포트 커밋(main) → 이후 작업은 브랜치(`feat/sim-core`)
+- ✅ env 관리 체계: `.env.example`(커밋되는 변수 계약) / `.env.local`(gitignore, 기기별 실제 값) + 기기 간 이어 작업 문서(README). 시크릿은 서버 전용(`NEXT_PUBLIC_` 금지).
 
 ## M1. 순수 시뮬 코어 (LLM 없이 · TDD) ✅ 완료 — "하드락 벽"의 신뢰성 확보
 
@@ -31,7 +32,7 @@ NAN 2026 (NHN Game × AI 해커톤) **신청용 프로토타입** — "실시간
 
 ## M2. 2콜 분리 (판정콜=코드 → 대사콜=LLM)
 
-- ⬜ LLM 프록시(Next API 라우트)로 API 키 서버측 보관
+- ⬜ LLM 프록시(Next API 라우트)로 API 키 서버측 보관 (env 계약은 M0에서 `.env.example`의 `ANTHROPIC_API_KEY`로 정의됨 — 여기선 타입드 로더로 소비·검증)
 - ⬜ 대사콜: "이미 정해진 판정 결과"를 전원 담당자 인물 대사로 연기 (수용/거절을 바꾸지 못함)
 - ⬜ 정합성 검증: 코드 판정 == 최종 게임 상태 (LLM이 뒤집지 못함) 테스트
 - ⚠️ 유료 API 비용 부담 주체 FAQ 확인 전까지 판당 호출 상한(6~10) 전제
