@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { startGame, attemptTransfer } from './round'
+import { startGame, attemptTransfer, tickTime } from './round'
 import type { Hospital, Patient } from './types'
 
 const patient: Patient = {
@@ -85,5 +85,40 @@ describe('round — 한 판 상태기계', () => {
     const lost = attemptTransfer(startGame(patient, [fullHospital], 100), 'nobed', 100)
     expect(lost.status).toBe('DIED')
     expect(() => attemptTransfer(lost, 'nobed', 10)).toThrow()
+  })
+})
+
+describe('tickTime — 실시간(벽시계) 골든타임 소모', () => {
+  it('경과 시간만큼 타이머가 줄고, 시간이 남으면 진행중 유지', () => {
+    const state = startGame(patient, [accepting, fullHospital], 720)
+
+    const next = tickTime(state, 30)
+
+    expect(next.timer.remainingSeconds).toBe(690)
+    expect(next.status).toBe('IN_PROGRESS')
+  })
+
+  it('실시간 경과로 골든타임이 0이 되면 DIED (전원 시도 없이도 죽는다)', () => {
+    const state = startGame(patient, [accepting], 20)
+
+    const next = tickTime(state, 20)
+
+    expect(next.status).toBe('DIED')
+    expect(next.timer.remainingSeconds).toBe(0)
+  })
+
+  it('원본 상태를 변경하지 않는다(불변)', () => {
+    const state = startGame(patient, [accepting], 720)
+
+    tickTime(state, 30)
+
+    expect(state.timer.remainingSeconds).toBe(720)
+    expect(state.status).toBe('IN_PROGRESS')
+  })
+
+  it('이미 끝난 판(ACCEPTED/DIED)에서는 no-op으로 동일 객체를 반환 (인터벌 레이스 안전)', () => {
+    const won = attemptTransfer(startGame(patient, [accepting], 720), 'accept', 60)
+    expect(won.status).toBe('ACCEPTED')
+    expect(tickTime(won, 10)).toBe(won)
   })
 })
