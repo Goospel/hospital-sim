@@ -20,10 +20,10 @@ function DepartmentCard({
         <span className="text-sm font-medium text-zinc-100">{dept.label}</span>
         {dept.essential ? (
           <span className="text-xs text-amber-500">
-            {dept.label} · 적자 예상 · {dept.lawsuitRisk ? "소송 ⚠" : ""}
+            적자 예상{dept.lawsuitRisk ? " · 소송 ⚠" : ""}
           </span>
         ) : (
-          <span className="text-xs text-emerald-400">{dept.label} · 수익 예상 ↑</span>
+          <span className="text-xs text-emerald-400">수익 예상 ↑</span>
         )}
         <span className="font-mono text-xs tabular-nums text-zinc-600">
           채용 {dept.hireCostBillions}억/명
@@ -34,6 +34,7 @@ function DepartmentCard({
           type="button"
           onClick={() => onAdjust(-1)}
           disabled={count === 0}
+          aria-label={`${dept.label} 채용 한 명 줄이기`}
           className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-30 disabled:hover:bg-transparent"
         >
           −
@@ -42,6 +43,7 @@ function DepartmentCard({
         <button
           type="button"
           onClick={() => onAdjust(1)}
+          aria-label={`${dept.label} 채용 한 명 늘리기`}
           className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800"
         >
           +
@@ -73,6 +75,7 @@ export default function SetupWizard({ onComplete }: { onComplete: (choices: Setu
         value={choices.hospitalName}
         onChange={(e) => setChoices((c) => ({ ...c, hospitalName: e.target.value }))}
         placeholder="병원 이름"
+        aria-label="병원 이름"
         className="rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
       />
 
@@ -105,7 +108,7 @@ export default function SetupWizard({ onComplete }: { onComplete: (choices: Setu
         type="button"
         onClick={() => onComplete(choices)}
         disabled={!ready}
-        className="rounded-lg bg-red-600 py-3 text-base font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
+        className="rounded-lg bg-emerald-600 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
       >
         병원 개원
       </button>
