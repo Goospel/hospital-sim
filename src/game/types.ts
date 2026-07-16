@@ -60,3 +60,30 @@ export interface TransferVerdict {
   accepted: boolean
   reason?: RejectionReason
 }
+
+/** 수익과(비필수) — 필수과는 기존 Specialty로 표현한다. */
+export type RevenueDept = 'AESTHETICS' | 'CHECKUP'
+
+/** 위저드에서 고를 수 있는 과 = 수익과 + 필수과. */
+export type DeptKey = RevenueDept | Specialty
+
+/**
+ * 과 카탈로그 한 줄. 금액(억)은 각색이되 부호(적자↔흑자)만 근거를 지킨다.
+ * lawsuitRisk = "소송 리스크 ⚠"(필수·고위험과). 근거: essential-care-litigation-risk.md
+ * — 부호는 '분쟁 빈도'가 아니라 결과의 중대성(사망·중증장애·형사기소).
+ */
+export interface DepartmentSpec {
+  key: DeptKey
+  label: string
+  essential: boolean
+  profitPerDoctorBillions: number // 의사 1명당 분기 손익(부호만 근거)
+  hireCostBillions: number // 채용 예산 표기(필수·고위험과는 인력 희소 → 비쌈)
+  lawsuitRisk: boolean
+  providesBackup?: Specialty // 이 과가 제공하는 배후진료(필수과만)
+}
+
+/** 설정 위저드 산출물 — 곧 플레이어 병원이 된다. */
+export interface SetupChoices {
+  hospitalName: string
+  doctors: Partial<Record<DeptKey, number>> // 과별 의사 수
+}
