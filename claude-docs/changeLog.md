@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-16 · 디렉토리 정리 — Claude 작업문서 `claude-docs/` 통합 · learning-notes 제거 (PR #22)
+
+- **무엇을**: Claude가 생성·운영하는 md를 `claude-docs/` 한 곳으로 격리. 루트 3종(plan·changeLog·troubleshooting)과 `docs/superpowers/`(브레인스토밍 spec·구현계획)를 `claude-docs/`(및 `claude-docs/superpowers/{specs,plans}`)로 이동, 프로젝트 미사용인 `learning-notes.md`(빈 골격)는 삭제. 이동으로 깨지는 문서 간 상대링크를 9개 파일에서 전수 조사·수정하고 66개 링크 재해석 검증(0 broken). `docs/`의 제품·리서치·submission 문서는 유지.
+- **왜**: 루트에 흩어진 Claude 운영 로그를 사용자 지시로 한 곳에 모아 저장소 루트 정리. PKM learning-notes 파이프라인은 이 프로젝트 미사용. 글로벌 컨벤션(3종=repo 루트)과 달리 이 프로젝트는 `claude-docs/` 배치 채택 — README 내비게이터가 새 위치를 가리킴.
+- **함정**: 이동 중 `git mv`가 대상 디렉토리 없으면 실패 → [troubleshooting.md](troubleshooting.md) T-029.
+
 ## 2026-07-16 · 경영 확장 로직 코어 (Part 1) — setup/receiving/session/ledger/dialogue (결정론·TDD) (PR #20)
 
 - **무엇을**: 경영 확장(spec #17)의 **결정론 순수 로직 코어**를 subagent-driven TDD(구현자+리뷰어 태스크별 게이트)로 구축. 5개 모듈 + types 추가, 전 테스트 92 green(+38), `tsc --noEmit` 0, 비파괴.
@@ -11,18 +17,18 @@
   - `receiving.ts` — 1막 콜 큐(`classifyCall` 하드락/선택 — 기존 `adjudicateTransfer` 재사용, `decide` 불변 리듀서: 장부·소송 노출 누적).
   - `session.ts` — 5페이즈 상태기계(SETUP→RECEIVING→INTERSTITIAL→EMERGENCY→EPILOGUE) + `beginEmergency` 분기(순환기 있으면 in-house 생존 / 없으면 기존 STEMI 뺑뺑이 재사용) + `buildEpilogue`(영수증+장부).
   - `dialogue.ts` — 1막 받는 쪽 다크코미디 폴백 대사(호소·명랑수용🎉·하드락). 기존 발신 대사 무손상.
-- **왜**: 사용자 "전화도 받고 싶어" 요청의 결정론 뼈대 — 벽의 양쪽(받는 쪽 `classifyCall` ↔ 보내는 쪽 2막)에 **같은 판정 로직**. agency가 결과에 닿음(순환기 건설 여부가 2막 생사·결말 장부를 가름). 소송 비용은 "짓기가 아니라 **수용에서 실현**"(리서치 [essential-care-litigation-risk.md](docs/research/essential-care-litigation-risk.md) 축 C 부호). [[fact-grounding-before-mechanics]]·판정=코드 원칙 유지.
-- **범위**: 로직 코어만(Part 1). **UI 통합(Part 2)**—SetupWizard·ReceivingPhase·SessionClient·에필로그 배선—은 후속. 최종 whole-branch 리뷰(opus) Ready to merge, Minor 5 중 1(공허 단언) 수정·4(spec ⓐ 의도 단순화/도달불가) Part 2 이연. 계획: [docs/superpowers/plans/2026-07-16-management-expansion-core.md](docs/superpowers/plans/2026-07-16-management-expansion-core.md).
+- **왜**: 사용자 "전화도 받고 싶어" 요청의 결정론 뼈대 — 벽의 양쪽(받는 쪽 `classifyCall` ↔ 보내는 쪽 2막)에 **같은 판정 로직**. agency가 결과에 닿음(순환기 건설 여부가 2막 생사·결말 장부를 가름). 소송 비용은 "짓기가 아니라 **수용에서 실현**"(리서치 [essential-care-litigation-risk.md](../docs/research/essential-care-litigation-risk.md) 축 C 부호). [[fact-grounding-before-mechanics]]·판정=코드 원칙 유지.
+- **범위**: 로직 코어만(Part 1). **UI 통합(Part 2)**—SetupWizard·ReceivingPhase·SessionClient·에필로그 배선—은 후속. 최종 whole-branch 리뷰(opus) Ready to merge, Minor 5 중 1(공허 단언) 수정·4(spec ⓐ 의도 단순화/도달불가) Part 2 이연. 계획: [docs/superpowers/plans/2026-07-16-management-expansion-core.md](superpowers/plans/2026-07-16-management-expansion-core.md).
 
 ## 2026-07-16 · 필수과 소송·방어진료 리스크 — 게임 "소송 리스크 ⚠" 근거 리서치 (PR #18)
 
-- **무엇을**: 경영 확장(spec #17)의 위저드 카피 "순환기·흉부외과·산부인과 = 소송 리스크 ⚠"와 결말 장부 '소송 비용 한 줄'의 **부호 근거**를, 5갈래 병렬 웹 리서치 → 주장별 적대적 검증 → 종합 워크플로우(29에이전트, PR #10 패턴)로 산출 → [docs/research/essential-care-litigation-risk.md](docs/research/essential-care-litigation-risk.md). 검증 통과 23건(기각 0), 5축(중대결과 집중·의료 형사화·초고액 단건 배상·방어진료·이탈 → 미용 대조) + 각색 허용표 + 경계·주의 12항.
+- **무엇을**: 경영 확장(spec #17)의 위저드 카피 "순환기·흉부외과·산부인과 = 소송 리스크 ⚠"와 결말 장부 '소송 비용 한 줄'의 **부호 근거**를, 5갈래 병렬 웹 리서치 → 주장별 적대적 검증 → 종합 워크플로우(29에이전트, PR #10 패턴)로 산출 → [docs/research/essential-care-litigation-risk.md](../docs/research/essential-care-litigation-risk.md). 검증 통과 23건(기각 0), 5축(중대결과 집중·의료 형사화·초고액 단건 배상·방어진료·이탈 → 미용 대조) + 각색 허용표 + 경계·주의 12항.
 - **왜**: [[fact-grounding-before-mechanics]] — 게임 각색 수치가 현실 부호를 안 어기게 근거 선행(#10/#14 선례). **적대 검증이 잡은 핵심 교정**: 성립하는 부호는 '분쟁 빈도'가 아니라 **결과의 중대성(사망·중증장애·형사기소)**이다 — 미용도 분쟁 '건수'는 오히려 산부인과보다 많으므로 카피는 "미용은 소송 없다"(❌)가 아니라 "미용·검진은 중대 결과 리스크가 낮다"(✅)로. 형사 배율(수백 배)·유죄율 등 단일출처 과장 수치는 화면 인용 금지로 §5에 못박음.
 - **범위**: 근거 문서만. 경영 확장 구현 계획(writing-plans)·코드는 후속.
 
 ## 2026-07-16 · 경영 확장 설계 — "벽의 양쪽" 2막 단막극 (브레인스토밍 확정) (PR #17)
 
-- **무엇을**: 게임을 '전화를 받는 병원'까지 플레이하는 **2막 단막극**으로 감싸는 경영 확장 설계 확정 → [docs/superpowers/specs/2026-07-16-management-expansion-design.md](docs/superpowers/specs/2026-07-16-management-expansion-design.md). 흐름: 설정 위저드(병원명·과·의사 수=투자) → 콜 큐(수용/거절 = `adjudicate`를 플레이어가 직접) → 명랑한 장부 → 막간 시점전환 → 2막(순환기 지었으면 in-house 생존 / 스킵했으면 기존 STEMI 뺑뺑이 재사용) → 내 병원 데이터로 결말. 5개 설계 결정 잠금(톤=합리적 공범 다크코미디, 2막 구조, 사전확정 투자, agency가 결과에 닿음, 양쪽 다 값을 치름).
+- **무엇을**: 게임을 '전화를 받는 병원'까지 플레이하는 **2막 단막극**으로 감싸는 경영 확장 설계 확정 → [docs/superpowers/specs/2026-07-16-management-expansion-design.md](superpowers/specs/2026-07-16-management-expansion-design.md). 흐름: 설정 위저드(병원명·과·의사 수=투자) → 콜 큐(수용/거절 = `adjudicate`를 플레이어가 직접) → 명랑한 장부 → 막간 시점전환 → 2막(순환기 지었으면 in-house 생존 / 스킵했으면 기존 STEMI 뺑뺑이 재사용) → 내 병원 데이터로 결말. 5개 설계 결정 잠금(톤=합리적 공범 다크코미디, 2막 구조, 사전확정 투자, agency가 결과에 닿음, 양쪽 다 값을 치름).
 - **왜**: 사용자 요청("전화도 받고 싶어"·병원 설립·필수과 딜레마)을 브레인스토밍으로 방향 확정. 시퀀싱: 이번 주 결정론 구현(API 불필요) → 다음 주 실LLM. 기존 8/10 제출작을 **비파괴로 감싸는** 상위 구조라 제출선을 위협하지 않음.
 - **범위**: 설계 문서만. 근거 리서치(#18)·구현(writing-plans)은 후속.
 
@@ -40,12 +46,12 @@
 ## 2026-07-16 · 병원 장부 — "수익은 흑자, 필수과 채용은 0" (결정론·TDD) (PR #14)
 
 - **무엇을**: 게임의 두 번째 문제 축(필수의료 붕괴)을 켜는 '병원 장부' 에필로그. 영수증 아래에 결정론 패널 추가 — 한 대학병원(한바다대학병원)이 미용·검진으로 흑자(순이익 +287억)인데, 환자가 필요했던 순환기내과 신규 채용은 0. `ledger.ts` 순수 함수(TDD 8 tests): 부문 손익·순이익·신규 채용 집계. **필수 배후과 채용 수는 하드코딩이 아니라 `backupCare`(=거절 사유 `NO_BACKUP_CARE`의 뿌리)에서 파생** — 그 과 배후진료가 없으면 0, 있으면 데이터값. `types`에 `Hospital.economics`+`HospitalEconomics`(각색 수치, 부호만 근거 준수), `scenarios` h1에 경제 데이터. GameClient 결말에 패널 배선(부문 손익/순이익/신규 채용). 총 54 green, tsc·next build 통과, 브라우저로 결말 장부 관찰 검증.
-- **왜**: "왜 배후진료 불가였나"의 경제적 뿌리를 보여준다 — 필수과는 적자(저수가), 미용·비급여는 흑자라 병원이 합리적으로 적자과에 투자하지 않는다(수요측) + 뽑을 인력 자체가 없다(공급측). 아무도 악당이 아닌데 환자가 죽는 구조. [[game-show-dont-tell]] 원칙 준수 — "필수의료 붕괴입니다"라고 쓰지 않고 순이익 +287억과 채용 0명을 병치해 플레이어가 스스로 잇게. 전제는 [fact-grounding-before-mechanics] 원칙대로 경량 리서치+적대 검증으로 근거([essential-care-economics.md](docs/research/essential-care-economics.md), 방어 가능 판정), 구체 ₩는 각색.
+- **왜**: "왜 배후진료 불가였나"의 경제적 뿌리를 보여준다 — 필수과는 적자(저수가), 미용·비급여는 흑자라 병원이 합리적으로 적자과에 투자하지 않는다(수요측) + 뽑을 인력 자체가 없다(공급측). 아무도 악당이 아닌데 환자가 죽는 구조. [[game-show-dont-tell]] 원칙 준수 — "필수의료 붕괴입니다"라고 쓰지 않고 순이익 +287억과 채용 0명을 병치해 플레이어가 스스로 잇게. 전제는 [fact-grounding-before-mechanics] 원칙대로 경량 리서치+적대 검증으로 근거([essential-care-economics.md](../docs/research/essential-care-economics.md), 방어 가능 판정), 구체 ₩는 각색.
 - **범위 밖(v2 보류)**: 지역 집계 장부(여러 병원 합산) · 플레이어가 수익 배분·채용하는 조작 루프 — plan U4.5에 기록.
 
 ## 2026-07-16 · 인과 디브리핑 → 차가운 사실 영수증 ("보여주지 말고 겪게") (PR #13)
 
-- **무엇을**: U4 결말의 강의식 해설을 전부 걷어내고 라벨+숫자만의 '전원 기록' 영수증으로 교체. 제거: 반사실 분할("당신을 바꿨다면/구조를 바꿨다면"), findings 카드 3장, "당신이 아니라 구조" 착지 카피, "무엇이 죽였나" 유도 헤더. `debrief.ts`를 순수 팩트 추출기로 슬림화 — 카피 필드(findings/counterfactual/landing)·안 쓰는 파생값 제거, 거절 사유별 집계(`rejectionBreakdown`, 첫 등장 순서=결정론) 추가. 영수증: 전원 시도 N통 / 거절 N회(사유별 ×N) / 받을 수 있던 곳 1·6 / 골든타임 소요. 각주는 허구 고지만 남기고 통계·출처 문장 제거(이미 [팩트시트](docs/research/stemi-factsheet.md)에 있음). TDD 재작성 8 tests, 총 46 green, tsc·next build 통과. 브라우저로 DIED(12통·`배후진료 불가 ×8`·1/6)·ACCEPTED 양쪽 검증.
+- **무엇을**: U4 결말의 강의식 해설을 전부 걷어내고 라벨+숫자만의 '전원 기록' 영수증으로 교체. 제거: 반사실 분할("당신을 바꿨다면/구조를 바꿨다면"), findings 카드 3장, "당신이 아니라 구조" 착지 카피, "무엇이 죽였나" 유도 헤더. `debrief.ts`를 순수 팩트 추출기로 슬림화 — 카피 필드(findings/counterfactual/landing)·안 쓰는 파생값 제거, 거절 사유별 집계(`rejectionBreakdown`, 첫 등장 순서=결정론) 추가. 영수증: 전원 시도 N통 / 거절 N회(사유별 ×N) / 받을 수 있던 곳 1·6 / 골든타임 소요. 각주는 허구 고지만 남기고 통계·출처 문장 제거(이미 [팩트시트](../docs/research/stemi-factsheet.md)에 있음). TDD 재작성 8 tests, 총 46 green, tsc·next build 통과. 브라우저로 DIED(12통·`배후진료 불가 ×8`·1/6)·ACCEPTED 양쪽 검증.
 - **왜**: 게임이 결말에서 "구조가 문제였다"를 **글로 설명**하면, 플레이 중 이미 손끝으로 겪은 무력감이 강의로 납작해진다("이건 좋은 게임이 아니야"—사용자). 좋은 게임은 플레이어가 플레이로 겪고 스스로 깨닫게 한다 → 해석을 삭제하고 사실(특히 반복된 `배후진료 불가 ×8`)이 스스로 고발하게. "판정=결정론"에 이어 디브리핑도 순수 함수를 유지하되, 이제 설득 카피를 안 들어 함수가 더 깨끗해짐.
 
 ## 2026-07-16 · U4 인과 디브리핑 — "당신이 아니라 구조" (결정론·TDD) (PR #12)
@@ -60,7 +66,7 @@
 
 ## 2026-07-16 · 리서치 — 게임 전제 팩트체크 + STEMI 팩트시트 (PR #10)
 
-- **무엇을**: 5개 도메인 웹 리서치(출처 필수) + 적대적 검증 워크플로우(11에이전트)로 게임 전제를 실제 통계·사례로 검증. 산출물 [docs/research/medical-system-grounding.md](docs/research/medical-system-grounding.md)(확증/교정/누락/톤/출처) · [docs/research/stemi-factsheet.md](docs/research/stemi-factsheet.md)(검증 사실+각색 고지+출처 12+).
+- **무엇을**: 5개 도메인 웹 리서치(출처 필수) + 적대적 검증 워크플로우(11에이전트)로 게임 전제를 실제 통계·사례로 검증. 산출물 [docs/research/medical-system-grounding.md](../docs/research/medical-system-grounding.md)(확증/교정/누락/톤/출처) · [docs/research/stemi-factsheet.md](../docs/research/stemi-factsheet.md)(검증 사실+각색 고지+출처 12+).
 - **왜**: "의도가 생명인 게임을 리서치 없이 진행하면 나중에 의도 타격" 우려. 지어낸 통계가 제출용 PDF에 새지 않도록 출처 검증을 선행. 핵심 발견 = 지배 병목이 병상이 아니라 배후진료 부재(→ #11로 반영).
 
 ## 2026-07-16 · U3 하드락 벽 — 매달려도 병상0은 안 뚫린다 (PR #9)
@@ -80,7 +86,7 @@
 
 ## 2026-07-16 · 사전 과제 25일 제출 로드맵 확정
 
-- **무엇을**: 실제 제출 폼(필수 4종: 플레이어블 빌드·플레이 영상·게임소개 PDF·AI활용 PDF) 확인 후, [docs/submission-plan.md](docs/submission-plan.md) 신설 + plan.md 로드맵을 크리티컬 패스(U1~Z9)로 재정렬. 마감 8/10·본선 9/4~6 웹검증. 3관점(의존성·리스크·데모서사) 설계 → 종합 → 적대적 비평 워크플로우(5에이전트).
+- **무엇을**: 실제 제출 폼(필수 4종: 플레이어블 빌드·플레이 영상·게임소개 PDF·AI활용 PDF) 확인 후, [docs/submission-plan.md](../docs/submission-plan.md) 신설 + plan.md 로드맵을 크리티컬 패스(U1~Z9)로 재정렬. 마감 8/10·본선 9/4~6 웹검증. 3관점(의존성·리스크·데모서사) 설계 → 종합 → 적대적 비평 워크플로우(5에이전트).
 - **왜**: 기존엔 "GitHub 링크만 내면 됨"으로 오인 → 실제는 필수 4종. "최소 제출선 먼저(폴백 1판+배포)" 전략으로 마감 리스크 최소화, 실LLM은 비파괴 upside로 격리.
 - **비평 반영**: 패키징 직렬화·버퍼에서 실LLM 제외(착시 제거) / 실LLM 극소판을 UI 단계로 당겨 영상에 라이브 AI 확보 / 요강·결제키 확인을 첫날로 / '의학 감수 문구' → 출처 각주+각색 고지.
 
@@ -106,6 +112,6 @@
 
 ## 2026-07-16 · 프로젝트 부트스트랩 & 컨셉 확정
 
-- **무엇을**: 병원 시뮬 게임 저장소 초기 셋업 — Next.js + TS + Tailwind 스캐폴딩, 작업추적 3종·learning-notes 생성, 게임 컨셉 문서([docs/game-concept.md](docs/game-concept.md)) 작성.
+- **무엇을**: 병원 시뮬 게임 저장소 초기 셋업 — Next.js + TS + Tailwind 스캐폴딩, 작업추적 3종·learning-notes 생성, 게임 컨셉 문서([docs/game-concept.md](../docs/game-concept.md)) 작성.
 - **왜**: NAN 2026 (NHN Game × AI 해커톤) 신청용 프로토타입을 만들기 위한 출발점. 브레인스토밍으로 방향(의료진 시점 · 응급실 뺑뺑이/필수의료/지방격차 3축) 확정.
 - **결정**: AI 핵심 축 = **실시간 전원 협상 + 인과 디브리핑**(6개 설계안 4렌즈 교차채점으로 선정). 아키텍처 원칙 = **판정=코드 / 대사=LLM** 2콜 분리.

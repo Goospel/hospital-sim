@@ -14,7 +14,7 @@
 
 - **판정=결정론 코드**: 게임 상태 전이는 순수 함수가 정한다. RNG 금지(`Math.random` 0건), `Date.now`/`new Date` 금지(시간은 이벤트가 명시적으로 흘린다). 같은 입력 → 같은 출력.
 - **불변(immutable) 상태**: 리듀서는 새 객체를 반환한다(기존 `round.ts`·`goldenTime.ts` 스타일). 입력 변형 금지.
-- **부호만 근거 · ₩ 각색**: 금액(억)·수치는 각색이되 **부호(적자↔흑자)·대소**는 리서치를 지킨다 — 근거: [essential-care-economics.md](../../research/essential-care-economics.md)(필수과 적자/미용·검진 흑자), [essential-care-litigation-risk.md](../../research/essential-care-litigation-risk.md)(소송 리스크의 부호는 '분쟁 빈도'가 아니라 **결과의 중대성**; "미용은 소송 없다"가 아니라 "미용·검진은 중대 결과 리스크가 낮다").
+- **부호만 근거 · ₩ 각색**: 금액(억)·수치는 각색이되 **부호(적자↔흑자)·대소**는 리서치를 지킨다 — 근거: [essential-care-economics.md](../../../docs/research/essential-care-economics.md)(필수과 적자/미용·검진 흑자), [essential-care-litigation-risk.md](../../../docs/research/essential-care-litigation-risk.md)(소송 리스크의 부호는 '분쟁 빈도'가 아니라 **결과의 중대성**; "미용은 소송 없다"가 아니라 "미용·검진은 중대 결과 리스크가 낮다").
 - **톤 분업**: 다크코미디는 **1막(receiving·dialogue)에만**. 2막·결말은 냉정(라벨+숫자, 해석 0 — PR #13/#14 원칙). 농담의 과녁은 시스템의 태연한 논리이지 죽는 환자·특정 집단이 아니다. 병원명·인물은 가상.
 - **한글 커밋 메시지**: T-026 패턴(`.commit-msg-tmp` UTF-8 파일 + `git commit -F .commit-msg-tmp`)으로 PowerShell 5.1 CP949 깨짐을 피한다. `.commit-msg-tmp`는 `.gitignore`에 이미 있음.
 - **테스트 컨벤션**: `import { describe, it, expect } from 'vitest'`, 파일은 대상과 co-located(`src/game/<name>.test.ts`), 한글 describe/it 라벨.
@@ -1129,7 +1129,7 @@ git commit -F .commit-msg-tmp
 
 ## Execution Handoff
 
-**Plan complete and saved to `docs/superpowers/plans/2026-07-16-management-expansion-core.md`. Two execution options:**
+**Plan complete and saved to `claude-docs/superpowers/plans/2026-07-16-management-expansion-core.md`. Two execution options:**
 
 **1. Subagent-Driven (recommended)** — 태스크마다 신선한 서브에이전트, 태스크 사이 리뷰, 빠른 반복.
 

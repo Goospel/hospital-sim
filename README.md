@@ -31,10 +31,9 @@
 |---|---|
 | [docs/game-concept.md](docs/game-concept.md) | 게임 컨셉 · AI 핵심 축 결정 · MVP 절단선 |
 | [docs/submission-plan.md](docs/submission-plan.md) | 사전 과제 25일 제출 로드맵 · 리스크 · 영상 샷 · PDF 목차 |
-| [plan.md](plan.md) | 앞으로 할 일 (살아있는 계획) |
-| [changeLog.md](changeLog.md) | 완료 기록 (역순) |
-| [troubleshooting.md](troubleshooting.md) | 함정 + 승격 |
-| [claude-docs/learning-notes.md](claude-docs/learning-notes.md) | 학습 노트 |
+| [claude-docs/plan.md](claude-docs/plan.md) | 앞으로 할 일 (살아있는 계획) |
+| [claude-docs/changeLog.md](claude-docs/changeLog.md) | 완료 기록 (역순) |
+| [claude-docs/troubleshooting.md](claude-docs/troubleshooting.md) | 함정 + 승격 |
 | [docs/research/](docs/research/) | 사실 근거 — STEMI 팩트시트·필수의료 경제 (출처 + 각색 고지) |
 
 ## 핵심 설계 원칙
