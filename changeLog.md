@@ -3,6 +3,16 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-16 · 골든타임 타이머 (PR #2)
+
+- **무엇을**: 순수·불변 골든타임 카운트다운(`src/game/goldenTime.ts`) — advance/clamp/만료판정, 음수 경과 가드. TDD 5케이스.
+- **왜**: 전원 콜·문진이 시간을 소모하고 0이 되면 환자가 죽는, 게임의 압박 시계. Date.now 미사용으로 결정론·테스트 용이.
+
+## 2026-07-16 · 결정론적 전원 판정 코어 (PR #1)
+
+- **무엇을**: `adjudicateTransfer`(`src/game/adjudicate.ts`) — 병상·당직으로 수용/거절 판정. 설득 텍스트는 시그니처에 부재. TDD 4케이스.
+- **왜**: "판정=코드/대사=LLM" 2콜 분리의 코드 절반. LLM 굴복으로 상태가 뒤집히는 붕괴를 타입 수준에서 차단.
+
 ## 2026-07-16 · 프로젝트 부트스트랩 & 컨셉 확정
 
 - **무엇을**: 병원 시뮬 게임 저장소 초기 셋업 — Next.js + TS + Tailwind 스캐폴딩, 작업추적 3종·learning-notes 생성, 게임 컨셉 문서([docs/game-concept.md](docs/game-concept.md)) 작성.
