@@ -5,7 +5,7 @@
 
 - **작성일**: 2026-07-16 (KST)
 - **상태**: 설계 확정(브레인스토밍 종료) → 사용자 리뷰 대기 → 구현 계획(writing-plans)
-- **관련**: [plan.md](../../../plan.md) · [docs/game-concept.md](../../game-concept.md) · [docs/research/essential-care-economics.md](../../research/essential-care-economics.md)
+- **관련**: [plan.md](../../plan.md) · [docs/game-concept.md](../../../docs/game-concept.md) · [docs/research/essential-care-economics.md](../../../docs/research/essential-care-economics.md)
 
 ---
 
@@ -117,7 +117,7 @@
 ## 7. 근거 선행 (프로젝트 원칙 — fact-grounding-before-mechanics)
 
 숫자의 **부호**만 근거를 지키고 ₩는 각색(PR #10/#11/#14 선례):
-- 이미 있음: [essential-care-economics.md](../../research/essential-care-economics.md) — 필수과 적자 vs 미용·비급여 흑자(방어 가능 판정).
+- 이미 있음: [essential-care-economics.md](../../../docs/research/essential-care-economics.md) — 필수과 적자 vs 미용·비급여 흑자(방어 가능 판정).
 - **보강 필요(한 축)**: 필수과·고위험과의 **의료소송/방어진료 리스크**가 미용·검진보다 유의미하게 크다는 부호 근거. spec 확정 후 **경량 리서치 + 적대 검증 워크플로우**(PR #10 패턴)로 산출 → `docs/research/essential-care-litigation-risk.md`.
 - 결말·위저드의 각색 수치는 이 부호를 어기지 않는다.
 

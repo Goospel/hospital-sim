@@ -2,7 +2,7 @@
 
 > **목적**: 게임 "수화기 너머의 벽"의 전제·메커니즘이 실제 한국 의료의 구조적 문제를 정확히 반영하는지 웹 리서치(출처 필수) + 적대적 검증으로 확인하고, 왜곡·누락을 교정한다.
 > **방법**: 5개 도메인(응급실 뺑뺑이 / STEMI 임상 / 필수의료 붕괴 / 지방 공백 / 2024~25 맥락·톤) 각각 리서치 → 출처 뒷받침 여부 + 게임 전제 적대적 검증 → 종합. (2026-07-16)
-> **관련**: [stemi-factsheet.md](stemi-factsheet.md) · [../game-concept.md](../game-concept.md) · [../../plan.md](../../plan.md)
+> **관련**: [stemi-factsheet.md](stemi-factsheet.md) · [../game-concept.md](../game-concept.md) · [../../plan.md](../../claude-docs/plan.md)
 
 ---
 

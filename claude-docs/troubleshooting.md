@@ -8,6 +8,7 @@
 
 - [T-027](#t-027--main-머지-후-라이브-배포-지연을-배포-안-됨으로-오진) · main 머지 후 배포 지연을 '배포 고장'으로 오진
 - [T-028](#t-028--워크트리에서-gh-pr-merge---delete-branch가-로컬-후처리에서-깨짐) · 워크트리에서 `gh pr merge --delete-branch` 로컬 후처리 실패(머지는 성공)
+- [T-029](#t-029--windows에서-git-mv는-대상-디렉토리를-자동-생성하지-않음) · Windows `git mv`는 대상 디렉토리를 자동 생성 안 함 (mkdir -p 선행)
 
 ---
 
@@ -29,7 +30,16 @@
 
 ---
 
+## T-029 · Windows에서 `git mv`는 대상 디렉토리를 자동 생성하지 않음
+
+- **증상**: 디렉토리 재구성 중 `git mv <src> <newdir>/<file>` 실행 → `fatal: renaming ... failed: No such file or directory`. 에러가 **소스 경로**를 가리켜 "소스가 없나" 오인. `&&`로 여러 mv를 묶었으면 여기서 체인이 끊겨 뒤 명령(learning-notes 삭제 등)이 통째로 스킵된다.
+- **원인**: `git mv`는 대상의 **상위 디렉토리를 자동 생성하지 않는다** — 이미 존재하는 디렉토리로만 옮긴다. `claude-docs/superpowers/specs/`처럼 새 중첩 경로로 옮기면 그 디렉토리가 없어 실패하고, 메시지가 소스를 지목해 원인(대상 디렉토리 부재)을 가린다.
+- **해결**: 이동 전 `mkdir -p <newdir>`로 대상 디렉토리를 먼저 만든 뒤 `git mv`. 체인이 끊겼으면 `git status`로 중단 지점 확인 후 나머지 재개.
+- **재발방지**: 파일을 **새 하위 경로**로 옮길 땐 `mkdir -p` 선행을 기본으로. `&&` 체인 mv는 중간 실패가 조용히 나머지를 건너뛰므로, 묶음 mv 후 반드시 `git status`로 전수 반영 확인.
+
+---
+
 ## 이 프로젝트에서 이미 알고 있는 전제(참고)
 
-- **Next.js 16 breaking change**: 이 버전은 학습 데이터와 API/구조가 다를 수 있음. Next 관련 코드(App Router, route handler 등) 작성 전 `node_modules/next/dist/docs/` 의 해당 가이드를 먼저 볼 것. ([AGENTS.md](AGENTS.md) 지침)
+- **Next.js 16 breaking change**: 이 버전은 학습 데이터와 API/구조가 다를 수 있음. Next 관련 코드(App Router, route handler 등) 작성 전 `node_modules/next/dist/docs/` 의 해당 가이드를 먼저 볼 것. ([AGENTS.md](../AGENTS.md) 지침)
 - **한글 커밋 메시지**: PowerShell 5.1 인라인 `-m`은 CP949로 깨짐 → `.commit-msg-tmp`(UTF-8) 파일 경유 `git commit -F` 사용(글로벌 T-026).
