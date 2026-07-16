@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DEPARTMENTS, FIXED_BEDS, SETUP_BUDGET_BILLIONS, buildHospital, hiringCost, withinBudget } from './setup'
+import { adjustDoctors, isSetupReady, DEPARTMENTS, FIXED_BEDS, SETUP_BUDGET_BILLIONS, buildHospital, hiringCost, withinBudget } from './setup'
 import type { SetupChoices } from './types'
 
 // 합리적 공범 빌드: 미용·검진만(흑자·필수과 0)
@@ -81,5 +81,39 @@ describe('예산', () => {
     const overspend: SetupChoices = { hospitalName: '과소비', doctors: { CARDIOLOGY: 10 } }
     expect(hiringCost(overspend)).toBeGreaterThan(SETUP_BUDGET_BILLIONS)
     expect(withinBudget(overspend)).toBe(false)
+  })
+})
+
+const base: SetupChoices = { hospitalName: '한바다', doctors: {} }
+
+describe('adjustDoctors', () => {
+  it('increments a department from zero', () => {
+    expect(adjustDoctors(base, 'AESTHETICS', 1).doctors.AESTHETICS).toBe(1)
+  })
+  it('clamps to zero and removes the key on over-decrement', () => {
+    const one = adjustDoctors(base, 'AESTHETICS', 1)
+    const back = adjustDoctors(one, 'AESTHETICS', -5)
+    expect(back.doctors.AESTHETICS).toBeUndefined()
+  })
+  it('floors non-integer deltas (never negative, never fractional)', () => {
+    const r = adjustDoctors(base, 'CARDIOLOGY', 1.9)
+    expect(r.doctors.CARDIOLOGY).toBe(1)
+  })
+  it('does not mutate the input', () => {
+    const snapshot = JSON.parse(JSON.stringify(base))
+    adjustDoctors(base, 'CHECKUP', 2)
+    expect(base).toEqual(snapshot)
+  })
+})
+
+describe('isSetupReady', () => {
+  it('false when name is blank', () => {
+    expect(isSetupReady({ hospitalName: '   ', doctors: { AESTHETICS: 1 } })).toBe(false)
+  })
+  it('false when over budget', () => {
+    expect(isSetupReady({ hospitalName: '한바다', doctors: { NEUROSURGERY: 99 } })).toBe(false)
+  })
+  it('true for a named, within-budget build (including cardiology-skip 공범)', () => {
+    expect(isSetupReady({ hospitalName: '한바다', doctors: { AESTHETICS: 2 } })).toBe(true)
   })
 })
