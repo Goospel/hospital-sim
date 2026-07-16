@@ -3,11 +3,17 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
-## 2026-07-17 · Task 7 — 통일 시각 마감 + 막간 붕괴 시그니처 + a11y/반응형 · 배포 게이트 통과 (PR TBD)
+## 2026-07-17 · 경영 확장 UI 통합 (Part 2) — 위저드→콜큐→막간→응급→결말 플레이어블 (PR TBD)
 
-- **무엇을**: Part 2 UI 통합의 마지막 태스크. (1) body/html 지면을 프리퍼런스(`prefers-color-scheme`) 무관 다크(zinc-950)로 고정 — 라이트모드·모바일 오버스크롤에서 새던 흰 플래시 제거(spec §3 통일 시각의 핵심 교정). (2) `Interstitial`에 시그니처 "막간 붕괴" 추가 — [계속] 클릭 시 명랑한 초록 섹션이 탈색(grayscale)·dim되고 응급 경보가 차갑게 고조되는 ~700ms 전환 후 응급으로 전이, `prefers-reduced-motion: reduce`면 전환 생략·즉시 전이. (3) 롤업 결함 수정 — `LedgerPanel` 순이익 총계가 부호를 하드코딩해 적자에서 `+-24억`으로 렌더되던 버그를, 부호 인지 포맷터 `formatSignedBillions`(`labels.ts`, 신규·TDD)로 단일화해 수정 + 회귀 테스트 4개 추가(99→103 green). (4) DRY — `LedgerPanel`/`ReceivingPhase`의 완전 동일한 "부문 손익" 트리 렌더를 `SegmentTree` 컴포넌트로 추출. (5) 전 인터랙티브 요소(버튼·스테퍼·입력)에 `focus-visible:ring` 추가, `Epilogue` 헤드라인을 공범·생존("환자는 살았다")/양심·생존("환자를 살렸습니다")으로 분화해 냉정 톤 강화.
-- **왜**: 사용자의 #1 우선순위인 "디자인의 통일성"을 최종 마감하고, 게임 주제("당신의 이익 챙기기가 당신이 책임질 응급으로 곤두박질친다")를 막간 전환이라는 한 제스처로 구현하기 위함. LedgerPanel 부호 버그는 냉정 극(결말 장부)이 "대가는 장부에 남는다"를 정직하게 보여주지 못하고 있었던 실질 결함.
-- **범위**: `tsc --noEmit` 0 · `vitest run` 103 green(99 유지 + 4 신규) · `next build`(Turbopack) 통과. 브라우저 스크린샷(Step 5)은 컨트롤러 몫으로 이 세션에서 수행하지 않음. 상세: [.superpowers/sdd/task-7-report.md](../.superpowers/sdd/task-7-report.md).
+- **무엇을**: Part 1 결정론 로직 코어 위에 React UI를 배선해 API 없이 한 세션을 완주하는 플레이어블 완성. `page.tsx→SessionClient`(오케스트레이터·`SessionState` 소유·phase 스위치)로 진입 전환, 기존 하드코딩 `GameClient`를 표현 컴포넌트(`SetupWizard`·`ReceivingPhase`·`Interstitial`·`InHouseEmergency`·`TransferRound`·`Receipt`·`LedgerPanel`·`EmergencyChrome`·`SegmentTree`·`Epilogue`)로 분해·재사용 후 삭제. 5페이즈: 설정 위저드(과별 채용·예산 게이트) → 1막 콜 큐(하드락/선택 + 명랑 장부) → 막간(시점 전환) → 2막(순환기 있으면 원내 생존 / 없으면 전원 뺑뺑이) → 결말(내 병원 영수증+장부, 세 낙차 공범·사망/공범·생존/양심·생존). 시그니처 **막간 붕괴**(초록 탈색→응급 고조 ~700ms 전환, `prefers-reduced-motion` 시 즉시). 통일 시각(단일 어두운 zinc 시스템·1막 emerald→결말 red 아크·다크 지면 고정으로 흰 플래시 차단)·접근성(`focus-visible`)·375px 반응형. 롤업 결함 수정(적자 `+-24억`→`−24억` 부호 포맷터 `formatSignedBillions` 단일화) + 러닝 순이익을 순수 `runningNetProfit`로 승격(판정=코드 경계 강화).
+- **왜**: 사용자 #1 우선순위 "**디자인의 통일성**" — 밝은/어두운 화면 전환 없이 하나의 어두운 세계에서 액센트 온도(초록→빨강)로만 톤 아크를 만들고, 게임 주제("이익 챙기기가 당신이 책임질 응급으로 곤두박질친다")를 막간 붕괴 한 제스처로 구현. 판정=코드 경계·비파괴·결정론 유지(상태 전이는 전부 `src/game/` 순수함수, 뷰 타이머는 연출만).
+- **범위**: subagent-driven TDD(태스크별 구현자+리뷰어 게이트 7태스크 + 최종 whole-branch 리뷰 opus + 폴리시). `tsc --noEmit` 0 · `vitest run` **106 green**(Part1 92 + Part2 신규 14) · `next build`(Turbopack) 통과 · 브라우저 양경로 완주 검증(공범·양심, 데스크톱+375px, 콘솔 0). 최종 리뷰 **Ready to merge**(Critical·Important 0), Minor 3건 추적 이연(Interstitial 타이머 unmount cleanup·중복클릭 useRef 가드·CALLER_PLEA 라벨-변주). 로직코어 이연 Minor 중 음수값 방어 해소(T1). 계획: [superpowers/plans/2026-07-17-management-expansion-ui.md](superpowers/plans/2026-07-17-management-expansion-ui.md) · 설계: [superpowers/specs/2026-07-17-management-expansion-ui-design.md](superpowers/specs/2026-07-17-management-expansion-ui-design.md).
+
+## 2026-07-17 · CLAUDE.md에 AI 활용 추적 규칙 — 커밋 트레일러로 사용 스킬·플러그인 명시 (PR TBD)
+
+- **무엇을**: `CLAUDE.md`에 프로젝트 한정 규칙 신설 — 커밋 생성 시 실제 호출한 스킬·플러그인을 트레일러(`Skills-used`/`Plugins-used`/`Skill-benefit`)로 남긴다. 스킬 미사용 커밋은 `Skills-used: none`으로 명시해 빈도의 분모를 확보.
+- **왜**: 스킬/플러그인의 (a) 사용 빈도 (b) 있는데 미사용인 것 (c) 실제로 얻은 이점을 측정하기 위함. 트레일러 형식이라 `git interpret-trailers --parse`·`git log --grep`로 기계 집계 가능.
+- **범위**: `CLAUDE.md` 규칙 1개 + 이 changeLog. 코드 무변경. **소프트 규칙**(내 자가보고)이며, (a)·(b) 객관 집계는 추후 `Skill` 도구 호출을 기록하는 `PostToolUse` 훅으로 승격 여지를 남김. (c) 이점 서술은 자동화 불가라 커밋 주석이 제자리.
 
 ## 2026-07-16 · ④ AI 활용 문서 시각화판 — "디렉터의 운영체계" 라이브 아티팩트 (PR #24)
 
