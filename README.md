@@ -30,7 +30,7 @@
 | 문서 | 역할 |
 |---|---|
 | [docs/game-concept.md](docs/game-concept.md) | 게임 컨셉 · AI 핵심 축 결정 · MVP 절단선 |
-| [docs/submission-plan.md](docs/submission-plan.md) | 사전 과제 25일 제출 로드맵 · 리스크 · 영상 샷 · PDF 목차 |
+| [docs/submission-plan.md](docs/submission/submission-plan.md) | 사전 과제 25일 제출 로드맵 · 리스크 · 영상 샷 · PDF 목차 |
 | [claude-docs/plan.md](claude-docs/plan.md) | 앞으로 할 일 (살아있는 계획) |
 | [claude-docs/changeLog.md](claude-docs/changeLog.md) | 완료 기록 (역순) |
 | [claude-docs/troubleshooting.md](claude-docs/troubleshooting.md) | 함정 + 승격 |
