@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { adjudicateTransfer } from "@/game/adjudicate";
+import { buildDebrief } from "@/game/debrief";
 import { fallbackLine, persuasionReply } from "@/game/dialogue";
 import { formatClock, REJECTION_LABEL, SPECIALTY_LABEL } from "@/game/labels";
 import { attemptTransfer, startGame, tickTime, type GameState } from "@/game/round";
@@ -47,6 +48,11 @@ export default function GameClient() {
   }, [state.attempts]);
 
   const { patient, timer, status } = state;
+  // 결말이면 로그에서 구조 변수를 결정론적으로 산출(디브리핑).
+  const debrief = useMemo(
+    () => (status === "ACCEPTED" || status === "DIED" ? buildDebrief(state) : null),
+    [status, state],
+  );
   const lowTime = timer.remainingSeconds <= LOW_TIME_THRESHOLD;
   const alarming = started && status === "IN_PROGRESS" && lowTime;
 
@@ -193,8 +199,8 @@ export default function GameClient() {
           )}
         </>
       ) : (
-        /* 결말 */
-        <section className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+        /* 결말 + 인과 디브리핑 */
+        <section className="flex flex-1 flex-col items-center gap-4 py-2 text-center">
           {status === "ACCEPTED" ? (
             <>
               <p className="text-2xl font-bold text-emerald-400">환자를 살렸습니다</p>
@@ -203,13 +209,57 @@ export default function GameClient() {
               </p>
             </>
           ) : (
-            <>
-              <p className="text-2xl font-bold text-red-500">골든타임을 놓쳤습니다</p>
-              <p className="max-w-sm text-sm text-zinc-400">
-                당신의 판단이 틀린 게 아니었다. 받아줄 곳이 없었을 뿐이다.
-              </p>
-            </>
+            <p className="text-2xl font-bold text-red-500">골든타임을 놓쳤습니다</p>
           )}
+
+          {debrief && (
+            <div className="w-full text-left">
+              <p className="mb-2 text-center text-xs uppercase tracking-[0.25em] text-zinc-500">
+                {status === "DIED" ? "무엇이 환자를 죽였나" : "무엇이 이 환자를 살렸나"}
+              </p>
+
+              {/* 구조 사실 — 로그에서 산출 */}
+              <div className="flex flex-col gap-2">
+                {debrief.findings.map((f) => (
+                  <div
+                    key={f.key}
+                    className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3"
+                  >
+                    <p className="text-sm font-semibold text-zinc-200">{f.headline}</p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">{f.detail}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* 반사실 1쌍 — 개인 축 vs 구조 축 */}
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-zinc-800 bg-black/30 p-3">
+                  <p className="text-xs uppercase tracking-widest text-zinc-500">당신을 바꿨다면</p>
+                  <p className="mt-1 text-sm leading-6 text-zinc-300">
+                    {debrief.counterfactual.personal}
+                  </p>
+                  <p className="mt-2 text-xs font-medium text-zinc-500">→ 결과는 그대로였다</p>
+                </div>
+                <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-3">
+                  <p className="text-xs uppercase tracking-widest text-emerald-500/80">
+                    구조를 바꿨다면
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-zinc-200">
+                    {debrief.counterfactual.structural}
+                  </p>
+                  {debrief.counterfactual.structuralChangesOutcome && (
+                    <p className="mt-2 text-xs font-medium text-emerald-400">→ 환자는 살 수 있었다</p>
+                  )}
+                </div>
+              </div>
+
+              {/* 착지 카피 */}
+              <p className="mt-4 text-center text-base font-semibold leading-7 text-zinc-100">
+                {debrief.landing}
+              </p>
+            </div>
+          )}
+
           <button
             onClick={handleRestart}
             className="mt-2 rounded-lg border border-zinc-700 px-5 py-2 text-sm font-medium hover:bg-zinc-800"
