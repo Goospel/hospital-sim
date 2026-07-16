@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · CLAUDE.md에 AI 활용 추적 규칙 — 커밋 트레일러로 사용 스킬·플러그인 명시 (PR TBD)
+
+- **무엇을**: `CLAUDE.md`에 프로젝트 한정 규칙 신설 — 커밋 생성 시 실제 호출한 스킬·플러그인을 트레일러(`Skills-used`/`Plugins-used`/`Skill-benefit`)로 남긴다. 스킬 미사용 커밋은 `Skills-used: none`으로 명시해 빈도의 분모를 확보.
+- **왜**: 스킬/플러그인의 (a) 사용 빈도 (b) 있는데 미사용인 것 (c) 실제로 얻은 이점을 측정하기 위함. 트레일러 형식이라 `git interpret-trailers --parse`·`git log --grep`로 기계 집계 가능.
+- **범위**: `CLAUDE.md` 규칙 1개 + 이 changeLog. 코드 무변경. **소프트 규칙**(내 자가보고)이며, (a)·(b) 객관 집계는 추후 `Skill` 도구 호출을 기록하는 `PostToolUse` 훅으로 승격 여지를 남김. (c) 이점 서술은 자동화 불가라 커밋 주석이 제자리.
+
 ## 2026-07-16 · ④ AI 활용 문서 시각화판 — "디렉터의 운영체계" 라이브 아티팩트 (PR #24)
 
 - **무엇을**: 제출물 ④(AI 활용)의 시각화·PDF판을 `docs/submission/ai-usage-directing.html`로 신설 — 자기완결 HTML(라이트/다크·`@media print` PDF 최적화). 실제 셋업 근거: 글로벌 CLAUDE.md 8갈래 · 프로젝트 규칙(AGENTS.md·판정=코드/대사=LLM) · 활성 플러그인 5종·훅 3종(`settings.json` 실측) · superpowers 스킬 체인 실사용(#17→#18→#20) · 서브에이전트 팬아웃 · **프롬프트↔실행 로그** · 메모리 4종 · 되먹임 사다리. §1에 **라이브 PR 타임라인**(문서 상단 `DATA` 한 곳에서 렌더).
