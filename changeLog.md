@@ -3,6 +3,17 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-16 · 경영 확장 로직 코어 (Part 1) — setup/receiving/session/ledger/dialogue (결정론·TDD) (PR #19)
+
+- **무엇을**: 경영 확장(spec #17)의 **결정론 순수 로직 코어**를 subagent-driven TDD(구현자+리뷰어 태스크별 게이트)로 구축. 5개 모듈 + types 추가, 전 테스트 92 green(+38), `tsc --noEmit` 0, 비파괴.
+  - `setup.ts` — 과 카탈로그(수익 미용·검진 흑자 / 필수 순환기·흉부외과 등 적자·소송⚠) + `buildHospital(choices)`(위저드→플레이어 병원+경제) + 예산 헬퍼.
+  - `ledger.ts` — 순수 코어 `composeLedger` 추출 + `buildSessionLedger`(플레이어 병원 + 1막 콜 델타 + 소송 비용 한 줄). 기존 `buildLedger(state)` **동작 보존**(라인 대조 확인).
+  - `receiving.ts` — 1막 콜 큐(`classifyCall` 하드락/선택 — 기존 `adjudicateTransfer` 재사용, `decide` 불변 리듀서: 장부·소송 노출 누적).
+  - `session.ts` — 5페이즈 상태기계(SETUP→RECEIVING→INTERSTITIAL→EMERGENCY→EPILOGUE) + `beginEmergency` 분기(순환기 있으면 in-house 생존 / 없으면 기존 STEMI 뺑뺑이 재사용) + `buildEpilogue`(영수증+장부).
+  - `dialogue.ts` — 1막 받는 쪽 다크코미디 폴백 대사(호소·명랑수용🎉·하드락). 기존 발신 대사 무손상.
+- **왜**: 사용자 "전화도 받고 싶어" 요청의 결정론 뼈대 — 벽의 양쪽(받는 쪽 `classifyCall` ↔ 보내는 쪽 2막)에 **같은 판정 로직**. agency가 결과에 닿음(순환기 건설 여부가 2막 생사·결말 장부를 가름). 소송 비용은 "짓기가 아니라 **수용에서 실현**"(리서치 [essential-care-litigation-risk.md](docs/research/essential-care-litigation-risk.md) 축 C 부호). [[fact-grounding-before-mechanics]]·판정=코드 원칙 유지.
+- **범위**: 로직 코어만(Part 1). **UI 통합(Part 2)**—SetupWizard·ReceivingPhase·SessionClient·에필로그 배선—은 후속. 최종 whole-branch 리뷰(opus) Ready to merge, Minor 5 중 1(공허 단언) 수정·4(spec ⓐ 의도 단순화/도달불가) Part 2 이연. 계획: [docs/superpowers/plans/2026-07-16-management-expansion-core.md](docs/superpowers/plans/2026-07-16-management-expansion-core.md).
+
 ## 2026-07-16 · 필수과 소송·방어진료 리스크 — 게임 "소송 리스크 ⚠" 근거 리서치 (PR #18)
 
 - **무엇을**: 경영 확장(spec #17)의 위저드 카피 "순환기·흉부외과·산부인과 = 소송 리스크 ⚠"와 결말 장부 '소송 비용 한 줄'의 **부호 근거**를, 5갈래 병렬 웹 리서치 → 주장별 적대적 검증 → 종합 워크플로우(29에이전트, PR #10 패턴)로 산출 → [docs/research/essential-care-litigation-risk.md](docs/research/essential-care-litigation-risk.md). 검증 통과 23건(기각 0), 5축(중대결과 집중·의료 형사화·초고액 단건 배상·방어진료·이탈 → 미용 대조) + 각색 허용표 + 경계·주의 12항.
