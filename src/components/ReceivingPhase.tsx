@@ -1,7 +1,9 @@
 "use client";
 
 import { CALLER_PLEA, receivingLine } from "@/game/dialogue";
+import { formatSignedBillions } from "@/game/labels";
 import { classifyCall, type ReceivingState } from "@/game/receiving";
+import SegmentTree from "./SegmentTree";
 
 /**
  * 명랑 장부(사이드) — 부문 손익 + 라이브 분기 진료 수익 + 러닝 순이익.
@@ -19,24 +21,12 @@ function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
         {receiving.hospital.name} · 분기 장부
       </p>
       <div className="flex flex-col gap-2 font-mono text-sm">
-        <p className="text-xs uppercase tracking-widest text-zinc-600">부문 손익</p>
-        {segments.map((s, i) => (
-          <div key={s.label} className="flex items-baseline justify-between pl-3 text-xs text-zinc-500">
-            <span>
-              {i === segments.length - 1 ? "└" : "├"} {s.label}
-            </span>
-            <span className={`tabular-nums ${s.profitBillions < 0 ? "text-red-400" : "text-zinc-300"}`}>
-              {s.profitBillions < 0 ? "−" : "+"}
-              {Math.abs(s.profitBillions)}억
-            </span>
-          </div>
-        ))}
+        <SegmentTree segments={segments} />
         <div className="my-1 border-t border-zinc-800/80" />
         <div className="flex items-baseline justify-between">
           <span className="text-zinc-400">분기 진료 수익</span>
           <span className="tabular-nums text-emerald-400">
-            {receiving.netProfitDeltaBillions >= 0 ? "+" : "−"}
-            {Math.abs(receiving.netProfitDeltaBillions)}억
+            {formatSignedBillions(receiving.netProfitDeltaBillions)}
           </span>
         </div>
         <div className="flex items-baseline justify-between">
@@ -44,8 +34,7 @@ function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
           <span
             className={`tabular-nums font-semibold ${netProfit > 0 ? "text-emerald-400" : "text-zinc-300"}`}
           >
-            {netProfit >= 0 ? "+" : "−"}
-            {Math.abs(netProfit)}억
+            {formatSignedBillions(netProfit)}
           </span>
         </div>
       </div>
@@ -86,7 +75,7 @@ export default function ReceivingPhase({
             return (
               <div
                 key={entry.callId}
-                className="flex items-center justify-between rounded-md border border-zinc-800 bg-white/[0.02] px-3 py-2 text-xs"
+                className="flex items-center justify-between rounded-md border border-zinc-800 bg-white/[0.03] px-3 py-2 text-xs"
               >
                 <span className="text-zinc-400">{call.label}</span>
                 <span className={entry.accepted ? "text-emerald-400" : "text-zinc-600"}>{label}</span>
@@ -100,7 +89,7 @@ export default function ReceivingPhase({
         <button
           type="button"
           onClick={onContinue}
-          className="rounded-lg bg-emerald-600 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500"
+          className="rounded-lg bg-emerald-600 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
         >
           계속
         </button>
@@ -152,7 +141,7 @@ export default function ReceivingPhase({
               onClick={() => onDecide(true)}
               disabled={disposition === "HARDLOCK_REJECT"}
               aria-label={`${call.label} 수용`}
-              className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
+              className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             >
               수용
             </button>
@@ -160,7 +149,7 @@ export default function ReceivingPhase({
               type="button"
               onClick={() => onDecide(false)}
               aria-label={`${call.label} 거절`}
-              className="flex-1 rounded-lg border border-zinc-700 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
+              className="flex-1 rounded-lg border border-zinc-700 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             >
               거절
             </button>

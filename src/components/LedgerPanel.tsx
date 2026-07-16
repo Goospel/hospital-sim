@@ -1,5 +1,6 @@
 import type { Ledger } from "@/game/ledger";
-import { SPECIALTY_LABEL } from "@/game/labels";
+import { formatSignedBillions, SPECIALTY_LABEL } from "@/game/labels";
+import SegmentTree from "./SegmentTree";
 
 // 결말 "올해 장부" 블록 — 장부 주체 병원의 부문 손익·신규 채용. GameClient에서 그대로 이관.
 export default function LedgerPanel({ ledger }: { ledger: Ledger }) {
@@ -9,26 +10,14 @@ export default function LedgerPanel({ ledger }: { ledger: Ledger }) {
         {ledger.hospitalName} · 올해 장부
       </p>
       <div className="flex flex-col gap-2 rounded-lg border border-zinc-800 bg-black/40 px-5 py-4 font-mono text-sm">
-        <p className="text-xs uppercase tracking-widest text-zinc-600">부문 손익</p>
-        {ledger.segments.map((s, i) => (
-          <div
-            key={s.label}
-            className="flex items-baseline justify-between pl-3 text-xs text-zinc-500"
-          >
-            <span>
-              {i === ledger.segments.length - 1 ? "└" : "├"} {s.label}
-            </span>
-            <span
-              className={`tabular-nums ${s.profitBillions < 0 ? "text-red-400" : "text-zinc-300"}`}
-            >
-              {s.profitBillions < 0 ? "−" : "+"}
-              {Math.abs(s.profitBillions)}억
-            </span>
-          </div>
-        ))}
+        <SegmentTree segments={ledger.segments} />
         <div className="flex items-baseline justify-between">
           <span className="text-zinc-400">순이익</span>
-          <span className="tabular-nums text-zinc-100">+{ledger.netProfitBillions}억</span>
+          <span
+            className={`tabular-nums ${ledger.netProfitBillions < 0 ? "text-red-400" : "text-zinc-100"}`}
+          >
+            {formatSignedBillions(ledger.netProfitBillions)}
+          </span>
         </div>
         <div className="my-1 border-t border-zinc-800/80" />
         <div className="flex items-baseline justify-between">
