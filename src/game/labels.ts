@@ -11,7 +11,9 @@ export const SPECIALTY_LABEL: Record<Specialty, string> = {
 
 export const REJECTION_LABEL: Record<RejectionReason, string> = {
   NO_BED: '병상 없음',
-  NO_SPECIALIST: '당직 전문의 없음',
+  NO_ER_ONCALL: '응급실 당직 없음',
+  ER_OVERCROWDED: '응급실 과밀',
+  NO_BACKUP_CARE: '배후진료 불가',
 }
 
 /** 골든타임 초를 mm:ss 로 포맷한다. */

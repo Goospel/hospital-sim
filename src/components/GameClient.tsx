@@ -108,12 +108,18 @@ export default function GameClient() {
       </section>
 
       {!started ? (
-        <button
-          onClick={() => setStarted(true)}
-          className="rounded-lg bg-red-600 py-3 text-base font-semibold text-white transition-colors hover:bg-red-500"
-        >
-          전원 시작 — 받아줄 병원을 찾아라
-        </button>
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => setStarted(true)}
+            className="rounded-lg bg-red-600 py-3 text-base font-semibold text-white transition-colors hover:bg-red-500"
+          >
+            전원 시작 — 받아줄 병원을 찾아라
+          </button>
+          <p className="text-xs leading-5 text-zinc-600">
+            ※ 게임 속 180초는 실제 골든타임(급성심근경색 전원 시 첫 의료진 접촉 후 120분 이내
+            재관류 권고)을 극적으로 압축한 연출입니다.
+          </p>
+        </div>
       ) : status === "IN_PROGRESS" ? (
         <>
           {/* 통화 내용 */}
@@ -200,7 +206,7 @@ export default function GameClient() {
             <>
               <p className="text-2xl font-bold text-red-500">골든타임을 놓쳤습니다</p>
               <p className="max-w-sm text-sm text-zinc-400">
-                당신의 판단이 틀린 게 아니었다. 받아줄 자리가 없었을 뿐이다.
+                당신의 판단이 틀린 게 아니었다. 받아줄 곳이 없었을 뿐이다.
               </p>
             </>
           )}
@@ -210,6 +216,11 @@ export default function GameClient() {
           >
             다시 한 판
           </button>
+          <p className="mt-4 max-w-md text-xs leading-5 text-zinc-600">
+            이 게임은 특정 개인·집단·정부를 비난하지 않습니다. 실제 응급환자 재이송의 지배적
+            원인은 병상 부족이 아니라 전문의·배후진료 역량의 부재입니다(국회입법조사처, 2024).
+            등장하는 병원·인물·사건은 모두 허구입니다.
+          </p>
         </section>
       )}
     </main>
