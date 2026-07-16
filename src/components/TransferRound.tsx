@@ -10,12 +10,12 @@ import EmergencyChrome from "./EmergencyChrome";
 
 // 전원 콜/매달리기 한 번이 잡아먹는 골든타임(초) — 실시간 소모에 더해 콜 자체의 비용.
 const CALL_COST_SECONDS = 12;
-// 헤더가 붉게 경고하기 시작하는 잔여 시간(초). GameClient도 결말 헤더 파리티에 이 값을 재사용한다.
+// 헤더가 붉게 경고하기 시작하는 잔여 시간(초).
 export const LOW_TIME_THRESHOLD = 30;
 
 /**
  * 전원 라운드(IN_PROGRESS) 상호작용 전체를 캡슐화한다 — 골든타임 헤더·환자 카드·통화 내용·
- * 설득 입력·병원 리스트·거절 로그. 시작 게이트·재시작·결말 렌더는 부모(GameClient/SessionClient)
+ * 설득 입력·병원 리스트·거절 로그. 시작 게이트·재시작·결말 렌더는 부모(SessionClient)
  * 책임이다. 내부 상태는 `game` prop을 초기값으로만 쓰고, 이후엔 자체 실시간 타이머로 독립 진행하다가
  * 종료(ACCEPTED/DIED) 시 최종 상태를 `onFinish`로 1회 보고한다.
  */

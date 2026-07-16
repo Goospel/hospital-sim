@@ -3,9 +3,8 @@ import type { Patient } from "@/game/types";
 
 /**
  * 응급 화면 공통 chrome — 골든타임 헤더 + 환자 카드.
- * 시작 전·진행 중·결말 어느 화면에서도 같은 헤더/카드가 보이므로 단일 컴포넌트로 공유한다.
- * 타이머 값·pulse 임계(lowTime)는 부모가 계산해 넘긴다 — 진행 중엔 TransferRound가 실시간 상태로,
- * 시작/결말엔 GameClient가 정지 상태로 각각 소유하되, 렌더는 이 한 곳으로 통일한다.
+ * 현재는 TransferRound(전원 라운드 진행 중)만 이 컴포넌트를 쓴다 — 타이머 값·pulse 임계(lowTime)는
+ * TransferRound가 실시간 상태로 계산해 넘기고, 렌더는 이 한 곳으로 통일한다.
  */
 export default function EmergencyChrome({
   patient,
