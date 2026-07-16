@@ -23,6 +23,18 @@ export interface Hospital {
   hasErOnCall: boolean // 응급의학과 당직 — 응급환자를 접수·초기진료할 수 있는가
   overcrowded: boolean // 과밀·boarding — 병상이 명목상 있어도 실질 포화인가
   backupCare: Specialty[] // 배후진료(최종치료) 가능 진료과 — STEMI면 CARDIOLOGY=심도자실/중재시술팀 가동
+  economics?: HospitalEconomics // '병원 장부' 에필로그용(있는 병원만)
+}
+
+/**
+ * 병원 경제 데이터 — '병원 장부' 에필로그용.
+ * 수치(₩·억)는 각색이되 부호(적자↔흑자)·대소는 근거를 지킨다(docs/research/essential-care-economics.md).
+ * 필수 배후과 채용은 여기서 하드코딩하지 않는다 — backupCare 유무로 장부에서 파생한다(0 = 그 과 배후진료 없음).
+ */
+export interface HospitalEconomics {
+  segments: { label: string; profitBillions: number }[] // 부문 손익(억) — 미용·검진 흑자, 필수·응급 적자
+  hires: { label: string; count: number }[] // 수익과 신규 채용
+  essentialHires: number // 필수 배후과 채용 수(그 과 배후진료가 있을 때만 장부에 반영)
 }
 
 /** 응급 환자 */

@@ -22,7 +22,28 @@ export function createStemiScenario(): Scenario {
 
   const hospitals: Hospital[] = [
     // 병상 있음 + 응급실 당직 있음 — 그러나 순환기 중재팀이 없다 → NO_BACKUP_CARE (지배 병목·첫 벽)
-    { id: 'h1', name: '한바다대학병원', beds: 2, hasErOnCall: true, overcrowded: false, backupCare: ['THORACIC_SURGERY', 'NEUROSURGERY'] },
+    // 장부 주체: 미용·검진으로 흑자(수익↑)인데, 환자가 필요한 순환기 배후는 없다(backupCare에 CARDIOLOGY 부재).
+    // 수치는 각색 — 부호(적자↔흑자)만 근거 준수(docs/research/essential-care-economics.md).
+    {
+      id: 'h1',
+      name: '한바다대학병원',
+      beds: 2,
+      hasErOnCall: true,
+      overcrowded: false,
+      backupCare: ['THORACIC_SURGERY', 'NEUROSURGERY'],
+      economics: {
+        segments: [
+          { label: '미용·피부', profitBillions: 210 },
+          { label: '건강검진', profitBillions: 95 },
+          { label: '순환기·응급', profitBillions: -18 },
+        ],
+        hires: [
+          { label: '미용·피부', count: 19 },
+          { label: '영상·검진', count: 9 },
+        ],
+        essentialHires: 0,
+      },
+    },
     // 병상 넉넉 + 응급실 당직 — 역시 순환기 시술 역량 없음 → NO_BACKUP_CARE (지배 병목 재확인)
     { id: 'h2', name: '새빛종합병원', beds: 4, hasErOnCall: true, overcrowded: false, backupCare: ['GENERAL_SURGERY', 'OBSTETRICS'] },
     // 시술 역량은 있으나 응급실이 꽉 차 자리가 안 빠진다 → ER_OVERCROWDED
