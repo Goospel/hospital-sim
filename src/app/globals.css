@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
+/*
+ * 통일 시각 — 하나의 어두운 zinc 지면(spec §3). 전 페이즈 <main>이 개별적으로 bg-zinc-950을
+ * 강제하더라도, body/html 자체가 라이트모드에서 흰색(#ffffff)이면 모바일 오버스크롤 바운스나
+ * 화면 전환 사이 미충전 프레임에서 흰 플래시가 새어 "하나의 어두운 세계" 통일성이 깨진다.
+ * → 프리퍼런스(prefers-color-scheme) 와 무관하게 지면을 어두운 값으로 고정한다(Task 7 Step 1).
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #09090b; /* zinc-950 */
+  --foreground: #f4f4f5; /* zinc-100 */
 }
 
 @theme inline {
@@ -12,15 +18,17 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  /* 네이티브 폼 컨트롤·스크롤바도 어두운 지면과 조화되도록 브라우저에 다크임을 알린다. */
+  color-scheme: dark;
 }
 
+html,
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+body {
   font-family: Arial, Helvetica, sans-serif;
 }

@@ -20,7 +20,7 @@ export default function InHouseEmergency({ onContinue }: { onContinue: () => voi
       <button
         type="button"
         onClick={onContinue}
-        className="rounded-lg bg-zinc-100 px-8 py-3 text-base font-semibold text-zinc-900 transition-colors hover:bg-white"
+        className="rounded-lg bg-zinc-100 px-8 py-3 text-base font-semibold text-zinc-900 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
       >
         계속
       </button>

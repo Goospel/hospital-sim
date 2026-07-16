@@ -110,7 +110,7 @@ export default function TransferRound({
           value={pleaText}
           onChange={(e) => setPleaText(e.target.value)}
           placeholder="제발요, 지금 안 보내면 환자가 죽습니다…"
-          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none"
+          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
         />
         <p className="text-xs text-zinc-600">하고 싶은 말을 적고, 아래 병원을 눌러 전하세요.</p>
       </div>
@@ -124,7 +124,7 @@ export default function TransferRound({
             <button
               key={h.id}
               onClick={() => handleCall(h.id)}
-              className="flex items-center justify-between rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-left transition-colors hover:border-red-500/60 hover:bg-zinc-800"
+              className="flex items-center justify-between rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-left transition-colors hover:border-red-500/60 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             >
               <span className="font-medium">
                 {h.name}

@@ -19,6 +19,13 @@ export default function Epilogue({
 }) {
   const { survived, ledger, debrief } = epilogue;
 
+  // 헤드라인도 낙차를 따라간다 — 공범·생존은 "살았다"(다른 병원이 대신 받았을 뿐, 내 손으로 한 일이 아니다),
+  // 양심·생존만 "살렸습니다"(내 응급실이 직접 받아 낸 결과). 부제의 구분을 헤드라인까지 밀어 냉정 톤을 강화한다.
+  const title = !survived
+    ? "골든타임을 놓쳤습니다"
+    : debrief
+      ? "환자는 살았다"
+      : "환자를 살렸습니다";
   const subtitle = !survived
     ? "받아줄 병원을 끝내 찾지 못했다."
     : debrief
@@ -37,7 +44,7 @@ export default function Epilogue({
 
       <section className="flex flex-col items-center gap-2 text-center">
         <p className={`text-2xl font-bold ${survived ? "text-zinc-100" : "text-red-500"}`}>
-          {survived ? "환자를 살렸습니다" : "골든타임을 놓쳤습니다"}
+          {title}
         </p>
         <p className="text-sm text-zinc-400">{subtitle}</p>
       </section>
@@ -50,7 +57,7 @@ export default function Epilogue({
       <button
         type="button"
         onClick={onRestart}
-        className="mt-2 rounded-lg border border-zinc-700 px-5 py-2 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-800"
+        className="mt-2 rounded-lg border border-zinc-700 px-5 py-2 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
       >
         다시 한 판
       </button>

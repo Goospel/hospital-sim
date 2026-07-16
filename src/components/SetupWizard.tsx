@@ -35,7 +35,7 @@ function DepartmentCard({
           onClick={() => onAdjust(-1)}
           disabled={count === 0}
           aria-label={`${dept.label} 채용 한 명 줄이기`}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-30 disabled:hover:bg-transparent"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
         >
           −
         </button>
@@ -44,7 +44,7 @@ function DepartmentCard({
           type="button"
           onClick={() => onAdjust(1)}
           aria-label={`${dept.label} 채용 한 명 늘리기`}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
         >
           +
         </button>
@@ -76,7 +76,7 @@ export default function SetupWizard({ onComplete }: { onComplete: (choices: Setu
         onChange={(e) => setChoices((c) => ({ ...c, hospitalName: e.target.value }))}
         placeholder="병원 이름"
         aria-label="병원 이름"
-        className="rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
+        className="rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
       />
 
       <div className="flex flex-col gap-2">
@@ -108,7 +108,7 @@ export default function SetupWizard({ onComplete }: { onComplete: (choices: Setu
         type="button"
         onClick={() => onComplete(choices)}
         disabled={!ready}
-        className="rounded-lg bg-emerald-600 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
+        className="rounded-lg bg-emerald-600 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
       >
         병원 개원
       </button>
