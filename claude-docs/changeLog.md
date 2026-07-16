@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-16 · ④ AI 활용 문서 시각화판 — "디렉터의 운영체계" 라이브 아티팩트 (PR #24)
+
+- **무엇을**: 제출물 ④(AI 활용)의 시각화·PDF판을 `docs/submission/ai-usage-directing.html`로 신설 — 자기완결 HTML(라이트/다크·`@media print` PDF 최적화). 실제 셋업 근거: 글로벌 CLAUDE.md 8갈래 · 프로젝트 규칙(AGENTS.md·판정=코드/대사=LLM) · 활성 플러그인 5종·훅 3종(`settings.json` 실측) · superpowers 스킬 체인 실사용(#17→#18→#20) · 서브에이전트 팬아웃 · **프롬프트↔실행 로그** · 메모리 4종 · 되먹임 사다리. §1에 **라이브 PR 타임라인**(문서 상단 `DATA` 한 곳에서 렌더).
+- **왜**: 기존 텍스트 초안(`ai-usage-doc.md`, #19)과 상보 — 텍스트가 "게임 속 AI 아키텍처"라면 시각화판은 "AI를 지휘한 운영체계" 전체. 사용자가 라이브 아티팩트 URL로 보며 Part 2 구현과 함께 계속 발전시킬 목적(런타임 프롬프트 로그·UI 스크린샷은 이후 채움). 최종엔 브라우저 인쇄로 PDF화. 색: teal=코드/판정 · indigo=LLM/대사(2콜 분리를 색으로 인코딩).
+- **범위**: 문서 추가 1(HTML) + 텍스트 초안 상호링크. 코드 무변경. 아티팩트는 비공개(claude.ai). 문서 성장에 따라 브랜치를 열어 둠(제출 준비 시 머지).
+
 ## 2026-07-16 · README env 가이드 링크 — 공식 URL 병기 (오진된 "깨진 링크") (PR TBD · fix/readme-nextjs-doc-link)
 
 - **무엇을**: README 82번째 줄 `[Next.js env 가이드]` 링크를 공식 URL(https://nextjs.org/docs/app/guides/environment-variables)로 바꾸고, 설치본 경로(`node_modules/next/dist/docs/01-app/02-guides/environment-variables.md`)는 버전-정확 복사용 인라인 코드로 병기. troubleshooting **T-030** 신설.
