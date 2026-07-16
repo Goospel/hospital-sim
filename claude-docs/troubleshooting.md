@@ -9,6 +9,7 @@
 - [T-027](#t-027--main-머지-후-라이브-배포-지연을-배포-안-됨으로-오진) · main 머지 후 배포 지연을 '배포 고장'으로 오진
 - [T-028](#t-028--워크트리에서-gh-pr-merge---delete-branch가-로컬-후처리에서-깨짐) · 워크트리에서 `gh pr merge --delete-branch` 로컬 후처리 실패(머지는 성공)
 - [T-029](#t-029--windows에서-git-mv는-대상-디렉토리를-자동-생성하지-않음) · Windows `git mv`는 대상 디렉토리를 자동 생성 안 함 (mkdir -p 선행)
+- [T-030](#t-030--워크트리엔-node_modules가-없어-node_modules-상대링크가-깨진-것처럼-오진됨) · 워크트리엔 node_modules가 없어 `node_modules/...` 링크가 깨진 것처럼 오진됨
 
 ---
 
@@ -36,6 +37,15 @@
 - **원인**: `git mv`는 대상의 **상위 디렉토리를 자동 생성하지 않는다** — 이미 존재하는 디렉토리로만 옮긴다. `claude-docs/superpowers/specs/`처럼 새 중첩 경로로 옮기면 그 디렉토리가 없어 실패하고, 메시지가 소스를 지목해 원인(대상 디렉토리 부재)을 가린다.
 - **해결**: 이동 전 `mkdir -p <newdir>`로 대상 디렉토리를 먼저 만든 뒤 `git mv`. 체인이 끊겼으면 `git status`로 중단 지점 확인 후 나머지 재개.
 - **재발방지**: 파일을 **새 하위 경로**로 옮길 땐 `mkdir -p` 선행을 기본으로. `&&` 체인 mv는 중간 실패가 조용히 나머지를 건너뛰므로, 묶음 mv 후 반드시 `git status`로 전수 반영 확인.
+
+---
+
+## T-030 · 워크트리엔 node_modules가 없어 `node_modules/...` 상대링크가 깨진 것처럼 오진됨
+
+- **증상**: README의 `[Next.js env 가이드](node_modules/next/dist/docs/01-app/02-guides/environment-variables.md)` 링크가 "깨졌다"고 신고됨(PR #22 발견). 워크트리에서 `Glob node_modules/next/dist/docs/**/*environment*` → `No files found`. Next 16에서 docs 경로가 이동/개명된 것으로 오인.
+- **원인**: git **워크트리는 기본적으로 node_modules를 공유하지 않는다** — 각 워크트리는 자체 `npm install`이 없으면 node_modules 자체가 비어 있다. 확인을 워크트리 안에서 하면 "파일 없음"이 나오지만, **메인 체크아웃엔 정확히 그 경로에 파일이 존재**한다(설치본 Next 16.2.10, `01-app/02-guides/environment-variables.md`, 제목 "How to use environment variables in Next.js"). 경로는 이동/개명된 적 없다 — 링크는 원래 정확했다.
+- **해결**: node_modules 참조의 존재 검증은 **node_modules가 실제 설치된 체크아웃**(대개 메인 워크트리)에서 한다: `ls <main-worktree>/node_modules/next/dist/docs/...`. 그럼에도 `node_modules/...` 상대링크는 **gitignore라 GitHub 렌더 README·신규 클론에서는 죽는다** → 사람 대상 링크는 공식 URL을 병기(설치본 경로는 버전-정확 복사용 인라인 코드로 유지). ([AGENTS.md](../AGENTS.md)의 node_modules 가이드 참조 컨벤션은 유지.)
+- **재발방지**: "워크트리에서 파일/모듈이 없다"를 곧바로 "삭제/이동됐다"로 단정하지 않는다 — **node_modules·빌드 산출물 등 gitignore 대상은 워크트리에 없는 게 기본**이다. 존재 검증은 설치본 있는 곳에서. node_modules 상대링크를 사람용 문서에 둘 땐 공식 URL 병기. (T-027/T-028과 같은 "성급한 오진" 계열.)
 
 ---
 

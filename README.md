@@ -79,4 +79,4 @@ npm run dev
 - **기기 간 값 이동**: git이 아니라 **비밀번호 관리자** 또는 **발급처에서 재복사**(Anthropic Console). 배포 후에는 Vercel에 값을 한 번 등록하고 각 기기에서 `vercel env pull .env.local`로 당겨오면 단일 소스로 동기화된다.
 - **테스트 격리**: Next.js는 `test` 환경에서 `.env.local`을 로드하지 않는다 → vitest는 로컬 값에 영향받지 않고 결정론을 유지한다.
 
-> 로드 우선순위: `process.env` → `.env.local` → `.env`. 자세한 규약은 [Next.js env 가이드](node_modules/next/dist/docs/01-app/02-guides/environment-variables.md).
+> 로드 우선순위: `process.env` → `.env.local` → `.env`. 자세한 규약은 [Next.js env 가이드](https://nextjs.org/docs/app/guides/environment-variables) (설치본·버전 정확: `node_modules/next/dist/docs/01-app/02-guides/environment-variables.md`).

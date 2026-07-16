@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-16 · README env 가이드 링크 — 공식 URL 병기 (오진된 "깨진 링크") (PR TBD · fix/readme-nextjs-doc-link)
+
+- **무엇을**: README 82번째 줄 `[Next.js env 가이드]` 링크를 공식 URL(https://nextjs.org/docs/app/guides/environment-variables)로 바꾸고, 설치본 경로(`node_modules/next/dist/docs/01-app/02-guides/environment-variables.md`)는 버전-정확 복사용 인라인 코드로 병기. troubleshooting **T-030** 신설.
+- **왜**: PR #22에서 "깨진 링크"로 신고됐으나, **검증 결과 링크는 정확했다** — 파일은 설치본(Next 16.2.10) 그 경로에 존재. 깨진 듯 보인 건 확인을 node_modules 없는 워크트리에서 했기 때문(T-030). 다만 `node_modules/...` 상대링크는 gitignore라 GitHub 렌더 README·신규 클론에서 죽으므로, 사람 대상 링크에 공식 URL을 병기해 실질 강건성만 개선. AGENTS.md의 node_modules 가이드 참조 컨벤션은 유지.
+- **범위**: README 1줄 + 추적 문서(troubleshooting T-030·이 항목). 코드 무변경.
+
 ## 2026-07-16 · 디렉토리 정리 — Claude 작업문서 `claude-docs/` 통합 · learning-notes 제거 (PR #22)
 
 - **무엇을**: Claude가 생성·운영하는 md를 `claude-docs/` 한 곳으로 격리. 루트 3종(plan·changeLog·troubleshooting)과 `docs/superpowers/`(브레인스토밍 spec·구현계획)를 `claude-docs/`(및 `claude-docs/superpowers/{specs,plans}`)로 이동, 프로젝트 미사용인 `learning-notes.md`(빈 골격)는 삭제. 이동으로 깨지는 문서 간 상대링크를 9개 파일에서 전수 조사·수정하고 66개 링크 재해석 검증(0 broken). `docs/`의 제품·리서치·submission 문서는 유지.
