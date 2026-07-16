@@ -12,14 +12,18 @@ const accepting: Hospital = {
   id: 'accept',
   name: '중앙권역외상센터',
   beds: 2,
-  onCallSpecialties: ['THORACIC_SURGERY'],
+  hasErOnCall: true,
+  overcrowded: false,
+  backupCare: ['THORACIC_SURGERY'],
 }
 
 const fullHospital: Hospital = {
   id: 'nobed',
   name: '만상병원',
   beds: 0,
-  onCallSpecialties: ['THORACIC_SURGERY'],
+  hasErOnCall: true,
+  overcrowded: false,
+  backupCare: ['THORACIC_SURGERY'],
 }
 
 describe('round — 한 판 상태기계', () => {
