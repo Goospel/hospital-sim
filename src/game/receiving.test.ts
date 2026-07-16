@@ -54,7 +54,6 @@ describe('classifyCall — 하드락 vs 선택', () => {
 
 describe('decide 리듀서 — 장부·소송 누적', () => {
   it('워크인 수용 → 순이익 델타↑, 소송 노출 0', () => {
-    const s0 = initReceiving(hospitalOf(collaborator))
     // 첫 콜을 워크인으로 만들기 위해 큐를 직접 구성
     const walkin = createCallQueue().find((c) => c.kind === 'COSMETIC_WALKIN')!
     const s = initReceiving(hospitalOf(collaborator), [walkin])
@@ -62,7 +61,7 @@ describe('decide 리듀서 — 장부·소송 누적', () => {
     expect(after.netProfitDeltaBillions).toBeGreaterThan(0)
     expect(after.lawsuitExposure).toBe(0)
     expect(after.done).toBe(true)
-    expect(s0.index).toBe(0) // 원본 불변
+    expect(s.index).toBe(0) // 원본 불변 — decide는 입력 state를 변형하지 않는다
   })
 
   it('STEMI 하드락 콜은 accept=true여도 수용 안 됨(가드) — 델타·노출 불변', () => {
