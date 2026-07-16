@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { fallbackLine, persuasionReply } from './dialogue'
+import { fallbackLine, persuasionReply, receivingLine, CALLER_PLEA, RECEIVE_HARDLOCK } from './dialogue'
 import type { RejectionReason, TransferVerdict } from './types'
+import { classifyCall, createCallQueue } from './receiving'
+import { buildHospital } from './setup'
 
 const accepted: TransferVerdict = { accepted: true }
 const reject = (reason: RejectionReason): TransferVerdict => ({ accepted: false, reason })
@@ -59,5 +61,41 @@ describe('persuasionReply — 매달릴수록 냉정해지되 판정은 안 바�
     for (const r of ALL_REASONS) {
       expect(persuasionReply(reject(r), 99).length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
+  const q = createCallQueue()
+  const stemi = q.find((c) => c.kind === 'STEMI')!
+  const walkin = q.find((c) => c.kind === 'COSMETIC_WALKIN')!
+  const collaborator = buildHospital({ hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3 } }).hospital
+  const conscientious = buildHospital({ hospitalName: '양심병원', doctors: { CARDIOLOGY: 2 } }).hospital
+
+  it('모든 콜 종류에 호소 대사가 있다', () => {
+    expect(CALLER_PLEA.STEMI.length).toBeGreaterThan(0)
+    expect(CALLER_PLEA.COSMETIC_WALKIN.length).toBeGreaterThan(0)
+    expect(CALLER_PLEA.GENERAL_EMERGENCY.length).toBeGreaterThan(0)
+  })
+
+  it('워크인 수용 → 명랑한 확인 대사(🎉 포함)', () => {
+    const line = receivingLine(walkin, classifyCall(collaborator, walkin), true)
+    expect(line.length).toBeGreaterThan(0)
+    expect(line).toContain('🎉')
+  })
+
+  it('STEMI 하드락(내 병원도 순환기 없음) → 벽을 안쪽에서 배우는 대사', () => {
+    const disposition = classifyCall(collaborator, stemi) // HARDLOCK_REJECT
+    const line = receivingLine(stemi, disposition, false)
+    expect(line).toBe(RECEIVE_HARDLOCK)
+  })
+
+  it('양심 병원의 STEMI 수용 → 명랑/확인 대사(비어있지 않음)', () => {
+    const disposition = classifyCall(conscientious, stemi) // CHOICE
+    const line = receivingLine(stemi, disposition, true)
+    expect(line.length).toBeGreaterThan(0)
+  })
+
+  it('결정론 — 같은 인자·seed는 같은 대사', () => {
+    expect(receivingLine(walkin, 'CHOICE', true, 1)).toBe(receivingLine(walkin, 'CHOICE', true, 1))
   })
 })

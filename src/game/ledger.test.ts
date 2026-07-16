@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildLedger } from './ledger'
+import { buildLedger, buildSessionLedger, LAWSUIT_COST_PER_EXPOSURE } from './ledger'
 import { startGame } from './round'
 import { createStemiScenario } from './scenarios'
 import type { Hospital, Patient } from './types'
@@ -76,5 +76,44 @@ describe('buildLedger — 결정론 병원 장부', () => {
   it('결정론 — 같은 판은 같은 장부', () => {
     const g = startGame(createStemiScenario().patient, createStemiScenario().hospitals, 180)
     expect(buildLedger(g)).toEqual(buildLedger(g))
+  })
+})
+
+describe('buildSessionLedger — 플레이어 병원 결말 장부(콜 델타 + 소송 비용)', () => {
+  const collaboratorHospital: Hospital = {
+    id: 'player', name: '흑자메디컬', beds: 2, hasErOnCall: true, overcrowded: false,
+    backupCare: [],
+    economics: { segments: [{ label: '미용·피부', profitBillions: 210 }], hires: [{ label: '미용·피부', count: 3 }], essentialHires: 0 },
+  }
+  const conscientiousHospital: Hospital = {
+    id: 'player', name: '양심병원', beds: 2, hasErOnCall: true, overcrowded: false,
+    backupCare: ['CARDIOLOGY'],
+    economics: { segments: [{ label: '순환기내과', profitBillions: -24 }], hires: [], essentialHires: 2 },
+  }
+
+  it('공범: 순환기 없음 → essentialHires 0, 콜 수익 델타가 순이익에 반영, 소송 비용 없음', () => {
+    const led = buildSessionLedger(collaboratorHospital, 'CARDIOLOGY', { netProfitDeltaBillions: 16, lawsuitExposure: 0 })!
+    expect(led.essentialHires).toBe(0)
+    expect(led.segments).toContainEqual({ label: '분기 진료 수익', profitBillions: 16 })
+    expect(led.segments.some((s) => s.label === '소송 비용')).toBe(false)
+    expect(led.netProfitBillions).toBe(210 + 16)
+  })
+
+  it('양심: 순환기 있음 → essentialHires 2, 소송 노출 → 소송 비용 한 줄(음수)이 순이익을 깎음', () => {
+    const led = buildSessionLedger(conscientiousHospital, 'CARDIOLOGY', { netProfitDeltaBillions: -20, lawsuitExposure: 1 })!
+    expect(led.essentialHires).toBe(2)
+    expect(led.segments).toContainEqual({ label: '소송 비용', profitBillions: -LAWSUIT_COST_PER_EXPOSURE })
+    expect(led.netProfitBillions).toBe(-24 + -20 + -LAWSUIT_COST_PER_EXPOSURE)
+    expect(led.netProfitBillions).toBeLessThan(0)
+  })
+
+  it('델타 0·노출 0이면 추가 세그먼트 없음(기저만)', () => {
+    const led = buildSessionLedger(collaboratorHospital, 'CARDIOLOGY', { netProfitDeltaBillions: 0, lawsuitExposure: 0 })!
+    expect(led.segments).toEqual(collaboratorHospital.economics!.segments)
+  })
+
+  it('경제 데이터 없으면 null', () => {
+    const bare: Hospital = { id: 'x', name: '무장부', beds: 2, hasErOnCall: true, overcrowded: false, backupCare: [] }
+    expect(buildSessionLedger(bare, 'CARDIOLOGY', { netProfitDeltaBillions: 5, lawsuitExposure: 0 })).toBeNull()
   })
 })
