@@ -35,7 +35,6 @@ export default function SessionClient() {
     case "INTERSTITIAL":
       return (
         <Interstitial
-          hospital={session.hospital!}
           receiving={session.receiving!}
           onContinue={() => setSession(beginEmergency(session))}
         />

@@ -2,7 +2,7 @@
 
 import { CALLER_PLEA, receivingLine } from "@/game/dialogue";
 import { formatSignedBillions } from "@/game/labels";
-import { classifyCall, type ReceivingState } from "@/game/receiving";
+import { classifyCall, runningNetProfit, type ReceivingState } from "@/game/receiving";
 import SegmentTree from "./SegmentTree";
 
 /**
@@ -12,8 +12,7 @@ import SegmentTree from "./SegmentTree";
  */
 function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
   const segments = receiving.hospital.economics?.segments ?? [];
-  const segmentTotal = segments.reduce((sum, s) => sum + s.profitBillions, 0);
-  const netProfit = segmentTotal + receiving.netProfitDeltaBillions;
+  const netProfit = runningNetProfit(receiving);
 
   return (
     <section className="rounded-lg border border-zinc-800 bg-black/40 px-5 py-4">

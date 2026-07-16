@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Hospital } from "@/game/types";
-import type { ReceivingState } from "@/game/receiving";
+import { runningNetProfit, type ReceivingState } from "@/game/receiving";
 import { formatSignedBillions } from "@/game/labels";
 
 // 붕괴 전환 지속시간(ms) — 아래 Tailwind duration-700 클래스와 반드시 일치시킨다(뷰 전용 타이밍).
@@ -19,19 +18,15 @@ const COLLAPSE_MS = 700;
  * 주제를 한 제스처로 구현한다. `prefers-reduced-motion: reduce`면 전환 없이 즉시 onContinue().
  */
 export default function Interstitial({
-  hospital,
   receiving,
   onContinue,
 }: {
-  hospital: Hospital;
   receiving: ReceivingState;
   onContinue: () => void;
 }) {
   const [collapsing, setCollapsing] = useState(false);
 
-  const segments = hospital.economics?.segments ?? [];
-  const segmentTotal = segments.reduce((sum, s) => sum + s.profitBillions, 0);
-  const net = segmentTotal + receiving.netProfitDeltaBillions;
+  const net = runningNetProfit(receiving);
 
   function handleContinue() {
     if (collapsing) return; // 중복 클릭 가드 — 전환 중 재진입 금지.
