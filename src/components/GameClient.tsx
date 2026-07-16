@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { adjudicateTransfer } from "@/game/adjudicate";
-import { fallbackLine } from "@/game/dialogue";
+import { fallbackLine, persuasionReply } from "@/game/dialogue";
 import { formatClock, REJECTION_LABEL, SPECIALTY_LABEL } from "@/game/labels";
 import { attemptTransfer, startGame, tickTime, type GameState } from "@/game/round";
 import { createStemiScenario } from "@/game/scenarios";
+import type { TransferVerdict } from "@/game/types";
 
-// 전원 콜 한 번이 잡아먹는 골든타임(초) — 실시간 소모에 더해 콜 자체의 비용.
+// 전원 콜/매달리기 한 번이 잡아먹는 골든타임(초) — 실시간 소모에 더해 콜 자체의 비용.
 const CALL_COST_SECONDS = 12;
 const LOW_TIME_THRESHOLD = 30;
 
@@ -19,6 +20,8 @@ function newGame(): GameState {
 export default function GameClient() {
   const [state, setState] = useState<GameState>(newGame);
   const [started, setStarted] = useState(false);
+  const [pleaText, setPleaText] = useState("");
+  const [lastPlea, setLastPlea] = useState<string | null>(null);
   const [lastLine, setLastLine] = useState<string | null>(null);
 
   // 실시간 골든타임: 시작 후 진행중일 때만 1초씩 소모.
@@ -32,21 +35,34 @@ export default function GameClient() {
     () => new Map(state.hospitals.map((h) => [h.id, h.name])),
     [state.hospitals],
   );
-  const calledIds = useMemo(
-    () => new Set(state.attempts.map((a) => a.hospitalId)),
-    [state.attempts],
-  );
+  const countByHospital = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of state.attempts) m.set(a.hospitalId, (m.get(a.hospitalId) ?? 0) + 1);
+    return m;
+  }, [state.attempts]);
+  const lastVerdictByHospital = useMemo(() => {
+    const m = new Map<string, TransferVerdict>();
+    for (const a of state.attempts) m.set(a.hospitalId, a.verdict);
+    return m;
+  }, [state.attempts]);
 
   const { patient, timer, status } = state;
   const lowTime = timer.remainingSeconds <= LOW_TIME_THRESHOLD;
+  const alarming = started && status === "IN_PROGRESS" && lowTime;
 
   function handleCall(hospitalId: string) {
-    if (status !== "IN_PROGRESS" || calledIds.has(hospitalId)) return;
+    if (status !== "IN_PROGRESS") return;
     const hospital = state.hospitals.find((h) => h.id === hospitalId);
     if (!hospital) return;
-    // 담당자 대사는 이미 확정된 판정을 "연기"할 뿐 — 판정은 코드가 정한다.
+    const priorCount = countByHospital.get(hospitalId) ?? 0;
+    // 담당자 대사는 확정된 판정을 "연기"할 뿐 — 몇 번을 매달려도 판정은 코드가 정한다.
     const verdict = adjudicateTransfer(hospital, patient);
-    setLastLine(fallbackLine(verdict, state.attempts.length));
+    const line = verdict.accepted
+      ? fallbackLine(verdict, priorCount)
+      : persuasionReply(verdict, priorCount);
+    setLastPlea(pleaText.trim() || null);
+    setLastLine(line);
+    setPleaText("");
     setState((prev) =>
       prev.status === "IN_PROGRESS" ? attemptTransfer(prev, hospitalId, CALL_COST_SECONDS) : prev,
     );
@@ -55,17 +71,25 @@ export default function GameClient() {
   function handleRestart() {
     setState(newGame());
     setStarted(false);
+    setPleaText("");
+    setLastPlea(null);
     setLastLine(null);
   }
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-6 bg-zinc-950 px-5 py-8 text-zinc-100">
+    <main
+      className={`mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 transition-shadow duration-500 ${
+        alarming
+          ? "bg-zinc-950 shadow-[inset_0_0_120px_rgba(153,27,27,0.4)]"
+          : "bg-zinc-950"
+      }`}
+    >
       {/* 골든타임 */}
       <header className="flex items-baseline justify-between">
         <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">골든타임</span>
         <span
           className={`font-mono text-4xl font-bold tabular-nums ${
-            lowTime ? "text-red-500" : "text-zinc-100"
+            lowTime ? "animate-pulse text-red-500" : "text-zinc-100"
           }`}
         >
           {formatClock(timer.remainingSeconds)}
@@ -92,32 +116,50 @@ export default function GameClient() {
         </button>
       ) : status === "IN_PROGRESS" ? (
         <>
-          {/* 담당자 대사 */}
-          <div className="min-h-[3.5rem] rounded-lg border border-zinc-800 bg-black/40 p-4 text-sm leading-6 text-zinc-300">
+          {/* 통화 내용 */}
+          <div className="min-h-[4.5rem] rounded-lg border border-zinc-800 bg-black/40 p-4 text-sm leading-6">
+            {lastPlea && <p className="text-zinc-400">🗣️ 나: “{lastPlea}”</p>}
             {lastLine ? (
-              <span>📞 “{lastLine}”</span>
+              <p className={lastPlea ? "mt-1 text-zinc-200" : "text-zinc-200"}>📞 담당자: “{lastLine}”</p>
             ) : (
-              <span className="text-zinc-600">병원에 전화를 돌려 전원을 요청하세요.</span>
+              !lastPlea && <span className="text-zinc-600">병원에 전화를 돌려 전원을 요청하세요.</span>
             )}
           </div>
 
-          {/* 병원 리스트 */}
+          {/* 자유 텍스트 설득 */}
+          <div className="flex flex-col gap-1">
+            <input
+              value={pleaText}
+              onChange={(e) => setPleaText(e.target.value)}
+              placeholder="제발요, 지금 안 보내면 환자가 죽습니다…"
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none"
+            />
+            <p className="text-xs text-zinc-600">하고 싶은 말을 적고, 아래 병원을 눌러 전하세요.</p>
+          </div>
+
+          {/* 병원 리스트 (거절해도 다시 매달릴 수 있다) */}
           <section className="flex flex-col gap-2">
             {state.hospitals.map((h) => {
-              const called = calledIds.has(h.id);
+              const count = countByHospital.get(h.id) ?? 0;
+              const last = lastVerdictByHospital.get(h.id);
               return (
                 <button
                   key={h.id}
                   onClick={() => handleCall(h.id)}
-                  disabled={called}
-                  className={`flex items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors ${
-                    called
-                      ? "cursor-not-allowed border-zinc-800 bg-zinc-900/40 text-zinc-600"
-                      : "border-zinc-700 bg-zinc-900 hover:border-red-500/60 hover:bg-zinc-800"
-                  }`}
+                  className="flex items-center justify-between rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-left transition-colors hover:border-red-500/60 hover:bg-zinc-800"
                 >
-                  <span className="font-medium">{h.name}</span>
-                  <span className="text-xs">{called ? "거절됨" : "전원 콜"}</span>
+                  <span className="font-medium">
+                    {h.name}
+                    {last && !last.accepted && last.reason && (
+                      <span className="ml-2 rounded bg-red-950/60 px-1.5 py-0.5 text-xs text-red-400">
+                        {REJECTION_LABEL[last.reason]}
+                        {count > 1 && ` ×${count}`}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs text-zinc-400">
+                    {count === 0 ? "전원 콜" : "다시 매달리기"}
+                  </span>
                 </button>
               );
             })}
@@ -125,8 +167,8 @@ export default function GameClient() {
 
           {/* 거절 로그 */}
           {state.attempts.length > 0 && (
-            <section className="mt-1 text-xs text-zinc-500">
-              <p className="mb-1 uppercase tracking-widest">전원 시도</p>
+            <section className="text-xs text-zinc-500">
+              <p className="mb-1 uppercase tracking-widest">전원 시도 {state.attempts.length}회</p>
               <ul className="flex flex-col gap-1">
                 {state.attempts.map((a, i) => (
                   <li key={i} className="flex justify-between">
