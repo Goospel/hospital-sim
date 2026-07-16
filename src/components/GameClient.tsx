@@ -199,7 +199,7 @@ export default function GameClient() {
           )}
         </>
       ) : (
-        /* 결말 + 인과 디브리핑 */
+        /* 결말 — 차가운 사실 영수증(해석 없음) */
         <section className="flex flex-1 flex-col items-center gap-4 py-2 text-center">
           {status === "ACCEPTED" ? (
             <>
@@ -213,50 +213,46 @@ export default function GameClient() {
           )}
 
           {debrief && (
-            <div className="w-full text-left">
-              <p className="mb-2 text-center text-xs uppercase tracking-[0.25em] text-zinc-500">
-                {status === "DIED" ? "무엇이 환자를 죽였나" : "무엇이 이 환자를 살렸나"}
+            <div className="w-full max-w-sm">
+              <p className="mb-3 text-center text-xs uppercase tracking-[0.3em] text-zinc-600">
+                전원 기록
               </p>
-
-              {/* 구조 사실 — 로그에서 산출 */}
-              <div className="flex flex-col gap-2">
-                {debrief.findings.map((f) => (
-                  <div
-                    key={f.key}
-                    className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3"
-                  >
-                    <p className="text-sm font-semibold text-zinc-200">{f.headline}</p>
-                    <p className="mt-1 text-xs leading-5 text-zinc-400">{f.detail}</p>
+              <div className="flex flex-col gap-2 rounded-lg border border-zinc-800 bg-black/40 px-5 py-4 font-mono text-sm">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-zinc-400">전원 시도</span>
+                  <span className="tabular-nums text-zinc-100">{debrief.transferAttempts}통</span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-zinc-400">거절</span>
+                  <span className="tabular-nums text-zinc-100">{debrief.rejectionCount}회</span>
+                </div>
+                {debrief.rejectionBreakdown.length > 0 && (
+                  <div className="flex flex-col gap-1 pl-3 text-xs text-zinc-500">
+                    {debrief.rejectionBreakdown.map((r, i) => (
+                      <div key={r.reason} className="flex items-baseline justify-between">
+                        <span>
+                          {i === debrief.rejectionBreakdown.length - 1 ? "└" : "├"}{" "}
+                          {REJECTION_LABEL[r.reason]}
+                        </span>
+                        <span className="tabular-nums">×{r.count}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-
-              {/* 반사실 1쌍 — 개인 축 vs 구조 축 */}
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="rounded-lg border border-zinc-800 bg-black/30 p-3">
-                  <p className="text-xs uppercase tracking-widest text-zinc-500">당신을 바꿨다면</p>
-                  <p className="mt-1 text-sm leading-6 text-zinc-300">
-                    {debrief.counterfactual.personal}
-                  </p>
-                  <p className="mt-2 text-xs font-medium text-zinc-500">→ 결과는 그대로였다</p>
+                )}
+                <div className="my-1 border-t border-zinc-800/80" />
+                <div className="flex items-baseline justify-between">
+                  <span className="text-zinc-400">받을 수 있던 곳</span>
+                  <span className="tabular-nums text-zinc-100">
+                    {debrief.acceptableCount} / {debrief.hospitalCount}
+                  </span>
                 </div>
-                <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-3">
-                  <p className="text-xs uppercase tracking-widest text-emerald-500/80">
-                    구조를 바꿨다면
-                  </p>
-                  <p className="mt-1 text-sm leading-6 text-zinc-200">
-                    {debrief.counterfactual.structural}
-                  </p>
-                  {debrief.counterfactual.structuralChangesOutcome && (
-                    <p className="mt-2 text-xs font-medium text-emerald-400">→ 환자는 살 수 있었다</p>
-                  )}
+                <div className="flex items-baseline justify-between">
+                  <span className="text-zinc-400">골든타임</span>
+                  <span className="tabular-nums text-zinc-100">
+                    {formatClock(debrief.secondsSpent)} / {formatClock(debrief.goldenSeconds)}
+                  </span>
                 </div>
               </div>
-
-              {/* 착지 카피 */}
-              <p className="mt-4 text-center text-base font-semibold leading-7 text-zinc-100">
-                {debrief.landing}
-              </p>
             </div>
           )}
 
@@ -267,9 +263,7 @@ export default function GameClient() {
             다시 한 판
           </button>
           <p className="mt-4 max-w-md text-xs leading-5 text-zinc-600">
-            이 게임은 특정 개인·집단·정부를 비난하지 않습니다. 실제 응급환자 재이송의 지배적
-            원인은 병상 부족이 아니라 전문의·배후진료 역량의 부재입니다(국회입법조사처, 2024).
-            등장하는 병원·인물·사건은 모두 허구입니다.
+            등장하는 병원·인물·사건은 모두 허구이며, 특정 개인·집단을 비난하지 않습니다.
           </p>
         </section>
       )}
