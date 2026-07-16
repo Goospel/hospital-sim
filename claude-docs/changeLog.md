@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · Task 7 — 통일 시각 마감 + 막간 붕괴 시그니처 + a11y/반응형 · 배포 게이트 통과 (PR TBD)
+
+- **무엇을**: Part 2 UI 통합의 마지막 태스크. (1) body/html 지면을 프리퍼런스(`prefers-color-scheme`) 무관 다크(zinc-950)로 고정 — 라이트모드·모바일 오버스크롤에서 새던 흰 플래시 제거(spec §3 통일 시각의 핵심 교정). (2) `Interstitial`에 시그니처 "막간 붕괴" 추가 — [계속] 클릭 시 명랑한 초록 섹션이 탈색(grayscale)·dim되고 응급 경보가 차갑게 고조되는 ~700ms 전환 후 응급으로 전이, `prefers-reduced-motion: reduce`면 전환 생략·즉시 전이. (3) 롤업 결함 수정 — `LedgerPanel` 순이익 총계가 부호를 하드코딩해 적자에서 `+-24억`으로 렌더되던 버그를, 부호 인지 포맷터 `formatSignedBillions`(`labels.ts`, 신규·TDD)로 단일화해 수정 + 회귀 테스트 4개 추가(99→103 green). (4) DRY — `LedgerPanel`/`ReceivingPhase`의 완전 동일한 "부문 손익" 트리 렌더를 `SegmentTree` 컴포넌트로 추출. (5) 전 인터랙티브 요소(버튼·스테퍼·입력)에 `focus-visible:ring` 추가, `Epilogue` 헤드라인을 공범·생존("환자는 살았다")/양심·생존("환자를 살렸습니다")으로 분화해 냉정 톤 강화.
+- **왜**: 사용자의 #1 우선순위인 "디자인의 통일성"을 최종 마감하고, 게임 주제("당신의 이익 챙기기가 당신이 책임질 응급으로 곤두박질친다")를 막간 전환이라는 한 제스처로 구현하기 위함. LedgerPanel 부호 버그는 냉정 극(결말 장부)이 "대가는 장부에 남는다"를 정직하게 보여주지 못하고 있었던 실질 결함.
+- **범위**: `tsc --noEmit` 0 · `vitest run` 103 green(99 유지 + 4 신규) · `next build`(Turbopack) 통과. 브라우저 스크린샷(Step 5)은 컨트롤러 몫으로 이 세션에서 수행하지 않음. 상세: [.superpowers/sdd/task-7-report.md](../.superpowers/sdd/task-7-report.md).
+
 ## 2026-07-16 · ④ AI 활용 문서 시각화판 — "디렉터의 운영체계" 라이브 아티팩트 (PR #24)
 
 - **무엇을**: 제출물 ④(AI 활용)의 시각화·PDF판을 `docs/submission/ai-usage-directing.html`로 신설 — 자기완결 HTML(라이트/다크·`@media print` PDF 최적화). 실제 셋업 근거: 글로벌 CLAUDE.md 8갈래 · 프로젝트 규칙(AGENTS.md·판정=코드/대사=LLM) · 활성 플러그인 5종·훅 3종(`settings.json` 실측) · superpowers 스킬 체인 실사용(#17→#18→#20) · 서브에이전트 팬아웃 · **프롬프트↔실행 로그** · 메모리 4종 · 되먹임 사다리. §1에 **라이브 PR 타임라인**(문서 상단 `DATA` 한 곳에서 렌더).
