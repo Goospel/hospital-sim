@@ -29,7 +29,9 @@ export default function Interstitial({
         <span className="text-xs uppercase tracking-[0.25em] text-zinc-600">분기 마감</span>
         <p className="text-2xl font-semibold text-zinc-200">
           순이익{" "}
-          <span className="font-mono tabular-nums text-emerald-400">
+          <span
+            className={`font-mono tabular-nums ${net > 0 ? "text-emerald-400" : "text-zinc-300"}`}
+          >
             {net >= 0 ? "+" : "−"}
             {Math.abs(net)}억
           </span>
