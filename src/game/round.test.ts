@@ -122,3 +122,19 @@ describe('tickTime — 실시간(벽시계) 골든타임 소모', () => {
     expect(tickTime(won, 10)).toBe(won)
   })
 })
+
+describe('설득 불가 불변식 — 병상 0은 몇 번을 매달려도 수용되지 않는다', () => {
+  it('같은 병상0 병원에 반복 재시도해도 전부 NO_BED, 절대 ACCEPTED가 되지 않는다', () => {
+    let state = startGame(patient, [fullHospital], 1000)
+
+    for (let i = 0; i < 5 && state.status === 'IN_PROGRESS'; i++) {
+      state = attemptTransfer(state, 'nobed', 1)
+    }
+
+    expect(state.attempts).toHaveLength(5)
+    expect(
+      state.attempts.every((a) => !a.verdict.accepted && a.verdict.reason === 'NO_BED'),
+    ).toBe(true)
+    expect(state.status).not.toBe('ACCEPTED')
+  })
+})

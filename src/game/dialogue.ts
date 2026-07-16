@@ -31,3 +31,30 @@ export function fallbackLine(verdict: TransferVerdict, seed = 0): string {
   const index = ((seed % pool.length) + pool.length) % pool.length
   return pool[index]
 }
+
+// 매달릴수록(priorAttempts↑) 냉정해지는 응답 — 마지막 단계로 clamp.
+// 어떤 말로도 병상·당직은 바뀌지 않는다는 걸 대사로 체감시킨다.
+const NO_BED_ESCALATION = [
+  '지금 중환자실이 다 찼습니다. 받을 자리가 없어요.',
+  '말씀드렸잖아요, 병상이 없습니다. 없는 자리가 생기진 않아요.',
+  '몇 번을 말해도 똑같습니다. 시간 버리지 마시고 다른 데 알아보세요.',
+]
+
+const NO_SPECIALIST_ESCALATION = [
+  '그 환자 볼 당직 전문의가 지금 없습니다. 못 받아요.',
+  '전문의가 없다니까요. 받아도 처치를 못 합니다.',
+  '안 된다고 말씀드렸습니다. 이러실 시간에 다른 병원을 알아보세요.',
+]
+
+/**
+ * 거절당한 뒤 "매달릴" 때의 담당자 응답. priorAttempts(그 병원에 이미 시도한 횟수)가
+ * 늘수록 냉정해지지만, 판정 자체는 절대 바꾸지 못한다 — 설득으로 병상 0을 뚫을 수 없다.
+ */
+export function persuasionReply(verdict: TransferVerdict, priorAttempts: number): string {
+  if (verdict.accepted) {
+    return fallbackLine(verdict, priorAttempts)
+  }
+  const pool = verdict.reason === 'NO_BED' ? NO_BED_ESCALATION : NO_SPECIALIST_ESCALATION
+  const index = Math.min(Math.max(0, priorAttempts), pool.length - 1)
+  return pool[index]
+}
