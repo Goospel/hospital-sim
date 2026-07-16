@@ -3,6 +3,11 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-16 · 한 판 상태기계 (PR #3)
+
+- **무엇을**: `round.ts` — startGame / attemptTransfer. 판정+타이머를 엮어 도착→전원 콜 반복→결과(ACCEPTED/DIED). 불변 업데이트, 종료 후 가드. TDD 6케이스. (M1 시뮬 코어 완료: 15 tests green)
+- **왜**: 게임의 한 판 흐름. 거절이 누적되고 골든타임이 소진되면 사망하는, 메시지의 뼈대.
+
 ## 2026-07-16 · 골든타임 타이머 (PR #2)
 
 - **무엇을**: 순수·불변 골든타임 카운트다운(`src/game/goldenTime.ts`) — advance/clamp/만료판정, 음수 경과 가드. TDD 5케이스.
