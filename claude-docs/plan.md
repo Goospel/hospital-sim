@@ -1,7 +1,7 @@
 # plan — 앞으로 할 일 (살아있는 계획)
 
 > 범례: ✅완료 · 🔜다음 · ⬜예정 · `X`droppable upside · ⏸의도적 보류(본선/v2) · ⚠️리스크·전제
-> 관련 문서: [changeLog.md](changeLog.md) · [troubleshooting.md](troubleshooting.md) · [docs/game-concept.md](../docs/game-concept.md) · **[docs/submission-plan.md](../docs/submission-plan.md)** (25일 제출 로드맵 상세)
+> 관련 문서: [changeLog.md](changeLog.md) · [troubleshooting.md](troubleshooting.md) · [docs/game-concept.md](../docs/game-concept.md) · **[docs/submission-plan.md](../docs/submission/submission-plan.md)** (25일 제출 로드맵 상세)
 
 ## 목표
 
@@ -9,7 +9,7 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 
 **필수 제출물 4종**: ① 플레이어블 빌드(공개 Vercel URL)+소스(GitHub public) · ② 플레이 영상(유튜브 30~60초) · ③ 게임 소개 PDF · ④ AI 활용 기술 PDF. (팀 소개·포트폴리오는 스킵)
 
-전략: **최소 제출선 먼저** — LLM 없이 결정론 폴백으로도 한 판 플레이+배포를 먼저 확보하고, 실LLM은 그 위에 **비파괴 가산 레이어**로. 상세·리스크·영상 샷·PDF 목차는 → [docs/submission-plan.md](../docs/submission-plan.md).
+전략: **최소 제출선 먼저** — LLM 없이 결정론 폴백으로도 한 판 플레이+배포를 먼저 확보하고, 실LLM은 그 위에 **비파괴 가산 레이어**로. 상세·리스크·영상 샷·PDF 목차는 → [docs/submission-plan.md](../docs/submission/submission-plan.md).
 
 핵심 원칙: **판정 = 결정론적 코드 / 대사 = LLM** (2콜 분리). 게임 상태 전이는 절대 LLM이 정하지 않는다.
 
@@ -41,7 +41,7 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 - ⬜ **Anthropic 콘솔 결제/크레딧 활성 확인** (미설정이면 `X8` 스킵 전제 → ④PDF는 설계+로컬 시연 중심)
 - ⬜ **FAQ '유료 API 부담 주체' 문의 발송 여부 결정** (초안은 내가 준비, 발송은 승인 후)
 
-## 크리티컬 패스 — 최소 제출선 먼저 (상세: [submission-plan.md](../docs/submission-plan.md))
+## 크리티컬 패스 — 최소 제출선 먼저 (상세: [submission-plan.md](../docs/submission/submission-plan.md))
 
 > **U/P = 필수 최소 경로**(이것만으로 8/10 성립) · `X` = droppable upside · `Z` = 버퍼.
 > 비평 반영: 패키징(P6→P7) **직렬화**, `Z9` 전제에서 `X8` 제외(버퍼 착시 제거), 실LLM 극소판을 **U2로 당김**(영상에 라이브 AI 확보), 간이 지도는 **v2 강등**.
