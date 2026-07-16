@@ -31,25 +31,55 @@ function ledgerHospital(hospitals: Hospital[]): Hospital | undefined {
   return hospitals.find((h) => h.economics)
 }
 
-export function buildLedger(state: GameState): Ledger | null {
-  const hospital = ledgerHospital(state.hospitals)
-  if (!hospital?.economics) return null
+/** 소송 비용 실현 단가(억) — 필수·고위험 케이스 수용의 꼬리위험 한 방. 각색(부호만 근거: 축 C). */
+export const LAWSUIT_COST_PER_EXPOSURE = 25
 
-  const { segments, hires, essentialHires: capableHires } = hospital.economics
-  const essentialSpecialty = state.patient.requiredSpecialty
+/** 병원+경제에서 장부를 조립하는 순수 코어. extraSegments로 세션 델타(진료 수익·소송 비용)를 얹는다. */
+function composeLedger(
+  hospital: Hospital,
+  patientSpecialty: Specialty,
+  extraSegments: LedgerSegment[],
+): Ledger | null {
+  const econ = hospital.economics
+  if (!econ) return null
+  const segments = [...econ.segments, ...extraSegments]
   // 파생: 그 과 배후진료가 있을 때만 채용 수가 잡히고, 없으면(=NO_BACKUP_CARE의 뿌리) 0.
-  const essentialHires = hospital.backupCare.includes(essentialSpecialty) ? capableHires : 0
-
+  const essentialHires = hospital.backupCare.includes(patientSpecialty) ? econ.essentialHires : 0
   const netProfitBillions = segments.reduce((n, s) => n + s.profitBillions, 0)
-  const totalHires = hires.reduce((n, h) => n + h.count, 0) + essentialHires
-
+  const totalHires = econ.hires.reduce((n, h) => n + h.count, 0) + essentialHires
   return {
     hospitalName: hospital.name,
     segments,
     netProfitBillions,
-    hires,
-    essentialSpecialty,
+    hires: econ.hires,
+    essentialSpecialty: patientSpecialty,
     essentialHires,
     totalHires,
   }
+}
+
+export function buildLedger(state: GameState): Ledger | null {
+  const hospital = ledgerHospital(state.hospitals)
+  if (!hospital) return null
+  return composeLedger(hospital, state.patient.requiredSpecialty, [])
+}
+
+/**
+ * 세션 결말 장부 — 플레이어 병원(위저드 산출) + 1막 콜 델타 + 소송 비용을 결정론적으로 조립.
+ * 공범(순환기 0): 흑자 + 채용 0 + 소송 비용 없음. 양심(순환기 N): 적자 + 소송 비용 한 줄.
+ */
+export function buildSessionLedger(
+  hospital: Hospital,
+  patientSpecialty: Specialty,
+  receiving: { netProfitDeltaBillions: number; lawsuitExposure: number },
+): Ledger | null {
+  const extra: LedgerSegment[] = []
+  if (receiving.netProfitDeltaBillions !== 0) {
+    extra.push({ label: '분기 진료 수익', profitBillions: receiving.netProfitDeltaBillions })
+  }
+  const lawsuitCost = receiving.lawsuitExposure > 0 ? receiving.lawsuitExposure * LAWSUIT_COST_PER_EXPOSURE : 0
+  if (lawsuitCost > 0) {
+    extra.push({ label: '소송 비용', profitBillions: -lawsuitCost })
+  }
+  return composeLedger(hospital, patientSpecialty, extra)
 }
