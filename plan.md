@@ -104,6 +104,17 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 
 ---
 
+## E. 경영 확장 — "벽의 양쪽" 2막 단막극 (결정론 · 7/16~ · 제출선과 독립)
+
+> spec §0의 "빈 활주로(7/16~7/29)" 작업. 8/10 제출작(협상+디브리핑+장부)을 **비파괴로 감싸는** 상위 구조 — 전화를 *받는* 병원까지 플레이. 이번 주는 API 불필요(결정론), 다음 주 실LLM(X8)은 대사만 얹음. 설계: [docs/superpowers/specs/2026-07-16-management-expansion-design.md](docs/superpowers/specs/2026-07-16-management-expansion-design.md).
+
+- ✅ 설계 확정(브레인스토밍) → spec (PR #17)
+- ✅ 근거 리서치 — 필수과 소송·방어진료 리스크의 **부호(결과의 중대성 축)** → [essential-care-litigation-risk.md](docs/research/essential-care-litigation-risk.md) (PR #18)
+- 🔜 **로직 코어(Part 1)** — `setup`(위저드·과 카탈로그·예산) / `receiving`(콜 큐·하드락/선택·장부·소송 누적) / `session`(5페이즈·2막 분기) / `ledger` 재배선(플레이어 병원) / `dialogue`(1막 다크코미디). 전부 결정론·TDD. 계획: [docs/superpowers/plans/2026-07-16-management-expansion-core.md](docs/superpowers/plans/2026-07-16-management-expansion-core.md)
+- ⬜ UI 통합(Part 2) — `SetupWizard`·`ReceivingPhase`·`SessionClient`·에필로그 배선 + 브라우저 검증
+- ⏸ (다음 주·`X8`) 실LLM 경영/협상 대사 — 폴백 대사 위에 얹음
+- ⏸ (구조 2·본선 이후) 재투자 루프([U4.5](#u45-병원-장부--필수의료-경제장부-에필로그-716--)의 B안)·병동 증설·장비 업그레이드·다회차 캠페인·다양한 환자 축·리치한 소송 이벤트 시스템
+
 ## ⏸ 본선 48시간 확장 (신청 이후 보류)
 
 - ⏸ 음성 TTS(히어로 보이스)
