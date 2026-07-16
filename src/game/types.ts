@@ -87,3 +87,18 @@ export interface SetupChoices {
   hospitalName: string
   doctors: Partial<Record<DeptKey, number>> // 과별 의사 수
 }
+
+/** 1막 콜 종류. */
+export type CallKind =
+  | 'STEMI' // 급성심근경색 — 순환기 배후 필요(없으면 하드락)
+  | 'GENERAL_EMERGENCY' // 일반 응급 — 병상만 있으면 받을 수 있음(저마진)
+  | 'COSMETIC_WALKIN' // 미용·검진 워크인 — 늘 받을 수 있음(명랑)
+
+/** 걸려오는 콜 한 통. patient는 STEMI/일반응급 판정에 쓰인다(워크인은 명목값). */
+export interface IncomingCall {
+  id: string
+  kind: CallKind
+  label: string // 화면 표시용 상황 요약
+  patient: Patient
+  lawsuitRisk: boolean // 수용 시 소송 노출 누적 여부(고위험 필수 케이스)
+}
