@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { startSession, completeSetup, type SessionState } from "@/game/session";
+import { startSession, completeSetup, completeReceiving, type SessionState } from "@/game/session";
+import { decide } from "@/game/receiving";
 import SetupWizard from "./SetupWizard";
+import ReceivingPhase from "./ReceivingPhase";
 
 /** 다음 태스크에서 실제 페이즈 컴포넌트로 교체될 임시 자리표시자. */
 function PhasePlaceholder({ label }: { label: string }) {
@@ -21,7 +23,13 @@ export default function SessionClient() {
     case "SETUP":
       return <SetupWizard onComplete={(choices) => setSession(completeSetup(choices))} />;
     case "RECEIVING":
-      return <PhasePlaceholder label="RECEIVING (Task 4)" />;
+      return (
+        <ReceivingPhase
+          receiving={session.receiving!}
+          onDecide={(accept) => setSession((s) => ({ ...s, receiving: decide(s.receiving!, accept) }))}
+          onContinue={() => setSession(completeReceiving(session))}
+        />
+      );
     case "INTERSTITIAL":
       return <PhasePlaceholder label="INTERSTITIAL (Task 5)" />;
     case "EMERGENCY":
