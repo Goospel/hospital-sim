@@ -3,6 +3,11 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-16 · U1 파이프라인 스파이크 — 배포 뚫림 (PR #6)
+
+- **무엇을**: 기본 Next 템플릿을 walking skeleton("수화기 너머의 벽" 다크 랜딩)으로 교체(`src/app/page.tsx`·`layout.tsx`, lang=ko·메타데이터) + `.claude/launch.json`. prod `next build`(Turbopack) 통과 확인 후 **Vercel 배포** → https://hospital-sim-ashy.vercel.app/ 공개 URL 렌더 검증. 15 tests green 유지.
+- **왜**: 로드맵 최상위 리스크는 코드가 아니라 미검증 배포 파이프라인(첫 Next 16 prod 빌드·Vercel). 게임 완성 전에 이걸 먼저 뚫어, 마감 직전 터질 리스크를 제거하고 이후 모든 작업을 "이미 되는 배포" 위에 얹는다.
+
 ## 2026-07-16 · 사전 과제 25일 제출 로드맵 확정
 
 - **무엇을**: 실제 제출 폼(필수 4종: 플레이어블 빌드·플레이 영상·게임소개 PDF·AI활용 PDF) 확인 후, [docs/submission-plan.md](docs/submission-plan.md) 신설 + plan.md 로드맵을 크리티컬 패스(U1~Z9)로 재정렬. 마감 8/10·본선 9/4~6 웹검증. 3관점(의존성·리스크·데모서사) 설계 → 종합 → 적대적 비평 워크플로우(5에이전트).
