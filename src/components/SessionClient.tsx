@@ -1,10 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { startSession, completeSetup, completeReceiving, type SessionState } from "@/game/session";
+import {
+  startSession,
+  completeSetup,
+  completeReceiving,
+  beginEmergency,
+  toEpilogue,
+  type SessionState,
+} from "@/game/session";
 import { decide } from "@/game/receiving";
 import SetupWizard from "./SetupWizard";
 import ReceivingPhase from "./ReceivingPhase";
+import Interstitial from "./Interstitial";
+import InHouseEmergency from "./InHouseEmergency";
+import TransferRound from "./TransferRound";
 
 /** 다음 태스크에서 실제 페이즈 컴포넌트로 교체될 임시 자리표시자. */
 function PhasePlaceholder({ label }: { label: string }) {
@@ -31,9 +41,27 @@ export default function SessionClient() {
         />
       );
     case "INTERSTITIAL":
-      return <PhasePlaceholder label="INTERSTITIAL (Task 5)" />;
-    case "EMERGENCY":
-      return <PhasePlaceholder label="EMERGENCY (Task 5)" />;
+      return (
+        <Interstitial
+          hospital={session.hospital!}
+          receiving={session.receiving!}
+          onContinue={() => setSession(beginEmergency(session))}
+        />
+      );
+    case "EMERGENCY": {
+      const em = session.emergency!;
+      if (em.mode === "IN_HOUSE") {
+        return <InHouseEmergency onContinue={() => setSession(toEpilogue(session))} />;
+      }
+      return (
+        <TransferRound
+          game={em.game}
+          onFinish={(final) =>
+            setSession((s) => toEpilogue({ ...s, emergency: { mode: "TRANSFER", game: final } }))
+          }
+        />
+      );
+    }
     case "EPILOGUE":
       return <PhasePlaceholder label="EPILOGUE (Task 6)" />;
   }
