@@ -1,5 +1,5 @@
-import GameClient from "@/components/GameClient";
+import SessionClient from "@/components/SessionClient";
 
 export default function Home() {
-  return <GameClient />;
+  return <SessionClient />;
 }

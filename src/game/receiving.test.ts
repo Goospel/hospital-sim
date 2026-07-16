@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { createCallQueue, classifyCall, initReceiving, decide } from './receiving'
+import { createCallQueue, classifyCall, initReceiving, decide, runningNetProfit } from './receiving'
+import type { ReceivingState } from './receiving'
 import { buildHospital } from './setup'
 import type { Hospital, SetupChoices } from './types'
 
@@ -98,5 +99,44 @@ describe('decide 리듀서 — 장부·소송 누적', () => {
     for (let i = 0; i < 5; i++) s = decide(s, false)
     expect(s.done).toBe(true)
     expect(() => decide(s, false)).toThrow()
+  })
+})
+
+describe('runningNetProfit — 러닝 순이익(소송 비용 제외, 1막 한정)', () => {
+  function stateWith(
+    segments: { label: string; profitBillions: number }[] | undefined,
+    netProfitDeltaBillions: number,
+  ): ReceivingState {
+    const hospital: Hospital = {
+      id: 'test',
+      name: '테스트병원',
+      beds: 2,
+      hasErOnCall: true,
+      overcrowded: false,
+      backupCare: [],
+      economics: segments === undefined ? undefined : { segments, hires: [], essentialHires: 0 },
+    }
+    return { ...initReceiving(hospital, []), netProfitDeltaBillions }
+  }
+
+  it('양수 — 부문 손익 합 + 분기 델타', () => {
+    const s = stateWith(
+      [
+        { label: 'A', profitBillions: 10 },
+        { label: 'B', profitBillions: 5 },
+      ],
+      3,
+    )
+    expect(runningNetProfit(s)).toBe(18)
+  })
+
+  it('음수 — 부문 손익 합이 음수여도 그대로 더한다', () => {
+    const s = stateWith([{ label: 'A', profitBillions: -20 }], -4)
+    expect(runningNetProfit(s)).toBe(-24)
+  })
+
+  it('segments 없음(economics undefined) — 분기 델타만', () => {
+    const s = stateWith(undefined, 7)
+    expect(runningNetProfit(s)).toBe(7)
   })
 })

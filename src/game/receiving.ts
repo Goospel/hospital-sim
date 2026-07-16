@@ -88,3 +88,13 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
     done: index >= state.queue.length,
   }
 }
+
+/**
+ * 1막 러닝 순이익(부문 손익 합 + 분기 진료 수익 델타) — 소송 비용은 제외.
+ * 소송 비용은 결말 buildSessionLedger에서만 차감된다(해석 0 원칙: 1막은 명랑한 숫자만).
+ */
+export function runningNetProfit(state: ReceivingState): number {
+  const segments = state.hospital.economics?.segments ?? []
+  const segmentTotal = segments.reduce((sum, s) => sum + s.profitBillions, 0)
+  return segmentTotal + state.netProfitDeltaBillions
+}

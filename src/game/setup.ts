@@ -59,3 +59,18 @@ export function hiringCost(choices: SetupChoices): number {
 export function withinBudget(choices: SetupChoices): boolean {
   return hiringCost(choices) <= SETUP_BUDGET_BILLIONS
 }
+
+/** 불변 갱신 — 과별 의사 수를 delta만큼 조정. 음수·비정수 방어(0 클램프·정수화), 0이면 키 제거. */
+export function adjustDoctors(choices: SetupChoices, key: DeptKey, delta: number): SetupChoices {
+  const current = choices.doctors[key] ?? 0
+  const next = Math.max(0, Math.floor(current + delta))
+  const doctors = { ...choices.doctors }
+  if (next === 0) delete doctors[key]
+  else doctors[key] = next
+  return { ...choices, doctors }
+}
+
+/** 세션을 시작할 수 있는 선택인가 — 이름이 있고 예산 이내. */
+export function isSetupReady(choices: SetupChoices): boolean {
+  return choices.hospitalName.trim().length > 0 && withinBudget(choices)
+}

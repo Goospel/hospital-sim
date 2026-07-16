@@ -1,0 +1,164 @@
+"use client";
+
+import { CALLER_PLEA, receivingLine } from "@/game/dialogue";
+import { formatSignedBillions } from "@/game/labels";
+import { classifyCall, runningNetProfit, type ReceivingState } from "@/game/receiving";
+import SegmentTree from "./SegmentTree";
+
+/**
+ * 명랑 장부(사이드) — 부문 손익 + 라이브 분기 진료 수익 + 러닝 순이익.
+ * lawsuitExposure는 여기서 절대 표시하지 않는다 — 냉정한 소송 비용은 결말(에필로그)에서만 실현된다.
+ * 명랑한 숫자만 보이는 게 바로 1막 다크코미디의 논지다.
+ */
+function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
+  const segments = receiving.hospital.economics?.segments ?? [];
+  const netProfit = runningNetProfit(receiving);
+
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-black/40 px-5 py-4">
+      <p className="mb-3 text-xs uppercase tracking-[0.3em] text-zinc-600">
+        {receiving.hospital.name} · 분기 장부
+      </p>
+      <div className="flex flex-col gap-2 font-mono text-sm">
+        <SegmentTree segments={segments} />
+        <div className="my-1 border-t border-zinc-800/80" />
+        <div className="flex items-baseline justify-between">
+          <span className="text-zinc-400">분기 진료 수익</span>
+          <span className="tabular-nums text-emerald-400">
+            {formatSignedBillions(receiving.netProfitDeltaBillions)}
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span className="font-semibold text-zinc-200">러닝 순이익</span>
+          <span
+            className={`tabular-nums font-semibold ${netProfit > 0 ? "text-emerald-400" : "text-zinc-300"}`}
+          >
+            {formatSignedBillions(netProfit)}
+          </span>
+        </div>
+      </div>
+      {netProfit > 0 && (
+        <p className="mt-3 text-center text-xs font-medium text-emerald-400">이번 분기 흑자 🎉</p>
+      )}
+    </section>
+  );
+}
+
+export default function ReceivingPhase({
+  receiving,
+  onDecide,
+  onContinue,
+}: {
+  receiving: ReceivingState;
+  onDecide: (accept: boolean) => void;
+  onContinue: () => void;
+}) {
+  if (receiving.done) {
+    return (
+      <main className="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
+        <header className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">전원 콜 접수</span>
+          <h1 className="text-lg font-semibold">
+            오늘의 콜 {receiving.queue.length}통을 모두 처리했습니다
+          </h1>
+        </header>
+
+        <div className="flex flex-col gap-1.5">
+          {receiving.log.map((entry, i) => {
+            const call = receiving.queue[i];
+            const label = entry.accepted
+              ? "수용"
+              : entry.disposition === "HARDLOCK_REJECT"
+                ? "하드락"
+                : "거절";
+            return (
+              <div
+                key={entry.callId}
+                className="flex items-center justify-between rounded-md border border-zinc-800 bg-white/[0.03] px-3 py-2 text-xs"
+              >
+                <span className="text-zinc-400">{call.label}</span>
+                <span className={entry.accepted ? "text-emerald-400" : "text-zinc-600"}>{label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <CheerfulLedger receiving={receiving} />
+
+        <button
+          type="button"
+          onClick={onContinue}
+          className="rounded-lg bg-emerald-600 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        >
+          계속
+        </button>
+      </main>
+    );
+  }
+
+  const call = receiving.queue[receiving.index];
+  const disposition = classifyCall(receiving.hospital, call);
+  const pleaPool = CALLER_PLEA[call.kind];
+  const plea = pleaPool[receiving.index % pleaPool.length];
+
+  const prevCall = receiving.index > 0 ? receiving.queue[receiving.index - 1] : undefined;
+  const prevLog = receiving.log[receiving.log.length - 1];
+  const prevLine =
+    prevCall && prevLog
+      ? receivingLine(prevCall, prevLog.disposition, prevLog.accepted, receiving.index - 1)
+      : undefined;
+
+  return (
+    <main className="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
+      <header className="flex flex-col gap-1">
+        <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">전원 콜 접수</span>
+        <h1 className="text-lg font-semibold">
+          콜 {receiving.index + 1} / {receiving.queue.length}
+        </h1>
+      </header>
+
+      {prevLine && (
+        <p className="text-xs text-zinc-600">
+          직전 · {prevCall!.label} → {prevLine}
+        </p>
+      )}
+
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+        <section className="flex flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4">
+          <p className="text-sm font-medium text-zinc-100">{call.label}</p>
+          <p className="text-sm italic text-zinc-400">&ldquo;{plea}&rdquo;</p>
+
+          {disposition === "HARDLOCK_REJECT" && (
+            <p className="text-xs text-amber-500">
+              {receivingLine(call, "HARDLOCK_REJECT", false, receiving.index)}
+            </p>
+          )}
+
+          <div className="mt-1 flex gap-3">
+            <button
+              type="button"
+              onClick={() => onDecide(true)}
+              disabled={disposition === "HARDLOCK_REJECT"}
+              aria-label={`${call.label} 수용`}
+              className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            >
+              수용
+            </button>
+            <button
+              type="button"
+              onClick={() => onDecide(false)}
+              aria-label={`${call.label} 거절`}
+              className="flex-1 rounded-lg border border-zinc-700 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            >
+              거절
+            </button>
+          </div>
+        </section>
+
+        <div className="w-full sm:w-72 sm:shrink-0">
+          <CheerfulLedger receiving={receiving} />
+        </div>
+      </div>
+    </main>
+  );
+}
