@@ -1,4 +1,5 @@
-import type { RejectionReason, TransferVerdict } from './types'
+import type { RejectionReason, TransferVerdict, CallKind, IncomingCall } from './types'
+import type { CallDisposition } from './receiving'
 
 // 확정된 판정(코드)을 전원 담당자의 "대사"로 옮기는 결정론적 폴백.
 // LLM이 붙기 전에도 게임이 돌아가고, 붙은 뒤에도 무키·실패 시 여기로 강등된다.
@@ -77,4 +78,56 @@ export function persuasionReply(verdict: TransferVerdict, priorAttempts: number)
   const pool = REJECTION_ESCALATION[verdict.reason ?? 'NO_BED']
   const index = Math.min(Math.max(0, priorAttempts), pool.length - 1)
   return pool[index]
+}
+
+// ── 1막 받는 쪽(내 병원) 다크코미디 폴백 ──
+// 톤: 명랑한 시스템 대사와 인간의 대가 사이의 낙차. 과녁은 시스템의 태연함이지 환자가 아니다.
+// (2막·결말은 냉정 — 여기 대사는 1막에서만.)
+
+/** 걸려오는 쪽의 호소(발신자). */
+export const CALLER_PLEA: Record<CallKind, string[]> = {
+  STEMI: [
+    '심근경색 환자입니다. 재관류 가능한 데가 없어요. 받아주실 수 있나요?',
+    '벌써 네 번째 병원입니다. 순환기 되는 곳이… 거기 되나요?',
+  ],
+  GENERAL_EMERGENCY: [
+    '복통 응급인데 병상이 없어서요. 자리 하나만 부탁드립니다.',
+    '지금 받아줄 곳을 못 찾고 있어요. 입원 가능할까요?',
+  ],
+  COSMETIC_WALKIN: [
+    '보톡스 상담 예약 가능할까요?',
+    '검진 패키지 문의드려요. 오늘 접수되나요?',
+  ],
+}
+
+/** 수용 시 시스템의 명랑한 확인. */
+export const RECEIVE_ACCEPT: Record<CallKind, string> = {
+  STEMI: '…받겠습니다. 준비하고 있겠습니다.',
+  GENERAL_EMERGENCY: '네, 병상 하나 내드리죠. 보내세요.',
+  COSMETIC_WALKIN: '물론이죠! 바로 접수해 드릴게요 🎉',
+}
+
+/** 선택 거절 시. */
+export const RECEIVE_REJECT: Record<CallKind, string> = {
+  STEMI: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
+  GENERAL_EMERGENCY: '지금은 병상을 비워두겠습니다. 다른 곳을 알아보세요.',
+  COSMETIC_WALKIN: '오늘은 예약이 다 찼습니다. 다음에 오세요.',
+}
+
+/** STEMI인데 내 병원도 순환기 배후가 없어 못 받는다 — 벽을 안쪽에서 배운다. */
+export const RECEIVE_HARDLOCK =
+  '자리는 있는데, 저희도 순환기 시술팀이 없습니다. 받아도 못 뚫어요.'
+
+/** 콜 처리 결과 → 받는 쪽 폴백 대사. seed로 호소 대사를 변주(결정론). */
+export function receivingLine(
+  call: IncomingCall,
+  disposition: CallDisposition,
+  accepted: boolean,
+  seed = 0,
+): string {
+  if (disposition === 'HARDLOCK_REJECT') {
+    // STEMI 하드락은 배후 부재의 벽, 그 외 하드락은 일반 거절.
+    return call.kind === 'STEMI' ? RECEIVE_HARDLOCK : RECEIVE_REJECT[call.kind]
+  }
+  return accepted ? RECEIVE_ACCEPT[call.kind] : RECEIVE_REJECT[call.kind]
 }
