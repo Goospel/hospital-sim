@@ -66,3 +66,17 @@ export function attemptTransfer(
   const status: GameStatus = isExpired(timer) ? 'DIED' : 'IN_PROGRESS'
   return { ...state, timer, attempts, status }
 }
+
+/**
+ * 실시간(벽시계) 경과만큼 골든타임을 소모한다. 전원 시도와 무관하게 시간만 흐른다.
+ * 끝난 판(ACCEPTED/DIED)에서는 동일 객체를 그대로 반환한다 — 실시간 인터벌이
+ * 종료 직후 한 틱 더 울려도 안전하도록.
+ */
+export function tickTime(state: GameState, elapsedSeconds: number): GameState {
+  if (state.status !== 'IN_PROGRESS') {
+    return state
+  }
+  const timer = advance(state.timer, elapsedSeconds)
+  const status: GameStatus = isExpired(timer) ? 'DIED' : 'IN_PROGRESS'
+  return { ...state, timer, status }
+}

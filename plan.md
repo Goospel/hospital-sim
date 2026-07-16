@@ -50,10 +50,10 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 - ⬜ (U2와 겹쳐) 영상 20초 throwaway 유튜브 업로드 테스트 · LLM 단일 왕복 호출·지연 실측 — LLM 스파이크는 결제 활성 확인 후(선결②)
 - ⏸ `ANTHROPIC_API_KEY` Vercel 환경변수 등록은 `X8`(실LLM) 착수 시
 
-### U2. 한 판 UI 척추 + 실LLM 극소판 (7/19–7/24) — ①
-- ⬜ 결정론 코어(`round`/`goldenTime`/`adjudicate`)를 React 배선: 환자 도착 + 골든타임 카운트다운 / 병원 리스트 + '전원 콜' → `attemptTransfer` → `TransferVerdict` / 종료 상태 UI + 입력 잠금
-- ⬜ 결정론 폴백 대사 1차 세트 + STEMI 하드코딩 완주
-- ⬜ **실LLM 극소판**: 거절 대사 1종만 실제 Anthropic 왕복으로 렌더(무키면 폴백) — 영상용 라이브 AI 확보
+### U2. 한 판 UI 척추 + 실LLM 극소판 (7/16) — ① 🔜 진행중
+- ✅ 결정론 코어를 React 배선(`GameClient.tsx`): 환자 도착 + **실시간 골든타임 카운트다운**(`tickTime`, TDD) / 병원 리스트 + '전원 콜' → `attemptTransfer` → 수용·거절 표시 / 종료 상태(ACCEPTED/DIED) UI + 입력 잠금 + '다시 한 판'
+- ✅ 결정론 폴백 대사(`dialogue.ts`, TDD) + STEMI 시나리오(`scenarios.ts`, TDD·두 거절 사유 다 드러나되 풀림) 하드코딩 완주 — 브라우저 관찰 검증(NO_BED→NO_SPECIALIST→수용)
+- ⬜ **실LLM 극소판**: 거절 대사 1종만 실제 Anthropic 왕복으로 렌더(무키면 폴백) — ⚠️ 결제 활성 확인 후(선결②)
 
 ### U3. 거절 누적 좌절 + 하드락 벽 (7/24–7/27) — ①
 - ⬜ 거절 로그 리스트 + 사유 태그(병상없음/당직없음) 뱃지

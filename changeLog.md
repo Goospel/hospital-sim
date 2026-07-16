@@ -3,6 +3,11 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-16 · U2 한 판 UI 척추 — 결정론으로 완주 가능 (PR #8)
+
+- **무엇을**: 시뮬 코어를 React에 배선(`GameClient.tsx`)해 STEMI 한 판이 손끝으로 완주된다 — 실시간 골든타임 카운트다운, 전원 콜→수용/거절, 거절 사유 태그, 폴백 대사, 결말(살림/놓침)+다시하기. 순수 로직 TDD 신규: `tickTime`(실시간 소모, 인터벌 레이스 안전 no-op), `fallbackLine`(판정→폴백 대사), `createStemiScenario`(두 거절 사유 다 드러나되 풀림). 총 26 tests green. 브라우저로 한 판 관찰 검증(NO_BED→NO_SPECIALIST→수용→살림).
+- **왜**: "플레이어블 빌드"의 척추. LLM 없이 결정론 폴백만으로도 데모 4비트 중 3비트(압박·거절 누적·결말)가 화면에서 돈다 → 최소 제출선의 코어 확보. 실LLM 극소판은 결제 확인 후 이 위에 얹는다.
+
 ## 2026-07-16 · U1 파이프라인 스파이크 — 배포 뚫림 (PR #6)
 
 - **무엇을**: 기본 Next 템플릿을 walking skeleton("수화기 너머의 벽" 다크 랜딩)으로 교체(`src/app/page.tsx`·`layout.tsx`, lang=ko·메타데이터) + `.claude/launch.json`. prod `next build`(Turbopack) 통과 확인 후 **Vercel 배포** → https://hospital-sim-ashy.vercel.app/ 공개 URL 렌더 검증. 15 tests green 유지.
