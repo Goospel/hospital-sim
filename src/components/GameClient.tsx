@@ -3,9 +3,9 @@
 import { useState, type ReactNode } from "react";
 import { buildDebrief } from "@/game/debrief";
 import { buildLedger } from "@/game/ledger";
-import { formatClock, SPECIALTY_LABEL } from "@/game/labels";
 import { startGame, type GameState } from "@/game/round";
 import { createStemiScenario } from "@/game/scenarios";
+import EmergencyChrome from "./EmergencyChrome";
 import LedgerPanel from "./LedgerPanel";
 import Receipt from "./Receipt";
 import TransferRound, { LOW_TIME_THRESHOLD } from "./TransferRound";
@@ -20,33 +20,14 @@ function newGame(): GameState {
  * 진행 중(IN_PROGRESS)엔 TransferRound가 이 chrome을 자체 소유(실시간 틱과 함께)하므로 여기선 쓰이지 않는다.
  */
 function GameChrome({ game, children }: { game: GameState; children: ReactNode }) {
-  const { patient, timer } = game;
-  const lowTime = timer.remainingSeconds <= LOW_TIME_THRESHOLD;
+  const lowTime = game.timer.remainingSeconds <= LOW_TIME_THRESHOLD;
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 transition-shadow duration-500 bg-zinc-950">
-      {/* 골든타임 */}
-      <header className="flex items-baseline justify-between">
-        <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">골든타임</span>
-        <span
-          className={`font-mono text-4xl font-bold tabular-nums ${
-            lowTime ? "animate-pulse text-red-500" : "text-zinc-100"
-          }`}
-        >
-          {formatClock(timer.remainingSeconds)}
-        </span>
-      </header>
-
-      {/* 환자 카드 */}
-      <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
-        <p className="text-xs uppercase tracking-widest text-red-400">응급 환자 도착</p>
-        <h1 className="mt-1 text-lg font-semibold">
-          급성 심근경색(STEMI) 의심 · 중증도 {patient.severity}/5
-        </h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          필요 진료과: <span className="text-zinc-200">{SPECIALTY_LABEL[patient.requiredSpecialty]}</span> · 즉시 전원 필요
-        </p>
-      </section>
-
+      <EmergencyChrome
+        patient={game.patient}
+        remainingSeconds={game.timer.remainingSeconds}
+        lowTime={lowTime}
+      />
       {children}
     </main>
   );
@@ -87,7 +68,9 @@ export default function GameClient() {
   // 결말 — 차가운 사실 영수증(해석 없음)
   const debrief = buildDebrief(game);
   const ledger = buildLedger(game);
-  const nameById = new Map(game.hospitals.map((h) => [h.id, h.name]));
+  const acceptedHospitalName = game.hospitals.find(
+    (h) => h.id === game.acceptedHospitalId,
+  )?.name;
 
   return (
     <GameChrome game={game}>
@@ -96,7 +79,7 @@ export default function GameClient() {
           <>
             <p className="text-2xl font-bold text-emerald-400">환자를 살렸습니다</p>
             <p className="text-sm text-zinc-400">
-              {nameById.get(game.acceptedHospitalId ?? "")}이(가) 전원을 수용했습니다.
+              {acceptedHospitalName}이(가) 전원을 수용했습니다.
             </p>
           </>
         ) : (
