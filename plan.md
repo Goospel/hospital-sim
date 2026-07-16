@@ -44,10 +44,11 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 > **U/P = 필수 최소 경로**(이것만으로 8/10 성립) · `X` = droppable upside · `Z` = 버퍼.
 > 비평 반영: 패키징(P6→P7) **직렬화**, `Z9` 전제에서 `X8` 제외(버퍼 착시 제거), 실LLM 극소판을 **U2로 당김**(영상에 라이브 AI 확보), 간이 지도는 **v2 강등**.
 
-### U1. 파이프라인 스파이크 (7/16–7/19) — 인프라
-- ⬜ 로컬 **prod `next build`**(dev 아님) 통과 — Next 16 breaking change를 `node_modules/next/dist/docs` 정독으로 선제 확인 (필수 게이트)
-- ⬜ walking skeleton을 **Vercel 배포** → 타 기기/시크릿창 공개 URL 확인 + `ANTHROPIC_API_KEY` 서버 환경변수 예행
-- ⬜ (U2와 겹쳐) 영상 20초 throwaway 유튜브 업로드 테스트 · LLM 단일 왕복 호출·지연 실측 · 예비 1일
+### U1. 파이프라인 스파이크 (7/16) — 인프라 ✅ 배포 파이프라인 뚫림
+- ✅ 로컬 **prod `next build`**(Turbopack) 통과 — Next 16 breaking change(`node_modules/next/dist/docs`) 정독 완료 (필수 게이트 해소)
+- ✅ walking skeleton("수화기 너머의 벽") **Vercel 배포** → 공개 URL 렌더 확인 → https://hospital-sim-ashy.vercel.app/ (main 푸시 시 자동 재배포)
+- ⬜ (U2와 겹쳐) 영상 20초 throwaway 유튜브 업로드 테스트 · LLM 단일 왕복 호출·지연 실측 — LLM 스파이크는 결제 활성 확인 후(선결②)
+- ⏸ `ANTHROPIC_API_KEY` Vercel 환경변수 등록은 `X8`(실LLM) 착수 시
 
 ### U2. 한 판 UI 척추 + 실LLM 극소판 (7/19–7/24) — ①
 - ⬜ 결정론 코어(`round`/`goldenTime`/`adjudicate`)를 React 배선: 환자 도착 + 골든타임 카운트다운 / 병원 리스트 + '전원 콜' → `attemptTransfer` → `TransferVerdict` / 종료 상태 UI + 입력 잠금
