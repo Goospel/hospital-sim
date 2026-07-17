@@ -37,6 +37,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-049](troubleshooting/T-049.md) · 기억을 "현실"이라 부르며 T-042를 그대로 반복 — 적대 검증의 **기각**도 확신에 차서 틀린다
 - [T-048](troubleshooting/T-048.md) · sh 훅에서 PowerShell 검사기를 부르면 세 군데서 조용히 깨진다 — 워크트리 hooksPath·ExecutionPolicy·한글 출력. 셋 다 "훅을 직접 실행하는 테스트"는 통과한다
 - [T-047](troubleshooting/T-047.md) · PowerShell로 파일을 재생성하면 `AppendLine`이 CRLF를 섞어 LF 파일이 혼합 EOL이 된다 — 규칙이 있는데도 밟았다
 - [T-046](troubleshooting/T-046.md) · `.gitattributes` 없이 셸 훅을 커밋하면 clone 시 CRLF 로 풀려 훅이 통째로 죽음
