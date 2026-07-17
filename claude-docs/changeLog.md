@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · 랜딩 타이틀 카드 — 첫 화면 신설(LANDING 페이즈 승격) (PR #31)
+
+- **무엇을**: URL 진입 시 곧장 위저드(채용 폼)가 뜨던 걸, 앞에 다크 지면 타이틀 카드("수화기 너머의 벽")를 세워 사용자가 처음 보는 화면으로. 원본 랜딩(97a012c)의 느낌을 되살리되 카피는 현재 게임(경영 전체 아크)에 맞춰 재프레이밍: "병원을 세우고, 환자를 받고, 그 대가를 치른다 / 최선을 다해도 결과를 정하는 건 당신이 아니라 **구조**다"(세우고=채용·받고=콜큐/응급·대가=결말). CTA=emerald(초록 1막 유혹→빨강 응급 아크의 시작점, 위저드 CTA와 동색)·마운트 fade-in(reduced-motion 존중). `LANDING`을 세션 페이즈로 **승격** — `startSession()→LANDING`, 신규 전이 `beginSetup()`(LANDING→SETUP, 가드). 재시작은 startSession 단일 진입점이라 자동으로 랜딩 리셋.
+- **왜**: 첫 화면이 맥락 없는 채용 폼이면 세계관·논지 없이 던져진다. 타이틀 카드로 톤과 "구조" 논지를 먼저 세운다. UI 전용 boolean 대신 페이즈로 승격한 건, 이 레포가 모든 상태 전이를 결정론 순수 함수로 TDD하는 구조라 랜딩만 예외로 두면 결이 어긋나기 때문(exhaustive switch가 tsc에서 누락도 잡음).
+- **범위**: `session.ts`(+LANDING·beginSetup)·`session.test.ts`(+3, 기존 `startSession→SETUP` 테스트를 →LANDING으로 갱신)·`Landing.tsx`(신규)·`SessionClient.tsx`(LANDING 케이스). 스펙 [superpowers/specs/2026-07-17-landing-title-card-design.md](superpowers/specs/2026-07-17-landing-title-card-design.md). `tsc` 0 · `vitest` **316 green**(+2) · 브라우저 검증(랜딩 렌더·카피 정확·시작→위저드 전이·콘솔 0). TDD Red(startSession→LANDING·beginSetup 부재로 실패)→Green. 검증 함정 [troubleshooting.md](troubleshooting.md) T-036.
+
 ## 2026-07-17 · 하이드레이션 경고 억제 — 루트 <html>에 suppressHydrationWarning (PR #30)
 
 - **무엇을**: 로컬 첫 로드에서 뜨던 Next dev 하이드레이션 오버레이("some attributes of the server rendered HTML didn't match")를 잡음. 원인은 **우리 코드 아님** — 사용자 Chrome의 **DarkReader 확장**이 하이드레이션 전 `<html>`에 `data-darkreader-proxy-injected` 속성을 주입해 서버/클라 속성 불일치. 루트 레이아웃 `<html>`에 `suppressHydrationWarning` 추가(Next 16.2 공식 패턴).

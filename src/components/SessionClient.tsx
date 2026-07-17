@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   startSession,
+  beginSetup,
   completeSetup,
   completeReceiving,
   beginEmergency,
@@ -11,6 +12,7 @@ import {
   type SessionState,
 } from "@/game/session";
 import { decide } from "@/game/receiving";
+import Landing from "./Landing";
 import SetupWizard from "./SetupWizard";
 import ReceivingPhase from "./ReceivingPhase";
 import Interstitial from "./Interstitial";
@@ -22,6 +24,8 @@ export default function SessionClient() {
   const [session, setSession] = useState<SessionState>(startSession);
 
   switch (session.phase) {
+    case "LANDING":
+      return <Landing onStart={() => setSession(beginSetup(session))} />;
     case "SETUP":
       return <SetupWizard onComplete={(choices) => setSession(completeSetup(choices))} />;
     case "RECEIVING":

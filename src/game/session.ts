@@ -6,13 +6,13 @@ import { createStemiScenario } from './scenarios'
 import { buildDebrief, type Debrief } from './debrief'
 import { buildSessionLedger, type Ledger } from './ledger'
 
-// 2막 단막극 세션 상태기계 — 순수·결정론. SETUP → RECEIVING → INTERSTITIAL → EMERGENCY → EPILOGUE.
+// 2막 단막극 세션 상태기계 — 순수·결정론. LANDING → SETUP → RECEIVING → INTERSTITIAL → EMERGENCY → EPILOGUE.
 // beginEmergency가 hospital.backupCare로 in-house 생존 vs 기존 전원 뺑뺑이를 가른다(철학 ii).
 
 /** STEMI 슬라이스가 요구하는 배후과(이번 주 유일 축, spec ⓐ). */
 const STEMI_SPECIALTY: Specialty = 'CARDIOLOGY'
 
-export type SessionPhase = 'SETUP' | 'RECEIVING' | 'INTERSTITIAL' | 'EMERGENCY' | 'EPILOGUE'
+export type SessionPhase = 'LANDING' | 'SETUP' | 'RECEIVING' | 'INTERSTITIAL' | 'EMERGENCY' | 'EPILOGUE'
 
 export type EmergencyState =
   | { mode: 'IN_HOUSE' } // 순환기 배후 있음 → 내 응급실이 직접 PCI → 생존
@@ -26,6 +26,14 @@ export interface SessionState {
 }
 
 export function startSession(): SessionState {
+  return { phase: 'LANDING' }
+}
+
+/** 랜딩 "시작" → 위저드. startSession이 단일 진입점이라 재시작도 자동으로 여기로 되돌아온다. */
+export function beginSetup(state: SessionState): SessionState {
+  if (state.phase !== 'LANDING') {
+    throw new Error(`beginSetup requires LANDING, got ${state.phase}`)
+  }
   return { phase: 'SETUP' }
 }
 
