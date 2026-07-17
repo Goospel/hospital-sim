@@ -24,6 +24,19 @@ export const SETUP_BUDGET_BILLIONS = 100
 export const MAX_DOCTORS_PER_DEPT = FIXED_BEDS
 
 /**
+ * 그 과의 배후진료가 **24시간** 돌아가려면 필요한 의사 수 — 당직 로테이션 최소 인원.
+ *
+ * 의사 1명은 24시간을 못 버틴다. 그래서 2번째 의사가 사는 건 처리량이 아니라 **시간대**다:
+ * 1명이면 주간 STEMI만 받고, 밤에 온 STEMI는 당직이 비어 못 받는다.
+ *
+ * ⚠️ 이 상수가 없던 시절 `backupCare`가 **이진값**이라 2번째 의사는 손익만 −12 깎는 순수 함정이었다
+ * (강지배). 그때 내가 낸 답이 "위저드 상한 1"이었는데, **코드가 표현 못 하는 걸 현실에 없는 것으로
+ * 착각**한 것이었다 — 현실에서 2명째가 사는 게 바로 이 24시간이다(T-042).
+ * 근거: medical-system-grounding.md:20("24시간 중재 순환기내과")·:66("당직 1명이 이미 3명 동시 진료").
+ */
+export const ROUND_THE_CLOCK_MIN_DOCTORS = 2
+
+/**
  * 한 판의 길이 = 7일(월~일). 달력 한 주가 곧 한 게임이다.
  *
  * DEPARTMENTS의 손익 숫자는 **이 7일 전체**의 손익이고, 하루는 그 1/7씩 쌓인다.
@@ -67,6 +80,11 @@ export function buildHospital(choices: SetupChoices): { hospital: Hospital; econ
     .filter((x) => x.dept.providesBackup)
     .map((x) => x.dept.providesBackup as Specialty)
 
+  // 그중 24시간 돌아가는 과 — 당직 로테이션이 서는 인원(2명)부터. 3명째는 24시간을 두 번 사지 못한다.
+  const roundTheClockBackup: Specialty[] = staffed
+    .filter((x) => x.dept.providesBackup && x.n >= ROUND_THE_CLOCK_MIN_DOCTORS)
+    .map((x) => x.dept.providesBackup as Specialty)
+
   const segments = staffed.map((x) => ({ label: x.dept.label, profitBillions: x.dept.profitPerDoctorBillions * x.n }))
   const hires = staffed.filter((x) => !x.dept.essential).map((x) => ({ label: x.dept.label, count: x.n }))
   // 필수 배후과 채용 수는 STEMI 슬라이스가 요구하는 CARDIOLOGY 수에서 파생(spec ⓐ).
@@ -80,6 +98,7 @@ export function buildHospital(choices: SetupChoices): { hospital: Hospital; econ
     hasErOnCall: true,
     overcrowded: false,
     backupCare,
+    roundTheClockBackup,
     economics,
   }
   return { hospital, economics }

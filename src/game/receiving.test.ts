@@ -76,6 +76,77 @@ describe('CALL_ECONOMICS — 가격을 누가 정하는가', () => {
   })
 })
 
+/**
+ * 야간 당직 — 배후진료가 '있냐/없냐'가 아니라 '몇 시냐'가 된다(T-042·F1b).
+ *
+ * 순환기 1명은 24시간을 못 버틴다. 그래서 2번째 의사가 사는 건 처리량이 아니라 **시간대**다 —
+ * 밤에 오는 STEMI를 받을 수 있느냐. 이게 없으면 2명째는 손익만 −12 깎는 순수 함정이었다.
+ */
+describe('야간 콜 — 시간대는 DAY_PLANS 위치에서 파생(RNG 0)', () => {
+  it('하루 5통 중 마지막 2통이 야간 — 결정론', () => {
+    for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+      const q = createCallQueue(day)
+      expect(q.map((c) => c.nightShift)).toEqual([false, false, false, true, true])
+    }
+    // 같은 day는 항상 같은 큐
+    expect(createCallQueue(3).map((c) => c.nightShift)).toEqual(createCallQueue(3).map((c) => c.nightShift))
+  })
+
+  it('[도달성] 주간 큐에 야간 STEMI가 최소 하루는 온다 — 없으면 이 장치가 죽은 코드다', () => {
+    const nightStemiDays = Array.from({ length: DAYS_PER_WEEK }, (_, i) => createCallQueue(i + 1)).filter((q) =>
+      q.some((c) => c.kind === 'STEMI' && c.nightShift),
+    )
+    expect(nightStemiDays.length).toBeGreaterThan(0)
+  })
+
+  it('[도달성] 주간 STEMI도 최소 하루는 온다 — 순환기 1명이 뭔가는 받을 수 있어야 한다', () => {
+    const dayStemiDays = Array.from({ length: DAYS_PER_WEEK }, (_, i) => createCallQueue(i + 1)).filter((q) =>
+      q.some((c) => c.kind === 'STEMI' && !c.nightShift),
+    )
+    expect(dayStemiDays.length).toBeGreaterThan(0)
+  })
+})
+
+describe('hardlockReason — 야간 배후진료', () => {
+  const solo: Hospital = hospitalOf({ hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 1 } })
+  const roundTheClock: Hospital = hospitalOf(conscientious) // 순환기 2
+  const nightStemi = () => ({ ...createCallQueue(1).find((c) => c.kind === 'STEMI')!, nightShift: true })
+  const dayStemi = () => ({ ...createCallQueue(1).find((c) => c.kind === 'STEMI')!, nightShift: false })
+
+  it('순환기 1명 + 주간 STEMI → 받는다', () => {
+    expect(hardlockReason(solo, dayStemi(), 3)).toBeNull()
+  })
+
+  /**
+   * 야간 공백은 **배후과 부재와 다른 사유**다 — 이 병원엔 순환기가 있다. 밤에 없을 뿐이다.
+   * 같은 태그를 쓰면 대사가 "저희도 순환기 시술팀이 없습니다"가 되어, 30억을 내고 순환기를 뽑은
+   * 플레이어에게 게임이 거짓말을 한다. 현실에서도 이 둘은 다른 사유고, 수용곤란 고지의 최대 증가분이
+   * '인력부족'(1년 새 2.3배)이라 오히려 이쪽이 지배적이다(stemi-factsheet.md:19).
+   */
+  it('순환기 1명 + 야간 STEMI → NO_NIGHT_BACKUP (과는 있는데 당직이 비었다)', () => {
+    expect(hardlockReason(solo, nightStemi(), 3)).toBe('NO_NIGHT_BACKUP')
+  })
+
+  it('순환기 0명 + 야간 STEMI → NO_BACKUP_CARE — 과가 아예 없는 것과 구분된다', () => {
+    expect(hardlockReason(hospitalOf(collaborator), nightStemi(), 3)).toBe('NO_BACKUP_CARE')
+  })
+
+  it('순환기 2명 + 야간 STEMI → 받는다 — 2번째 의사가 사는 게 이것이다', () => {
+    expect(hardlockReason(roundTheClock, nightStemi(), 3)).toBeNull()
+  })
+
+  it('자리 0이면 야간 여부와 무관하게 NO_BED — 게이트 우선순위 유지', () => {
+    expect(hardlockReason(roundTheClock, nightStemi(), 0)).toBe('NO_BED')
+  })
+
+  it('미용·일반응급은 야간이어도 배후 판정을 받지 않는다 — 배후진료가 필요한 건 STEMI뿐', () => {
+    const nightWalkin = { ...createCallQueue(1).find((c) => c.kind === 'COSMETIC_WALKIN')!, nightShift: true }
+    const nightGeneral = { ...createCallQueue(1).find((c) => c.kind === 'GENERAL_EMERGENCY')!, nightShift: true }
+    expect(hardlockReason(solo, nightWalkin, 3)).toBeNull()
+    expect(hardlockReason(solo, nightGeneral, 3)).toBeNull()
+  })
+})
+
 describe('createCallQueue — 고정 5통(결정론)', () => {
   it('5통이고 STEMI·워크인·일반응급을 모두 포함', () => {
     const q = createCallQueue()

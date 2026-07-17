@@ -7,7 +7,9 @@ import { buildHospital } from './setup'
 const accepted: TransferVerdict = { accepted: true }
 const reject = (reason: RejectionReason): TransferVerdict => ({ accepted: false, reason })
 
-const ALL_REASONS: RejectionReason[] = ['NO_BED', 'NO_ER_ONCALL', 'ER_OVERCROWDED', 'NO_BACKUP_CARE']
+const ALL_REASONS: RejectionReason[] = [
+  'NO_BED', 'NO_ER_ONCALL', 'ER_OVERCROWDED', 'NO_BACKUP_CARE', 'NO_NIGHT_BACKUP',
+]
 
 describe('fallbackLine — 결정론적 폴백 대사 (LLM 없이)', () => {
   it('수용 판정은 비어 있지 않은 대사를 준다', () => {
@@ -87,6 +89,17 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
     const disposition = classifyCall(collaborator, stemi, 3) // HARDLOCK_REJECT
     const line = receivingLine(stemi, disposition, false, 0, 'NO_BACKUP_CARE')
     expect(line).toBe(RECEIVE_HARDLOCK)
+  })
+
+  /**
+   * 야간 공백 대사는 배후 부재 대사와 **달라야** 한다 — 순환기를 30억 주고 뽑은 플레이어에게
+   * "저희도 순환기 시술팀이 없습니다"라고 하면 게임이 거짓말을 하는 것이다.
+   */
+  it('야간 당직 공백 → 배후 부재와 다른 대사, "없습니다"가 아니라 당직 얘기', () => {
+    const line = receivingLine(stemi, 'HARDLOCK_REJECT', false, 0, 'NO_NIGHT_BACKUP')
+    expect(line).not.toBe(RECEIVE_HARDLOCK)
+    expect(line.length).toBeGreaterThan(0)
+    expect(line).toContain('당직')
   })
 
   it('양심 병원의 STEMI 수용 → 명랑/확인 대사(비어있지 않음)', () => {

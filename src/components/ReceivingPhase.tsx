@@ -194,7 +194,18 @@ export default function ReceivingPhase({
 
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
         <section className="flex flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4">
-          <p className="text-sm font-medium text-zinc-100">{call.label}</p>
+          {/*
+            야간 표시 — 왜 밤에만 막히는지 플레이어가 스스로 잇게 하려면 시간대가 보여야 한다.
+            해석은 없다. '야간' 두 글자와, 순환기를 뽑고도 밤에 거절당하는 경험만 놓는다.
+          */}
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-zinc-100">{call.label}</p>
+            {call.nightShift && (
+              <span className="rounded-full border border-indigo-800/70 bg-indigo-950/50 px-2 py-0.5 text-[10px] font-medium tracking-wider text-indigo-300">
+                야간
+              </span>
+            )}
+          </div>
           <p className="text-sm italic text-zinc-400">&ldquo;{plea}&rdquo;</p>
 
           <CallEconomicsBreakdown call={call} />

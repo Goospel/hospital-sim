@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { adjustDoctors, isSetupReady, DEPARTMENTS, FIXED_BEDS, MAX_DOCTORS_PER_DEPT, SETUP_BUDGET_BILLIONS, buildHospital, hiringCost, withinBudget, withinDeptCaps } from './setup'
+import { adjustDoctors, isSetupReady, DEPARTMENTS, FIXED_BEDS, MAX_DOCTORS_PER_DEPT, ROUND_THE_CLOCK_MIN_DOCTORS, SETUP_BUDGET_BILLIONS, buildHospital, hiringCost, withinBudget, withinDeptCaps } from './setup'
 import type { SetupChoices } from './types'
 
 // 합리적 공범 빌드: 미용·검진만(흑자·필수과 0)
@@ -107,6 +107,41 @@ describe('adjustDoctors', () => {
   it('과별 상한에서 멈춘다 — 상한 초과 증가는 상한값', () => {
     const maxed = adjustDoctors(base, 'AESTHETICS', MAX_DOCTORS_PER_DEPT + 5)
     expect(maxed.doctors.AESTHETICS).toBe(MAX_DOCTORS_PER_DEPT)
+  })
+})
+
+/**
+ * 24시간 당직 커버리지 — 2번째 의사가 사는 것(T-042).
+ *
+ * 의사 1명은 24시간을 못 버틴다. STEMI는 **24시간 중재 순환기내과**를 갖춘 PCI 병원이라야
+ * 재관류가 되고(medical-system-grounding.md:20), 거절하는 당직의의 정당한 제약이
+ * "당직 1명이 이미 3명 동시 진료"(:66)다. 그래서 배후진료는 **있냐/없냐가 아니라 몇 시냐**다.
+ */
+describe('roundTheClockBackup — 24시간 배후는 2명부터', () => {
+  it('필수과 1명 → backupCare엔 있지만 24시간은 아니다 (주간만)', () => {
+    const { hospital } = buildHospital({ hospitalName: '양심병원', doctors: { CARDIOLOGY: 1 } })
+    expect(hospital.backupCare).toContain('CARDIOLOGY')
+    expect(hospital.roundTheClockBackup).not.toContain('CARDIOLOGY')
+  })
+
+  it('필수과 2명 → 24시간 배후 성립', () => {
+    const { hospital } = buildHospital({ hospitalName: '양심병원', doctors: { CARDIOLOGY: 2 } })
+    expect(hospital.roundTheClockBackup).toContain('CARDIOLOGY')
+  })
+
+  it('상한 = 당직 로테이션 최소 인원 — 3명째는 24시간을 두 번 사지 못한다', () => {
+    expect(ROUND_THE_CLOCK_MIN_DOCTORS).toBe(2)
+    const { hospital } = buildHospital({ hospitalName: '양심병원', doctors: { CARDIOLOGY: 3 } })
+    expect(hospital.roundTheClockBackup).toEqual(['CARDIOLOGY'])
+  })
+
+  it('안 뽑은 과는 24시간 목록에도 없다', () => {
+    const { hospital } = buildHospital(collaborator)
+    expect(hospital.roundTheClockBackup).toEqual([])
+  })
+
+  it('레포 대표 양심 픽스처(순환기 2)는 24시간 병원이다', () => {
+    expect(buildHospital(conscientious).hospital.roundTheClockBackup).toContain('CARDIOLOGY')
   })
 })
 
