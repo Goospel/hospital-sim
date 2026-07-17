@@ -5,9 +5,11 @@ import { formatSignedBillions } from "@/game/labels";
 import {
   accruedSegments,
   callDelta,
+  canOrderWorkup,
   classifyCall,
   hardlockReason,
   runningNetProfit,
+  workupDelta,
   CALL_ECONOMICS,
   DAY_LABELS,
   type ReceivingState,
@@ -72,6 +74,15 @@ function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
             {formatSignedBillions(receiving.netProfitDeltaBillions)}
           </span>
         </div>
+        {/* 검사 수익은 진료 수익 바로 아래 별도 줄 — 덮는 게 뭔지 보여야 한다. 해석은 없다. */}
+        {receiving.workupRevenueBillions !== 0 && (
+          <div className="flex items-baseline justify-between">
+            <span className="text-zinc-400">오늘 검사 수익</span>
+            <span className="tabular-nums text-emerald-400">
+              {formatSignedBillions(receiving.workupRevenueBillions)}
+            </span>
+          </div>
+        )}
         <div className="flex items-baseline justify-between">
           <span className="font-semibold text-zinc-200">오늘 순이익</span>
           <span
@@ -96,7 +107,7 @@ export default function ReceivingPhase({
 }: {
   receiving: ReceivingState;
   day: number;
-  onDecide: (accept: boolean) => void;
+  onDecide: (accept: boolean, withWorkup?: boolean) => void;
   onContinue: () => void;
 }) {
   const dayLabel = `${DAY_LABELS[day - 1]}요일`;
@@ -216,7 +227,11 @@ export default function ReceivingPhase({
             </p>
           )}
 
-          <div className="mt-1 flex gap-3">
+          {/*
+            검사 버튼 — 급여 환자에게만. 해석 카피 0: "과잉진료"라고 쓰지 않는다.
+            숫자만 놓는다(+4억, 자리 내일까지). 플레이어가 일곱 번 누른 뒤 장부에서 스스로 본다.
+          */}
+          <div className="mt-1 flex flex-wrap gap-3">
             <button
               type="button"
               onClick={() => onDecide(true)}
@@ -224,8 +239,22 @@ export default function ReceivingPhase({
               aria-label={`${call.label} 수용`}
               className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             >
-              수용
+              {canOrderWorkup(call.kind) ? "그냥 받기" : "수용"}
             </button>
+            {canOrderWorkup(call.kind) && (
+              <button
+                type="button"
+                onClick={() => onDecide(true, true)}
+                disabled={disposition === "HARDLOCK_REJECT"}
+                aria-label={`${call.label} 검사를 추가해 수용`}
+                className="flex-1 rounded-lg border border-emerald-700 bg-emerald-950/40 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-900 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+              >
+                검사를 추가한다
+                <span className="ml-1.5 font-mono text-xs font-normal opacity-80">
+                  {formatSignedBillions(workupDelta())} · 자리 내일까지
+                </span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onDecide(false)}

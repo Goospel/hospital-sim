@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   createCallQueue, classifyCall, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
+  WORKUP_ECONOMICS, workupDelta, canOrderWorkup,
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK } from './setup'
@@ -144,6 +145,98 @@ describe('hardlockReason — 야간 배후진료', () => {
     const nightGeneral = { ...createCallQueue(1).find((c) => c.kind === 'GENERAL_EMERGENCY')!, nightShift: true }
     expect(hardlockReason(solo, nightWalkin, 3)).toBeNull()
     expect(hardlockReason(solo, nightGeneral, 3)).toBeNull()
+  })
+})
+
+/**
+ * 검사 + boarding — 설계 스펙 §3.3(척추). 인과 사슬을 닫는 슬라이스.
+ *
+ * 저수가(45~85%) → 검사로 메꿈(160%) → boarding → 자리 없음 → 수용 불가 → 뺑뺑이 → 다음날 신문.
+ * 게임은 이 사슬을 한마디도 설명하지 않는다. 플레이어가 자기 손으로 만든다.
+ */
+describe('검사(WORKUP) — 급여 환자의 부호를 뒤집는다', () => {
+  it('검사는 급여(정부 고시)이고 원가보전율이 검체 160.5% 밴드 안 — 유일하게 원가를 넘는 급여 항목', () => {
+    expect(WORKUP_ECONOMICS.priceSetter).toBe('GOVERNMENT')
+    const recovery = WORKUP_ECONOMICS.revenueBillions / WORKUP_ECONOMICS.costBillions
+    expect(recovery).toBeGreaterThan(1.5)
+    expect(recovery).toBeLessThan(1.8)
+    expect(workupDelta()).toBeGreaterThan(0)
+  })
+
+  it('[I2] 일반 응급 + 검사 > 0 — 검사가 부호를 뒤집는다', () => {
+    expect(callDelta('GENERAL_EMERGENCY')).toBeLessThan(0)
+    expect(callDelta('GENERAL_EMERGENCY') + workupDelta()).toBeGreaterThan(0)
+  })
+
+  it('[I2] STEMI + 검사 > 0 — 과 단위 117%가 여기서 창발한다(입력이 아니다)', () => {
+    expect(callDelta('STEMI')).toBeLessThan(0)
+    expect(callDelta('STEMI') + workupDelta()).toBeGreaterThan(0)
+  })
+
+  it('미용은 비급여라 검사 대상이 아니다 — 가격을 병원이 정하니 메꿀 게 없다', () => {
+    expect(canOrderWorkup('COSMETIC_WALKIN')).toBe(false)
+    expect(canOrderWorkup('GENERAL_EMERGENCY')).toBe(true)
+    expect(canOrderWorkup('STEMI')).toBe(true)
+  })
+
+  it('검사를 붙여 수용 → 검사 수익이 진료 수익과 별도로 쌓인다', () => {
+    const general = createCallQueue().find((c) => c.kind === 'GENERAL_EMERGENCY')!
+    const s = initReceiving(hospitalOf(collaborator), [general])
+    const after = decide(s, true, true)
+    expect(after.netProfitDeltaBillions).toBe(callDelta('GENERAL_EMERGENCY')) // 진료 수익은 여전히 음수
+    expect(after.workupRevenueBillions).toBe(workupDelta()) // 덮는 건 검사다 — 두 줄이 나란히 있을 뿐
+    expect(after.workupCount).toBe(1)
+  })
+
+  it('검사 없이 수용 → 검사 수익 0', () => {
+    const general = createCallQueue().find((c) => c.kind === 'GENERAL_EMERGENCY')!
+    const after = decide(initReceiving(hospitalOf(collaborator), [general]), true, false)
+    expect(after.workupRevenueBillions).toBe(0)
+    expect(after.workupCount).toBe(0)
+  })
+
+  it('미용에 검사를 요청해도 무시된다 — 가드', () => {
+    const walkin = createCallQueue().find((c) => c.kind === 'COSMETIC_WALKIN')!
+    const after = decide(initReceiving(hospitalOf(collaborator), [walkin]), true, true)
+    expect(after.workupCount).toBe(0)
+    expect(after.workupRevenueBillions).toBe(0)
+  })
+
+  it('거절한 콜엔 검사가 안 붙는다 — 안 받은 환자를 검사할 수는 없다', () => {
+    const general = createCallQueue().find((c) => c.kind === 'GENERAL_EMERGENCY')!
+    const after = decide(initReceiving(hospitalOf(collaborator), [general]), false, true)
+    expect(after.workupCount).toBe(0)
+  })
+})
+
+describe('boarding — 어제의 흑자가 오늘의 자리를 먹는다', () => {
+  it('이월 0(기본값)이면 자리는 병상 전부 — 기존 동작 유지', () => {
+    const h = hospitalOf(conscientious)
+    expect(initReceiving(h).bedsFree).toBe(h.beds)
+  })
+
+  it('어제 검사 n건 → 오늘 자리 = 병상 − n', () => {
+    const h = hospitalOf(conscientious)
+    expect(initReceiving(h, createCallQueue(2), 2).bedsFree).toBe(h.beds - 2)
+  })
+
+  /**
+   * 지뢰 3 — 자리 0 데드락이 **의도된 결과**임을 잠근다.
+   * 어제 검사를 3건 붙이면 오늘 5통이 전부 NO_BED다. 이게 boarding의 대가고, 자기제한 장치다:
+   * 자리가 없으면 검사 붙일 환자도 없으니 다음날 자리가 돌아온다 → 무한 악화가 구조적으로 불가능.
+   */
+  it('[지뢰 3] 어제 검사가 병상만큼이면 오늘 전 콜이 NO_BED — 데드락이 의도다', () => {
+    const h = hospitalOf(conscientious)
+    const s = initReceiving(h, createCallQueue(2), h.beds)
+    expect(s.bedsFree).toBe(0)
+    for (const call of s.queue) {
+      expect(hardlockReason(h, call, s.bedsFree)).toBe('NO_BED')
+    }
+  })
+
+  it('이월이 병상보다 커도 자리는 음수가 안 된다', () => {
+    const h = hospitalOf(conscientious)
+    expect(initReceiving(h, createCallQueue(2), 99).bedsFree).toBe(0)
   })
 })
 

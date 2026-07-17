@@ -76,11 +76,16 @@ export function buildLedger(state: GameState): Ledger | null {
 export function buildSessionLedger(
   hospital: Hospital,
   patientSpecialty: Specialty,
-  receiving: { netProfitDeltaBillions: number; lawsuitExposure: number },
+  receiving: { netProfitDeltaBillions: number; workupRevenueBillions?: number; lawsuitExposure: number },
 ): Ledger | null {
   const extra: LedgerSegment[] = []
   if (receiving.netProfitDeltaBillions !== 0) {
     extra.push({ label: '이번 주 진료 수익', profitBillions: receiving.netProfitDeltaBillions })
+  }
+  // 검사 수익은 진료 수익 **바로 아래 별도 줄**이다. 합치면 이 게임이 하려는 말이 사라진다 —
+  // 진료 수익은 음수인데 검사가 덮어서 순이익이 양수인 장부. 해석은 없다, 두 줄이 나란히 있을 뿐이다.
+  if (receiving.workupRevenueBillions) {
+    extra.push({ label: '이번 주 검사 수익', profitBillions: receiving.workupRevenueBillions })
   }
   const lawsuitCost = receiving.lawsuitExposure > 0 ? receiving.lawsuitExposure * LAWSUIT_COST_PER_EXPOSURE : 0
   if (lawsuitCost > 0) {

@@ -46,6 +46,38 @@ export function callDelta(kind: CallKind): number {
   return e.revenueBillions - e.costBillions
 }
 
+/**
+ * 검사 한 건 — **유일하게 원가를 넘겨 받는 급여 항목**(검체 160.5% / 영상 144.3%).
+ *
+ * 급여 진료는 전부 원가 미달인데(기본진료 50.5%·응급 45.0%·수술 84.9%) 검사만 160%다.
+ * 이 비대칭이 §2.6의 척추다 — **응급의료 수가항목 45%인데 응급의학과 손익은 103%**, 그 차이가 검사다.
+ * 그래서 과 단위 흑자(심장내과 117%·응급의학과 103%)는 이 게임에서 **입력이 아니라
+ * 플레이어가 검사를 붙였을 때 장부에서 창발**한다.
+ *
+ * 대가는 boarding — 검사를 붙인 환자는 결과를 기다리며 자리를 점유하고, 그 자리는 **내일** 비워진다.
+ */
+export const WORKUP_ECONOMICS: CallEconomics = {
+  priceSetter: 'GOVERNMENT',
+  revenueBillions: 10,
+  costBillions: 6, // 10/6 ≈ 166.7% — 검체 160.5% 밴드
+}
+
+/** 검사 한 건의 손익 델타(억). 급여 환자의 부호를 −에서 +로 뒤집는다(I2). */
+export function workupDelta(): number {
+  return WORKUP_ECONOMICS.revenueBillions - WORKUP_ECONOMICS.costBillions
+}
+
+/**
+ * 이 콜에 검사를 붙일 수 있는가 — **급여 환자 전체**(일반 응급 + STEMI).
+ *
+ * 미용은 비급여라 애초에 가격을 병원이 정하니 메꿀 게 없다.
+ * ⚠️ 초안은 일반 응급으로 한정했는데, 그 논거("STEMI는 시술 117%가 본체")가 **순환 논증**이었다 —
+ * 117%의 흑자 출처 자체가 검사다. 한정하면 117%가 영원히 창발 못 하고 부호 위반이 남는다(T-039).
+ */
+export function canOrderWorkup(kind: CallKind): boolean {
+  return CALL_ECONOMICS[kind].priceSetter === 'GOVERNMENT'
+}
+
 export type CallDisposition = 'HARDLOCK_REJECT' | 'CHOICE'
 
 export interface ReceivingState {
@@ -59,6 +91,14 @@ export interface ReceivingState {
    */
   bedsFree: number
   netProfitDeltaBillions: number
+  /**
+   * 오늘 검사 수익 — 진료 수익과 **별도로** 쌓는다.
+   * 합쳐버리면 이 게임이 하려는 말이 사라진다: 진료 수익은 음수인데 검사 수익이 덮어서 순이익이 양수다.
+   * 아무도 "과잉진료"라고 말하지 않는다 — 두 줄이 나란히 있을 뿐이다.
+   */
+  workupRevenueBillions: number
+  /** 오늘 검사를 붙인 환자 수 — 내일 자리를 먹는다(boarding). */
+  workupCount: number
   lawsuitExposure: number
   /** reason = 하드락 사유(못 받은 이유). 받았거나 내가 거절한 콜은 null — 구조가 막은 것만 사유가 남는다. */
   log: { callId: string; accepted: boolean; disposition: CallDisposition; reason: RejectionReason | null }[]
@@ -177,21 +217,39 @@ export function classifyCall(hospital: Hospital, call: IncomingCall, bedsFree: n
   return hardlockReason(hospital, call, bedsFree) === null ? 'CHOICE' : 'HARDLOCK_REJECT'
 }
 
-export function initReceiving(hospital: Hospital, queue: IncomingCall[] = createCallQueue()): ReceivingState {
+/**
+ * 하루 시작 — `boardedBeds`는 **어제 검사를 붙인 환자 수**다(기본 0).
+ *
+ * 이게 달력에 처음으로 의미를 준다: 지금까지 7일은 서로 독립이었다(매일 자리 리셋).
+ * 검사가 자리를 이월시키면 **어제의 흑자가 오늘의 자리를 먹는다.**
+ * 기본값 0인 선택적 인자라 이월을 안 쓰는 호출부(테스트 포함)는 기존 동작 그대로다.
+ */
+export function initReceiving(
+  hospital: Hospital,
+  queue: IncomingCall[] = createCallQueue(),
+  boardedBeds = 0,
+): ReceivingState {
   return {
     hospital,
     queue,
     index: 0,
-    bedsFree: hospital.beds, // 하루는 병상을 다 비운 채 시작한다
+    bedsFree: Math.max(0, hospital.beds - boardedBeds), // 어제 검사가 물고 있는 자리만큼 덜 시작한다
     netProfitDeltaBillions: 0,
+    workupRevenueBillions: 0,
+    workupCount: 0,
     lawsuitExposure: 0,
     log: [],
     done: queue.length === 0,
   }
 }
 
-/** 현재 콜에 수용/거절을 정한다. 하드락 콜은 accept=true여도 수용되지 않는다(가드). */
-export function decide(state: ReceivingState, accept: boolean): ReceivingState {
+/**
+ * 현재 콜에 수용/거절을 정한다. 하드락 콜은 accept=true여도 수용되지 않는다(가드).
+ *
+ * `withWorkup` — 수용하면서 검사를 붙인다. 급여 환자에게만 유효하고(canOrderWorkup),
+ * 실제로 수용된 경우에만 붙는다. 안 받은 환자를 검사할 수는 없다.
+ */
+export function decide(state: ReceivingState, accept: boolean, withWorkup = false): ReceivingState {
   if (state.done) {
     throw new Error('receiving already done')
   }
@@ -199,12 +257,18 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   const reason = hardlockReason(state.hospital, call, state.bedsFree)
   const disposition: CallDisposition = reason === null ? 'CHOICE' : 'HARDLOCK_REJECT'
   const effectiveAccept = disposition === 'CHOICE' && accept
+  const effectiveWorkup = effectiveAccept && withWorkup && canOrderWorkup(call.kind)
 
   // 수용한 환자만 자리를 먹는다 — 거절·하드락은 자리를 소모하지 않는다.
   const bedsFree = effectiveAccept ? state.bedsFree - 1 : state.bedsFree
   const netProfitDeltaBillions = effectiveAccept
     ? state.netProfitDeltaBillions + callDelta(call.kind)
     : state.netProfitDeltaBillions
+  // 검사 수익은 진료 수익과 섞지 않는다 — 덮는 게 뭔지 장부에서 보여야 한다.
+  const workupRevenueBillions = effectiveWorkup
+    ? state.workupRevenueBillions + workupDelta()
+    : state.workupRevenueBillions
+  const workupCount = effectiveWorkup ? state.workupCount + 1 : state.workupCount
   const lawsuitExposure = effectiveAccept && call.lawsuitRisk ? state.lawsuitExposure + 1 : state.lawsuitExposure
 
   const log = [...state.log, { callId: call.id, accepted: effectiveAccept, disposition, reason }]
@@ -213,6 +277,8 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
     ...state,
     bedsFree,
     netProfitDeltaBillions,
+    workupRevenueBillions,
+    workupCount,
     lawsuitExposure,
     log,
     index,
@@ -246,10 +312,10 @@ export function accruedSegments(state: ReceivingState): { label: string; profitB
 }
 
 /**
- * 오늘 순이익(부문 손익 오늘치 + 오늘 진료 수익 델타) — 소송 비용은 제외.
+ * 오늘 순이익(부문 손익 오늘치 + 오늘 진료 수익 + 오늘 검사 수익) — 소송 비용은 제외.
  * 소송 비용은 결말 buildSessionLedger에서만 차감된다(해석 0 원칙: 1막은 명랑한 숫자만).
  */
 export function runningNetProfit(state: ReceivingState): number {
   const segmentTotal = accruedSegments(state).reduce((sum, s) => sum + s.profitBillions, 0)
-  return segmentTotal + state.netProfitDeltaBillions
+  return segmentTotal + state.netProfitDeltaBillions + state.workupRevenueBillions
 }
