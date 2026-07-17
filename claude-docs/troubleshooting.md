@@ -13,6 +13,7 @@
 - [T-031](#t-031--브리프의-특정-플레이런-예시-확인됨을-보편-불변식으로-오인할-뻔함) · 브리프의 특정 플레이런 예시("확인됨")를 보편 불변식으로 오인할 뻔함
 - [T-032](#t-032--dev-서버가-켜진-채-next-build를-돌리면-nextdev-캐시가-손상돼-ise) · dev 서버 켠 채 `next build` → `.next/dev` 손상(ISE, 코드는 멀쩡)
 - [T-033](#t-033--getcomputedstyle은-compositor-가속-cssopacityfiltertransform의-전환-중간값을-못-읽어-애니메이션이-무효처럼-보임) · getComputedStyle은 compositor 애니메이션(opacity/filter/transform) 중간값을 못 읽음
+- [T-034](#t-034--in-app-브라우저-get_page_text가-페이즈-전환-후-stale-화면을-반환read_page는-최신) · in-app 브라우저 get_page_text가 전환 후 stale 화면 반환(read_page는 최신)
 
 ---
 
@@ -81,3 +82,12 @@
 - **원인**: `opacity`·`filter`·`transform`/`scale`은 **compositor 스레드에서 가속**돼, 메인 스레드의 `getComputedStyle`이 진행 중 보간값을 반영하지 못한다 — base 또는 target만 반환하고 **중간값은 절대 안 나온다**. 즉 "중간에 base로 읽힘"은 애니메이션 실패 증거가 아니다.
 - **해결**: (1) 유틸 클래스가 실제 효과를 내는지는 **독립 프로브 요소**로 확인(`<div class="grayscale opacity-40 scale-110">`의 computed = grayscale(1)·0.4·scale 1.1). (2) 실제 요소는 collapsing className 부착 + `transition-property/duration` 선언 + **최종 상태** 정확성으로 판정 — CSS 시맨틱상 (transition 선언 + 속성 변화 + 최종값 도달)이면 브라우저가 보간한다.
 - **재발방지**: compositor 속성 전환은 getComputedStyle **다시점 샘플로 매끄러움을 측정하지 않는다** — 클래스 적용·transition 선언·최종값으로 검증. (부수: Tailwind v4의 `scale-*`은 `transform`이 아니라 CSS `scale` 속성 → `.transform` 말고 `.scale`을 읽어야 함.)
+
+---
+
+## T-034 · in-app 브라우저 get_page_text가 페이즈 전환 후 stale 화면을 반환(read_page는 최신)
+
+- **증상**: SetupWizard 개원 버튼 클릭 후 `get_page_text`가 계속 SETUP 화면("병원 설립…")을 반환 → "클릭이 안 먹혔다"고 반복 재클릭. 실제로는 이미 RECEIVING으로 전환돼 있었다(`read_page`는 "보톡스 상담 워크인 수용/거절"을 최신 반영). 곁들여 `computer{screenshot}`이 30s 타임아웃으로 멈추고, React onClick이 `javascript_tool`의 `button.click()`(native click)에 반응하지 않아 혼란 가중.
+- **원인**: (1) `get_page_text`는 캐시된 텍스트를 반환할 수 있어 클라이언트 라우팅/상태 전환 직후 **이전 화면**을 보여준다 — `read_page`(접근성 트리)는 실시간 DOM을 읽어 최신. (2) `computer{screenshot}`은 렌더러 상태에 따라 일시적으로 멈출 수 있으나 페이지 자체는 살아있다(텍스트 도구는 정상 응답). (3) React 합성 이벤트가 프로그램적 `.click()`에 항상 위임되진 않는다.
+- **해결**: 페이즈/화면 전환 검증은 **`read_page`로 교차 확인**(`get_page_text`만으로 "전환 안 됨" 단정 금지). 클릭은 `computer{left_click, ref}`(read_page가 준 ref)로 — 활성화된 버튼은 이름 반영 후 read_page에 ref로 잡힌다. screenshot이 멈추면 텍스트 도구(read_page/get_page_text)로 우회.
+- **재발방지**: SPA 상태 전환 후엔 **read_page를 진실원본으로** 신뢰. 컨트롤드 인풋 값이 안 들어가면(React state 미반영) `form_input` 대신 `computer{left_click}`+`type`으로 실제 입력, 버튼은 `.click()`(JS) 말고 ref 클릭. (T-032/T-033에 이은 "브라우저 검증 도구의 무성 오해" 계열.)

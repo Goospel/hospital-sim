@@ -114,7 +114,8 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 - ✅ 근거 리서치 — 필수과 소송·방어진료 리스크의 **부호(결과의 중대성 축)** → [essential-care-litigation-risk.md](../docs/research/essential-care-litigation-risk.md) (PR #18)
 - ✅ **로직 코어(Part 1)** — `setup`(위저드·과 카탈로그·예산) / `receiving`(콜 큐·하드락/선택·장부·소송 누적) / `session`(5페이즈·2막 분기) / `ledger` 재배선(플레이어 병원) / `dialogue`(1막 다크코미디). 전부 결정론·TDD, 92 green·tsc 0·비파괴 (PR #20). 계획: [docs/superpowers/plans/2026-07-16-management-expansion-core.md](superpowers/plans/2026-07-16-management-expansion-core.md)
 - ✅ **UI 통합(Part 2)** — `SetupWizard`·`ReceivingPhase`·`SessionClient`·에필로그 배선(Task 2~6) + **통일 시각 최종 마감·막간 붕괴 시그니처·a11y/반응형·배포 게이트**(Task 7). 진입=세션이 THE 게임(위저드-first, 기존 STEMI는 2막 TRANSFER로 흡수)·통일 시각(단일 어두운 zinc 시스템 + 초록→빨강 액센트 아크, body/html 지면을 프리퍼런스 무관 다크로 고정해 밝은 화면·흰 플래시 0). 설계: [docs/superpowers/specs/2026-07-17-management-expansion-ui-design.md](superpowers/specs/2026-07-17-management-expansion-ui-design.md). (로직 코어 Minor 4건: 음수값 방어→Part2 해소 / essentialHires 다필수과·도달불가 분기 커버·STEMI_SPECIALTY export→v2·별건 보류). Task 7 롤업 결함(LedgerPanel 순이익 부호 하드코딩 `+-24억`)도 이때 수정 + 회귀 테스트.
-  - ⬜ (컨트롤러 몫, 코드 아님) Step 5 — Preview로 공범·양심 양 경로 완주 스크린샷 확보(④ 제출 문서·P6/P7용)
+  - ✅ **이연 Minor 3건 청소 (PR #27)** — `callerPlea` 순수 함수 추출(TDD·대사 선택 통일)·Interstitial 붕괴 타이머 `useEffect` cleanup·`firedRef` 중복 진입 가드(reduced-motion 경로 커버). tsc 0·vitest 309 green·next build·브라우저 공범 경로 검증. (`receivingLine` 미사용 seed warning은 pre-existing 별건.)
+  - ⬜ (컨트롤러 몫, 코드 아님) Step 5 — Preview로 공범·양심 양 경로 완주 스크린샷 확보(④ 제출 문서·P6/P7용). (공범 경로는 이번 검증에서 텍스트로 완주 확인 — 스크린샷 도구가 일시 멈춰 이미지 미확보, 양심 경로 미완.)
 - ⏸ (다음 주·`X8`) 실LLM 경영/협상 대사 — 폴백 대사 위에 얹음
 - ⏸ (구조 2·본선 이후) 재투자 루프([U4.5](#u45-병원-장부--필수의료-경제장부-에필로그-716--)의 B안)·병동 증설·장비 업그레이드·다회차 캠페인·다양한 환자 축·리치한 소송 이벤트 시스템
 
