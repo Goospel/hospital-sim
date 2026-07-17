@@ -111,6 +111,21 @@ export function callerPlea(call: IncomingCall, seed = 0): string {
   return pool[index]
 }
 
+/**
+ * 콜 큐에서 index번째 콜의 호소 대사 — seed로 **같은 kind가 큐에 등장한 순번**(0,1,…)을 넘긴다.
+ * callerPlea의 seed는 "같은 콜 종류 안에서의 변주"용이므로, 전역 큐 index가 아니라 kind 내 순번이라야
+ * 라벨↔대사가 맞는다. (예: 2번째 COSMETIC_WALKIN='검진 패키지 문의' 콜 → 풀[1]='검진 …', 보톡스 대사 아님.)
+ * 전역 index를 넘기면 같은 kind의 여러 콜이 index%len 충돌로 같은/엉뚱한 대사를 집는 버그가 난다.
+ */
+export function callerPleaAt(queue: IncomingCall[], index: number): string {
+  const call = queue[index]
+  let occurrence = 0
+  for (let i = 0; i < index; i++) {
+    if (queue[i].kind === call.kind) occurrence++
+  }
+  return callerPlea(call, occurrence)
+}
+
 /** 수용 시 시스템의 명랑한 확인. */
 export const RECEIVE_ACCEPT: Record<CallKind, string> = {
   STEMI: '…받겠습니다. 준비하고 있겠습니다.',

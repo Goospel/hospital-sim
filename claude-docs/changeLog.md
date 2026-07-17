@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · 발신자 대사 라벨↔대사 정합 — callerPleaAt(kind 내 등장 순번 seed) (PR #29)
+
+- **무엇을**: RECEIVING 콜 c3 "검진 패키지 문의" 라벨에 보톡스 대사("보톡스 상담 예약 가능할까요?")가 붙던 불일치 수정. `callerPlea(call, seed)`의 seed는 "같은 kind 안에서의 변주"용인데 컴포넌트가 **전역 큐 index**(0,2,…)를 넘겨, 두 COSMETIC_WALKIN 콜이 `index%2==0`→pool[0]로 충돌했음. 순수 함수 `callerPleaAt(queue, index)` 추가 — kind 내 **등장 순번**(0,1,…)을 계산해 seed로 넘김 → c1(순번0)→pool[0] 보톡스 / c3(순번1)→pool[1] 검진. `ReceivingPhase`가 이 함수를 쓰도록 배선.
+- **왜**: 제출 영상·스크린샷(P6/④)에 그대로 노출되면 리뷰어가 알아챌 유일한 실콘텐츠 결함이라 캡처 전에 잠금. `callerPlea`의 docstring이 이미 "같은 콜 종류 안에서 변주"라 규정 — 전역 index는 그 계약 위반이었고, 등장 순번이 계약에 맞는 seed.
+- **범위**: `dialogue.ts`(+`callerPleaAt`)·`dialogue.test.ts`(+5 회귀/변주/결정론/범위)·`ReceivingPhase.tsx`(1줄 배선). `callerPlea`/#27 테스트 유지. `tsc` 0 · `vitest` **314 green**(+5) · `next build` 통과 · 브라우저 검증(콜 3이 검진 대사 렌더·콘솔 0). TDD Red(회귀 테스트가 전역-index 버그를 잡음)→Green.
+
 ## 2026-07-17 · 양심 경로 완주 코드 검증 + Step 5 스크린샷 상태 정리 (docs)
 
 - **무엇을**: Preview로 **양심 경로**를 처음부터 끝까지 완주 검증(이번 세션 이전엔 공범 경로만 검증됨). 양심대학병원(순환기 2명·60억) SETUP→RECEIVING(콜 5통·STEMI가 하드락 아닌 **선택**으로 뜸→전부 수용)→INTERSTITIAL(러닝 −46억)→EMERGENCY("내 순환기팀이 직접 PCI"→**생존**)→EPILOGUE("환자를 살렸습니다"·올해 장부 순이익 **−96억**=순환기 −24 + 진료 −22 + **소송 −50**). 콘솔 에러 0. 공범(흑자·하드락 사망)↔양심(−96억·생존·소송 노출) 세 낙차 정상 동작 확인. plan/changeLog 반영.
