@@ -1,0 +1,67 @@
+#!/bin/sh
+# commit-msg — Skills-used 트레일러가 실제로 "파싱되는지" 검사한다.
+#
+# 왜 검사기가 필요한가:
+#   CLAUDE.md 의 AI 활용 추적 규칙은 트레일러의 목적을 "기계 집계"라고 명시한다.
+#   그런데 트레일러 블록 중간에 빈 줄이 하나라도 있으면 git 은 **마지막 문단만** 트레일러로
+#   보고 그 앞을 통째로 버린다. 커밋 메시지를 눈으로 보면 멀쩡해서 아무도 모른다 — 무성 실패.
+#
+#   이 함정은 이미 T-041 로 문서화됐다. 그리고 그 문서가 스스로 "재발률이 사실상 100%"라
+#   예측했고, 실제로 그 뒤 4커밋(#38·#39·#40·#41)이 **전부** 파싱=0 으로 재발했다.
+#   재발방지 문구("커밋 후 눈으로 확인한다")는 4번 다 실행되지 않았다.
+#   → 소프트 규칙이 안 듣는다는 게 데이터로 증명됐으므로 검사기로 승격한다.
+#
+# 설치 (clone 후 1회):
+#   git config core.hooksPath .githooks
+#
+# 해제: git config --unset core.hooksPath
+
+MSG_FILE="$1"
+[ -z "$MSG_FILE" ] && exit 0
+[ -f "$MSG_FILE" ] || exit 0
+
+# 주석(#)을 뺀 실제 메시지만 본다 — git 이 붙이는 안내 주석은 커밋에 안 들어간다.
+CLEAN="$MSG_FILE.trailercheck"
+grep -v '^#' "$MSG_FILE" > "$CLEAN" 2>/dev/null
+
+# 빈 메시지 → git 이 알아서 abort 한다. 훅이 관여하지 않는다.
+if [ -z "$(sed '/^[[:space:]]*$/d' "$CLEAN")" ]; then
+  rm -f "$CLEAN"
+  exit 0
+fi
+
+# git 이 자동 생성하는 메시지엔 트레일러를 요구할 수 없다.
+FIRST=$(sed '/^[[:space:]]*$/d' "$CLEAN" | head -1)
+case "$FIRST" in
+  "Merge "*|"Revert "*|"fixup!"*|"squash!"*|"amend!"*)
+    rm -f "$CLEAN"
+    exit 0
+    ;;
+esac
+
+# 규칙 1 — Skills-used 가 있어야 한다. 스킬을 안 썼어도 'none' 으로 명시한다(집계의 분모).
+if ! grep -q '^Skills-used:' "$CLEAN"; then
+  echo "" >&2
+  echo "  ❌ Skills-used 트레일러가 없습니다 (CLAUDE.md — AI 활용 추적 규칙)." >&2
+  echo "     스킬을 하나도 안 썼으면 'Skills-used: none' 을 명시하세요 — 빈도의 분모입니다." >&2
+  echo "" >&2
+  rm -f "$CLEAN"
+  exit 1
+fi
+
+# 규칙 2 — 그게 트레일러로 **파싱**되어야 한다. 메시지에 보이는 것은 파싱됐다는 증거가 아니다(T-041).
+if ! git interpret-trailers --parse < "$CLEAN" | grep -q '^Skills-used:'; then
+  echo "" >&2
+  echo "  ❌ Skills-used 가 메시지엔 있지만 트레일러로 **파싱되지 않습니다** (T-041)." >&2
+  echo "     원인: 트레일러 블록 중간에 빈 줄이 있어 git 이 마지막 문단만 트레일러로 봅니다." >&2
+  echo "     해결: Skills-used ~ Co-Authored-By 를 빈 줄 없이 한 덩어리로 붙이세요." >&2
+  echo "" >&2
+  echo "     git 이 지금 보고 있는 트레일러:" >&2
+  git interpret-trailers --parse < "$CLEAN" | sed 's/^/       /' >&2
+  echo "" >&2
+  rm -f "$CLEAN"
+  exit 1
+fi
+
+rm -f "$CLEAN"
+exit 0

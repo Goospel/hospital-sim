@@ -1,0 +1,7 @@
+# 셸 스크립트와 git 훅은 **반드시 LF**로 체크아웃한다.
+#
+# 이 머신은 core.autocrlf=true 라, 이 지정이 없으면 clone·checkout 시 CRLF 로 풀린다.
+# 그러면 셔뱅이 `#!/bin/sh\r` 가 되어 훅이 "실행 파일을 찾을 수 없음"으로 통째로 죽는다.
+# 훅은 조용히 안 도는 게 가장 나쁘다 — 검사기가 없는 것보다 "있는 줄 아는데 없는" 게 더 나쁘다.
+*.sh text eol=lf
+.githooks/** text eol=lf
