@@ -14,6 +14,7 @@ import {
   DAY_LABELS,
   type ReceivingState,
 } from "@/game/receiving";
+import type { NewsItem } from "@/game/news";
 import type { IncomingCall } from "@/game/types";
 import SegmentTree from "./SegmentTree";
 
@@ -99,14 +100,40 @@ function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
   );
 }
 
+/**
+ * 오늘 아침 신문 — 어제 돌려보낸 사람들의 후일담.
+ *
+ * 해석 0(메모 game-show-dont-tell): "당신이 죽였다"고 쓰지 않는다. 헤드라인은 **무주체**다 —
+ * 병원명도 의사명도 환자 이름도 없다. 숫자(N곳, T시간)가 스스로 말한다.
+ * 실제 응급실 뺑뺑이 보도 38건이 정확히 그렇게 쓰여 있고, 그게 이 게임의 원칙과 같다.
+ */
+function MorningPaper({ news }: { news: NewsItem[] }) {
+  if (news.length === 0) return null;
+  return (
+    <section className="rounded-lg border border-zinc-700 bg-zinc-900/70 px-4 py-3">
+      <p className="mb-2 text-[10px] uppercase tracking-[0.3em] text-zinc-500">오늘 아침 신문</p>
+      <ul className="flex flex-col gap-2">
+        {news.map((n) => (
+          <li key={n.id} className="border-l-2 border-zinc-700 pl-3">
+            <p className="text-sm font-medium leading-snug text-zinc-200">{n.headline}</p>
+            <p className="mt-0.5 text-[11px] text-zinc-500">{n.outlet}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export default function ReceivingPhase({
   receiving,
   day,
+  news,
   onDecide,
   onContinue,
 }: {
   receiving: ReceivingState;
   day: number;
+  news: NewsItem[];
   onDecide: (accept: boolean, withWorkup?: boolean) => void;
   onContinue: () => void;
 }) {
@@ -196,6 +223,9 @@ export default function ReceivingPhase({
           </span>
         </div>
       </header>
+
+      {/* 신문이 먼저다 — 어제의 결과를 보고 오늘의 콜을 받는다. */}
+      <MorningPaper news={news} />
 
       {prevLine && (
         <p className="text-xs text-zinc-600">
