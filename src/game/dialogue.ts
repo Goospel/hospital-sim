@@ -100,6 +100,17 @@ export const CALLER_PLEA: Record<CallKind, string[]> = {
   ],
 }
 
+/**
+ * 발신자 호소 대사 선택 — seed로 같은 콜 종류 안에서 변주(결정론).
+ * seed가 음수·범위 밖이어도 항상 풀 안의 유효한 대사로 clamp(fallbackLine과 동일 패턴).
+ * 대사 선택 로직을 컴포넌트 인라인에서 순수 함수로 통일해 테스트로 잠근다.
+ */
+export function callerPlea(call: IncomingCall, seed = 0): string {
+  const pool = CALLER_PLEA[call.kind]
+  const index = ((seed % pool.length) + pool.length) % pool.length
+  return pool[index]
+}
+
 /** 수용 시 시스템의 명랑한 확인. */
 export const RECEIVE_ACCEPT: Record<CallKind, string> = {
   STEMI: '…받겠습니다. 준비하고 있겠습니다.',

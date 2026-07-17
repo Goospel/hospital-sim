@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fallbackLine, persuasionReply, receivingLine, CALLER_PLEA, RECEIVE_HARDLOCK } from './dialogue'
+import { fallbackLine, persuasionReply, receivingLine, callerPlea, CALLER_PLEA, RECEIVE_HARDLOCK } from './dialogue'
 import type { RejectionReason, TransferVerdict } from './types'
 import { classifyCall, createCallQueue } from './receiving'
 import { buildHospital } from './setup'
@@ -97,5 +97,33 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
 
   it('결정론 — 같은 인자·seed는 같은 대사', () => {
     expect(receivingLine(walkin, 'CHOICE', true, 1)).toBe(receivingLine(walkin, 'CHOICE', true, 1))
+  })
+})
+
+describe('callerPlea — 발신자 호소 대사 선택(순수·결정론·범위 방어)', () => {
+  const q = createCallQueue()
+  const stemi = q.find((c) => c.kind === 'STEMI')!
+
+  it('비어 있지 않은 대사를 준다', () => {
+    expect(callerPlea(stemi, 0).length).toBeGreaterThan(0)
+  })
+
+  it('같은 콜·seed는 항상 같은 대사(결정론)', () => {
+    expect(callerPlea(stemi, 1)).toBe(callerPlea(stemi, 1))
+  })
+
+  it('seed로 같은 콜 종류 안에서 대사가 변주된다', () => {
+    const lines = new Set([0, 1].map((s) => callerPlea(stemi, s)))
+    expect(lines.size).toBeGreaterThan(1)
+  })
+
+  it('음수 seed에도 유효한 대사를 준다(범위 방어)', () => {
+    expect(callerPlea(stemi, -1).length).toBeGreaterThan(0)
+  })
+
+  it('반환값은 항상 그 콜 종류의 CALLER_PLEA 풀 안의 대사다', () => {
+    for (const s of [0, 1, 2, 7, -3]) {
+      expect(CALLER_PLEA.STEMI).toContain(callerPlea(stemi, s))
+    }
   })
 })
