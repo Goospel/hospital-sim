@@ -2,7 +2,7 @@
 
 > **산출**: 실제 보도 38건 수집·분석, 2026-07-17.
 > **용도**: 게임의 허구 뉴스 헤드라인이 **기사로 읽히게** 하는 문법 근거 + **실제 유족을 해치지 않게** 하는 윤리 가드.
-> **관련**: [fee-schedule-and-subsidies.md](fee-schedule-and-subsidies.md) · [medical-system-grounding.md](medical-system-grounding.md) · `claude-docs/superpowers/specs/2026-07-17-essential-care-economics-devices-design.md` §3.5·§5
+> **관련**: [fee-schedule-and-subsidies.md](fee-schedule-and-subsidies.md) · [medical-system-grounding.md](medical-system-grounding.md) · [stemi-factsheet.md](stemi-factsheet.md) (각색 고지 — **§5의 병원 수와 기준이 다르다**) · `claude-docs/superpowers/specs/2026-07-17-essential-care-economics-devices-design.md` §3.5·§5
 
 ---
 
@@ -119,7 +119,7 @@
 
 **기법 예시**: "응급실 병상 비었는데 '뺑뺑이' 사망"(KBS) — 사유와 사실을 헤드라인에서 정면 충돌시킨다. "환자 집에서 '5분 거리'에 있는 종합병원 등 15개 병원이 수용을 거부" — 거리를 대비시킨다.
 
-> 📌 게임의 `RejectionReason` 4종(NO_BED / NO_ER_ONCALL / ER_OVERCROWDED / NO_BACKUP_CARE)이 이 보도 표현과 그대로 대응한다.
+> 📌 게임의 `RejectionReason` 5종 중 **4종**(NO_BED / NO_ER_ONCALL / ER_OVERCROWDED / NO_BACKUP_CARE)이 위 보도 표현과 그대로 대응한다. 나머지 **NO_NIGHT_BACKUP**(배후과는 있으나 야간 당직 공백)은 개별 사건 보도의 사유 표현이 아니라 **§4의 수용곤란 고지 사유 중 증가율이 가장 큰 '인력부족'** 쪽에 대응한다 — 과 자체가 없는 NO_BACKUP_CARE와는 **다른 사유**다. (단일 출처: `src/game/types.ts`의 `RejectionReason`)
 
 ---
 
@@ -168,6 +168,8 @@
 ---
 
 ## 5. 🎯 게임에 바로 쓸 수치 범위
+
+> ⚠️ **이 범위는 「접촉·거절당한 병원 수」 기준**(헤드라인 슬롯 값)이다. 2막 전원 시퀀스의 병원 수(6곳)는 **「PCI 가능 후보 기관 수」 기준**이라 이 범위와 **직접 비교하지 않는다** → [stemi-factsheet.md](stemi-factsheet.md) §2. 두 기준을 섞으면 같은 숫자가 낙관도 되고 축소도 된다.
 
 **실제 범위**: 거부 **8~15곳** · 지연 **1시간 20분~5시간**(분만 3시간 30분)
 
