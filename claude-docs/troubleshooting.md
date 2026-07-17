@@ -14,6 +14,7 @@
 - [T-032](#t-032--dev-서버가-켜진-채-next-build를-돌리면-nextdev-캐시가-손상돼-ise) · dev 서버 켠 채 `next build` → `.next/dev` 손상(ISE, 코드는 멀쩡)
 - [T-033](#t-033--getcomputedstyle은-compositor-가속-cssopacityfiltertransform의-전환-중간값을-못-읽어-애니메이션이-무효처럼-보임) · getComputedStyle은 compositor 애니메이션(opacity/filter/transform) 중간값을 못 읽음
 - [T-034](#t-034--in-app-브라우저-get_page_text가-페이즈-전환-후-stale-화면을-반환read_page는-최신) · in-app 브라우저 get_page_text가 전환 후 stale 화면 반환(read_page는 최신)
+- [T-035](#t-035--darkreader-등-브라우저-확장의-html-속성-주입을-next-하이드레이션-버그로-오진) · DarkReader 등 확장이 하이드레이션 전 `<html>` 속성 주입 → hydration mismatch(우리 코드 무관, `suppressHydrationWarning`)
 
 ---
 
@@ -91,3 +92,12 @@
 - **원인**: (1) `get_page_text`는 캐시된 텍스트를 반환할 수 있어 클라이언트 라우팅/상태 전환 직후 **이전 화면**을 보여준다 — `read_page`(접근성 트리)는 실시간 DOM을 읽어 최신. (2) `computer{screenshot}`은 렌더러 상태에 따라 일시적으로 멈출 수 있으나 페이지 자체는 살아있다(텍스트 도구는 정상 응답). (3) React 합성 이벤트가 프로그램적 `.click()`에 항상 위임되진 않는다.
 - **해결**: 페이즈/화면 전환 검증은 **`read_page`로 교차 확인**(`get_page_text`만으로 "전환 안 됨" 단정 금지). 클릭은 `computer{left_click, ref}`(read_page가 준 ref)로 — 활성화된 버튼은 이름 반영 후 read_page에 ref로 잡힌다. screenshot이 멈추면 텍스트 도구(read_page/get_page_text)로 우회.
 - **재발방지**: SPA 상태 전환 후엔 **read_page를 진실원본으로** 신뢰. 컨트롤드 인풋 값이 안 들어가면(React state 미반영) `form_input` 대신 `computer{left_click}`+`type`으로 실제 입력, 버튼은 `.click()`(JS) 말고 ref 클릭. (T-032/T-033에 이은 "브라우저 검증 도구의 무성 오해" 계열.)
+
+---
+
+## T-035 · DarkReader 등 브라우저 확장의 `<html>` 속성 주입을 Next 하이드레이션 버그로 오진
+
+- **증상**: 로컬 `localhost:3000` 첫 로드에서 Next dev 오버레이 "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties" (Console Error). diff가 `<html>`의 `data-darkreader-proxy-injected="true"`를 서버/클라 불일치로 지목 → "우리 `layout.tsx`의 하이드레이션 버그"로 오진할 뻔.
+- **원인**: 브라우저 확장 **DarkReader**(다크모드)가 React 하이드레이션 **전에** `<html>`에 `data-darkreader-*` 속성을 주입 → 서버가 보낸 HTML엔 없던 속성이 클라 DOM에 생겨 속성 불일치. **우리 코드 무관.** 증거: (1) 속성 이름에 'darkreader' 명시, (2) 확장 없는 in-app 브라우저는 `<html>`에 lang·class만·에러 0, (3) Next 에러 문구가 "browser extension … messes with the HTML before React loaded" 명시. dev 오버레이 전용·기능 무해(프로덕션·확장 없는 사용자엔 안 뜸).
+- **해결**: 루트 레이아웃 `<html>`에 `suppressHydrationWarning`(Next 16.2 공식 패턴 — `node_modules/next/dist/docs/.../preventing-flash-before-hydration.md`가 `<html … suppressHydrationWarning>` 예시). 이 **한 요소의 속성/텍스트 불일치만** 억제하며, 자식·컴포넌트의 실제 하이드레이션 버그는 그대로 잡힌다.
+- **재발방지**: `data-*` 속성 불일치 하이드레이션 경고는 **코드 손대기 전 확장 유발부터 의심** — 속성 이름에 확장명이 박혀 있거나, 확장 없는 브라우저(시크릿/다른 브라우저/in-app)에서 재현 안 되면 확장 원인. 루트 `<html>`엔 `suppressHydrationWarning`를 기본 하드닝으로. (T-032~T-034에 이은 "브라우저 환경발 무성 오진" 계열.)

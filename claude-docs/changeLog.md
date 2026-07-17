@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · 하이드레이션 경고 억제 — 루트 <html>에 suppressHydrationWarning (PR #30)
+
+- **무엇을**: 로컬 첫 로드에서 뜨던 Next dev 하이드레이션 오버레이("some attributes of the server rendered HTML didn't match")를 잡음. 원인은 **우리 코드 아님** — 사용자 Chrome의 **DarkReader 확장**이 하이드레이션 전 `<html>`에 `data-darkreader-proxy-injected` 속성을 주입해 서버/클라 속성 불일치. 루트 레이아웃 `<html>`에 `suppressHydrationWarning` 추가(Next 16.2 공식 패턴).
+- **왜**: 확장이 `<html>`/`<body>`를 건드리는 건 흔하고 프로덕션에선 조용히 넘어가지만 dev 오버레이가 플레이테스트를 방해. 표준 하드닝으로 제거. `<html>` 한 요소의 속성 불일치만 억제 — 자식·컴포넌트의 실제 하이드레이션 버그는 그대로 잡힌다.
+- **범위**: `layout.tsx` 1속성 + 주석. 코드 로직 무변경. `tsc` 0 · `next build` 통과 · 브라우저 회귀 없음(확장 없는 in-app은 원래 에러 없음 → 최종 확인은 사용자 DarkReader Chrome에서 재로드). 진단 함정 → [troubleshooting.md](troubleshooting.md) T-035.
+
 ## 2026-07-17 · 발신자 대사 라벨↔대사 정합 — callerPleaAt(kind 내 등장 순번 seed) (PR #29)
 
 - **무엇을**: RECEIVING 콜 c3 "검진 패키지 문의" 라벨에 보톡스 대사("보톡스 상담 예약 가능할까요?")가 붙던 불일치 수정. `callerPlea(call, seed)`의 seed는 "같은 kind 안에서의 변주"용인데 컴포넌트가 **전역 큐 index**(0,2,…)를 넘겨, 두 COSMETIC_WALKIN 콜이 `index%2==0`→pool[0]로 충돌했음. 순수 함수 `callerPleaAt(queue, index)` 추가 — kind 내 **등장 순번**(0,1,…)을 계산해 seed로 넘김 → c1(순번0)→pool[0] 보톡스 / c3(순번1)→pool[1] 검진. `ReceivingPhase`가 이 함수를 쓰도록 배선.

@@ -24,9 +24,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // suppressHydrationWarning: DarkReader 등 브라우저 확장이 하이드레이션 전에 <html>에 data-* 속성을
+    // 주입해 서버/클라이언트 속성이 어긋나는 것을 억제(우리 코드 무관·확장 유발·dev 오버레이 전용).
+    // <html> 이 한 요소의 속성 불일치만 억제하며, 자식·컴포넌트의 실제 하이드레이션 버그는 그대로 잡힌다.
     <html
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
