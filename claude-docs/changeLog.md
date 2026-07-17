@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · 부문 손익을 분기 진행률만큼 누적 — t=0 선반영 제거 (PR #33)
+
+- **무엇을**: RECEIVING 러닝 장부의 "부문 손익"이 콜 1/5(진료 0)부터 과별 손익(건강검진 +40 등)을 **전액 선반영**하던 걸, **분기 진행률(처리한 콜/전체)만큼 0에서 누적**하도록 변경. 콜 0/5→전 부문 0, 콜을 처리할수록 각 과가 자기 구조 손익을 향해 자라고, 분기말(done)에 전체 수치 도달. `quarterProgress(state)`·`accruedSegments(state)` 순수 함수 추가, `runningNetProfit`이 누적 부문 손익을 쓰도록 변경, `CheerfulLedger`(ReceivingPhase)가 `accruedSegments`를 렌더.
+- **왜**: "진료를 볼수록 흑자/적자"가 시뮬의 논리인데, 진료 전인 t=0에 이미 벌어놓은 건(예: 건강검진 시작부터 +40억) 부자연스럽고, 게다가 어느 과가 흑자/적자인지 처음부터 흘려 show-don't-tell(PR #32 취지)과도 어긋남. 진행률 누적이 둘 다 해소. **금액·부호는 불변**(각 과의 최종 구조 손익은 그대로, 도달 타이밍만 바꿈). 결말 `buildSessionLedger`(1년치 완료)·Interstitial(진행률 1)은 값 불변.
+- **범위**: `receiving.ts`(+quarterProgress·accruedSegments·runningNetProfit 변경)·`receiving.test.ts`(+8 TDD)·`ReceivingPhase.tsx`(accruedSegments 렌더). `tsc` 0 · `vitest` **324 green**(+8) · 브라우저 검증(콜1/5 전 부문 0·러닝 0·흑자 배지 없음 → 콜2/5 미용+28·검진+8·러닝+44·배지 등장 → done 전액 도달·콘솔 0). TDD Red(runningNetProfit index0=290, 기대 0)→Green. 기존 runningNetProfit 테스트는 빈 큐(진행률 1)라 회귀 0.
+
 ## 2026-07-17 · 위저드 2단계 분리 + 과 카드 해석 힌트 제거(show-don't-tell) (PR #32)
 
 - **무엇을**: SETUP 위저드 개편. (1) **2단계 분리** — 랜딩 다음 첫 화면은 **병원 이름 하나만**(NAME 스텝, 딱 한 가지에 집중) → "다음" → 과 채용(DEPTS 스텝). 정보 과부하("너무 많은 정보")를 덜고 이름 확정 후 과 구성에만 집중하게. (2) **해석성 힌트 제거** — 과 카드의 "수익 예상 ↑"(emerald)·"적자 예상 · 소송 ⚠"(amber) 라벨과 색 구분을 없앰. 카드는 이제 **과 이름 + 채용비(N억/명)**만 노출(중립 사실). 상단 tell "순환기내과는 비워둬도 시작할 수 있습니다"도 중립 문구("예산 100억 안에서 진료과를 꾸립니다")로 교체.

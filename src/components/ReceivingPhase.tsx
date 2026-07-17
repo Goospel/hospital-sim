@@ -2,7 +2,7 @@
 
 import { callerPleaAt, receivingLine } from "@/game/dialogue";
 import { formatSignedBillions } from "@/game/labels";
-import { classifyCall, runningNetProfit, type ReceivingState } from "@/game/receiving";
+import { accruedSegments, classifyCall, runningNetProfit, type ReceivingState } from "@/game/receiving";
 import SegmentTree from "./SegmentTree";
 
 /**
@@ -11,7 +11,8 @@ import SegmentTree from "./SegmentTree";
  * 명랑한 숫자만 보이는 게 바로 1막 다크코미디의 논지다.
  */
 function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
-  const segments = receiving.hospital.economics?.segments ?? [];
+  // 부문 손익은 분기 진행률만큼 누적(콜 0에서 출발) — 정적 선반영이 아님.
+  const segments = accruedSegments(receiving);
   const netProfit = runningNetProfit(receiving);
 
   return (
