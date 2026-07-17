@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · PR #26 이연 Minor 3건 청소 — callerPlea 순수화·Interstitial 타이머 cleanup·useRef 가드 (PR #27)
+
+- **무엇을**: Part 2(#26) 최종 리뷰가 추적 이연한 Minor 3건 정리. (1) **CALLER_PLEA 변주** — `ReceivingPhase` 인라인 표현식(`pleaPool[index % len]`)을 `dialogue.ts` 순수 함수 `callerPlea(call, seed)`로 추출(음수·범위 밖 clamp, `fallbackLine`과 동일 패턴). 대사 선택이 전부 `dialogue.ts` 순수 함수가 되도록 통일 + TDD 5케이스. (2) **Interstitial 타이머 cleanup** — 붕괴 `setTimeout`을 `useEffect`로 옮겨 언마운트/재렌더 시 `clearTimeout`(누수·stale `onContinue` 호출 방지). (3) **중복 진입 가드** — state(`collapsing`)에서 `firedRef` 동기 가드로(reduced-motion 경로·배칭 지연까지 커버).
+- **왜**: 리뷰 이연 항목을 방치하지 않고 청소. plea 선택을 순수 함수로 통일해 회귀를 테스트로 잠그고, 막간 타이머·중복클릭 UI 위생을 정석 패턴으로.
+- **범위**: 4파일(`dialogue.ts`·`dialogue.test.ts`·`ReceivingPhase.tsx`·`Interstitial.tsx`). `tsc` 0 · `vitest` **309 green**(+5, 회귀 0) · `next build` 통과 · 브라우저 공범 경로 완주 검증(plea 렌더·막간→응급 타이머 전이·콘솔 0). `receivingLine`의 미사용 `seed` warning은 pre-existing(kind별 단일 대사라 변주 소스 없음)이라 별건·유지. 검증 중 도구 함정 [troubleshooting.md](troubleshooting.md) T-034.
+
 ## 2026-07-17 · 경영 확장 UI 통합 (Part 2) — 위저드→콜큐→막간→응급→결말 플레이어블 (PR #26)
 
 - **무엇을**: Part 1 결정론 로직 코어 위에 React UI를 배선해 API 없이 한 세션을 완주하는 플레이어블 완성. `page.tsx→SessionClient`(오케스트레이터·`SessionState` 소유·phase 스위치)로 진입 전환, 기존 하드코딩 `GameClient`를 표현 컴포넌트(`SetupWizard`·`ReceivingPhase`·`Interstitial`·`InHouseEmergency`·`TransferRound`·`Receipt`·`LedgerPanel`·`EmergencyChrome`·`SegmentTree`·`Epilogue`)로 분해·재사용 후 삭제. 5페이즈: 설정 위저드(과별 채용·예산 게이트) → 1막 콜 큐(하드락/선택 + 명랑 장부) → 막간(시점 전환) → 2막(순환기 있으면 원내 생존 / 없으면 전원 뺑뺑이) → 결말(내 병원 영수증+장부, 세 낙차 공범·사망/공범·생존/양심·생존). 시그니처 **막간 붕괴**(초록 탈색→응급 고조 ~700ms 전환, `prefers-reduced-motion` 시 즉시). 통일 시각(단일 어두운 zinc 시스템·1막 emerald→결말 red 아크·다크 지면 고정으로 흰 플래시 차단)·접근성(`focus-visible`)·375px 반응형. 롤업 결함 수정(적자 `+-24억`→`−24억` 부호 포맷터 `formatSignedBillions` 단일화) + 러닝 순이익을 순수 `runningNetProfit`로 승격(판정=코드 경계 강화).

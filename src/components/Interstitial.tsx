@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { runningNetProfit, type ReceivingState } from "@/game/receiving";
 import { formatSignedBillions } from "@/game/labels";
 
@@ -25,11 +25,24 @@ export default function Interstitial({
   onContinue: () => void;
 }) {
   const [collapsing, setCollapsing] = useState(false);
+  // 중복 진입 하드 가드 — state(collapsing)는 배칭 지연이 있고 reduced-motion 경로에선
+  // 아예 세팅되지 않으므로, ref로 "이미 전이를 시작했는가"를 동기적으로 못박는다.
+  const firedRef = useRef(false);
 
   const net = runningNetProfit(receiving);
 
+  // 붕괴 전환이 시작되면(collapsing) COLLAPSE_MS 뒤 응급으로 전이한다.
+  // 타이머를 effect에서 관리해 언마운트/재렌더 시 정리(누수·언마운트 후 stale onContinue 호출 방지).
+  useEffect(() => {
+    if (!collapsing) return;
+    const id = setTimeout(onContinue, COLLAPSE_MS);
+    return () => clearTimeout(id);
+    // onContinue는 전이 시점에 안정적(부모 phase 불변) — collapsing 트리거만 감시해 타이머 리셋을 막는다.
+  }, [collapsing]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleContinue() {
-    if (collapsing) return; // 중복 클릭 가드 — 전환 중 재진입 금지.
+    if (firedRef.current) return; // 한 번만 — 전환 중이든 즉시 전이든 재진입 금지.
+    firedRef.current = true;
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -37,8 +50,7 @@ export default function Interstitial({
       onContinue(); // 애니메이션 생략, 즉시 전이(품질 바닥).
       return;
     }
-    setCollapsing(true);
-    setTimeout(onContinue, COLLAPSE_MS);
+    setCollapsing(true); // → 위 effect가 COLLAPSE_MS 뒤 onContinue 호출(정리 가능한 타이머).
   }
 
   return (

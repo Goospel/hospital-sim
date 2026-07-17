@@ -1,6 +1,6 @@
 "use client";
 
-import { CALLER_PLEA, receivingLine } from "@/game/dialogue";
+import { callerPlea, receivingLine } from "@/game/dialogue";
 import { formatSignedBillions } from "@/game/labels";
 import { classifyCall, runningNetProfit, type ReceivingState } from "@/game/receiving";
 import SegmentTree from "./SegmentTree";
@@ -98,8 +98,7 @@ export default function ReceivingPhase({
 
   const call = receiving.queue[receiving.index];
   const disposition = classifyCall(receiving.hospital, call);
-  const pleaPool = CALLER_PLEA[call.kind];
-  const plea = pleaPool[receiving.index % pleaPool.length];
+  const plea = callerPlea(call, receiving.index);
 
   const prevCall = receiving.index > 0 ? receiving.queue[receiving.index - 1] : undefined;
   const prevLog = receiving.log[receiving.log.length - 1];
