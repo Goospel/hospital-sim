@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · 양심 경로 완주 코드 검증 + Step 5 스크린샷 상태 정리 (docs)
+
+- **무엇을**: Preview로 **양심 경로**를 처음부터 끝까지 완주 검증(이번 세션 이전엔 공범 경로만 검증됨). 양심대학병원(순환기 2명·60억) SETUP→RECEIVING(콜 5통·STEMI가 하드락 아닌 **선택**으로 뜸→전부 수용)→INTERSTITIAL(러닝 −46억)→EMERGENCY("내 순환기팀이 직접 PCI"→**생존**)→EPILOGUE("환자를 살렸습니다"·올해 장부 순이익 **−96억**=순환기 −24 + 진료 −22 + **소송 −50**). 콘솔 에러 0. 공범(흑자·하드락 사망)↔양심(−96억·생존·소송 노출) 세 낙차 정상 동작 확인. plan/changeLog 반영.
+- **왜**: Part 2(#26)에서 "양경로 완주 검증"이라 적었으나 실제론 공범 경로만 텍스트 확인돼 있었음 — 양심 경로의 코드 정확성(순환기 보유 시 STEMI=선택·원내 생존·소송비 실현)을 제출 전 잠금. 결말이 "살렸는데도 −96억+소송"으로 나오는 게 필수의료 붕괴 논지의 물증.
+- **범위**: 문서 2개(plan·changeLog). 코드 무변경. **발견(별건)**: 콜 c3 "검진 패키지 문의" 라벨에 보톡스 대사가 붙는 라벨↔대사 불일치 — `COSMETIC_WALKIN` 풀에서 c1(index0)·c3(index2) 둘 다 `index%2==0`→pool[0]이라 딱 맞는 pool[1]('검진 패키지 문의드려요…')이 안 쓰임. pre-existing·저위험 콘텐츠 결함, callerPlea 리팩터(#27)와 무관(선택식 동일 보존). 수정은 콜별 plea 명시/kind 내 등장순 선택 등 설계 텍스처가 있어 별건 슬라이스로 이연. **스크린샷 이미지**는 in-app `screenshot` 도구 재차 스톨(T-034)로 미확보 → 최종 캡처는 사용자 로컬 몫.
+
 ## 2026-07-17 · PR #26 이연 Minor 3건 청소 — callerPlea 순수화·Interstitial 타이머 cleanup·useRef 가드 (PR #27)
 
 - **무엇을**: Part 2(#26) 최종 리뷰가 추적 이연한 Minor 3건 정리. (1) **CALLER_PLEA 변주** — `ReceivingPhase` 인라인 표현식(`pleaPool[index % len]`)을 `dialogue.ts` 순수 함수 `callerPlea(call, seed)`로 추출(음수·범위 밖 clamp, `fallbackLine`과 동일 패턴). 대사 선택이 전부 `dialogue.ts` 순수 함수가 되도록 통일 + TDD 5케이스. (2) **Interstitial 타이머 cleanup** — 붕괴 `setTimeout`을 `useEffect`로 옮겨 언마운트/재렌더 시 `clearTimeout`(누수·stale `onContinue` 호출 방지). (3) **중복 진입 가드** — state(`collapsing`)에서 `firedRef` 동기 가드로(reduced-motion 경로·배칭 지연까지 커버).
