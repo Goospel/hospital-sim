@@ -7,6 +7,7 @@ import { startGame, type GameState } from './round'
 import { createStemiScenario } from './scenarios'
 import { buildDebrief, type Debrief } from './debrief'
 import { buildSessionLedger, type Ledger } from './ledger'
+import { morningNews, type NewsItem, type TurnedAway } from './news'
 
 // 2막 단막극 세션 상태기계 — 순수·결정론.
 // LANDING → SETUP → (RECEIVING → DAY_END) ×7일 → INTERSTITIAL → EMERGENCY → EPILOGUE.
@@ -31,6 +32,11 @@ export interface DayRecord {
   callDeltaBillions: number // 그날 진료 수익
   workupRevenueBillions: number // 그날 검사 수익 — 진료 수익과 별도로 센다(장부에서 덮는 게 보여야 한다)
   workupCount: number // 그날 검사를 붙인 환자 수 — 내일 자리를 먹는다(boarding)
+  /**
+   * 그날 못 받은 STEMI들 — 내일 아침 신문의 씨앗.
+   * 구조가 막았든(하드락) 내가 거절했든 **환자는 똑같이 못 들어왔다.** 그래서 둘을 구분하지 않는다.
+   */
+  turnedAway: TurnedAway[]
   netProfitBillions: number // 그날 순이익 = 위 셋의 합 (소송 비용은 결말에서만)
   accepted: number // 받은 콜 수
   blocked: number // 자리가 없어 구조가 막은 콜 수 — 달력엔 안 찍히는 사람들
@@ -44,10 +50,15 @@ export interface SessionState {
   emergency?: EmergencyState
   day: number // 1..DAYS_PER_WEEK — 현재 날
   ledgerDays: DayRecord[] // 마감된 날들(역순 아님, 1일차부터)
+  /**
+   * 오늘 아침 신문 — **어제** 돌려보낸 사람들의 후일담. 1일차엔 비어 있다(어제가 없다).
+   * 인과 사슬의 마지막 고리다: 저수가 → 검사 → boarding → 자리 없음 → 수용 불가 → **다음날 신문**.
+   */
+  morningNews: NewsItem[]
 }
 
 export function startSession(): SessionState {
-  return { phase: 'LANDING', day: 1, ledgerDays: [] }
+  return { phase: 'LANDING', day: 1, ledgerDays: [], morningNews: [] }
 }
 
 /** 랜딩 "시작" → 위저드. startSession이 단일 진입점이라 재시작도 자동으로 여기로 되돌아온다. */
@@ -55,7 +66,7 @@ export function beginSetup(state: SessionState): SessionState {
   if (state.phase !== 'LANDING') {
     throw new Error(`beginSetup requires LANDING, got ${state.phase}`)
   }
-  return { phase: 'SETUP', day: 1, ledgerDays: [] }
+  return { phase: 'SETUP', day: 1, ledgerDays: [], morningNews: [] }
 }
 
 export function completeSetup(choices: SetupChoices): SessionState {
@@ -66,6 +77,7 @@ export function completeSetup(choices: SetupChoices): SessionState {
     receiving: initReceiving(hospital, createCallQueue(1)),
     day: 1,
     ledgerDays: [],
+    morningNews: [], // 개원 첫날 아침엔 어제가 없다
   }
 }
 
@@ -83,6 +95,11 @@ function recordDay(day: number, receiving: ReceivingState): DayRecord {
     callDeltaBillions: receiving.netProfitDeltaBillions,
     workupRevenueBillions: receiving.workupRevenueBillions,
     workupCount: receiving.workupCount,
+    // 못 받은 STEMI만 기사가 된다 — 미용 워크인을 돌려보낸 건 뉴스가 아니다.
+    turnedAway: receiving.log
+      .map((e, i) => ({ entry: e, call: receiving.queue[i] }))
+      .filter((x) => x.call.kind === 'STEMI' && !x.entry.accepted)
+      .map((x) => ({ callId: x.entry.callId, reason: x.entry.reason })),
     netProfitBillions: runningNetProfit(receiving),
     accepted: receiving.log.filter((e) => e.accepted).length,
     blocked: receiving.log.filter((e) => e.reason === 'NO_BED').length,
@@ -122,11 +139,14 @@ export function advanceDay(state: SessionState): SessionState {
   // 어제 검사를 붙인 환자는 결과를 기다리며 자리를 물고 있다 — 그만큼 오늘 자리가 준다(boarding).
   // 이게 7일을 처음으로 서로 묶는다. 지금까지 하루는 서로 독립이었다(매일 자리 리셋).
   const boardedBeds = state.receiving!.workupCount
+  // 어제 돌려보낸 사람들이 오늘 아침 신문으로 온다 — 이틀 뒤가 아니라 바로 다음 날이다.
+  const yesterday = state.ledgerDays[state.ledgerDays.length - 1]
   return {
     ...state,
     phase: 'RECEIVING',
     day,
     receiving: initReceiving(state.hospital!, createCallQueue(day), boardedBeds),
+    morningNews: morningNews(day, yesterday?.turnedAway ?? []),
   }
 }
 

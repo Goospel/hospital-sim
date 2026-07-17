@@ -116,6 +116,37 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     expect(d3.receiving!.bedsFree).toBeGreaterThanOrEqual(d2.receiving!.bedsFree) // 무한 악화가 불가능
   })
 
+  /**
+   * 다음날 아침 신문 — 사용자 피드백 "돌려보낸 환자가 어떻게 됐는지 알 수 없다"의 답.
+   * 인과 사슬의 마지막 고리: 저수가 → 검사 → boarding → 자리 없음 → 수용 불가 → **다음날 신문**.
+   */
+  it('[신문] 어제 돌려보낸 STEMI가 오늘 아침 기사로 온다', () => {
+    // 미용만 받아 자리를 채우면 STEMI는 NO_BED로 막힌다 — 그게 기사가 된다.
+    const d1 = completeReceiving(runDay(completeSetup(conscientious), (c) => c.kind === 'COSMETIC_WALKIN'))
+    expect(d1.ledgerDays[0].turnedAway.length).toBeGreaterThan(0)
+    const d2 = advanceDay(d1)
+    expect(d2.morningNews.length).toBe(d1.ledgerDays[0].turnedAway.length)
+    expect(d2.morningNews[0].headline).toContain("'뺑뺑이'")
+  })
+
+  it('[신문] 1일차 아침엔 신문이 없다 — 어제가 없다', () => {
+    expect(completeSetup(conscientious).morningNews).toEqual([])
+  })
+
+  it('[신문] 돌려보낸 STEMI가 없으면 신문도 없다 — 다 받은 날의 아침은 조용하다', () => {
+    // 순환기 2명 + 자리가 허용하는 STEMI만 받는다 → 하드락 없음
+    const d1 = completeReceiving(runDay(completeSetup(conscientious), (c) => c.kind === 'STEMI'))
+    const hardlockedStemi = d1.ledgerDays[0].turnedAway.length
+    const d2 = advanceDay(d1)
+    expect(d2.morningNews.length).toBe(hardlockedStemi)
+  })
+
+  it('[신문] 내가 거절한 STEMI도 기사가 된다 — 구조가 막았든 내가 막았든 환자는 똑같이 못 들어왔다', () => {
+    const d1 = completeReceiving(runDay(completeSetup(conscientious), false)) // 전부 거절
+    const stemiPerDay = d1.receiving!.queue.filter((c) => c.kind === 'STEMI').length
+    expect(d1.ledgerDays[0].turnedAway.length).toBe(stemiPerDay)
+  })
+
   it('[I7] 주간 누계에 검사 수익이 별도로 합산된다', () => {
     const week = runWeek(conscientious, (c) => canOrderWorkup(c.kind), true)
     const totals = weekTotals(week)

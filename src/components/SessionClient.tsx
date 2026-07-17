@@ -36,6 +36,7 @@ export default function SessionClient() {
         <ReceivingPhase
           receiving={session.receiving!}
           day={session.day}
+          news={session.morningNews}
           onDecide={(accept, withWorkup) =>
             setSession((s) => ({ ...s, receiving: decide(s.receiving!, accept, withWorkup) }))
           }
