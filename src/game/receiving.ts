@@ -93,6 +93,15 @@ const DAY_PLANS: CallKind[][] = [
 /** 요일 라벨 — 달력 칸과 콜 화면이 공유한다. */
 export const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일']
 
+/**
+ * 이 인덱스부터 야간 콜 — 하루 5통 중 **마지막 2통**이 밤이다.
+ *
+ * 시간대를 DAY_PLANS 위치에서 파생시켜 **RNG 0**을 지킨다(같은 day는 항상 같은 큐).
+ * 야간이 하는 일: 배후과 의사가 1명뿐이면 당직이 비어 못 받는다(roundTheClockBackup).
+ * 금요일만 야간 STEMI가 없다 — 1명으로도 다 받는 날이 하루는 있어야 대비가 보인다.
+ */
+const NIGHT_SHIFT_FROM_INDEX = 3
+
 /** kind별 상황 라벨 풀. 같은 kind가 하루에 여러 번 오면 등장 순번으로 고른다(callerPleaAt과 같은 규칙). */
 const CALL_LABELS: Record<CallKind, string[]> = {
   COSMETIC_WALKIN: ['보톡스 상담 워크인', '검진 패키지 문의'],
@@ -123,6 +132,7 @@ export function createCallQueue(day = 1): IncomingCall[] {
       label: pool[occurrence % pool.length],
       patient: PATIENT_OF[kind],
       lawsuitRisk: kind === 'STEMI',
+      nightShift: i >= NIGHT_SHIFT_FROM_INDEX,
     }
   })
 }
@@ -149,7 +159,15 @@ export function hardlockReason(hospital: Hospital, call: IncomingCall, bedsFree:
       return null
     case 'STEMI': {
       const verdict = adjudicateTransfer(hospital, call.patient)
-      return verdict.accepted ? null : (verdict.reason ?? 'NO_BACKUP_CARE')
+      if (!verdict.accepted) return verdict.reason ?? 'NO_BACKUP_CARE'
+      // 배후과가 있어도 **밤엔 당직이 서 있어야** 받는다 — 의사 1명은 24시간을 못 버틴다(T-042).
+      // 그래서 2번째 의사가 사는 건 처리량이 아니라 시간대다: 이 줄이 없으면 n≥2가 순수 함정이 된다.
+      // 당직을 모델링하지 않는 병원(roundTheClockBackup 미지정)은 backupCare로 폴백 — 기존 동작 유지.
+      const onCallNow = hospital.roundTheClockBackup ?? hospital.backupCare
+      if (call.nightShift && !onCallNow.includes(call.patient.requiredSpecialty)) {
+        return 'NO_NIGHT_BACKUP' // 과는 있는데 당직이 비었다 — NO_BACKUP_CARE와 다른 사유다
+      }
+      return null
     }
   }
 }

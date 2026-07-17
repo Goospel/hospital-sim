@@ -14,6 +14,7 @@ export const REJECTION_LABEL: Record<RejectionReason, string> = {
   NO_ER_ONCALL: '응급실 당직 없음',
   ER_OVERCROWDED: '응급실 과밀',
   NO_BACKUP_CARE: '배후진료 불가',
+  NO_NIGHT_BACKUP: '야간 당직 없음',
 }
 
 /** 골든타임 초를 mm:ss 로 포맷한다. */
