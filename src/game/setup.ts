@@ -14,6 +14,16 @@ export const FIXED_BEDS = 3
 export const SETUP_BUDGET_BILLIONS = 100
 
 /**
+ * 한 과에 채용할 수 있는 의사 수 상한 — **하루 자리에서 파생한다(각색값이 아니다).**
+ * 한 과가 하루에 앉힐 수 있는 환자가 FIXED_BEDS뿐이라, 그보다 많은 의사는 볼 환자가 없다.
+ *
+ * 예산만으로는 못 막는다: 미용 10명이 **정확히 100억**이라 hiringCost를 통과하면서
+ * 부문 손익 70×10 = **+700억/주**(예산의 7배)를 만들어 불변식 I8(|순이익| ≤ 4 × 예산)을 깼다.
+ * 설계 스펙 §6 지뢰 5 — 적대 검증이 잡은 기존 버그다.
+ */
+export const MAX_DOCTORS_PER_DEPT = FIXED_BEDS
+
+/**
  * 한 판의 길이 = 7일(월~일). 달력 한 주가 곧 한 게임이다.
  *
  * DEPARTMENTS의 손익 숫자는 **이 7일 전체**의 손익이고, 하루는 그 1/7씩 쌓인다.
@@ -22,7 +32,19 @@ export const SETUP_BUDGET_BILLIONS = 100
  */
 export const DAYS_PER_WEEK = 7
 
-/** 고를 수 있는 과. 수익과(흑자·비필수) + 필수 배후과(적자·소송 ⚠). */
+/**
+ * 고를 수 있는 과. 수익과(흑자·비필수) + 필수 배후과(적자·소송 ⚠).
+ *
+ * 필수과의 음수는 **"적자과"가 아니라 24시간 대기 고정비**다(설계 스펙 §3.1). 콜을 받든 안 받든 나간다 —
+ * 심장중재팀·수술팀이 24시간 대기하는 비용이라 환자 수와 무관하기 때문이다. 그래서 "환자를 받을수록
+ * 적자"가 아니라 **"안 받아도 적자, 받아도 원가에 못 미침"**이 정확한 명제고, 콜당 원가 미달은
+ * 이 상수가 아니라 CALL_ECONOMICS(receiving.ts)가 따로 표현한다 — 둘은 층이 다르니 이중 계상이 아니다.
+ * ⛔ 이 값을 콜 수로 나눠 "환자 1명당 손실"을 만들지 마라 — 경제학적으로 틀린 조작이고 그런 공식 수치는 없다.
+ *
+ * ⚠️ 금액의 직접 근거는 미확인이다(fee-schedule-and-subsidies.md §10 — "24시간 심장중재팀 대기 고정비"
+ * 실측치가 없다). 가장 가까운 실측은 외상센터 "국고보조금 반영 후에도 손익률 −23.0%"(2014~2018)인데
+ * 외상센터이지 심장중재팀이 아니다. **부호(음수)와 대소 관계만 근거로 삼고 금액은 각색.**
+ */
 export const DEPARTMENTS: DepartmentSpec[] = [
   { key: 'AESTHETICS', label: '미용·피부', essential: false, profitPerDoctorBillions: 70, hireCostBillions: 10, lawsuitRisk: false },
   { key: 'CHECKUP', label: '건강검진', essential: false, profitPerDoctorBillions: 40, hireCostBillions: 12, lawsuitRisk: false },
@@ -73,17 +95,22 @@ export function withinBudget(choices: SetupChoices): boolean {
   return hiringCost(choices) <= SETUP_BUDGET_BILLIONS
 }
 
-/** 불변 갱신 — 과별 의사 수를 delta만큼 조정. 음수·비정수 방어(0 클램프·정수화), 0이면 키 제거. */
+/** 모든 과가 인원 상한 이내인가 — 예산과 독립된 제약이다(미용 10명은 예산은 통과한다). */
+export function withinDeptCaps(choices: SetupChoices): boolean {
+  return DEPARTMENTS.every((d) => count(choices, d.key) <= MAX_DOCTORS_PER_DEPT)
+}
+
+/** 불변 갱신 — 과별 의사 수를 delta만큼 조정. 음수·비정수 방어(0 클램프·정수화)·상한 클램프, 0이면 키 제거. */
 export function adjustDoctors(choices: SetupChoices, key: DeptKey, delta: number): SetupChoices {
   const current = choices.doctors[key] ?? 0
-  const next = Math.max(0, Math.floor(current + delta))
+  const next = Math.min(MAX_DOCTORS_PER_DEPT, Math.max(0, Math.floor(current + delta)))
   const doctors = { ...choices.doctors }
   if (next === 0) delete doctors[key]
   else doctors[key] = next
   return { ...choices, doctors }
 }
 
-/** 세션을 시작할 수 있는 선택인가 — 이름이 있고 예산 이내. */
+/** 세션을 시작할 수 있는 선택인가 — 이름이 있고 예산·과별 상한 이내. */
 export function isSetupReady(choices: SetupChoices): boolean {
-  return choices.hospitalName.trim().length > 0 && withinBudget(choices)
+  return choices.hospitalName.trim().length > 0 && withinBudget(choices) && withinDeptCaps(choices)
 }

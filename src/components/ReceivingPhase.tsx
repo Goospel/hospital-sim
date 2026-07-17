@@ -4,13 +4,49 @@ import { callerPleaAt, receivingLine } from "@/game/dialogue";
 import { formatSignedBillions } from "@/game/labels";
 import {
   accruedSegments,
+  callDelta,
   classifyCall,
   hardlockReason,
   runningNetProfit,
+  CALL_ECONOMICS,
   DAY_LABELS,
   type ReceivingState,
 } from "@/game/receiving";
+import type { IncomingCall } from "@/game/types";
 import SegmentTree from "./SegmentTree";
+
+/**
+ * 콜당 수가/원가 내역 — "가격을 누가 정하는가"를 두 줄로만 놓는다.
+ *
+ * 해석 0 원칙(메모 game-show-dont-tell): "정부가 원가도 안 준다"고 쓰지 않는다.
+ * 미용은 '진료비 (병원 책정)'이 원가보다 크고, 급여는 '수가 (정부 고시)'가 원가보다 작다 —
+ * 그 대조가 콜마다 반복되면 플레이어가 스스로 읽는다. 라벨 한 단어가 전부다.
+ */
+function CallEconomicsBreakdown({ call }: { call: IncomingCall }) {
+  const e = CALL_ECONOMICS[call.kind];
+  const delta = callDelta(call.kind);
+  const revenueLabel = e.priceSetter === "HOSPITAL" ? "진료비 (병원 책정)" : "수가 (정부 고시)";
+
+  return (
+    <dl className="flex flex-col gap-1 rounded-md border border-zinc-800 bg-black/30 px-3 py-2.5 font-mono text-xs">
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-zinc-400">{revenueLabel}</dt>
+        <dd className="tabular-nums text-zinc-300">{formatSignedBillions(e.revenueBillions)}</dd>
+      </div>
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-zinc-400">원가</dt>
+        <dd className="tabular-nums text-zinc-300">{formatSignedBillions(-e.costBillions)}</dd>
+      </div>
+      <div className="my-0.5 border-t border-zinc-800" />
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="sr-only">수용 시 손익</dt>
+        <dd className="ml-auto tabular-nums font-semibold text-zinc-100">
+          {formatSignedBillions(delta)}
+        </dd>
+      </div>
+    </dl>
+  );
+}
 
 /**
  * 명랑 장부(사이드) — 오늘치 부문 손익 + 라이브 오늘 진료 수익 + 오늘 순이익.
@@ -160,6 +196,8 @@ export default function ReceivingPhase({
         <section className="flex flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4">
           <p className="text-sm font-medium text-zinc-100">{call.label}</p>
           <p className="text-sm italic text-zinc-400">&ldquo;{plea}&rdquo;</p>
+
+          <CallEconomicsBreakdown call={call} />
 
           {disposition === "HARDLOCK_REJECT" && (
             <p className="text-xs text-amber-500">

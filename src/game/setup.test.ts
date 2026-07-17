@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { adjustDoctors, isSetupReady, DEPARTMENTS, FIXED_BEDS, SETUP_BUDGET_BILLIONS, buildHospital, hiringCost, withinBudget } from './setup'
+import { adjustDoctors, isSetupReady, DEPARTMENTS, FIXED_BEDS, MAX_DOCTORS_PER_DEPT, SETUP_BUDGET_BILLIONS, buildHospital, hiringCost, withinBudget, withinDeptCaps } from './setup'
 import type { SetupChoices } from './types'
 
 // 합리적 공범 빌드: 미용·검진만(흑자·필수과 0)
@@ -103,6 +103,43 @@ describe('adjustDoctors', () => {
     const snapshot = JSON.parse(JSON.stringify(base))
     adjustDoctors(base, 'CHECKUP', 2)
     expect(base).toEqual(snapshot)
+  })
+  it('과별 상한에서 멈춘다 — 상한 초과 증가는 상한값', () => {
+    const maxed = adjustDoctors(base, 'AESTHETICS', MAX_DOCTORS_PER_DEPT + 5)
+    expect(maxed.doctors.AESTHETICS).toBe(MAX_DOCTORS_PER_DEPT)
+  })
+})
+
+describe('과별 인원 상한 — 자리에서 파생(각색값 아님)', () => {
+  it('상한 = FIXED_BEDS — 하루 자리보다 많은 의사는 앉힐 환자가 없다', () => {
+    expect(MAX_DOCTORS_PER_DEPT).toBe(FIXED_BEDS)
+  })
+
+  it('withinDeptCaps: 상한 이내 true, 초과 false', () => {
+    expect(withinDeptCaps({ hospitalName: '한바다', doctors: { AESTHETICS: MAX_DOCTORS_PER_DEPT } })).toBe(true)
+    expect(withinDeptCaps({ hospitalName: '한바다', doctors: { AESTHETICS: MAX_DOCTORS_PER_DEPT + 1 } })).toBe(false)
+  })
+
+  /**
+   * 지뢰 5 회귀 — 상한이 없던 시절 '미용 10명'이 정확히 예산 100억이라 합법이었고,
+   * 부문 손익 70×10 = +700억(주당 예산의 7배)이 나와 불변식 I8(|순이익| ≤ 4×예산)을 깼다.
+   * 예산만으로는 못 막는다는 게 요점이다 — hiringCost는 통과한다.
+   */
+  it('[I8 회귀] 미용 10명은 예산은 통과하지만 상한에서 걸린다', () => {
+    const tenAesthetics: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 10 } }
+    expect(withinBudget(tenAesthetics)).toBe(true) // 10 × 10억 = 정확히 100억
+    expect(isSetupReady(tenAesthetics)).toBe(false)
+  })
+
+  it('상한을 다 채운 최대 흑자 셋업도 I8(|순이익| ≤ 4 × 예산) 안이다', () => {
+    const maxProfit: SetupChoices = {
+      hospitalName: '흑자메디컬',
+      doctors: { AESTHETICS: MAX_DOCTORS_PER_DEPT, CHECKUP: MAX_DOCTORS_PER_DEPT },
+    }
+    expect(isSetupReady(maxProfit)).toBe(true)
+    const { economics } = buildHospital(maxProfit)
+    const weekly = economics.segments.reduce((sum, s) => sum + s.profitBillions, 0)
+    expect(Math.abs(weekly)).toBeLessThanOrEqual(4 * SETUP_BUDGET_BILLIONS)
   })
 })
 

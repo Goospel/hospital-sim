@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   createCallQueue, classifyCall, hardlockReason, initReceiving, decide, runningNetProfit,
-  dayProgress, accruedSegments,
+  dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK } from './setup'
-import type { Hospital, SetupChoices } from './types'
+import type { CallKind, Hospital, SetupChoices } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
@@ -13,6 +13,68 @@ const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { A
 function hospitalOf(c: SetupChoices): Hospital {
   return buildHospital(c).hospital
 }
+
+/**
+ * 콜당 수가/원가 — 설계 스펙 §3.2·§7 (2026-07-17-essential-care-economics-devices-design.md).
+ *
+ * ⚠️ 금액이 아니라 **부호와 대소만** 잠근다. PR #35의 −525억이 테스트 372개를 전부 통과한 이유가
+ * "각색값을 스펙에 박고 테스트는 부호만 봤다"가 아니라 **아무도 스케일을 안 봐서**였다 —
+ * 그래서 여기선 부호·대소·원가보전율 밴드를 잠그고, 스케일(I8)은 브라우저 7일 완주로 잡는다.
+ *
+ * 🔴 부호는 **행위 단위 표 하나**에서만 뽑는다(§2.6). 과 단위(심장내과 117%·응급의학과 103%)를
+ * 여기 섞으면 정반대 부호가 나온다 — 초안이 정확히 그렇게 틀렸다(T-039). 과 단위 흑자는
+ * 입력이 아니라 플레이어가 검사를 붙였을 때 **장부에서 창발**한다(F2).
+ */
+describe('CALL_ECONOMICS — 가격을 누가 정하는가', () => {
+  it('가격 결정자: 미용만 병원(비급여), 나머지는 정부 고시(급여)', () => {
+    expect(CALL_ECONOMICS.COSMETIC_WALKIN.priceSetter).toBe('HOSPITAL')
+    expect(CALL_ECONOMICS.GENERAL_EMERGENCY.priceSetter).toBe('GOVERNMENT')
+    expect(CALL_ECONOMICS.STEMI.priceSetter).toBe('GOVERNMENT')
+  })
+
+  it('내역은 항상 수익 − 원가 = 델타로 닫힌다', () => {
+    for (const kind of ['COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'STEMI'] as CallKind[]) {
+      const e = CALL_ECONOMICS[kind]
+      expect(e.revenueBillions - e.costBillions).toBe(callDelta(kind))
+      expect(e.costBillions).toBeGreaterThan(0) // 공짜로 보는 환자는 없다
+    }
+  })
+
+  it('[I1] 일반 응급 콜 델타 < 0 — 기본진료 50.5% / 응급의료수가 45.0%', () => {
+    expect(callDelta('GENERAL_EMERGENCY')).toBeLessThan(0)
+  })
+
+  it('[I3] STEMI 콜 델타 < 0, 단 |STEMI| < |일반 응급| — 수술·처치 84.9% > 기본진료 50.5%', () => {
+    expect(callDelta('STEMI')).toBeLessThan(0)
+    expect(Math.abs(callDelta('STEMI'))).toBeLessThan(Math.abs(callDelta('GENERAL_EMERGENCY')))
+  })
+
+  it('미용 워크인만 흑자 — 가격 규제가 없는 유일한 콜', () => {
+    expect(callDelta('COSMETIC_WALKIN')).toBeGreaterThan(0)
+  })
+
+  /**
+   * 부호가 우연이 아니라 근거에서 나왔음을 잠근다 — 급여 콜의 수익/원가 비율이 곧 원가보전율이다.
+   * 밴드가 넓은 건 금액이 각색이기 때문이고, 좁히면 각색값을 테스트에 박는 게 된다.
+   */
+  it('급여 콜의 원가보전율이 행위 유형 근거 밴드 안 — STEMI(84.9%)가 일반 응급(50.5%)보다 높다', () => {
+    const recovery = (k: CallKind) => CALL_ECONOMICS[k].revenueBillions / CALL_ECONOMICS[k].costBillions
+    expect(recovery('GENERAL_EMERGENCY')).toBeGreaterThan(0.4)
+    expect(recovery('GENERAL_EMERGENCY')).toBeLessThan(0.6)
+    expect(recovery('STEMI')).toBeGreaterThan(0.75)
+    expect(recovery('STEMI')).toBeLessThan(0.95)
+    expect(recovery('STEMI')).toBeGreaterThan(recovery('GENERAL_EMERGENCY'))
+    expect(recovery('COSMETIC_WALKIN')).toBeGreaterThan(1) // 비급여는 원가를 넘겨 받는다
+  })
+
+  it('일반 응급 수용은 오늘 진료 수익을 깎는다 — 받을수록 장부가 나빠진다', () => {
+    const general = createCallQueue().find((c) => c.kind === 'GENERAL_EMERGENCY')!
+    const s = initReceiving(hospitalOf(collaborator), [general])
+    const after = decide(s, true)
+    expect(after.log[0].accepted).toBe(true)
+    expect(after.netProfitDeltaBillions).toBeLessThan(0)
+  })
+})
 
 describe('createCallQueue — 고정 5통(결정론)', () => {
   it('5통이고 STEMI·워크인·일반응급을 모두 포함', () => {
