@@ -6,6 +6,8 @@ import {
   beginSetup,
   completeSetup,
   completeReceiving,
+  advanceDay,
+  isLastDay,
   beginEmergency,
   toEpilogue,
   buildEpilogue,
@@ -15,6 +17,7 @@ import { decide } from "@/game/receiving";
 import Landing from "./Landing";
 import SetupWizard from "./SetupWizard";
 import ReceivingPhase from "./ReceivingPhase";
+import DayEnd from "./DayEnd";
 import Interstitial from "./Interstitial";
 import InHouseEmergency from "./InHouseEmergency";
 import TransferRound from "./TransferRound";
@@ -32,14 +35,24 @@ export default function SessionClient() {
       return (
         <ReceivingPhase
           receiving={session.receiving!}
+          day={session.day}
           onDecide={(accept) => setSession((s) => ({ ...s, receiving: decide(s.receiving!, accept) }))}
           onContinue={() => setSession(completeReceiving(session))}
+        />
+      );
+    case "DAY_END":
+      return (
+        <DayEnd
+          days={session.ledgerDays}
+          currentDay={session.day}
+          isLast={isLastDay(session)}
+          onContinue={() => setSession(advanceDay(session))}
         />
       );
     case "INTERSTITIAL":
       return (
         <Interstitial
-          receiving={session.receiving!}
+          days={session.ledgerDays}
           onContinue={() => setSession(beginEmergency(session))}
         />
       );

@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { runningNetProfit, type ReceivingState } from "@/game/receiving";
 import { formatSignedBillions } from "@/game/labels";
+import type { DayRecord } from "@/game/session";
 
 // 붕괴 전환 지속시간(ms) — 아래 Tailwind duration-700 클래스와 반드시 일치시킨다(뷰 전용 타이밍).
 const COLLAPSE_MS = 700;
 
 /**
- * 막간 — 1막(콜 큐) 종료와 2막(응급) 사이의 시점 전환.
- * 명랑한 분기 마감 숫자로 열었다가, 같은 화면 안에서 톤이 꺾여 냉정한 STEMI 경보로 닫는다.
+ * 막간 — 1막(7일 콜 큐) 종료와 2막(응급) 사이의 시점 전환.
+ * 명랑한 한 주 마감 숫자로 열었다가, 같은 화면 안에서 톤이 꺾여 냉정한 STEMI 경보로 닫는다.
  * 해석 0 원칙: 숫자는 담담히 보여줄 뿐 — 장부의 소송비용 같은 대가는 결말(에필로그)에서만 실현된다.
  *
  * 시그니처 — 막간 붕괴: [계속]을 누르면 onContinue()를 즉시 부르지 않고 `collapsing`으로 전환해
@@ -18,10 +18,10 @@ const COLLAPSE_MS = 700;
  * 주제를 한 제스처로 구현한다. `prefers-reduced-motion: reduce`면 전환 없이 즉시 onContinue().
  */
 export default function Interstitial({
-  receiving,
+  days,
   onContinue,
 }: {
-  receiving: ReceivingState;
+  days: DayRecord[];
   onContinue: () => void;
 }) {
   const [collapsing, setCollapsing] = useState(false);
@@ -29,7 +29,8 @@ export default function Interstitial({
   // 아예 세팅되지 않으므로, ref로 "이미 전이를 시작했는가"를 동기적으로 못박는다.
   const firedRef = useRef(false);
 
-  const net = runningNetProfit(receiving);
+  // 한 주 누계 — 7일치 합. 마지막 날 receiving만 쓰면 6일치가 증발한다.
+  const net = days.reduce((n, d) => n + d.netProfitBillions, 0);
 
   // 붕괴 전환이 시작되면(collapsing) COLLAPSE_MS 뒤 응급으로 전이한다.
   // 타이머를 effect에서 관리해 언마운트/재렌더 시 정리(누수·언마운트 후 stale onContinue 호출 방지).
@@ -63,13 +64,13 @@ export default function Interstitial({
         }`}
       />
 
-      {/* 명랑 — 분기 마감. 붕괴 시 탈색(grayscale)되며 dim. */}
+      {/* 명랑 — 한 주 마감. 붕괴 시 탈색(grayscale)되며 dim. */}
       <section
         className={`relative flex flex-col items-center gap-2 text-center transition-all duration-700 ease-out motion-reduce:transition-none ${
           collapsing ? "grayscale opacity-40" : ""
         }`}
       >
-        <span className="text-xs uppercase tracking-[0.25em] text-zinc-600">분기 마감</span>
+        <span className="text-xs uppercase tracking-[0.25em] text-zinc-600">한 주 마감</span>
         <p className="text-2xl font-semibold text-zinc-200">
           순이익{" "}
           <span
@@ -78,13 +79,13 @@ export default function Interstitial({
             {formatSignedBillions(net)}
           </span>
         </p>
-        {net > 0 && <p className="text-sm font-medium text-emerald-400">이번 분기 흑자 🎉</p>}
+        {net > 0 && <p className="text-sm font-medium text-emerald-400">이번 주 흑자 🎉</p>}
         {/*
           연결 조직 — 이 순이익은 결말 장부 첫 줄로 이어진다(소송 비용이 없으면 같은 값 그대로).
           "그대로 남는다"처럼 항상-동일을 단언하지 않는다 — 1막에서 STEMI 콜을 수용해 소송 노출이
           쌓이면 결말에서 더 깎이므로(해석 0 원칙: 사실이 아닐 수 있는 단언은 하지 않는다).
         */}
-        <p className="text-xs text-zinc-600">오늘 손익은 여기서 끝나지 않는다 — 결말 장부로 이어진다.</p>
+        <p className="text-xs text-zinc-600">이번 주 손익은 여기서 끝나지 않는다 — 결말 장부로 이어진다.</p>
       </section>
 
       <div className="relative h-px w-24 bg-zinc-800" />

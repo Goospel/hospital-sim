@@ -32,7 +32,7 @@ export interface Hospital {
  * 필수 배후과 채용은 여기서 하드코딩하지 않는다 — backupCare 유무로 장부에서 파생한다(0 = 그 과 배후진료 없음).
  */
 export interface HospitalEconomics {
-  segments: { label: string; profitBillions: number }[] // 부문 손익(억) — 미용·검진 흑자, 필수·응급 적자
+  segments: { label: string; profitBillions: number }[] // 부문 손익(억) — **이번 주(7일)** 기준. 미용·검진 흑자, 필수·응급 적자
   hires: { label: string; count: number }[] // 수익과 신규 채용
   essentialHires: number // 필수 배후과 채용 수(그 과 배후진료가 있을 때만 장부에 반영)
 }
@@ -76,7 +76,9 @@ export interface DepartmentSpec {
   key: DeptKey
   label: string
   essential: boolean
-  profitPerDoctorBillions: number // 의사 1명당 분기 손익(부호만 근거)
+  // 의사 1명당 **이번 주(7일 = 한 판) 전체** 손익(부호만 근거). 하루치는 이 값의 1/7.
+  // ⚠️ 기간 단위가 이 주석에만 있다 — 타입은 그냥 number라 의미를 바꿔도 tsc가 0건 잡는다(무성 실패).
+  profitPerDoctorBillions: number
   hireCostBillions: number // 채용 예산 표기(필수·고위험과는 인력 희소 → 비쌈)
   lawsuitRisk: boolean
   providesBackup?: Specialty // 이 과가 제공하는 배후진료(필수과만)
