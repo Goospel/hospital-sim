@@ -4,19 +4,30 @@ import {
 } from './session'
 import { decide } from './receiving'
 import { attemptTransfer } from './round'
-import type { SetupChoices } from './types'
+import type { IncomingCall, SetupChoices } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
 
-/** RECEIVING을 끝까지 흘린다. accept=false면 전부 거절, true면 전부 수용 시도(하드락은 자동 거절). */
-function runReceiving(choices: SetupChoices, accept = false) {
+/**
+ * RECEIVING을 끝까지 흘린다. 방침은 불리언(전부) 또는 콜별 함수.
+ *
+ * 자리가 유한해진 뒤로 **"전부 수용"은 더 이상 하나의 전략이 아니다** — 앞선 워크인이 자리를 먹으면
+ * 뒤의 STEMI가 NO_BED로 막힌다. 그래서 '양심'은 전부 수용이 아니라 **워크인을 거절해 자리를 비워두는
+ * 선택**으로만 표현된다. 이 헬퍼가 콜별 함수를 받는 이유다.
+ */
+function runReceiving(choices: SetupChoices, accept: boolean | ((call: IncomingCall) => boolean) = false) {
   let s = completeSetup(choices)
   while (!s.receiving!.done) {
-    s = { ...s, receiving: decide(s.receiving!, accept) }
+    const call = s.receiving!.queue[s.receiving!.index]
+    const yes = typeof accept === 'function' ? accept(call) : accept
+    s = { ...s, receiving: decide(s.receiving!, yes) }
   }
   return s
 }
+
+/** 양심 방침 — 워크인을 거절해 필수 케이스에 자리를 남긴다. */
+const essentialFirst = (call: IncomingCall) => call.kind !== 'COSMETIC_WALKIN'
 
 describe('세션 페이즈 전이', () => {
   it('startSession → LANDING(첫 화면 = 타이틀 카드)', () => {
@@ -75,9 +86,11 @@ describe('toEpilogue 가드 + buildEpilogue', () => {
   })
 
   it('양심 경로: IN_HOUSE → 즉시 EPILOGUE, 생존·적자·소송비용·순환기 채용 N', () => {
-    // 양심 빌드는 순환기 미용 함께라 기저는 흑자일 수 있다 — 적자·소송은 1막에서 필수 케이스를
-    // '수용'할 때 성립한다(비용은 짓기가 아니라 진료함에서 온다). 그래서 accept=true로 흘린다.
-    let s = beginEmergency(completeReceiving(runReceiving(conscientious, true)))
+    // 양심 빌드는 순환기·미용이 함께라 기저는 흑자다(부문 +46억) — 적자·소송은 1막에서 필수 케이스를
+    // '수용'할 때 성립한다(비용은 짓기가 아니라 진료함에서 온다).
+    // 자리가 3뿐이라 워크인을 거절해야만 STEMI 두 통을 다 받을 수 있다 — 양심은 이제 '선택'이다.
+    // (전부 수용하면 워크인이 자리를 먹어 두 번째 STEMI가 NO_BED로 막히고, 결말이 흑자로 뒤집힌다.)
+    let s = beginEmergency(completeReceiving(runReceiving(conscientious, essentialFirst)))
     s = toEpilogue(s)
     const epi = buildEpilogue(s)
     expect(epi.survived).toBe(true)

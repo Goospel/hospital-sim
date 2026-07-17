@@ -1,4 +1,4 @@
-import type { CallKind, Hospital, IncomingCall, Patient } from './types'
+import type { CallKind, Hospital, IncomingCall, Patient, RejectionReason } from './types'
 import { adjudicateTransfer } from './adjudicate'
 
 // 1막 콜 큐 — 받는 병원. 기존 adjudicateTransfer를 플레이어 손으로 돌린다(벽의 양쪽).
@@ -17,9 +17,16 @@ export interface ReceivingState {
   hospital: Hospital
   queue: IncomingCall[]
   index: number
+  /**
+   * 남은 하루 진료 자리 — 병원의 "능력의 한계"를 담는 유일한 동적 값.
+   * 병상=총량 / 의사=자격 모델의 총량 축(설계: 2026-07-17-daily-capacity-calendar-design.md §2.1).
+   * hospital.beds는 정적 스톡이라 소진되지 않는다 — 그래서 이 필드가 따로 있다.
+   */
+  bedsFree: number
   netProfitDeltaBillions: number
   lawsuitExposure: number
-  log: { callId: string; accepted: boolean; disposition: CallDisposition }[]
+  /** reason = 하드락 사유(못 받은 이유). 받았거나 내가 거절한 콜은 null — 구조가 막은 것만 사유가 남는다. */
+  log: { callId: string; accepted: boolean; disposition: CallDisposition; reason: RejectionReason | null }[]
   done: boolean
 }
 
@@ -38,17 +45,36 @@ export function createCallQueue(): IncomingCall[] {
   ]
 }
 
-/** 이 콜을 받을 수 있는가(선택) vs 판정상 못 받는가(하드락). */
-export function classifyCall(hospital: Hospital, call: IncomingCall): CallDisposition {
+/**
+ * 이 콜을 못 받는 사유 — 받을 수 있으면 null.
+ *
+ * 게이트 우선순위는 adjudicateTransfer(adjudicate.ts:9-13)를 따르되, 맨 앞에 **자리(총량)**를 둔다:
+ *   0) 자리 0 → NO_BED — 자격이 있어도 앉힐 데가 없다. 오늘 이미 다 썼기 때문이다.
+ *   1~3) 당직·과밀·배후 → 기존 판정(자격)
+ *
+ * 이 순서가 곧 논지다. 순환기를 갖춘 병원조차 미용으로 자리를 채우면 STEMI 앞에서 NO_BED가 된다 —
+ * 벽의 종류가 "역량 부재"에서 "이미 다 썼음"으로 바뀔 뿐 환자는 똑같이 못 들어온다.
+ */
+export function hardlockReason(hospital: Hospital, call: IncomingCall, bedsFree: number): RejectionReason | null {
+  if (bedsFree <= 0) return 'NO_BED'
   switch (call.kind) {
     case 'COSMETIC_WALKIN':
-      return 'CHOICE' // 응급이 아니라 늘 받을 수 있다(명랑)
+      return null // 응급이 아니라 자리만 있으면 받는다(명랑)
     case 'GENERAL_EMERGENCY':
-      // 병상·응급실만 있으면 받는다(배후 무관, 저마진).
-      return hospital.beds > 0 && hospital.hasErOnCall && !hospital.overcrowded ? 'CHOICE' : 'HARDLOCK_REJECT'
-    case 'STEMI':
-      return adjudicateTransfer(hospital, call.patient).accepted ? 'CHOICE' : 'HARDLOCK_REJECT'
+      // 응급실 당직·과밀만 보면 된다(배후 무관, 저마진).
+      if (!hospital.hasErOnCall) return 'NO_ER_ONCALL'
+      if (hospital.overcrowded) return 'ER_OVERCROWDED'
+      return null
+    case 'STEMI': {
+      const verdict = adjudicateTransfer(hospital, call.patient)
+      return verdict.accepted ? null : (verdict.reason ?? 'NO_BACKUP_CARE')
+    }
   }
+}
+
+/** 이 콜을 받을 수 있는가(선택) vs 판정상 못 받는가(하드락). */
+export function classifyCall(hospital: Hospital, call: IncomingCall, bedsFree: number): CallDisposition {
+  return hardlockReason(hospital, call, bedsFree) === null ? 'CHOICE' : 'HARDLOCK_REJECT'
 }
 
 export function initReceiving(hospital: Hospital, queue: IncomingCall[] = createCallQueue()): ReceivingState {
@@ -56,6 +82,7 @@ export function initReceiving(hospital: Hospital, queue: IncomingCall[] = create
     hospital,
     queue,
     index: 0,
+    bedsFree: hospital.beds, // 하루는 병상을 다 비운 채 시작한다
     netProfitDeltaBillions: 0,
     lawsuitExposure: 0,
     log: [],
@@ -69,18 +96,22 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
     throw new Error('receiving already done')
   }
   const call = state.queue[state.index]
-  const disposition = classifyCall(state.hospital, call)
+  const reason = hardlockReason(state.hospital, call, state.bedsFree)
+  const disposition: CallDisposition = reason === null ? 'CHOICE' : 'HARDLOCK_REJECT'
   const effectiveAccept = disposition === 'CHOICE' && accept
 
+  // 수용한 환자만 자리를 먹는다 — 거절·하드락은 자리를 소모하지 않는다.
+  const bedsFree = effectiveAccept ? state.bedsFree - 1 : state.bedsFree
   const netProfitDeltaBillions = effectiveAccept
     ? state.netProfitDeltaBillions + PROFIT_DELTA[call.kind]
     : state.netProfitDeltaBillions
   const lawsuitExposure = effectiveAccept && call.lawsuitRisk ? state.lawsuitExposure + 1 : state.lawsuitExposure
 
-  const log = [...state.log, { callId: call.id, accepted: effectiveAccept, disposition }]
+  const log = [...state.log, { callId: call.id, accepted: effectiveAccept, disposition, reason }]
   const index = state.index + 1
   return {
     ...state,
+    bedsFree,
     netProfitDeltaBillions,
     lawsuitExposure,
     log,

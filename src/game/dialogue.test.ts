@@ -78,21 +78,41 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
   })
 
   it('워크인 수용 → 명랑한 확인 대사(🎉 포함)', () => {
-    const line = receivingLine(walkin, classifyCall(collaborator, walkin), true)
+    const line = receivingLine(walkin, classifyCall(collaborator, walkin, 3), true)
     expect(line.length).toBeGreaterThan(0)
     expect(line).toContain('🎉')
   })
 
   it('STEMI 하드락(내 병원도 순환기 없음) → 벽을 안쪽에서 배우는 대사', () => {
-    const disposition = classifyCall(collaborator, stemi) // HARDLOCK_REJECT
-    const line = receivingLine(stemi, disposition, false)
+    const disposition = classifyCall(collaborator, stemi, 3) // HARDLOCK_REJECT
+    const line = receivingLine(stemi, disposition, false, 0, 'NO_BACKUP_CARE')
     expect(line).toBe(RECEIVE_HARDLOCK)
   })
 
   it('양심 병원의 STEMI 수용 → 명랑/확인 대사(비어있지 않음)', () => {
-    const disposition = classifyCall(conscientious, stemi) // CHOICE
+    const disposition = classifyCall(conscientious, stemi, 3) // CHOICE
     const line = receivingLine(stemi, disposition, true)
     expect(line.length).toBeGreaterThan(0)
+  })
+
+  it('자리 없음(NO_BED) 하드락은 "자리는 있는데"라고 말하지 않는다 — 사유별 정합', () => {
+    // RECEIVE_HARDLOCK("자리는 있는데, 저희도 순환기 시술팀이 없습니다")을 자리 소진에 쓰면 정면으로 거짓말이 된다.
+    const line = receivingLine(stemi, 'HARDLOCK_REJECT', false, 0, 'NO_BED')
+    expect(line).not.toBe(RECEIVE_HARDLOCK)
+    expect(line).not.toContain('자리는 있는데')
+    expect(line.length).toBeGreaterThan(0)
+  })
+
+  it('모든 하드락 사유에 대사가 있다(빈 문자열 없음)', () => {
+    for (const reason of ALL_REASONS) {
+      for (const call of [stemi, walkin]) {
+        expect(receivingLine(call, 'HARDLOCK_REJECT', false, 0, reason).length).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('사유를 안 넘겨도 기존 동작 유지(하위호환)', () => {
+    expect(receivingLine(stemi, 'HARDLOCK_REJECT', false)).toBe(RECEIVE_HARDLOCK)
   })
 
   it('결정론 — 같은 인자·seed는 같은 대사', () => {

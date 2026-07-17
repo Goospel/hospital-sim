@@ -4,8 +4,12 @@ import type { DepartmentSpec, DeptKey, Hospital, HospitalEconomics, SetupChoices
 // 부호(적자↔흑자)만 근거를 지키고 금액은 각색: essential-care-economics.md / essential-care-litigation-risk.md.
 // 이번 주 단순화(spec ⓐ): CARDIOLOGY만 STEMI 슬라이스의 기계적 분기점. 병상은 고정값.
 
-/** 플레이어 병원의 고정 병상(위저드에서 안 고름 — 이번 주 단순화). */
-export const FIXED_BEDS = 2
+/**
+ * 플레이어 병원의 고정 병상 = 하루에 볼 수 있는 환자 수(총량). 위저드에서 안 고른다.
+ * 하루 콜 5통(createCallQueue) > 자리 3 — 이 부등호가 "능력 대비 환자가 많다"를 만든다.
+ * 매일 2통은 자리가 없어 못 받는다: 플레이어는 몇 통 받을지가 아니라 누구를 앉힐지를 고른다.
+ */
+export const FIXED_BEDS = 3
 /** 채용 예산(억). 위저드가 이 한도로 선택을 제약해 "미용 vs 순환기" 딜레마를 만든다. */
 export const SETUP_BUDGET_BILLIONS = 100
 

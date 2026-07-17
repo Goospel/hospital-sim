@@ -144,14 +144,45 @@ export const RECEIVE_REJECT: Record<CallKind, string> = {
 export const RECEIVE_HARDLOCK =
   '자리는 있는데, 저희도 순환기 시술팀이 없습니다. 받아도 못 뚫어요.'
 
-/** 콜 처리 결과 → 받는 쪽 폴백 대사. seed로 호소 대사를 변주(결정론). */
+/**
+ * 자리 소진(NO_BED) 하드락 — 오늘 진료 역량을 이미 다 썼다.
+ * 톤은 1막의 명랑한 태연함 그대로 유지한다. 과녁은 시스템의 태연함이지 환자가 아니다.
+ * 앞서 무엇을 받느라 자리가 없어졌는지는 말하지 않는다 — 플레이어가 자기 선택을 스스로 안다(show-don't-tell).
+ */
+export const RECEIVE_NO_BED =
+  '오늘 자리가 다 찼습니다. 더는 못 받아요.'
+
+/**
+ * 하드락 사유별 받는 쪽 대사.
+ * RECEIVE_HARDLOCK은 "**자리는 있는데**, 저희도 순환기 시술팀이 없습니다"라서 자리 소진에 재사용하면
+ * 정면으로 거짓말이 된다 — 사유가 벽의 종류를 정하므로 대사도 사유를 따라간다.
+ */
+const RECEIVE_HARDLOCK_BY_REASON: Record<RejectionReason, string> = {
+  NO_BED: RECEIVE_NO_BED,
+  NO_ER_ONCALL: '지금 응급실 당직이 없습니다. 접수 자체가 안 됩니다.',
+  ER_OVERCROWDED: '자리는 있어도 응급실이 꽉 차서 지금은 못 받습니다.',
+  NO_BACKUP_CARE: RECEIVE_HARDLOCK,
+}
+
+/**
+ * 콜 처리 결과 → 받는 쪽 폴백 대사(순수·결정론).
+ * reason은 하드락일 때만 쓰인다 — 없으면 기존 동작(STEMI=배후 부재의 벽)으로 폴백한다.
+ * seed는 아직 변주에 쓰이지 않는다(받는 쪽 대사는 종류별 1개) — 호출부 시그니처 유지용.
+ */
 export function receivingLine(
   call: IncomingCall,
   disposition: CallDisposition,
   accepted: boolean,
-  seed = 0,
+  _seed = 0,
+  reason?: RejectionReason,
 ): string {
   if (disposition === 'HARDLOCK_REJECT') {
+    if (reason) {
+      // 자리 소진은 콜 종류를 안 가린다 — 워크인이든 STEMI든 같은 벽에 막힌다.
+      return reason === 'NO_BED' && call.kind === 'COSMETIC_WALKIN'
+        ? RECEIVE_REJECT[call.kind] // 워크인엔 '예약이 다 찼습니다'가 이미 정합(명랑 유지)
+        : RECEIVE_HARDLOCK_BY_REASON[reason]
+    }
     // STEMI 하드락은 배후 부재의 벽, 그 외 하드락은 일반 거절.
     return call.kind === 'STEMI' ? RECEIVE_HARDLOCK : RECEIVE_REJECT[call.kind]
   }
