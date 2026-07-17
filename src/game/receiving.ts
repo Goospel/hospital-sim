@@ -89,12 +89,31 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   }
 }
 
+/** 분기 진행률(0~1) — 처리한 콜 수 / 전체. 빈 큐(콜 없음)는 분기 완료로 보아 1. */
+export function quarterProgress(state: ReceivingState): number {
+  if (state.queue.length === 0) return 1
+  return state.index / state.queue.length
+}
+
 /**
- * 1막 러닝 순이익(부문 손익 합 + 분기 진료 수익 델타) — 소송 비용은 제외.
+ * 부문 손익 — 구조 손익(profitPerDoctor 기반)을 분기 진행률만큼 누적한 값.
+ * 콜 시작(index 0)엔 전 부문 0에서 출발해, 콜을 처리할수록(=분기 시간 경과) 각 과가 자기 구조
+ * 손익을 향해 자라고, 분기말(done)에 전체 수치에 도달한다 — "진료를 볼수록 흑자/적자" 직관과 일치.
+ * (정적 선반영이 진료 0인 t=0부터 흑자/적자를 전액 찍어 논지·show-don't-tell과 어긋나던 걸 교정.)
+ * 표시용 정수 반올림 — 분기말(진행률 1)엔 원 구조 손익 그대로.
+ */
+export function accruedSegments(state: ReceivingState): { label: string; profitBillions: number }[] {
+  const p = quarterProgress(state)
+  const segments = state.hospital.economics?.segments ?? []
+  return segments.map((s) => ({ label: s.label, profitBillions: Math.round(s.profitBillions * p) }))
+}
+
+/**
+ * 1막 러닝 순이익(누적 부문 손익 합 + 분기 진료 수익 델타) — 소송 비용은 제외.
+ * 부문 손익은 accruedSegments로 분기 진행률만큼만 반영한다(콜 시작 0에서 출발).
  * 소송 비용은 결말 buildSessionLedger에서만 차감된다(해석 0 원칙: 1막은 명랑한 숫자만).
  */
 export function runningNetProfit(state: ReceivingState): number {
-  const segments = state.hospital.economics?.segments ?? []
-  const segmentTotal = segments.reduce((sum, s) => sum + s.profitBillions, 0)
+  const segmentTotal = accruedSegments(state).reduce((sum, s) => sum + s.profitBillions, 0)
   return segmentTotal + state.netProfitDeltaBillions
 }
