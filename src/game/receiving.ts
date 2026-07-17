@@ -6,18 +6,44 @@ import { DAYS_PER_WEEK } from './setup'
 // 순수·결정론·불변. 다크코미디는 대사(dialogue.ts)와 UI가, 여기선 숫자만.
 // 시간 단위 = 하루. 한 ReceivingState = 하루치 콜 큐이고, 한 판은 7일(DAYS_PER_WEEK)이다.
 
+/** 이 콜의 가격을 누가 정하는가. 급여(GOVERNMENT)는 정부 고시가를 받고, 비급여(HOSPITAL)는 병원이 자율 결정한다. */
+export type PriceSetter = 'HOSPITAL' | 'GOVERNMENT'
+
+/** 콜 한 통의 수가/원가 내역(억). 델타 = 수익 − 원가. */
+export interface CallEconomics {
+  priceSetter: PriceSetter
+  revenueBillions: number
+  costBillions: number
+}
+
 /**
- * 콜 한 통 수용으로 누적되는 손익 델타(억). 부호만 근거, 금액 각색.
+ * 콜당 수가/원가 — **가격을 누가 정하는가**가 부호를 가른다.
  *
- * ⚠️ 스케일 주의 — 한 판이 콜 5통에서 **35통(7일 × 5)**으로 늘면서 이 값들이 7배로 누적된다.
- * 하루 단위 각색값(+8/+2/−20)을 그대로 두면 한 주 진료 수익이 부문 손익(주간 전액)을 압도해
- * 구조 손익이 무의미해지고(양심 루트 −525억) 예산 100억짜리 병원의 장부가 개연성을 잃는다.
- * 그래서 콜당 값을 주간 스케일로 낮춘다 — 7일을 다 돌았을 때 콜 델타 합이 부문 손익과 같은 자릿수가 되게.
+ * 비급여(미용)는 상대가치점수·환산지수가 적용되지 않아 병원이 가격을 자율 결정한다 → 원가를 넘겨 받는다.
+ * 급여는 정부 고시가라 원가보전율이 곧 부호다. 그래서 **수익/원가 비율이 근거이고 금액은 각색**이다:
+ *   - 일반 응급 3/6  ≈ 50%  — 기본진료 50.5% / 응급의료수가 45.0%
+ *   - STEMI    11/13 ≈ 85%  — 수술·처치 84.9% (원가 미만이되 기본진료보다 덜 밑진다)
+ *   - 미용      6/3  = 200% — 가격 규제 없음
+ * 근거: fee-schedule-and-subsidies.md §2 (**행위 단위**).
+ *
+ * 🔴 **부호는 행위 단위 표 하나에서만 뽑는다.** 과 단위 수치(심장내과 117%·응급의학과 103%)를
+ * 여기 섞으면 정반대 부호가 나온다 — 콜 델타는 "행위 1건"이라 단위가 다르다(T-039).
+ * 과 단위 흑자는 입력이 아니라 플레이어가 검사를 붙였을 때 **장부에서 창발**해야 한다(F2, 검체 160.5%).
+ *
+ * ⚠️ 스케일 주의 — 한 판이 콜 35통(7일 × 5)이라 이 값들이 누적된다. 콜 델타 합이 부문 손익(주간 전액)을
+ * 압도하면 구조 손익이 무의미해진다(PR #35 양심 루트 −525억). 불변식 I8(|순이익| ≤ 4 × 예산)은
+ * 테스트로 안 잡히고 **브라우저 7일 완주로만** 잡힌다.
  */
-const PROFIT_DELTA: Record<CallKind, number> = {
-  COSMETIC_WALKIN: 3, // 명랑한 흑자
-  GENERAL_EMERGENCY: 1, // 저마진
-  STEMI: -6, // 적자(필수·고위험 케이스 수용의 대가)
+export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
+  COSMETIC_WALKIN: { priceSetter: 'HOSPITAL', revenueBillions: 6, costBillions: 3 },
+  GENERAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 3, costBillions: 6 },
+  STEMI: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
+}
+
+/** 콜 한 통 수용으로 누적되는 손익 델타(억). */
+export function callDelta(kind: CallKind): number {
+  const e = CALL_ECONOMICS[kind]
+  return e.revenueBillions - e.costBillions
 }
 
 export type CallDisposition = 'HARDLOCK_REJECT' | 'CHOICE'
@@ -159,7 +185,7 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   // 수용한 환자만 자리를 먹는다 — 거절·하드락은 자리를 소모하지 않는다.
   const bedsFree = effectiveAccept ? state.bedsFree - 1 : state.bedsFree
   const netProfitDeltaBillions = effectiveAccept
-    ? state.netProfitDeltaBillions + PROFIT_DELTA[call.kind]
+    ? state.netProfitDeltaBillions + callDelta(call.kind)
     : state.netProfitDeltaBillions
   const lawsuitExposure = effectiveAccept && call.lawsuitRisk ? state.lawsuitExposure + 1 : state.lawsuitExposure
 
