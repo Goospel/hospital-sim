@@ -1,29 +1,43 @@
 import { describe, it, expect } from 'vitest'
 import {
-  startSession, beginSetup, completeSetup, completeReceiving, beginEmergency, toEpilogue, buildEpilogue,
+  startSession, beginSetup, completeSetup, completeReceiving, advanceDay, isLastDay, weekTotals,
+  beginEmergency, toEpilogue, buildEpilogue, type SessionState,
 } from './session'
 import { decide } from './receiving'
+import { DAYS_PER_WEEK } from './setup'
 import { attemptTransfer } from './round'
 import type { IncomingCall, SetupChoices } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
 
+type Policy = boolean | ((call: IncomingCall) => boolean)
+
 /**
- * RECEIVING을 끝까지 흘린다. 방침은 불리언(전부) 또는 콜별 함수.
+ * 그날의 RECEIVING을 끝까지 흘린다(하루 마감은 하지 않는다). 방침은 불리언(전부) 또는 콜별 함수.
  *
  * 자리가 유한해진 뒤로 **"전부 수용"은 더 이상 하나의 전략이 아니다** — 앞선 워크인이 자리를 먹으면
  * 뒤의 STEMI가 NO_BED로 막힌다. 그래서 '양심'은 전부 수용이 아니라 **워크인을 거절해 자리를 비워두는
  * 선택**으로만 표현된다. 이 헬퍼가 콜별 함수를 받는 이유다.
  */
-function runReceiving(choices: SetupChoices, accept: boolean | ((call: IncomingCall) => boolean) = false) {
-  let s = completeSetup(choices)
+function runDay(state: SessionState, accept: Policy) {
+  let s = state
   while (!s.receiving!.done) {
     const call = s.receiving!.queue[s.receiving!.index]
     const yes = typeof accept === 'function' ? accept(call) : accept
     s = { ...s, receiving: decide(s.receiving!, yes) }
   }
   return s
+}
+
+/** 7일을 통째로 흘려 INTERSTITIAL 직전까지 간다(각 날 마감 + 다음 날 전진). */
+function runWeek(choices: SetupChoices, accept: Policy = false) {
+  let s = runDay(completeSetup(choices), accept)
+  for (let d = 1; d < DAYS_PER_WEEK; d++) {
+    s = advanceDay(completeReceiving(s)) // 마감 → 다음 날 RECEIVING
+    s = runDay(s, accept)
+  }
+  return advanceDay(completeReceiving(s)) // 7일차 마감 → INTERSTITIAL
 }
 
 /** 양심 방침 — 워크인을 거절해 필수 케이스에 자리를 남긴다. */
@@ -54,15 +68,90 @@ describe('세션 페이즈 전이', () => {
     expect(() => completeReceiving(s)).toThrow()
   })
 
-  it('receiving 완료 → completeReceiving → INTERSTITIAL', () => {
-    const s = completeReceiving(runReceiving(collaborator))
+  it('receiving 완료 → completeReceiving → DAY_END(하루 마감, 달력 기록)', () => {
+    const s = completeReceiving(runDay(completeSetup(collaborator), false))
+    expect(s.phase).toBe('DAY_END')
+  })
+})
+
+describe('7일 루프 — day 전이와 달력 기록', () => {
+  it('completeSetup은 1일차에서 시작하고 달력은 비어 있다', () => {
+    const s = completeSetup(collaborator)
+    expect(s.day).toBe(1)
+    expect(s.ledgerDays).toEqual([])
+  })
+
+  it('DAY_END → advanceDay → 다음 날 RECEIVING(새 큐·자리·델타 리셋)', () => {
+    const d1 = completeReceiving(runDay(completeSetup(collaborator), true))
+    const d2 = advanceDay(d1)
+    expect(d2.phase).toBe('RECEIVING')
+    expect(d2.day).toBe(2)
+    expect(d2.receiving!.index).toBe(0)
+    expect(d2.receiving!.done).toBe(false)
+    expect(d2.receiving!.bedsFree).toBe(d2.hospital!.beds) // 새 하루엔 병상이 다 빈다
+    expect(d2.receiving!.netProfitDeltaBillions).toBe(0) // 그날 진료 수익은 0에서 시작
+    expect(d2.receiving!.queue[0].id).toContain('d2') // 2일차 큐
+  })
+
+  it('하루를 마감할 때마다 달력에 한 칸씩 쌓인다', () => {
+    const d1 = completeReceiving(runDay(completeSetup(collaborator), true))
+    expect(d1.ledgerDays).toHaveLength(1)
+    expect(d1.ledgerDays[0].day).toBe(1)
+    const d2 = completeReceiving(runDay(advanceDay(d1), true))
+    expect(d2.ledgerDays).toHaveLength(2)
+    expect(d2.ledgerDays.map((r) => r.day)).toEqual([1, 2])
+  })
+
+  it('달력 한 칸 = 부문 손익 오늘치 + 그날 진료 수익, 그리고 못 받은 콜 수를 남긴다', () => {
+    const d1 = completeReceiving(runDay(completeSetup(collaborator), true)) // 전부 수용 시도
+    const rec = d1.ledgerDays[0]
+    expect(rec.netProfitBillions).toBe(rec.segmentShareBillions + rec.callDeltaBillions)
+    expect(rec.accepted).toBe(3) // 자리 3
+    expect(rec.blocked).toBeGreaterThan(0) // 자리가 없어 구조가 막은 콜이 있다
+    expect(rec.accepted + rec.blocked).toBeLessThanOrEqual(5)
+  })
+
+  it('isLastDay — 7일차에서만 참', () => {
+    expect(isLastDay(completeSetup(collaborator))).toBe(false)
+    expect(isLastDay({ ...completeSetup(collaborator), day: DAYS_PER_WEEK })).toBe(true)
+  })
+
+  it('7일차 마감 후 advanceDay → INTERSTITIAL(그날 밤 응급으로)', () => {
+    const s = runWeek(collaborator, true)
     expect(s.phase).toBe('INTERSTITIAL')
+    expect(s.day).toBe(DAYS_PER_WEEK)
+    expect(s.ledgerDays).toHaveLength(DAYS_PER_WEEK) // 달력 일곱 칸이 다 찬다
+  })
+
+  it('DAY_END가 아니면 advanceDay 에러(가드)', () => {
+    expect(() => advanceDay(completeSetup(collaborator))).toThrow()
+  })
+
+  it('receiving 미완이면 completeReceiving 에러(하루를 일찍 못 닫는다)', () => {
+    expect(() => completeReceiving(completeSetup(collaborator))).toThrow()
+  })
+
+  it('weekTotals — 7일치 진료 수익·소송 노출을 합산한다(마지막 날 것만이 아니라)', () => {
+    const s = runWeek(conscientious, essentialFirst)
+    const totals = weekTotals(s)
+    const sumDelta = s.ledgerDays.reduce((n, r) => n + r.callDeltaBillions, 0)
+    const sumLawsuit = s.ledgerDays.reduce((n, r) => n + r.lawsuitExposure, 0)
+    expect(totals.netProfitDeltaBillions).toBe(sumDelta)
+    expect(totals.lawsuitExposure).toBe(sumLawsuit)
+    expect(totals.lawsuitExposure).toBeGreaterThan(s.ledgerDays[6].lawsuitExposure) // 한 날치보다 크다
+  })
+
+  it('부문 손익 오늘치 7일 합 = 주간 전액 — 달력과 결말 장부가 어긋나지 않는다', () => {
+    const s = runWeek(collaborator, false) // 전부 거절 → 델타 0, 구조 손익만
+    const sumShares = s.ledgerDays.reduce((n, r) => n + r.segmentShareBillions, 0)
+    const weekly = s.hospital!.economics!.segments.reduce((n, x) => n + x.profitBillions, 0)
+    expect(Math.abs(sumShares - weekly)).toBeLessThanOrEqual(DAYS_PER_WEEK) // 일별 반올림 오차만 허용
   })
 })
 
 describe('beginEmergency 분기 — backupCare가 가른다', () => {
   it('공범(순환기 없음) → TRANSFER(기존 STEMI 뺑뺑이)', () => {
-    const s = beginEmergency(completeReceiving(runReceiving(collaborator)))
+    const s = beginEmergency(runWeek(collaborator))
     expect(s.phase).toBe('EMERGENCY')
     expect(s.emergency!.mode).toBe('TRANSFER')
     const em = s.emergency!
@@ -73,7 +162,7 @@ describe('beginEmergency 분기 — backupCare가 가른다', () => {
   })
 
   it('양심(순환기 있음) → IN_HOUSE(직접 PCI)', () => {
-    const s = beginEmergency(completeReceiving(runReceiving(conscientious)))
+    const s = beginEmergency(runWeek(conscientious))
     expect(s.phase).toBe('EMERGENCY')
     expect(s.emergency!.mode).toBe('IN_HOUSE')
   })
@@ -81,7 +170,7 @@ describe('beginEmergency 분기 — backupCare가 가른다', () => {
 
 describe('toEpilogue 가드 + buildEpilogue', () => {
   it('TRANSFER가 진행중이면 toEpilogue 에러', () => {
-    const s = beginEmergency(completeReceiving(runReceiving(collaborator)))
+    const s = beginEmergency(runWeek(collaborator))
     expect(() => toEpilogue(s)).toThrow()
   })
 
@@ -90,7 +179,7 @@ describe('toEpilogue 가드 + buildEpilogue', () => {
     // '수용'할 때 성립한다(비용은 짓기가 아니라 진료함에서 온다).
     // 자리가 3뿐이라 워크인을 거절해야만 STEMI 두 통을 다 받을 수 있다 — 양심은 이제 '선택'이다.
     // (전부 수용하면 워크인이 자리를 먹어 두 번째 STEMI가 NO_BED로 막히고, 결말이 흑자로 뒤집힌다.)
-    let s = beginEmergency(completeReceiving(runReceiving(conscientious, essentialFirst)))
+    let s = beginEmergency(runWeek(conscientious, essentialFirst))
     s = toEpilogue(s)
     const epi = buildEpilogue(s)
     expect(epi.survived).toBe(true)
@@ -101,7 +190,7 @@ describe('toEpilogue 가드 + buildEpilogue', () => {
   })
 
   it('공범 경로: TRANSFER 끝(권역심혈관센터 h6 수용) → 생존, 장부는 흑자·채용 0·소송비용 없음', () => {
-    let s = beginEmergency(completeReceiving(runReceiving(collaborator)))
+    let s = beginEmergency(runWeek(collaborator))
     // 외부 풀의 출구 h6(권역심혈관센터)에 전원 성공
     const em = s.emergency!
     const game = attemptTransfer(em.mode === 'TRANSFER' ? em.game : (() => { throw new Error() })(), 'h6', 12)
@@ -125,6 +214,6 @@ describe('통합 불변식', () => {
     const afterStemi = decide(r, true) // c2 STEMI accept 시도
     expect(afterStemi.log[1].disposition).toBe('HARDLOCK_REJECT')
     // 2막: 전원 분기
-    expect(beginEmergency(completeReceiving(runReceiving(collaborator))).emergency!.mode).toBe('TRANSFER')
+    expect(beginEmergency(runWeek(collaborator)).emergency!.mode).toBe('TRANSFER')
   })
 })

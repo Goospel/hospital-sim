@@ -3,6 +3,15 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · 7일 루프 + 달력 — 분기 폐기, 하루가 지나면 그날 손익이 한 칸 (PR #35)
+
+- **무엇을**: 한 판을 **한 주(7일)**로. `SessionState.day(1..7)`·`ledgerDays: DayRecord[]` 신설, `DAY_END` 페이즈 신설(RECEIVING → DAY_END → 다음 날 | 7일차엔 INTERSTITIAL), 신규 전이 `advanceDay`·헬퍼 `isLastDay`·`weekTotals`. 요일별 고정 큐 `createCallQueue(day)`(DAY_PLANS 7행 · 결정론 유지 · 라벨은 kind 내 등장 순번으로 파생해 콘텐츠 부담 차단). 달력 UI `DayEnd.tsx` — 7칸에 그날 순이익 숫자+색(흑자 초록/적자 붉음), 오늘은 링, 미래는 빈칸, **해석 카피 0**.
+- **기간 3중 혼재 해소**: **분기를 폐기**했다. 과 손익 숫자를 "이번 주(7일) 전체"로 재정의하고 하루는 1/7씩 누적 — `quarterProgress`→`dayProgress`, `accruedSegments`가 `주간/7 × 진행률`. "올해 장부"(LedgerPanel)→"이번 주 장부", "분기 진료 수익"(ledger.ts)→"이번 주 진료 수익", "분기 마감"(Interstitial)→"한 주 마감". **7일치 1/7 합 = 주간 전액**이라 결말 장부(`composeLedger` 전액)와 자동 정합 — 매핑이 경고한 "계산 경로 이원화"(accruedSegments ×진행률 vs composeLedger 전액)가 이 등식으로 닫힌다. branch 의미의 '분기'(setup.ts:5·session.ts)는 손대지 않음(일괄 치환 지뢰).
+- **함께 고친 치명 버그**: `buildEpilogue`가 `state.receiving`(**7일차 하루치**)만 계상하던 것 → `weekTotals(state)`로 7일 합산. 안 고쳤으면 6일치 진료 수익·소송 노출이 통째로 증발했다. `Interstitial`도 마지막 날이 아니라 주간 누계를 표시.
+- **재밸런싱(스펙 정정)**: 설계 §2.3이 "재밸런싱 0"이라 했으나 **틀렸다** — 콜이 5→35통이 되며 `PROFIT_DELTA`·소송비가 7배 누적돼 진료 수익(−246)·소송(−325)이 부문 손익(+46)을 압도, 양심 루트가 **−525억**(예산 100억 대비 개연성 붕괴). 주간 스케일로 하향: `PROFIT_DELTA` +8/+2/−20 → **+3/+1/−6**, `LAWSUIT_COST_PER_EXPOSURE` 25 → **5**. ⚠️ 이 회귀는 **테스트 372개 전부 green인 채로 통과**했다(테스트가 부호·대소만 잠금) — 브라우저 완주로만 드러났다.
+- **왜**: "하루가 지나면 달력이 보이면서 순이익·손해를 기록"이라는 요청. 달력에 기록이 쌓이려면 날이 여러 번 지나야 하고, 그래야 **일곱 칸이 플레이어의 초상**이 된다 — 미용으로 자리를 채운 사람의 달력은 전부 초록이고, 받은 사람의 달력만 붉다. 돌려보낸 환자는 달력에 안 찍힌다는 것도 말하지 않는다.
+- **범위**: `session.ts`·`receiving.ts`·`setup.ts`(+DAYS_PER_WEEK)·`ledger.ts`·`types.ts`(기간 주석) + `DayEnd.tsx` 신설 + `SessionClient`·`ReceivingPhase`(day prop·요일 표시)·`Interstitial`·`LedgerPanel`. `tsc` 0 · `vitest` **372**(+16) · 브라우저 7일 완주 2회(공범: 초록 7칸·누계 +405→재밸런싱 후 +300대 / 양심: 월−4·화+2·수−4·목−4·금−4·토−4·일−4 → 누계 **−22억** → 막간 −22 → 원내 PCI 생존 → 결말 **−90억**) · 콘솔 0. 설계: [superpowers/specs/2026-07-17-daily-capacity-calendar-design.md](superpowers/specs/2026-07-17-daily-capacity-calendar-design.md) 2단계. 워크인 자격(§2.1)은 후속.
+
 ## 2026-07-17 · 하루 진료 자리 제한 — 능력 대비 환자가 많다(과부하 신설) (PR #34)
 
 - **무엇을**: 병원에 **능력의 한계**를 물리적으로 심었다. 하루 자리 = 병상(`FIXED_BEDS` 2→**3**) < 하루 콜 5통 → **매일 2통은 못 받는다**. `ReceivingState.bedsFree` 신설(수용 시 −1, 거절·하드락은 불변), `hardlockReason(hospital, call, bedsFree)` 순수 함수 추가(게이트 0순위=자리, 이후 기존 당직·과밀·배후 판정), `classifyCall`이 그 위의 얇은 래퍼로. 로그에 `reason` 기록(왜 못 받았는지). `receivingLine`이 사유별 대사를 고르고, UI 헤더에 "남은 자리 N / M" 숫자만 노출.

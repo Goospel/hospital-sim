@@ -94,7 +94,7 @@ describe('buildSessionLedger — 플레이어 병원 결말 장부(콜 델타 + 
   it('공범: 순환기 없음 → essentialHires 0, 콜 수익 델타가 순이익에 반영, 소송 비용 없음', () => {
     const led = buildSessionLedger(collaboratorHospital, 'CARDIOLOGY', { netProfitDeltaBillions: 16, lawsuitExposure: 0 })!
     expect(led.essentialHires).toBe(0)
-    expect(led.segments).toContainEqual({ label: '분기 진료 수익', profitBillions: 16 })
+    expect(led.segments).toContainEqual({ label: '이번 주 진료 수익', profitBillions: 16 })
     expect(led.segments.some((s) => s.label === '소송 비용')).toBe(false)
     expect(led.netProfitBillions).toBe(210 + 16)
   })
