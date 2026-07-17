@@ -4,10 +4,23 @@ import type { DepartmentSpec, DeptKey, Hospital, HospitalEconomics, SetupChoices
 // 부호(적자↔흑자)만 근거를 지키고 금액은 각색: essential-care-economics.md / essential-care-litigation-risk.md.
 // 이번 주 단순화(spec ⓐ): CARDIOLOGY만 STEMI 슬라이스의 기계적 분기점. 병상은 고정값.
 
-/** 플레이어 병원의 고정 병상(위저드에서 안 고름 — 이번 주 단순화). */
-export const FIXED_BEDS = 2
+/**
+ * 플레이어 병원의 고정 병상 = 하루에 볼 수 있는 환자 수(총량). 위저드에서 안 고른다.
+ * 하루 콜 5통(createCallQueue) > 자리 3 — 이 부등호가 "능력 대비 환자가 많다"를 만든다.
+ * 매일 2통은 자리가 없어 못 받는다: 플레이어는 몇 통 받을지가 아니라 누구를 앉힐지를 고른다.
+ */
+export const FIXED_BEDS = 3
 /** 채용 예산(억). 위저드가 이 한도로 선택을 제약해 "미용 vs 순환기" 딜레마를 만든다. */
 export const SETUP_BUDGET_BILLIONS = 100
+
+/**
+ * 한 판의 길이 = 7일(월~일). 달력 한 주가 곧 한 게임이다.
+ *
+ * DEPARTMENTS의 손익 숫자는 **이 7일 전체**의 손익이고, 하루는 그 1/7씩 쌓인다.
+ * (하루를 분기의 1/90로 잡으면 미용 의사 1명이 +0.78억/일이 되어 Math.round가 전부 0으로 뭉개고,
+ *  1회성 스톡인 채용비 30억과 스케일이 깨져 딜레마가 소멸한다. 그래서 나누지 않고 기간을 재정의했다.)
+ */
+export const DAYS_PER_WEEK = 7
 
 /** 고를 수 있는 과. 수익과(흑자·비필수) + 필수 배후과(적자·소송 ⚠). */
 export const DEPARTMENTS: DepartmentSpec[] = [

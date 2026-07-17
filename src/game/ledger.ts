@@ -32,7 +32,12 @@ function ledgerHospital(hospitals: Hospital[]): Hospital | undefined {
 }
 
 /** 소송 비용 실현 단가(억) — 필수·고위험 케이스 수용의 꼬리위험 한 방. 각색(부호만 근거: 축 C). */
-export const LAWSUIT_COST_PER_EXPOSURE = 25
+/**
+ * 소송 노출 1건당 비용(억). 부호·존재만 근거, 금액 각색.
+ * ⚠️ 스케일 주의 — 한 판이 7일(콜 35통)이라 노출이 10건 넘게 쌓인다. 하루 각색값 25를 그대로 두면
+ * 소송 한 줄(−325억)이 장부 전체를 압도해 다른 항목이 안 보인다.
+ */
+export const LAWSUIT_COST_PER_EXPOSURE = 5
 
 /** 병원+경제에서 장부를 조립하는 순수 코어. extraSegments로 세션 델타(진료 수익·소송 비용)를 얹는다. */
 function composeLedger(
@@ -75,7 +80,7 @@ export function buildSessionLedger(
 ): Ledger | null {
   const extra: LedgerSegment[] = []
   if (receiving.netProfitDeltaBillions !== 0) {
-    extra.push({ label: '분기 진료 수익', profitBillions: receiving.netProfitDeltaBillions })
+    extra.push({ label: '이번 주 진료 수익', profitBillions: receiving.netProfitDeltaBillions })
   }
   const lawsuitCost = receiving.lawsuitExposure > 0 ? receiving.lawsuitExposure * LAWSUIT_COST_PER_EXPOSURE : 0
   if (lawsuitCost > 0) {
