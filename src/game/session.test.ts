@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  startSession, completeSetup, completeReceiving, beginEmergency, toEpilogue, buildEpilogue,
+  startSession, beginSetup, completeSetup, completeReceiving, beginEmergency, toEpilogue, buildEpilogue,
 } from './session'
 import { decide } from './receiving'
 import { attemptTransfer } from './round'
@@ -19,8 +19,16 @@ function runReceiving(choices: SetupChoices, accept = false) {
 }
 
 describe('세션 페이즈 전이', () => {
-  it('startSession → SETUP', () => {
-    expect(startSession().phase).toBe('SETUP')
+  it('startSession → LANDING(첫 화면 = 타이틀 카드)', () => {
+    expect(startSession().phase).toBe('LANDING')
+  })
+
+  it('beginSetup → SETUP(랜딩에서 시작 → 위저드)', () => {
+    expect(beginSetup(startSession()).phase).toBe('SETUP')
+  })
+
+  it('LANDING이 아니면 beginSetup 에러(가드)', () => {
+    expect(() => beginSetup(completeSetup(collaborator))).toThrow()
   })
 
   it('completeSetup → RECEIVING(플레이어 병원·콜 큐 준비)', () => {

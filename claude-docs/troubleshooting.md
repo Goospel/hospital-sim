@@ -15,6 +15,7 @@
 - [T-033](#t-033--getcomputedstyle은-compositor-가속-cssopacityfiltertransform의-전환-중간값을-못-읽어-애니메이션이-무효처럼-보임) · getComputedStyle은 compositor 애니메이션(opacity/filter/transform) 중간값을 못 읽음
 - [T-034](#t-034--in-app-브라우저-get_page_text가-페이즈-전환-후-stale-화면을-반환read_page는-최신) · in-app 브라우저 get_page_text가 전환 후 stale 화면 반환(read_page는 최신)
 - [T-035](#t-035--darkreader-등-브라우저-확장의-html-속성-주입을-next-하이드레이션-버그로-오진) · DarkReader 등 확장이 하이드레이션 전 `<html>` 속성 주입 → hydration mismatch(우리 코드 무관, `suppressHydrationWarning`)
+- [T-036](#t-036--in-app-브라우저-computer-left_click이-fast-refresh-churn-중-react-onclick에-안-잡힘native-click은-정상) · in-app 브라우저 `computer left_click`이 Fast Refresh churn 중 React onClick에 안 잡힘(native `.click()`은 정상)
 
 ---
 
@@ -101,3 +102,12 @@
 - **원인**: 브라우저 확장 **DarkReader**(다크모드)가 React 하이드레이션 **전에** `<html>`에 `data-darkreader-*` 속성을 주입 → 서버가 보낸 HTML엔 없던 속성이 클라 DOM에 생겨 속성 불일치. **우리 코드 무관.** 증거: (1) 속성 이름에 'darkreader' 명시, (2) 확장 없는 in-app 브라우저는 `<html>`에 lang·class만·에러 0, (3) Next 에러 문구가 "browser extension … messes with the HTML before React loaded" 명시. dev 오버레이 전용·기능 무해(프로덕션·확장 없는 사용자엔 안 뜸).
 - **해결**: 루트 레이아웃 `<html>`에 `suppressHydrationWarning`(Next 16.2 공식 패턴 — `node_modules/next/dist/docs/.../preventing-flash-before-hydration.md`가 `<html … suppressHydrationWarning>` 예시). 이 **한 요소의 속성/텍스트 불일치만** 억제하며, 자식·컴포넌트의 실제 하이드레이션 버그는 그대로 잡힌다.
 - **재발방지**: `data-*` 속성 불일치 하이드레이션 경고는 **코드 손대기 전 확장 유발부터 의심** — 속성 이름에 확장명이 박혀 있거나, 확장 없는 브라우저(시크릿/다른 브라우저/in-app)에서 재현 안 되면 확장 원인. 루트 `<html>`엔 `suppressHydrationWarning`를 기본 하드닝으로. (T-032~T-034에 이은 "브라우저 환경발 무성 오진" 계열.)
+
+---
+
+## T-036 · in-app 브라우저 `computer left_click`이 Fast Refresh churn 중 React onClick에 안 잡힘(native `.click()`은 정상)
+
+- **증상**: 새 버튼(랜딩 "시작")을 `computer{left_click, ref}`로 2회 눌러도 페이즈 전이 없음. 버튼은 정상(좌표·크기 정확·`disabled=false`·`pointerEvents:auto`), 콘솔 에러 0. "onClick 배선/전이 로직이 틀렸나" 의심.
+- **원인**: 코드는 정상. `javascript_tool`로 같은 버튼에 native `.click()`을 주니 **즉시 전이**(위저드 h1 "어떤 병원을 세우시겠습니까" 렌더)됨 → 핸들러·`beginSetup` 전이는 옳음. 직전 다수 편집으로 Fast Refresh(HMR) rebuild가 연달아 돌던 타이밍에 in-app 브라우저의 좌표 합성 클릭이 React 이벤트로 전달되지 못한 **도구 쪽 전달 실패**로 판단. ⚠️ **T-034와 정반대** — 거기선 native `.click()`이 안 먹고 ref 클릭이 정답이었는데, 여기선 ref 클릭이 새고 native `.click()`이 정답. 즉 **어느 클릭 방식도 100% 신뢰 불가**(HMR 몰릴 때 양방향으로 샘).
+- **해결**: 클릭 반응이 없을 때 코드부터 의심하지 말고, 다른 클릭 방식으로 교차 검증 — ref 좌표 클릭이 안 먹으면 `javascript_tool`의 native `.click()`(또는 `dispatchEvent`)으로, 그 반대도. 전이 여부는 클릭 도구 반환이 아니라 **실제 상태 변화**(`read_page`/`get_page_text`의 h1·input 존재, 또는 JS로 상태 질의)로 판정.
+- **재발방지**: in-app 브라우저에서 "버튼이 안 먹는다"를 UI/코드 버그로 단정하지 않는다(T-033/T-034와 같은 검증 도구 blind-spot 계열). Fast Refresh가 몰아친 직후엔 클릭이 어느 방식으로든 샐 수 있으니, **핸들러 자체를 native `.click()`로 격리 검증**하고 전이는 실제 DOM 상태로 확인한다.
