@@ -2,7 +2,13 @@
 
 import { callerPleaAt, receivingLine } from "@/game/dialogue";
 import { formatSignedBillions } from "@/game/labels";
-import { accruedSegments, classifyCall, runningNetProfit, type ReceivingState } from "@/game/receiving";
+import {
+  accruedSegments,
+  classifyCall,
+  hardlockReason,
+  runningNetProfit,
+  type ReceivingState,
+} from "@/game/receiving";
 import SegmentTree from "./SegmentTree";
 
 /**
@@ -98,23 +104,46 @@ export default function ReceivingPhase({
   }
 
   const call = receiving.queue[receiving.index];
-  const disposition = classifyCall(receiving.hospital, call);
+  const reason = hardlockReason(receiving.hospital, call, receiving.bedsFree);
+  const disposition = classifyCall(receiving.hospital, call, receiving.bedsFree);
   const plea = callerPleaAt(receiving.queue, receiving.index);
 
   const prevCall = receiving.index > 0 ? receiving.queue[receiving.index - 1] : undefined;
   const prevLog = receiving.log[receiving.log.length - 1];
   const prevLine =
     prevCall && prevLog
-      ? receivingLine(prevCall, prevLog.disposition, prevLog.accepted, receiving.index - 1)
+      ? receivingLine(
+          prevCall,
+          prevLog.disposition,
+          prevLog.accepted,
+          receiving.index - 1,
+          prevLog.reason ?? undefined,
+        )
       : undefined;
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
-      <header className="flex flex-col gap-1">
-        <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">전원 콜 접수</span>
-        <h1 className="text-lg font-semibold">
-          콜 {receiving.index + 1} / {receiving.queue.length}
-        </h1>
+      {/*
+        남은 자리 — 이 게임의 유일한 과부하 표시. 숫자만 보여주고 해석하지 않는다:
+        콜 5통 > 자리 3이라 매일 2통은 못 받는데, 그걸 말로 하지 않고 숫자가 줄어드는 걸로만 알린다.
+      */}
+      <header className="flex items-baseline justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">전원 콜 접수</span>
+          <h1 className="text-lg font-semibold">
+            콜 {receiving.index + 1} / {receiving.queue.length}
+          </h1>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-xs uppercase tracking-[0.25em] text-zinc-600">남은 자리</span>
+          <span
+            className={`font-mono text-lg font-semibold tabular-nums ${
+              receiving.bedsFree === 0 ? "text-amber-500" : "text-zinc-200"
+            }`}
+          >
+            {receiving.bedsFree} / {receiving.hospital.beds}
+          </span>
+        </div>
       </header>
 
       {prevLine && (
@@ -130,7 +159,7 @@ export default function ReceivingPhase({
 
           {disposition === "HARDLOCK_REJECT" && (
             <p className="text-xs text-amber-500">
-              {receivingLine(call, "HARDLOCK_REJECT", false, receiving.index)}
+              {receivingLine(call, "HARDLOCK_REJECT", false, receiving.index, reason ?? undefined)}
             </p>
           )}
 

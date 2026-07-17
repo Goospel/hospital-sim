@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  createCallQueue, classifyCall, initReceiving, decide, runningNetProfit,
+  createCallQueue, classifyCall, hardlockReason, initReceiving, decide, runningNetProfit,
   quarterProgress, accruedSegments,
 } from './receiving'
 import type { ReceivingState } from './receiving'
@@ -41,18 +41,92 @@ describe('classifyCall — 하드락 vs 선택', () => {
   const stemi = q.find((c) => c.kind === 'STEMI')!
   const walkin = q.find((c) => c.kind === 'COSMETIC_WALKIN')!
   const general = q.find((c) => c.kind === 'GENERAL_EMERGENCY')!
+  const OPEN = 3 // 자리 넉넉 — 이 describe는 자리 축이 아니라 자격 축만 본다
 
-  it('워크인은 늘 CHOICE(명랑하게 받을 수 있음)', () => {
-    expect(classifyCall(hospitalOf(collaborator), walkin)).toBe('CHOICE')
+  it('워크인은 자리가 있으면 CHOICE(명랑하게 받을 수 있음)', () => {
+    expect(classifyCall(hospitalOf(collaborator), walkin, OPEN)).toBe('CHOICE')
   })
 
   it('STEMI: 순환기 없으면 하드락, 있으면 선택', () => {
-    expect(classifyCall(hospitalOf(collaborator), stemi)).toBe('HARDLOCK_REJECT')
-    expect(classifyCall(hospitalOf(conscientious), stemi)).toBe('CHOICE')
+    expect(classifyCall(hospitalOf(collaborator), stemi, OPEN)).toBe('HARDLOCK_REJECT')
+    expect(classifyCall(hospitalOf(conscientious), stemi, OPEN)).toBe('CHOICE')
   })
 
   it('일반응급: 병상+응급실 있으면 선택(배후 무관)', () => {
-    expect(classifyCall(hospitalOf(collaborator), general)).toBe('CHOICE')
+    expect(classifyCall(hospitalOf(collaborator), general, OPEN)).toBe('CHOICE')
+  })
+})
+
+describe('자리(하루 진료 역량) 소진 — 능력 대비 환자가 많다', () => {
+  const q = createCallQueue()
+  const stemi = q.find((c) => c.kind === 'STEMI')!
+  const walkin = q.find((c) => c.kind === 'COSMETIC_WALKIN')!
+  const general = q.find((c) => c.kind === 'GENERAL_EMERGENCY')!
+
+  it('자리가 0이면 어떤 콜이든 NO_BED 하드락 — 내 선택이 아니라 구조가 거절한다', () => {
+    for (const call of [walkin, general, stemi]) {
+      expect(classifyCall(hospitalOf(collaborator), call, 0)).toBe('HARDLOCK_REJECT')
+      expect(hardlockReason(hospitalOf(collaborator), call, 0)).toBe('NO_BED')
+    }
+    // 순환기를 갖춘 양심 병원도 자리가 없으면 STEMI를 못 받는다(자격 ≠ 총량).
+    expect(hardlockReason(hospitalOf(conscientious), stemi, 0)).toBe('NO_BED')
+  })
+
+  it('자리가 있어도 순환기가 없으면 STEMI는 NO_BACKUP_CARE — 자리로 못 메운다', () => {
+    expect(hardlockReason(hospitalOf(collaborator), stemi, 3)).toBe('NO_BACKUP_CARE')
+  })
+
+  it('받을 수 있는 콜은 사유가 없다(null)', () => {
+    expect(hardlockReason(hospitalOf(collaborator), walkin, 1)).toBeNull()
+    expect(hardlockReason(hospitalOf(conscientious), stemi, 1)).toBeNull()
+  })
+
+  it('initReceiving — 자리는 병원 병상 수에서 출발', () => {
+    const h = hospitalOf(collaborator)
+    expect(initReceiving(h).bedsFree).toBe(h.beds)
+  })
+
+  it('수용하면 자리 −1, 거절하면 자리 불변', () => {
+    const s = initReceiving(hospitalOf(collaborator), [walkin, walkin])
+    expect(decide(s, true).bedsFree).toBe(s.bedsFree - 1)
+    expect(decide(s, false).bedsFree).toBe(s.bedsFree)
+  })
+
+  it('하드락 콜은 수용 시도해도 자리를 먹지 않는다', () => {
+    const s = initReceiving(hospitalOf(collaborator), [stemi]) // 순환기 없음 → 하드락
+    expect(decide(s, true).bedsFree).toBe(s.bedsFree)
+  })
+
+  it('로그가 하드락 사유를 기록한다 — 왜 못 받았는지가 남는다', () => {
+    const s = initReceiving(hospitalOf(collaborator), [walkin, stemi])
+    expect(decide(s, true).log[0].reason).toBeNull() // 받은 콜엔 사유가 없다
+    expect(decide(s, false).log[0].reason).toBeNull() // 내가 거절한 것도 '못 받은' 게 아니다
+    const blocked = decide(decide(s, true), true) // 2번째 = STEMI, 순환기 없음
+    expect(blocked.log[1].reason).toBe('NO_BACKUP_CARE')
+  })
+
+  it('자리를 다 쓰면 남은 콜은 전부 하드락 — 수용을 눌러도 안 받아진다', () => {
+    // 병상 3 · 워크인 5통 → 3통까지만 받히고 나머지 2통은 구조가 거절한다.
+    const queue = [walkin, walkin, walkin, walkin, walkin]
+    let s = initReceiving(hospitalOf(collaborator), queue)
+    expect(s.bedsFree).toBe(3)
+    for (let i = 0; i < 5; i++) s = decide(s, true) // 전부 수용 시도
+
+    expect(s.bedsFree).toBe(0)
+    expect(s.log.filter((e) => e.accepted)).toHaveLength(3)
+    expect(s.log.slice(3).every((e) => e.disposition === 'HARDLOCK_REJECT')).toBe(true)
+    expect(s.log.slice(3).every((e) => !e.accepted)).toBe(true)
+  })
+
+  it('자리를 미용으로 채우면 그 뒤 STEMI는 못 받는다 — 미용 +8억의 진짜 가격', () => {
+    const conscience = hospitalOf(conscientious) // 순환기 있음 = STEMI 자격 있음
+    let s = initReceiving(conscience, [walkin, walkin, walkin, stemi])
+    for (let i = 0; i < 3; i++) s = decide(s, true) // 미용으로 자리를 다 채운다
+    expect(s.bedsFree).toBe(0)
+    // 자격은 그대로인데 자리가 없다 — 벽의 종류가 바뀐다.
+    expect(hardlockReason(conscience, stemi, s.bedsFree)).toBe('NO_BED')
+    const after = decide(s, true)
+    expect(after.log[3].accepted).toBe(false)
   })
 })
 

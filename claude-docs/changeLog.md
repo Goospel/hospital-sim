@@ -3,6 +3,14 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-17 · 하루 진료 자리 제한 — 능력 대비 환자가 많다(과부하 신설) (PR #34)
+
+- **무엇을**: 병원에 **능력의 한계**를 물리적으로 심었다. 하루 자리 = 병상(`FIXED_BEDS` 2→**3**) < 하루 콜 5통 → **매일 2통은 못 받는다**. `ReceivingState.bedsFree` 신설(수용 시 −1, 거절·하드락은 불변), `hardlockReason(hospital, call, bedsFree)` 순수 함수 추가(게이트 0순위=자리, 이후 기존 당직·과밀·배후 판정), `classifyCall`이 그 위의 얇은 래퍼로. 로그에 `reason` 기록(왜 못 받았는지). `receivingLine`이 사유별 대사를 고르고, UI 헤더에 "남은 자리 N / M" 숫자만 노출.
+- **왜**: `beds`·`NO_BED`가 타입에 **정의돼 있으면서 한 번도 쓰이지 않아**(병상이 감소하지 않음) 게임에 능력의 한계가 없었다. 콜 5통을 전부 받아도 대가가 0이라 플레이어는 **고르지 않았다**. 하루 콜 수를 숫자로 정하면 체크리스트가 될 뿐 — 콜이 자리보다 **넘쳐야** "능력 대비 환자가 많다"가 전달된다. 이제 미용 +8억은 공짜가 아니라 **거절한 응급 한 명의 가격**이다.
+- **드러난 것(의도된 결과)**: 순환기를 **갖춘** 양심병원조차 워크인·검진으로 자리를 채우면 두 번째 STEMI가 `NO_BED`로 막히고 장부가 **+42억 흑자 🎉**가 된다. 반대로 워크인을 거절해야만 STEMI 두 통을 다 받아 결말이 −42억 적자가 된다. **"전부 수용"이 더 이상 양심적인 플레이가 아니다** — 양심이 *선택*이 됐다. 이 때문에 `session.test.ts`의 낡은 전제(전부 수용 = 양심)를 콜별 방침(`essentialFirst`)으로 교정.
+- **함께 고친 버그**: `RECEIVE_HARDLOCK`("**자리는 있는데**, 저희도 순환기 시술팀이 없습니다")이 자리 소진 하드락에 그대로 나가 **정면으로 거짓말**이 되던 걸, 사유별 대사(`RECEIVE_NO_BED` 등)로 분리.
+- **범위**: `receiving.ts`·`dialogue.ts`·`setup.ts`·`ReceivingPhase.tsx` + 테스트 3종. `tsc` 0 · `vitest` **356 green**(+32) · 브라우저 양쪽 경로 검증(전부 수용→자리 3/3→0/3·c4/c5 하드락·+42 흑자 / 워크인 거절→STEMI 2통 수용·−38·러닝 +8·콘솔 0). 설계: [superpowers/specs/2026-07-17-daily-capacity-calendar-design.md](superpowers/specs/2026-07-17-daily-capacity-calendar-design.md) 1단계. **2단계(7일 루프+달력)는 다음 PR.**
+
 ## 2026-07-17 · 부문 손익을 분기 진행률만큼 누적 — t=0 선반영 제거 (PR #33)
 
 - **무엇을**: RECEIVING 러닝 장부의 "부문 손익"이 콜 1/5(진료 0)부터 과별 손익(건강검진 +40 등)을 **전액 선반영**하던 걸, **분기 진행률(처리한 콜/전체)만큼 0에서 누적**하도록 변경. 콜 0/5→전 부문 0, 콜을 처리할수록 각 과가 자기 구조 손익을 향해 자라고, 분기말(done)에 전체 수치 도달. `quarterProgress(state)`·`accruedSegments(state)` 순수 함수 추가, `runningNetProfit`이 누적 부문 손익을 쓰도록 변경, `CheerfulLedger`(ReceivingPhase)가 `accruedSegments`를 렌더.
