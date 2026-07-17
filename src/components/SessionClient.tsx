@@ -36,7 +36,9 @@ export default function SessionClient() {
         <ReceivingPhase
           receiving={session.receiving!}
           day={session.day}
-          onDecide={(accept) => setSession((s) => ({ ...s, receiving: decide(s.receiving!, accept) }))}
+          onDecide={(accept, withWorkup) =>
+            setSession((s) => ({ ...s, receiving: decide(s.receiving!, accept, withWorkup) }))
+          }
           onContinue={() => setSession(completeReceiving(session))}
         />
       );

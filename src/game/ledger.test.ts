@@ -91,6 +91,33 @@ describe('buildSessionLedger — 플레이어 병원 결말 장부(콜 델타 + 
     economics: { segments: [{ label: '순환기내과', profitBillions: -24 }], hires: [], essentialHires: 2 },
   }
 
+  /**
+   * 검사 수익은 진료 수익과 **별도 줄**이어야 한다 — 합치면 이 게임이 하려는 말이 사라진다.
+   * 진료 수익은 음수인데 검사 수익이 덮어서 순이익이 양수인 장부. 아무도 "과잉진료"라고 말하지 않는다.
+   * 두 줄이 나란히 있을 뿐이다. (= 응급의료 수가항목 45% vs 응급의학과 손익 103%의 장부 재현)
+   */
+  it('[I7] 검사 수익이 별도 줄로 서고, 진료 수익(−)을 덮어 순이익을 뒤집는다', () => {
+    const led = buildSessionLedger(conscientiousHospital, 'CARDIOLOGY', {
+      netProfitDeltaBillions: -20,
+      workupRevenueBillions: 56,
+      lawsuitExposure: 0,
+    })!
+    expect(led.segments).toContainEqual({ label: '이번 주 진료 수익', profitBillions: -20 })
+    expect(led.segments).toContainEqual({ label: '이번 주 검사 수익', profitBillions: 56 })
+    // I7: 검사 수익 > |진료 수익|
+    expect(56).toBeGreaterThan(Math.abs(-20))
+    expect(led.netProfitBillions).toBe(-24 - 20 + 56)
+  })
+
+  it('검사를 안 붙였으면 검사 줄 자체가 없다 — 0을 찍지 않는다', () => {
+    const led = buildSessionLedger(conscientiousHospital, 'CARDIOLOGY', {
+      netProfitDeltaBillions: -20,
+      workupRevenueBillions: 0,
+      lawsuitExposure: 0,
+    })!
+    expect(led.segments.some((s) => s.label === '이번 주 검사 수익')).toBe(false)
+  })
+
   it('공범: 순환기 없음 → essentialHires 0, 콜 수익 델타가 순이익에 반영, 소송 비용 없음', () => {
     const led = buildSessionLedger(collaboratorHospital, 'CARDIOLOGY', { netProfitDeltaBillions: 16, lawsuitExposure: 0 })!
     expect(led.essentialHires).toBe(0)

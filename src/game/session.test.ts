@@ -3,7 +3,7 @@ import {
   startSession, beginSetup, completeSetup, completeReceiving, advanceDay, isLastDay, weekTotals,
   beginEmergency, toEpilogue, buildEpilogue, type SessionState,
 } from './session'
-import { decide } from './receiving'
+import { canOrderWorkup, decide } from './receiving'
 import { DAYS_PER_WEEK } from './setup'
 import { attemptTransfer } from './round'
 import type { IncomingCall, SetupChoices } from './types'
@@ -20,22 +20,22 @@ type Policy = boolean | ((call: IncomingCall) => boolean)
  * 뒤의 STEMI가 NO_BED로 막힌다. 그래서 '양심'은 전부 수용이 아니라 **워크인을 거절해 자리를 비워두는
  * 선택**으로만 표현된다. 이 헬퍼가 콜별 함수를 받는 이유다.
  */
-function runDay(state: SessionState, accept: Policy) {
+function runDay(state: SessionState, accept: Policy, withWorkup = false) {
   let s = state
   while (!s.receiving!.done) {
     const call = s.receiving!.queue[s.receiving!.index]
     const yes = typeof accept === 'function' ? accept(call) : accept
-    s = { ...s, receiving: decide(s.receiving!, yes) }
+    s = { ...s, receiving: decide(s.receiving!, yes, withWorkup) }
   }
   return s
 }
 
 /** 7일을 통째로 흘려 INTERSTITIAL 직전까지 간다(각 날 마감 + 다음 날 전진). */
-function runWeek(choices: SetupChoices, accept: Policy = false) {
-  let s = runDay(completeSetup(choices), accept)
+function runWeek(choices: SetupChoices, accept: Policy = false, withWorkup = false) {
+  let s = runDay(completeSetup(choices), accept, withWorkup)
   for (let d = 1; d < DAYS_PER_WEEK; d++) {
     s = advanceDay(completeReceiving(s)) // 마감 → 다음 날 RECEIVING
-    s = runDay(s, accept)
+    s = runDay(s, accept, withWorkup)
   }
   return advanceDay(completeReceiving(s)) // 7일차 마감 → INTERSTITIAL
 }
@@ -88,9 +88,41 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     expect(d2.day).toBe(2)
     expect(d2.receiving!.index).toBe(0)
     expect(d2.receiving!.done).toBe(false)
-    expect(d2.receiving!.bedsFree).toBe(d2.hospital!.beds) // 새 하루엔 병상이 다 빈다
+    expect(d2.receiving!.bedsFree).toBe(d2.hospital!.beds) // 검사를 안 붙였으면 새 하루엔 병상이 다 빈다
     expect(d2.receiving!.netProfitDeltaBillions).toBe(0) // 그날 진료 수익은 0에서 시작
     expect(d2.receiving!.queue[0].id).toContain('d2') // 2일차 큐
+  })
+
+  /**
+   * boarding — 검사가 날짜를 처음으로 묶는다(설계 스펙 §3.3).
+   * 지금까지 7일은 서로 독립이었다(매일 자리 리셋). 이제 **어제의 흑자가 오늘의 자리를 먹는다.**
+   */
+  it('[boarding] 어제 검사를 붙인 만큼 오늘 자리가 준다 — 달력이 처음으로 의미를 갖는다', () => {
+    // 1일차: 급여 환자만 받고 전부 검사를 붙인다
+    const d1 = completeReceiving(runDay(completeSetup(conscientious), (c) => canOrderWorkup(c.kind), true))
+    const boarded = d1.receiving!.workupCount
+    expect(boarded).toBeGreaterThan(0) // 실제로 검사가 붙었어야 이 테스트가 의미 있다
+    const d2 = advanceDay(d1)
+    expect(d2.receiving!.bedsFree).toBe(d2.hospital!.beds - boarded)
+  })
+
+  it('[boarding] 자기제한적 — 자리가 0이면 검사 붙일 환자도 없어 다음날 자리가 돌아온다', () => {
+    const d1 = completeReceiving(runDay(completeSetup(conscientious), (c) => canOrderWorkup(c.kind), true))
+    const d2 = advanceDay(d1)
+    // 2일차는 자리가 줄어든 채 시작 → 받을 수 있는 환자가 적으니 검사도 적게 붙는다
+    const d2done = completeReceiving(runDay(d2, (c) => canOrderWorkup(c.kind), true))
+    expect(d2done.receiving!.workupCount).toBeLessThanOrEqual(d2.receiving!.bedsFree)
+    const d3 = advanceDay(d2done)
+    expect(d3.receiving!.bedsFree).toBeGreaterThanOrEqual(d2.receiving!.bedsFree) // 무한 악화가 불가능
+  })
+
+  it('[I7] 주간 누계에 검사 수익이 별도로 합산된다', () => {
+    const week = runWeek(conscientious, (c) => canOrderWorkup(c.kind), true)
+    const totals = weekTotals(week)
+    expect(totals.workupRevenueBillions).toBeGreaterThan(0)
+    // 급여 환자만 받고 전량 검사 → 진료 수익은 음수인데 검사가 덮는다
+    expect(totals.netProfitDeltaBillions).toBeLessThan(0)
+    expect(totals.workupRevenueBillions).toBeGreaterThan(Math.abs(totals.netProfitDeltaBillions))
   })
 
   it('하루를 마감할 때마다 달력에 한 칸씩 쌓인다', () => {
