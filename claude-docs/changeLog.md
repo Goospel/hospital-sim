@@ -3,6 +3,13 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-18 · 엔딩 누적 결산형 확정 + 이번 주 신문(7일 누적 돌려보낸 STEMI) 아카이브 (PR #52)
+
+- **무엇을**: (1) 엔딩 방향을 **누적 결산형**으로 확정([game-concept §7](../docs/game-concept.md)) — 엔딩은 쟁취가 아니라 필연, MVP=N=1주 / 본선=N주. (2) 에필로그에 1막 7일 누적 돌려보낸 STEMI를 **'이번 주 신문' 아카이브**로 추가.
+- **왜**: 사용자 물음("일주일+응급1회 후 리셋 — 의도?")에서 출발. 리셋은 의도(단막극)였으나, 결산에 구멍이 드러났다 — 기존 디브리핑은 2막 거절만 셌고 1막에서 돌려보낸 사람들은 다음날 아침 신문으로 한 번 스치고 증발(특히 7일차는 다음 아침이 없어 어디에도 안 나옴). 누적 아카이브가 구멍을 메우고 '사람 명부↔돈 장부' 병치로 논지를 카피 없이 전달.
+- **구현**: `news.morningNews`의 헤드라인 코어를 `renderNews`로 추출(재사용 → 플레이 중 기사와 글자까지 동일). `buildEpilogue`가 `ledgerDays.turnedAway`를 flatten해 `SessionEpilogue.weekNews`로. `Epilogue`에 `WeekPaper`(비면 숨김). 윤리 가드는 같은 코어라 기존 테스트가 커버.
+- **결과**: `tsc` 0 · `vitest` **219 통과**(신규 7건). 워크트리 dev 임시 라우트로 렌더 확인(신문 14명 + 순이익 +290억 병치, 콘솔 0) 후 임시 라우트 제거. 브랜치명(`game-reset-behavior`)은 최초 물음에서 유래 — 작업은 엔딩으로 확장.
+
 ## 2026-07-18 · 디자인 테마 "의무기록·차트" 확정 + Plan A(토큰·폰트 기반 + 원형/정점 리스킨) (PR #49)
 
 - **무엇을**: 게임 전체 시각 테마를 **의무기록·차트 도시에(medical dossier)**로 확정하고 디자인 시스템을 토큰화해 핵심 화면에 적용. 5개 방향 생성·적대심사 → 사용자가 ④(DD 최근접)까지 렌더 확인 후 ② 선택 → [스펙](superpowers/specs/2026-07-18-design-theme-dossier-design.md)·[Plan A](superpowers/plans/2026-07-18-design-theme-dossier-foundation.md) → 서브에이전트 구동 실행. 폰트 3계층 자체 호스팅(+`body{Arial}` 버그 수정) · 색·물성·모션 토큰(globals.css 단일 출처, WCAG 조정 ink-2 #585039·go #1b5e3d·glow 0.35) · TransferRound(원형)·Epilogue/Receipt(정점) 리스킨 · 안전한 카피 3건(이모지 제거·`다시 매달리기`→`다시 걸기`·motion-reduce).

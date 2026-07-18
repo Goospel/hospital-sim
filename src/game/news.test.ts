@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { morningNews, FORBIDDEN_REAL_EVENT_TOKENS, type TurnedAway } from './news'
+import { morningNews, renderNews, FORBIDDEN_REAL_EVENT_TOKENS, type TurnedAway } from './news'
 
 // 어제 돌려보낸 STEMI 한 건 — 기사 하나의 씨앗.
 const one: TurnedAway[] = [{ callId: 'd1c5', reason: 'NO_BED' }]
@@ -166,6 +166,51 @@ describe('무엇이 기사가 되는가', () => {
     for (const n of morningNews(2, two)) {
       expect(n.headline).not.toContain('당신')
       expect(n.headline).not.toContain('양심병원')
+    }
+  })
+})
+
+/**
+ * 주간 누적 아카이브(결말 신문) — renderNews.
+ *
+ * 플레이 중 신문은 "어제→오늘 아침"으로만 왔다(morningNews, day<=1이면 빈 배열). 그래서 7일차에
+ * 돌려보낸 사람들은 다음 아침이 없어 증발했다. 결말의 누적 아카이브가 그 구멍을 메운다 —
+ * morningNews와 **같은 코어**(renderNews)를 써서 플레이 중 본 기사와 글자까지 동일하게(재인식).
+ */
+describe('주간 누적 아카이브(결말 신문) — renderNews', () => {
+  it('돌려보낸 사람이 없으면 아카이브도 비어 있다', () => {
+    expect(renderNews([])).toEqual([])
+  })
+
+  it('날짜 게이트 없이 넘긴 사람 전부를 기사로 만든다 — 7일차도 포함', () => {
+    const week: TurnedAway[] = [
+      { callId: 'd7c1', reason: 'NO_BACKUP_CARE' },
+      { callId: 'd7c3', reason: null },
+    ]
+    expect(renderNews(week)).toHaveLength(2)
+  })
+
+  it('플레이 중 본 기사와 글자까지 동일 — morningNews와 같은 코어(재인식)', () => {
+    const t: TurnedAway[] = [{ callId: 'd2c4', reason: 'NO_BED' }]
+    expect(renderNews(t)[0].headline).toBe(morningNews(3, t)[0].headline)
+  })
+
+  it('결정론 — 같은 입력은 항상 같은 기사', () => {
+    const week: TurnedAway[] = [
+      { callId: 'd3c2', reason: 'NO_BED' },
+      { callId: 'd7c5', reason: null },
+    ]
+    expect(renderNews(week)).toEqual(renderNews(week))
+  })
+
+  it('🔴 윤리 가드 — 아카이브에도 실제 사건 토큰이 없다', () => {
+    const week: TurnedAway[] = [1, 2, 3, 4, 5].map((i) => ({
+      callId: `d7c${i}`,
+      reason: 'NO_BACKUP_CARE' as const,
+    }))
+    const headlines = renderNews(week).map((n) => n.headline)
+    for (const token of FORBIDDEN_REAL_EVENT_TOKENS) {
+      for (const h of headlines) expect(h).not.toContain(token)
     }
   })
 })

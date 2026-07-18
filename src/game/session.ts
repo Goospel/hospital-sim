@@ -7,7 +7,7 @@ import { startGame, type GameState } from './round'
 import { createStemiScenario } from './scenarios'
 import { buildDebrief, type Debrief } from './debrief'
 import { buildSessionLedger, type Ledger } from './ledger'
-import { morningNews, type NewsItem, type TurnedAway } from './news'
+import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
 
 // 2막 단막극 세션 상태기계 — 순수·결정론.
 // LANDING → SETUP → (RECEIVING → DAY_END) ×7일 → INTERSTITIAL → EMERGENCY → EPILOGUE.
@@ -194,6 +194,11 @@ export interface SessionEpilogue {
   survived: boolean
   ledger: Ledger | null
   debrief: Debrief | null // 전원 뺑뺑이한 경우만(IN_HOUSE는 null)
+  /**
+   * 이번 주 신문 — 1막 7일 누적 돌려보낸 STEMI(누적 결산). 플레이 중 아침 신문으로 스친 기사와
+   * 글자까지 동일하되, **7일차 것까지** 모은다(아침 신문은 8일차가 없어 마지막 날을 놓친다).
+   */
+  weekNews: NewsItem[]
 }
 
 export function buildEpilogue(state: SessionState): SessionEpilogue {
@@ -205,8 +210,10 @@ export function buildEpilogue(state: SessionState): SessionEpilogue {
   // 한 주 전체를 합산한다 — state.receiving은 7일차 하루치뿐이라 그걸 쓰면 6일치가 증발한다.
   // (economics.segments는 이미 주간 전액이라 여기서 스케일하지 않는다: 하루치 1/7 × 7일 = 전액.)
   const ledger = buildSessionLedger(hospital, STEMI_SPECIALTY, weekTotals(state))
+  // 누적 결산: 7일 내내 돌려보낸 STEMI를 한 자리에 모은다(달력 데이터 소스 turnedAway를 flatten).
+  const weekNews = renderNews(state.ledgerDays.flatMap((d) => d.turnedAway))
   if (em.mode === 'IN_HOUSE') {
-    return { survived: true, ledger, debrief: null }
+    return { survived: true, ledger, debrief: null, weekNews }
   }
-  return { survived: em.game.status === 'ACCEPTED', ledger, debrief: buildDebrief(em.game) }
+  return { survived: em.game.status === 'ACCEPTED', ledger, debrief: buildDebrief(em.game), weekNews }
 }
