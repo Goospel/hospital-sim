@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-19 · 미구현 엔티티 구현 우선순위 판정 — docs/concept/entity-implementation-priority.md 신설
+
+- **무엇을**: [entity-code-coverage.md](../docs/concept/entity-code-coverage.md)의 ⬜ABSENT 51개(+🟡PARTIAL 심화 4개)를 **M×2+F+C+S**(메시지 가중, 25점)로 채점해 구현 우선순위를 확정한 문서 신설. 상위: 거리·이송 축(취약지)·재정중립·방어진료·저수가 소청/산부 시나리오. 실명 사건 4건은 톤 가드레일상 영구 배제(S=1).
+- **왜**: 사용자 요청 — 커버리지(무엇이 안 됐나)에서 우선순위(다음에 무엇을)로. 본선 확장의 착수 순서를 코드 부착점·팩트 안전으로 근거화.
+- **결과**: game-concept·domain-entities·entity-code-coverage·medical-system-grounding + `src/game/*.ts` 통독으로 부착점 확인. 내부 독립 채점 패널 3인 + 적대 검증(Workflow)을 입력으로 쓰되 정수 점수는 코드 증거로 직접 확정 — 검증관이 반증한 F 과대(소청과·특례법·형사경로·전원협약)를 하향. 상위 3후보는 기존 훅(`timeCostSeconds`·`effects` 배열·`lawsuitExposure`+`workup`)에 데이터/인과만 배선하면 창발.
+
 ## 2026-07-19 · README 최신화 — 게임 설명을 실제 경영 아크(주 반복)로 정합
 
 - **무엇을**: [README.md](../README.md)의 게임 소개(상단 요약·"무엇을 겪나"·"플레이 방법")를 STEMI 단막극 서술에서 현재 게임의 전체 아크(개원→7일 진료→주말 응급→주간 결산→세계 재구성→반복→결말)로 갱신. 문서 내비게이터 경로 정합(submission-plan 표시경로 수정 + ai-usage-doc 행 추가), '현재 배포본' 노트에 세계 재구성이 아직 **결정론 카탈로그**로 도는 사실을 반영.
