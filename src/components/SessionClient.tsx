@@ -5,12 +5,17 @@ import {
   startSession,
   beginSetup,
   enterWorldEvent,
+  beginWeek,
   completeSetup,
   completeReceiving,
   advanceDay,
   isLastDay,
   beginEmergency,
-  toEpilogue,
+  completeWeek,
+  nextWeek,
+  endGame,
+  survivedEmergency,
+  cumulativeNetBillions,
   buildEpilogue,
   type SessionState,
 } from "@/game/session";
@@ -23,6 +28,7 @@ import DayEnd from "./DayEnd";
 import Interstitial from "./Interstitial";
 import InHouseEmergency from "./InHouseEmergency";
 import TransferRound from "./TransferRound";
+import WeekSummary from "./WeekSummary";
 import Epilogue from "./Epilogue";
 
 export default function SessionClient() {
@@ -32,10 +38,13 @@ export default function SessionClient() {
     case "LANDING":
       return <Landing onStart={() => setSession(enterWorldEvent(session))} />;
     case "WORLD_EVENT":
+      // 1주차는 개원(beginSetup), 2주차 이후는 이미 병원이 있어 위저드를 건너뛴다(beginWeek).
       return (
         <WorldEventCard
           event={session.event!}
-          onContinue={() => setSession(beginSetup(session))}
+          week={session.week}
+          ctaLabel={session.hospital ? "이번 주 진료로" : "병원 설립으로"}
+          onContinue={() => setSession(session.hospital ? beginWeek(session) : beginSetup(session))}
         />
       );
     case "SETUP":
@@ -76,17 +85,28 @@ export default function SessionClient() {
     case "EMERGENCY": {
       const em = session.emergency!;
       if (em.mode === "IN_HOUSE") {
-        return <InHouseEmergency onContinue={() => setSession(toEpilogue(session))} />;
+        return <InHouseEmergency onContinue={() => setSession(completeWeek(session))} />;
       }
       return (
         <TransferRound
           game={em.game}
           onFinish={(final) =>
-            setSession((s) => toEpilogue({ ...s, emergency: { mode: "TRANSFER", game: final } }))
+            setSession((s) => completeWeek({ ...s, emergency: { mode: "TRANSFER", game: final } }))
           }
         />
       );
     }
+    case "WEEK_SUMMARY":
+      return (
+        <WeekSummary
+          week={session.week}
+          weekNetBillions={session.ledgerDays.reduce((n, d) => n + d.netProfitBillions, 0)}
+          cumulativeNetBillions={cumulativeNetBillions(session)}
+          survived={survivedEmergency(session.emergency!)}
+          onNextWeek={() => setSession(nextWeek(session))}
+          onEnd={() => setSession(endGame(session))}
+        />
+      );
     case "EPILOGUE":
       return (
         <Epilogue

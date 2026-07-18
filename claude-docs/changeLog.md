@@ -8,14 +8,22 @@ tags:
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
-## 2026-07-18 · 외생 이벤트→WorldState 재구성 최소 슬라이스 구현 (진행 중 · PR 예정)
+## 2026-07-18 · 주 반복 루프 — 한 주로 안 끝나고 사용자가 종료(종료 버튼) (진행 중 · PR 예정)
+
+- **무엇을**: 게임이 한 주(7일+응급)로 끝나던 걸 **주 반복 루프**로 전환. 매 주말 응급 뒤 `WEEK_SUMMARY`(이번 주·누적 손익 + 응급 생존 + [다음 주]/[종료])에서 갈라진다 — [다음 주]는 **다음 외생 이벤트를 현재 세계 위에 누적**하고 같은 병원으로 새 주를 연다(위저드 스킵), [종료]는 그때 EPILOGUE로. session 상태기계에 `WEEK_SUMMARY` phase + `week`·`history` 필드 + `completeWeek`·`nextWeek`·`beginWeek`·`endGame`·`survivedEmergency`·`cumulativeNetBillions`. 콜 큐 id는 전역 일차((week−1)×7+day)로 고유화해 누적 신문 React 키 충돌 차단. UI: `WeekSummary` 신설, `WorldEventCard` 주차 배지·CTA 분기.
+- **왜**: 사용자 — "한 주 지나면 게임이 끝나버려 세계관 변화가 눈에 안 띈다. 계속 돌아가야 하고 끝은 사용자가 정한다." 세계가 매주 재구성되는 걸 여러 주에 걸쳐 보이게 하는 게 핵심. 응급은 매주 반복(사용자 선택).
+- **불변**: 판정=코드 유지. 에필로그 장부는 **최종 주** 결산 그대로(구조 손익 `econ.segments`가 1주치라 정합) — N주 누적 장부는 구조 손익 ×N + 일회성 채용 분리가 필요해 이 슬라이스 밖(알려진 단순화). 주 간 누적은 매 WEEK_SUMMARY의 `cumulativeNetBillions`로 노출(일당 순이익이 이미 구조 1/7 포함 → N주 자연 합산, 스케일 문제 없는 경로).
+- **결과**: `tsc` 0 · `vitest` **249 green**(신규 13). 워크트리 dev(3939) 2주차까지 브라우저 완주 — WEEK_SUMMARY 렌더·[다음 주]→2주차 WORLD_EVENT(다른 헤드라인·CTA "이번 주 진료로")→재설립 없이 RECEIVING 2주차, 콘솔 0.
+- **다음**: 인터스티셜 카피("결말 장부로 이어진다")는 다주에서 미세 부정확 — 후속 정리 후보. LLM 서사·전원 병원 이벤트는 여전히 확장점(spec §8).
+
+## 2026-07-18 · 외생 이벤트→WorldState 재구성 최소 슬라이스 구현 (PR #54)
 
 - **무엇을**: [스펙](superpowers/specs/2026-07-18-world-event-slice-design.md) 구현 — 외생 이벤트 1개가 `DEPARTMENTS` 채용 경제를 재구성하고 위저드가 그 위에서 돈다. `world.ts`(순수 코어: `WorldState`·`applyEvent`·개선1+악화1 카탈로그) + setup 5함수 departments 주입(하위호환) + session `WORLD_EVENT` phase(`enterWorldEvent`) + UI(`WorldEventCard`·위저드 주입·`SessionClient` 배선).
 - **왜**: "계획만 봐선 감이 안 온다"(사용자) → 결정론 코어부터 TDD로 실물화. 판정 불변 원칙의 한 계층 위 연장 — AI가 만질 세계 파라미터(채용 경제)만 이벤트가 바꾸고, 개별 생사 판정은 `adjudicate`가 잠근다(`applyEvent`는 `providesBackup` 불가침, 테스트로 잠금).
 - **결과**: `tsc` 0 · `vitest` 236 green(신규 17). 워크트리 dev(3939) 브라우저 흐름 검증(LANDING→WORLD_EVENT→SETUP, 콘솔 0). 개선 이벤트는 profit(숨김)만 바꿔 위저드 채용비엔 티 안 남 → 효과는 장부·결말에서 드러남(D형 비대칭).
 - **다음**: LLM 서사·다주 루프·전원 병원 이벤트는 확장점(spec §8).
 
-## 2026-07-18 · AI 축 전환 방향(대화형→뒷단 세계 생성형) + 시작 세계관·이벤트 리서치 (진행 중 · PR 예정)
+## 2026-07-18 · AI 축 전환 방향(대화형→뒷단 세계 생성형) + 시작 세계관·이벤트 리서치 (PR #54)
 
 - **무엇을**: (1) AI 용도를 실시간 대화형 전원 협상에서 **'매주 현실 세계(법·수가·여론)를 재구성하는 뒷단 엔진'**으로 트는 방향 문서 신설([ai-scenario-generation.md](../docs/ai-scenario-generation.md) — 6+1 결정 + 통합 그림). (2) 그 시작점을 실측으로 채우는 리서치 2편.
 - **왜**: 사용자 제안 — AI를 '대화 상대'가 아니라 '세계를 짜는 엔진'으로. 대화형은 폐기, 뺑뺑이 골격은 자유텍스트 입력창만 제거(전화 버튼식). 라이브 AI 노출은 포기하고 디렉팅·아키텍처를 문서로 강조(영상 미노출 단점 감안).
