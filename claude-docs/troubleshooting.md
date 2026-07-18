@@ -37,6 +37,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-051](troubleshooting/T-051.md) · 워크트리 시각검증 시 preview_start는 워크스페이스 루트 추론으로 메인 레포에서 dev 서버를 띄운다 — 워크트리 변경이 안 보이면 워크트리에서 직접 next dev
 - [T-050](troubleshooting/T-050.md) · block-stale-base 훅은 편집을 막지 편집 전 읽기·분류를 안 막는다 — stale 기반 "쓰기"는 잡아도 stale 기반 "사고"는 통과시킨다
 - [T-049](troubleshooting/T-049.md) · 기억을 "현실"이라 부르며 T-042를 그대로 반복 — 적대 검증의 **기각**도 확신에 차서 틀린다
 - [T-048](troubleshooting/T-048.md) · sh 훅에서 PowerShell 검사기를 부르면 세 군데서 조용히 깨진다 — 워크트리 hooksPath·ExecutionPolicy·한글 출력. 셋 다 "훅을 직접 실행하는 테스트"는 통과한다

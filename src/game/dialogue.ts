@@ -141,7 +141,7 @@ export function callerPleaAt(queue: IncomingCall[], index: number): string {
 export const RECEIVE_ACCEPT: Record<CallKind, string> = {
   STEMI: '…받겠습니다. 준비하고 있겠습니다.',
   GENERAL_EMERGENCY: '네, 병상 하나 내드리죠. 보내세요.',
-  COSMETIC_WALKIN: '물론이죠! 바로 접수해 드릴게요 🎉',
+  COSMETIC_WALKIN: '물론이죠! 바로 접수해 드릴게요',
 }
 
 /** 선택 거절 시. */

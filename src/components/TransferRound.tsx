@@ -81,18 +81,16 @@ export default function TransferRound({
 
   return (
     <main
-      className={`mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 transition-shadow duration-500 ${
-        alarming
-          ? "bg-zinc-950 shadow-[inset_0_0_120px_rgba(153,27,27,0.4)]"
-          : "bg-zinc-950"
+      className={`mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 bg-desk px-5 py-8 text-on-desk transition-shadow duration-500 ${
+        alarming ? "shadow-[var(--shadow-alarm)]" : ""
       }`}
     >
       {/* 골든타임 */}
       <header className="flex items-baseline justify-between">
-        <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">골든타임</span>
+        <span className="text-xs uppercase tracking-[0.25em] text-on-desk-muted">골든타임</span>
         <span
           className={`font-mono text-4xl font-bold tabular-nums ${
-            lowTime ? "animate-pulse text-red-500" : "text-zinc-100"
+            lowTime ? "animate-pulse motion-reduce:animate-none text-alarm" : "text-on-desk"
           }`}
         >
           {formatClock(timer.remainingSeconds)}
@@ -100,23 +98,23 @@ export default function TransferRound({
       </header>
 
       {/* 환자 카드 */}
-      <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
-        <p className="text-xs uppercase tracking-widest text-red-400">응급 환자 도착</p>
-        <h1 className="mt-1 text-lg font-semibold">
+      <section className="paper-card p-4">
+        <p className="text-xs uppercase tracking-widest text-stamp-ink">응급 환자 도착</p>
+        <h1 className="mt-1 font-serif text-lg font-semibold text-ink">
           급성 심근경색(STEMI) 의심 · 중증도 {patient.severity}/5
         </h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          필요 진료과: <span className="text-zinc-200">{SPECIALTY_LABEL[patient.requiredSpecialty]}</span> · 즉시 전원 필요
+        <p className="mt-1 text-sm text-ink-2">
+          필요 진료과: <span className="text-ink">{SPECIALTY_LABEL[patient.requiredSpecialty]}</span> · 즉시 전원 필요
         </p>
       </section>
 
       {/* 통화 내용 */}
-      <div className="min-h-[4.5rem] rounded-lg border border-zinc-800 bg-black/40 p-4 text-sm leading-6">
-        {lastPlea && <p className="text-zinc-400">🗣️ 나: “{lastPlea}”</p>}
+      <div className="paper-card min-h-[4.5rem] p-4 font-mono text-sm leading-6">
+        {lastPlea && <p className="text-ink-2">나: “{lastPlea}”</p>}
         {lastLine ? (
-          <p className={lastPlea ? "mt-1 text-zinc-200" : "text-zinc-200"}>📞 담당자: “{lastLine}”</p>
+          <p className={lastPlea ? "mt-1 text-ink" : "text-ink"}>담당자: “{lastLine}”</p>
         ) : (
-          !lastPlea && <span className="text-zinc-600">병원에 전화를 돌려 전원을 요청하세요.</span>
+          !lastPlea && <span className="text-ink-3">병원에 전화를 돌려 전원을 요청하세요.</span>
         )}
       </div>
 
@@ -126,12 +124,12 @@ export default function TransferRound({
           value={pleaText}
           onChange={(e) => setPleaText(e.target.value)}
           placeholder="제발요, 지금 안 보내면 환자가 죽습니다…"
-          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          className="rounded-lg border border-frame bg-desk-2 px-3 py-2 text-sm text-on-desk placeholder:text-on-desk-muted focus:border-border-paper focus:outline-none focus-visible:ring-2 focus-visible:ring-border-paper"
         />
-        <p className="text-xs text-zinc-600">하고 싶은 말을 적고, 아래 병원을 눌러 전하세요.</p>
+        <p className="text-xs text-on-desk-muted">하고 싶은 말을 적고, 아래 병원을 눌러 전하세요.</p>
       </div>
 
-      {/* 병원 리스트 (거절해도 다시 매달릴 수 있다) */}
+      {/* 병원 리스트 (거절해도 다시 걸 수 있다) */}
       <section className="flex flex-col gap-2">
         {state.hospitals.map((h) => {
           const count = countByHospital.get(h.id) ?? 0;
@@ -140,19 +138,19 @@ export default function TransferRound({
             <button
               key={h.id}
               onClick={() => handleCall(h.id)}
-              className="flex items-center justify-between rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-left transition-colors hover:border-red-500/60 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+              className="flex items-center justify-between rounded-paper border border-frame bg-desk-2 px-4 py-3 text-left transition-colors hover:border-alarm/60 hover:bg-desk focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-paper"
             >
-              <span className="font-medium">
+              <span className="font-serif font-medium text-on-desk">
                 {h.name}
                 {last && !last.accepted && last.reason && (
-                  <span className="ml-2 rounded bg-red-950/60 px-1.5 py-0.5 text-xs text-red-400">
+                  <span className="ml-2 rounded-stamp border border-stamp bg-stamp-field px-1.5 py-0.5 text-xs text-stamp-ink">
                     {REJECTION_LABEL[last.reason]}
                     {count > 1 && ` ×${count}`}
                   </span>
                 )}
               </span>
-              <span className="text-xs text-zinc-400">
-                {count === 0 ? "전원 콜" : "다시 매달리기"}
+              <span className="text-xs text-on-desk-muted">
+                {count === 0 ? "전원 콜" : "다시 걸기"}
               </span>
             </button>
           );
@@ -161,13 +159,13 @@ export default function TransferRound({
 
       {/* 거절 로그 */}
       {state.attempts.length > 0 && (
-        <section className="text-xs text-zinc-500">
+        <section className="font-mono text-xs text-on-desk-muted">
           <p className="mb-1 uppercase tracking-widest">전원 시도 {state.attempts.length}회</p>
-          <ul className="flex flex-col gap-1">
+          <ul className="flex flex-col gap-1 tabular-nums">
             {state.attempts.map((a, i) => (
               <li key={i} className="flex justify-between">
                 <span>{nameById.get(a.hospitalId)}</span>
-                <span className={a.verdict.accepted ? "text-emerald-400" : "text-red-400"}>
+                <span className={a.verdict.accepted ? "text-go" : "text-alarm"}>
                   {a.verdict.accepted
                     ? "수용"
                     : a.verdict.reason

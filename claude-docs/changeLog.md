@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-18 · 디자인 테마 "의무기록·차트" 확정 + Plan A(토큰·폰트 기반 + 원형/정점 리스킨) (PR #49)
+
+- **무엇을**: 게임 전체 시각 테마를 **의무기록·차트 도시에(medical dossier)**로 확정하고 디자인 시스템을 토큰화해 핵심 화면에 적용. 5개 방향 생성·적대심사 → 사용자가 ④(DD 최근접)까지 렌더 확인 후 ② 선택 → [스펙](superpowers/specs/2026-07-18-design-theme-dossier-design.md)·[Plan A](superpowers/plans/2026-07-18-design-theme-dossier-foundation.md) → 서브에이전트 구동 실행. 폰트 3계층 자체 호스팅(+`body{Arial}` 버그 수정) · 색·물성·모션 토큰(globals.css 단일 출처, WCAG 조정 ink-2 #585039·go #1b5e3d·glow 0.35) · TransferRound(원형)·Epilogue/Receipt(정점) 리스킨 · 안전한 카피 3건(이모지 제거·`다시 매달리기`→`다시 걸기`·motion-reduce).
+- **왜**: 11개 컴포넌트가 zinc 유틸을 인라인으로 흩뿌려 단일 출처가 없었고, 한글 게임인데 한글 서체가 의도 없이 시스템 폴백이었다. DD(Darkest Dungeon)의 무게·소모의 가시화·손맛 판넬을 촛불·양피지가 아니라 **실제 임상 서류 물성**으로 번역 — show-don't-tell 유지, 내레이터(해석 카피)는 버림.
+- **결과**: 전 커밋 `tsc --noEmit` 0 + vitest 212 green. 라이브 실측(토큰 색·3계층 한글 커버·rounded 1~2px·콘솔 0). **최종 opus 전체 브랜치 리뷰가 게이트·수동확인이 놓친 Critical(SegmentTree dark-on-dark) 포착 → 픽스**: 공유 컴포넌트 잉크는 부모 장부(LedgerPanel·CheerfulLedger, Plan B)와 함께 가야 해 zinc 복원, 장부 종이화는 Plan B 한 단위로 이관. 서술 카피·나머지 화면은 범위 밖(별도 카피 세션 / Plan B). 신설 [T-051](claude-docs/troubleshooting/T-051.md)(워크트리 preview는 메인 레포에서 돎 → 시각검증은 워크트리 직접 dev).
+
 ## 2026-07-18 · 순환기 상한 재검토 — 안 좁힘(상한 3 유지), 판단만 명문화 (PR #48)
 
 - **무엇을**: plan의 🔜 "순환기 상한을 `ROUND_THE_CLOCK_MIN_DOCTORS`(2)로 좁힐지 재검토"를 닫았다. 결론 **안 좁힘 · 코드 로직 0 변경** — `setup.ts` `MAX_DOCTORS_PER_DEPT` 주석에 판단 근거를 박고 plan 항목을 ✅로 이관.

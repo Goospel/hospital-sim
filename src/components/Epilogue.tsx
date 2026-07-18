@@ -33,20 +33,20 @@ export default function Epilogue({
       : "내 응급실이 직접 받았다 — 그 대가도 내 몫이다.";
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-5 py-8 text-zinc-100 bg-zinc-950">
+    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-5 py-8 text-on-desk bg-desk">
       <span
         className={`text-xs uppercase tracking-[0.25em] ${
-          survived ? "text-zinc-500" : "text-red-500/80"
+          survived ? "text-on-desk-muted" : "text-alarm"
         }`}
       >
         결말 · {survived ? "생존" : "사망"}
       </span>
 
       <section className="flex flex-col items-center gap-2 text-center">
-        <p className={`text-2xl font-bold ${survived ? "text-zinc-100" : "text-red-500"}`}>
+        <p className={`font-serif text-2xl font-bold ${survived ? "text-on-desk" : "text-alarm"}`}>
           {title}
         </p>
-        <p className="text-sm text-zinc-400">{subtitle}</p>
+        <p className="text-sm text-on-desk-muted">{subtitle}</p>
       </section>
 
       <div className="flex flex-col items-center gap-4">
@@ -57,12 +57,12 @@ export default function Epilogue({
       <button
         type="button"
         onClick={onRestart}
-        className="mt-2 rounded-lg border border-zinc-700 px-5 py-2 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        className="mt-2 rounded-lg border border-frame px-5 py-2 text-sm font-medium text-on-desk transition-colors hover:bg-desk-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-paper"
       >
         다시 한 판
       </button>
 
-      <p className="mt-4 max-w-md text-center text-xs leading-5 text-zinc-600">
+      <p className="mt-4 max-w-md text-center text-xs leading-5 text-on-desk-muted">
         등장하는 병원·인물·사건은 모두 허구이며, 특정 개인·집단을 비난하지 않습니다.
       </p>
     </main>

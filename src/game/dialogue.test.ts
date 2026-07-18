@@ -76,10 +76,11 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
     expect(CALLER_PLEA.GENERAL_EMERGENCY.length).toBeGreaterThan(0)
   })
 
-  it('워크인 수용 → 명랑한 확인 대사(🎉 포함)', () => {
+  it('워크인 수용 → 명랑한 확인 대사(이모지 없음)', () => {
     const line = receivingLine(walkin, 'CHOICE', true)
     expect(line.length).toBeGreaterThan(0)
-    expect(line).toContain('🎉')
+    expect(line).toContain('접수')
+    expect(line).not.toMatch(/\p{Extended_Pictographic}/u)
   })
 
   it('STEMI 하드락(내 병원도 순환기 없음) → 벽을 안쪽에서 배우는 대사', () => {

@@ -1,34 +1,61 @@
 @import "tailwindcss";
 
-/*
- * 통일 시각 — 하나의 어두운 zinc 지면(spec §3). 전 페이즈 <main>이 개별적으로 bg-zinc-950을
- * 강제하더라도, body/html 자체가 라이트모드에서 흰색(#ffffff)이면 모바일 오버스크롤 바운스나
- * 화면 전환 사이 미충전 프레임에서 흰 플래시가 새어 "하나의 어두운 세계" 통일성이 깨진다.
- * → 프리퍼런스(prefers-color-scheme) 와 무관하게 지면을 어두운 값으로 고정한다(Task 7 Step 1).
- */
 :root {
-  --background: #09090b; /* zinc-950 */
-  --foreground: #f4f4f5; /* zinc-100 */
+  /* 지면(desk) */
+  --desk: #101014; --desk-2: #17171c; --frame: #26262c;
+  --on-desk: #d8cfaf; --on-desk-muted: #7a7460; --alarm: #e5484d;
+  /* 종이(paper) */
+  --paper: #e5dcc4; --paper-2: #d3c6a3; --paper-edge: #c4b58f;
+  --border-paper: #a2966f; --rule: #b0a37e;
+  --ink: #26221a; --ink-2: #585039; /*★*/ --ink-3: #7d7358;
+  --stamp: #8f1a17; --stamp-ink: #7a1414; --stamp-field: #e9d9c4;
+  --go: #1b5e3d; /*★*/
+  /* 전역 = 지면 */
+  --background: var(--desk); --foreground: var(--on-desk);
+  /* 물성 */
+  --radius-paper: 2px; --radius-stamp: 1px;
+  --shadow-paper: 0 1px 1px rgba(0,0,0,.5), 0 6px 16px rgba(0,0,0,.45);
+  --paper-highlight: inset 0 1px 0 rgba(255,255,255,.35);
+  --shadow-alarm: inset 0 0 120px rgba(143,26,23,.35); /*★ 0.4→0.35*/
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--desk);
+  --color-foreground: var(--on-desk);
+  --color-desk: var(--desk);
+  --color-desk-2: var(--desk-2);
+  --color-frame: var(--frame);
+  --color-on-desk: var(--on-desk);
+  --color-on-desk-muted: var(--on-desk-muted);
+  --color-alarm: var(--alarm);
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-edge: var(--paper-edge);
+  --color-border-paper: var(--border-paper);
+  --color-rule: var(--rule);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-stamp: var(--stamp);
+  --color-stamp-ink: var(--stamp-ink);
+  --color-stamp-field: var(--stamp-field);
+  --color-go: var(--go);
+  --font-sans: var(--font-pretendard);
+  --font-serif: var(--font-noto-serif-kr);
+  --font-mono: var(--font-d2coding);
+  --radius-paper: var(--radius-paper);
+  --radius-stamp: var(--radius-stamp);
 }
 
-html {
-  /* 네이티브 폼 컨트롤·스크롤바도 어두운 지면과 조화되도록 브라우저에 다크임을 알린다. */
-  color-scheme: dark;
-}
+html { color-scheme: dark; }
+html, body { background: var(--desk); color: var(--on-desk); }
+body { font-family: var(--font-sans); }
 
-html,
-body {
-  background: var(--background);
-  color: var(--foreground);
-}
-
-body {
-  font-family: Arial, Helvetica, sans-serif;
+/* 종이 한 장 = 그라디언트 + 이너하이라이트 + 드롭섀도 (단일 출처) */
+.paper-card {
+  background: linear-gradient(180deg, var(--paper), var(--paper-2));
+  color: var(--ink);
+  border: 1px solid var(--border-paper);
+  border-radius: var(--radius-paper);
+  box-shadow: var(--paper-highlight), var(--shadow-paper);
 }
