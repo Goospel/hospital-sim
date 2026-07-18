@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-19 · 게임 콘셉 태그 정렬 — type/game-concept → type/concept
+
+- **무엇을**: `docs/concept/` 5문서의 frontmatter 태그를 `type/game-concept → type/concept`로 바꿔 **폴더명(concept)과 태그를 일치**시킴. CLAUDE.md 「종류=폴더」 표도 `type/concept`(docs/concept/)로 갱신.
+- **왜**: 다른 모든 폴더가 folder==tag(research→`type/research`, submission→`type/submission` …)인데 concept만 예외였다(직전 #60이 남긴 불일치). 사용자 결정으로 규약 일관성을 택함.
+- **결과**: 태그 검사기 OK(5 files, `type/\S` 매칭이라 값 무관). 직전 항목의 "type/game-concept 유지" 서술은 당시 상태의 정확한 기록이라 보존 — 본 항목이 supersede.
+
 ## 2026-07-19 · 게임 콘셉 문서 재분류 — docs/concept/ 폴더 신설
 
 - **무엇을**: 게임 콘셉 문서 5개를 `docs/concept/`로 모음 — [game-concept.md](../docs/concept/game-concept.md)·[ai-scenario-generation.md](../docs/concept/ai-scenario-generation.md)(원래 docs/ 루트) + domain-entities 3부작([카탈로그](../docs/concept/domain-entities.md)·[그래프](../docs/concept/domain-entity-graph.md)·[상세](../docs/concept/domain-entities-detail.md), 원래 docs/research/). domain 3부작 태그를 `type/research → type/game-concept`로 통일. 참조 링크 13개 파일 일괄 수정 + CLAUDE.md 「종류=폴더」 표의 game-concept 경로를 `docs/concept/`로 갱신.

@@ -1,6 +1,6 @@
 ---
 tags:
-  - type/game-concept
+  - type/concept
 ---
 
 # 병원 시뮬레이션 게임 — 컨셉 문서

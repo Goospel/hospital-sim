@@ -20,7 +20,7 @@ tags:
 ---
 ```
 
-- **종류 = 폴더**: `type/troubleshooting`(claude-docs/troubleshooting/) · `type/research`(docs/research/) · `type/spec`(superpowers/specs/) · `type/plan`(superpowers/plans/) · `type/submission`(docs/submission/) · `type/game-concept`(docs/concept/) · `type/meta`(운영문서 — CLAUDE·AGENTS·README·plan·changeLog·troubleshooting 허브). 계층 태그(`type/*`)라 나중에 `status/*` 같은 다른 축을 더해도 이름이 안 겹친다.
+- **종류 = 폴더**: `type/troubleshooting`(claude-docs/troubleshooting/) · `type/research`(docs/research/) · `type/spec`(superpowers/specs/) · `type/plan`(superpowers/plans/) · `type/submission`(docs/submission/) · `type/concept`(docs/concept/) · `type/meta`(운영문서 — CLAUDE·AGENTS·README·plan·changeLog·troubleshooting 허브). 계층 태그(`type/*`)라 나중에 `status/*` 같은 다른 축을 더해도 이름이 안 겹친다.
 - **새 문서도 반드시**: 새 md를 만들면 그 폴더의 type 태그를 넣는다. **안 넣으면 pre-commit이 거부한다** — `scripts/check-doc-tags.ps1`(테스트 `scripts/test-check-doc-tags.ps1`, TDD)이 git 추적 md 전수를 검사하고 `.githooks/pre-commit`이 md 를 건드리는 커밋마다 돌린다.
 - **T-\*.md 안전**: troubleshooting 항목은 이미 frontmatter(`summary`)가 있어 `tags`를 그 안에 같이 둔다 — rebuild 검사기는 `summary`/`promoted`만 읽어 `tags`를 무시한다.
 - **왜 검사기까지**: 태그는 소프트 규칙이라 새 문서에서 조용히 누락돼도 그래프에만 색 없는 노드로 뜨고 아무도 모른다. 바로 아래 「AI 활용 추적」이 뼈아프게 남긴 교훈 — *"검사기 없는 규약은 죽는 게 아니라 썩는다"* — 을 이번엔 규약 신설과 **동시에** 적용했다(그 규약은 검사기 없이 형식만 100% 준수되며 목적이 증발했다).
