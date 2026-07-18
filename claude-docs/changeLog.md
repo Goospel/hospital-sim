@@ -8,6 +8,13 @@ tags:
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-18 · 외생 이벤트→WorldState 재구성 최소 슬라이스 구현 (진행 중 · PR 예정)
+
+- **무엇을**: [스펙](superpowers/specs/2026-07-18-world-event-slice-design.md) 구현 — 외생 이벤트 1개가 `DEPARTMENTS` 채용 경제를 재구성하고 위저드가 그 위에서 돈다. `world.ts`(순수 코어: `WorldState`·`applyEvent`·개선1+악화1 카탈로그) + setup 5함수 departments 주입(하위호환) + session `WORLD_EVENT` phase(`enterWorldEvent`) + UI(`WorldEventCard`·위저드 주입·`SessionClient` 배선).
+- **왜**: "계획만 봐선 감이 안 온다"(사용자) → 결정론 코어부터 TDD로 실물화. 판정 불변 원칙의 한 계층 위 연장 — AI가 만질 세계 파라미터(채용 경제)만 이벤트가 바꾸고, 개별 생사 판정은 `adjudicate`가 잠근다(`applyEvent`는 `providesBackup` 불가침, 테스트로 잠금).
+- **결과**: `tsc` 0 · `vitest` 236 green(신규 17). 워크트리 dev(3939) 브라우저 흐름 검증(LANDING→WORLD_EVENT→SETUP, 콘솔 0). 개선 이벤트는 profit(숨김)만 바꿔 위저드 채용비엔 티 안 남 → 효과는 장부·결말에서 드러남(D형 비대칭).
+- **다음**: LLM 서사·다주 루프·전원 병원 이벤트는 확장점(spec §8).
+
 ## 2026-07-18 · AI 축 전환 방향(대화형→뒷단 세계 생성형) + 시작 세계관·이벤트 리서치 (진행 중 · PR 예정)
 
 - **무엇을**: (1) AI 용도를 실시간 대화형 전원 협상에서 **'매주 현실 세계(법·수가·여론)를 재구성하는 뒷단 엔진'**으로 트는 방향 문서 신설([ai-scenario-generation.md](../docs/ai-scenario-generation.md) — 6+1 결정 + 통합 그림). (2) 그 시작점을 실측으로 채우는 리서치 2편.

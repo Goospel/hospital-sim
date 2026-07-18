@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   startSession, beginSetup, completeSetup, completeReceiving, advanceDay, isLastDay, weekTotals,
-  beginEmergency, toEpilogue, buildEpilogue, type SessionState,
+  beginEmergency, toEpilogue, buildEpilogue, enterWorldEvent, type SessionState,
 } from './session'
+import { initWorld, applyEvent, selectEvent } from './world'
 import { canOrderWorkup, decide } from './receiving'
 import { DAYS_PER_WEEK } from './setup'
 import { attemptTransfer } from './round'
@@ -310,5 +311,40 @@ describe('통합 불변식', () => {
     expect(afterStemi.log[1].disposition).toBe('HARDLOCK_REJECT')
     // 2막: 전원 분기
     expect(beginEmergency(runWeek(collaborator)).emergency!.mode).toBe('TRANSFER')
+  })
+})
+
+// 새 축: 외생 이벤트가 위저드 전에 세계(채용 경제)를 재구성한다.
+// LANDING → WORLD_EVENT → SETUP. 판정 불변 원칙은 그대로 — 이벤트는 departments만 만진다.
+describe('WORLD_EVENT — 외생 이벤트가 위저드 전에 세계를 재구성한다', () => {
+  it('enterWorldEvent: LANDING → WORLD_EVENT, 개선 이벤트가 세계에 확정된다', () => {
+    const s = enterWorldEvent(startSession())
+    expect(s.phase).toBe('WORLD_EVENT')
+    const cardio = s.world!.departments.find((d) => d.key === 'CARDIOLOGY')!
+    expect(cardio.profitPerDoctorBillions).toBe(-6) // 개선 이벤트 적용(-12 → -6)
+    expect(s.event!.direction).toBe('improve')
+  })
+
+  it('LANDING이 아니면 enterWorldEvent 에러(가드)', () => {
+    expect(() => enterWorldEvent(completeSetup(collaborator))).toThrow()
+  })
+
+  it('beginSetup은 WORLD_EVENT에서도 SETUP으로 가며 world를 보존한다', () => {
+    const s = beginSetup(enterWorldEvent(startSession()))
+    expect(s.phase).toBe('SETUP')
+    expect(s.world!.departments.find((d) => d.key === 'CARDIOLOGY')!.profitPerDoctorBillions).toBe(-6)
+  })
+
+  it('completeSetup은 세계(이벤트 적용본)의 경제를 병원에 반영한다', () => {
+    const world = applyEvent(initWorld(), selectEvent(0)) // 순환기 -6
+    const s = completeSetup(conscientious, world)
+    const cardioSeg = s.hospital!.economics!.segments.find((seg) => seg.label === '순환기내과')!
+    expect(cardioSeg.profitBillions).toBe(-6 * 2) // 기본 세계였다면 -24
+  })
+
+  it('completeSetup을 world 없이 부르면 기본 세계 — 기존 흐름 무변경(하위호환)', () => {
+    const s = completeSetup(conscientious)
+    const cardioSeg = s.hospital!.economics!.segments.find((seg) => seg.label === '순환기내과')!
+    expect(cardioSeg.profitBillions).toBe(-12 * 2) // 기본 -24
   })
 })

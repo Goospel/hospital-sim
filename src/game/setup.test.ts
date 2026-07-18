@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { adjustDoctors, isSetupReady, DEPARTMENTS, FIXED_BEDS, MAX_DOCTORS_PER_DEPT, ROUND_THE_CLOCK_MIN_DOCTORS, SETUP_BUDGET_BILLIONS, buildHospital, hiringCost, withinBudget, withinDeptCaps } from './setup'
-import type { SetupChoices } from './types'
+import type { SetupChoices, DepartmentSpec } from './types'
 
 // 합리적 공범 빌드: 미용·검진만(흑자·필수과 0)
 const collaborator: SetupChoices = {
@@ -187,5 +187,37 @@ describe('isSetupReady', () => {
   })
   it('true for a named, within-budget build (including cardiology-skip 공범)', () => {
     expect(isSetupReady({ hospitalName: '한바다', doctors: { AESTHETICS: 2 } })).toBe(true)
+  })
+})
+
+// 외생 이벤트가 세계를 재구성한 뒤, 위저드는 '이벤트 적용된 카탈로그'로 딜레마를 띄운다.
+// setup 함수들이 departments를 주입받을 수 있어야 한다(기본값=DEPARTMENTS로 하위호환).
+describe('departments 주입 — 이벤트가 바꾼 카탈로그를 위저드가 쓴다', () => {
+  // 순환기 손익을 -12 → -6로 올린 카탈로그(개선 이벤트 적용본을 흉내낸 값)
+  const boosted: DepartmentSpec[] = DEPARTMENTS.map((d) =>
+    d.key === 'CARDIOLOGY' ? { ...d, profitPerDoctorBillions: -6 } : d,
+  )
+
+  it('buildHospital은 주입된 departments의 손익을 쓴다', () => {
+    const { economics } = buildHospital({ hospitalName: '양심', doctors: { CARDIOLOGY: 2 } }, boosted)
+    const cardioSeg = economics.segments.find((s) => s.label === '순환기내과')!
+    expect(cardioSeg.profitBillions).toBe(-6 * 2) // 기본값이면 -24였을 것
+  })
+
+  it('hiringCost는 주입된 departments의 채용비를 쓴다', () => {
+    const pricier: DepartmentSpec[] = DEPARTMENTS.map((d) =>
+      d.key === 'CARDIOLOGY' ? { ...d, hireCostBillions: 36 } : d,
+    )
+    expect(hiringCost({ hospitalName: 'x', doctors: { CARDIOLOGY: 1 } }, pricier)).toBe(36)
+  })
+
+  it('withinDeptCaps·isSetupReady도 주입된 카탈로그 기준으로 판단한다', () => {
+    // 카탈로그에 없던 과가 아니라, 주입본으로도 상한/예산 로직이 동일하게 돈다
+    expect(isSetupReady({ hospitalName: '양심', doctors: { CARDIOLOGY: 2 } }, boosted)).toBe(true)
+  })
+
+  it('인자 없이 부르면 기본 DEPARTMENTS — 기존 호출 무변경(하위호환)', () => {
+    expect(hiringCost(collaborator)).toBe(54)
+    expect(buildHospital(collaborator).economics.essentialHires).toBe(0)
   })
 })

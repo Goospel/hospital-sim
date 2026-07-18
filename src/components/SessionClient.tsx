@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   startSession,
   beginSetup,
+  enterWorldEvent,
   completeSetup,
   completeReceiving,
   advanceDay,
@@ -15,6 +16,7 @@ import {
 } from "@/game/session";
 import { decide } from "@/game/receiving";
 import Landing from "./Landing";
+import WorldEventCard from "./WorldEventCard";
 import SetupWizard from "./SetupWizard";
 import ReceivingPhase from "./ReceivingPhase";
 import DayEnd from "./DayEnd";
@@ -28,9 +30,21 @@ export default function SessionClient() {
 
   switch (session.phase) {
     case "LANDING":
-      return <Landing onStart={() => setSession(beginSetup(session))} />;
+      return <Landing onStart={() => setSession(enterWorldEvent(session))} />;
+    case "WORLD_EVENT":
+      return (
+        <WorldEventCard
+          event={session.event!}
+          onContinue={() => setSession(beginSetup(session))}
+        />
+      );
     case "SETUP":
-      return <SetupWizard onComplete={(choices) => setSession(completeSetup(choices))} />;
+      return (
+        <SetupWizard
+          departments={session.world?.departments}
+          onComplete={(choices) => setSession(completeSetup(choices, session.world))}
+        />
+      );
     case "RECEIVING":
       return (
         <ReceivingPhase
