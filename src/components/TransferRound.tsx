@@ -82,7 +82,7 @@ export default function TransferRound({
   return (
     <main
       className={`mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 bg-desk px-5 py-8 text-on-desk transition-shadow duration-500 ${
-        alarming ? "shadow-[inset_0_0_120px_rgba(143,26,23,0.35)]" : ""
+        alarming ? "shadow-[var(--shadow-alarm)]" : ""
       }`}
     >
       {/* 골든타임 */}
@@ -110,9 +110,9 @@ export default function TransferRound({
 
       {/* 통화 내용 */}
       <div className="paper-card min-h-[4.5rem] p-4 font-mono text-sm leading-6">
-        {lastPlea && <p className="text-ink-2">발신 &gt; 나: “{lastPlea}”</p>}
+        {lastPlea && <p className="text-ink-2">나: “{lastPlea}”</p>}
         {lastLine ? (
-          <p className={lastPlea ? "mt-1 text-ink" : "text-ink"}>수신 &lt; 담당자: “{lastLine}”</p>
+          <p className={lastPlea ? "mt-1 text-ink" : "text-ink"}>담당자: “{lastLine}”</p>
         ) : (
           !lastPlea && <span className="text-ink-3">병원에 전화를 돌려 전원을 요청하세요.</span>
         )}

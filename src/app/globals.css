@@ -44,6 +44,7 @@
   --font-serif: var(--font-noto-serif-kr);
   --font-mono: var(--font-d2coding);
   --radius-paper: var(--radius-paper);
+  --radius-stamp: var(--radius-stamp);
 }
 
 html { color-scheme: dark; }
