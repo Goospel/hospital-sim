@@ -12,7 +12,7 @@ tags:
 - **상태**: 브레인스토밍 종료 → 사용자 리뷰 대기 → 구현 계획(writing-plans)
 - **부모 설계(확정)**: [2026-07-16-management-expansion-design.md](2026-07-16-management-expansion-design.md) — 톤·구조·경제·철학 다섯 결정은 여기서 확정됨. 이 문서는 그 **UI 구현**만 다룬다.
 - **로직 코어(구현 완료)**: [../plans/2026-07-16-management-expansion-core.md](../plans/2026-07-16-management-expansion-core.md) · `src/game/{session,setup,receiving,dialogue}.ts` (92 green·tsc 0)
-- **관련**: [plan.md](../../plan.md) · [docs/game-concept.md](../../../docs/game-concept.md)
+- **관련**: [plan.md](../../plan.md) · [docs/concept/game-concept.md](../../../docs/concept/game-concept.md)
 
 ---
 

@@ -6,7 +6,7 @@ tags:
 # 설계 스펙 — 외생 이벤트 → WorldState 재구성 (최소 슬라이스)
 
 > **상태**: 확정 설계 (2026-07-18, brainstorming). 다음 = writing-plans로 구현 계획.
-> **맥락**: [ai-scenario-generation.md](../../ai-scenario-generation.md)가 확정한 새 축("AI가 매주 현실 세계를 재구성")의 **첫 최소 슬라이스**. 이번엔 결정론 코어만 — 실제 LLM은 이 코어가 검증된 뒤 비파괴 가산.
+> **맥락**: [ai-scenario-generation.md](../../concept/ai-scenario-generation.md)가 확정한 새 축("AI가 매주 현실 세계를 재구성")의 **첫 최소 슬라이스**. 이번엔 결정론 코어만 — 실제 LLM은 이 코어가 검증된 뒤 비파괴 가산.
 > **리서치 근거**: [current-korea-change-events.md](../../research/current-korea-change-events.md)(이벤트 재료) · [current-korea-starting-world.md](../../research/current-korea-starting-world.md)(시작 세계관).
 
 ---

@@ -5,9 +5,9 @@ tags:
 
 # 리서치 — 게임 '시작 세계관': 현재 대한민국 의료 시스템 스냅샷
 
-> **목적**: AI가 뒷단에서 매주 세계를 재구성하는 새 축([../ai-scenario-generation.md](../ai-scenario-generation.md))의 **출발점(시작 세계관)**을, 현재 대한민국 의료 시스템의 실제 구조로 채운다. 게임 세계의 "병원 인벤토리(등급·병상·배후진료·지역 분포)"를 실측 비율로 세우기 위한 근거.
+> **목적**: AI가 뒷단에서 매주 세계를 재구성하는 새 축([../ai-scenario-generation.md](../concept/ai-scenario-generation.md))의 **출발점(시작 세계관)**을, 현재 대한민국 의료 시스템의 실제 구조로 채운다. 게임 세계의 "병원 인벤토리(등급·병상·배후진료·지역 분포)"를 실측 비율로 세우기 위한 근거.
 > **방법**: deep-research 하네스(6개 검색 각도 · 23개 소스 fetch · 85개 주장 추출 → 25개 3표 적대 검증 → 22 확증 / 3 반증). 2026-07-18.
-> **관련**: [current-korea-change-events.md](current-korea-change-events.md)(짝 문서 — 이 세계가 매주 어떻게 변하는가) · [medical-system-grounding.md](medical-system-grounding.md)(전제 팩트체크 허브) · [stemi-factsheet.md](stemi-factsheet.md) · [fee-schedule-and-subsidies.md](fee-schedule-and-subsidies.md) · [../game-concept.md](../game-concept.md)
+> **관련**: [current-korea-change-events.md](current-korea-change-events.md)(짝 문서 — 이 세계가 매주 어떻게 변하는가) · [medical-system-grounding.md](medical-system-grounding.md)(전제 팩트체크 허브) · [stemi-factsheet.md](stemi-factsheet.md) · [fee-schedule-and-subsidies.md](fee-schedule-and-subsidies.md) · [../game-concept.md](../concept/game-concept.md)
 
 ---
 

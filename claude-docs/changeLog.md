@@ -9,9 +9,15 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-19 · 게임 콘셉 문서 재분류 — docs/concept/ 폴더 신설
+
+- **무엇을**: 게임 콘셉 문서 5개를 `docs/concept/`로 모음 — [game-concept.md](../docs/concept/game-concept.md)·[ai-scenario-generation.md](../docs/concept/ai-scenario-generation.md)(원래 docs/ 루트) + domain-entities 3부작([카탈로그](../docs/concept/domain-entities.md)·[그래프](../docs/concept/domain-entity-graph.md)·[상세](../docs/concept/domain-entities-detail.md), 원래 docs/research/). domain 3부작 태그를 `type/research → type/game-concept`로 통일. 참조 링크 13개 파일 일괄 수정 + CLAUDE.md 「종류=폴더」 표의 game-concept 경로를 `docs/concept/`로 갱신.
+- **왜**: 게임 콘셉 문서만 "종류=폴더" 규약의 예외로 docs/ 루트에 흩어져 있었다(research·submission·spec은 이미 각 폴더). 폴더=단일 출처로 모아 규약 완성. domain-entities는 게임 도메인 모델이라 콘셉으로 재분류(사용자 판단).
+- **결과**: 상대 .md 링크 전수 검증 0건 깨짐, 태그 검사기 OK(5 files), git rename 인식(이력 보존). 태그는 `type/game-concept` 유지(폴더명 concept과 불일치하나 기존 태그 의미 보존·churn 최소 — 사용자 선택).
+
 ## 2026-07-19 · 의료 시스템 도메인 엔티티 카탈로그 — 세계관 문서에서 엔티티 산출
 
-- **무엇을**: 리서치 문서 11개에 확증된 시스템 문제마다 참여 엔티티(행위자·조직·제도·자원·지표·사건·재정)를 뽑아 게임 도메인 모델로 정리 → [docs/research/domain-entities.md](../docs/research/domain-entities.md) 신설. 7개 카테고리 약 109개 엔티티 + 문제→엔티티 역인덱스(11개 문제).
+- **무엇을**: 리서치 문서 11개에 확증된 시스템 문제마다 참여 엔티티(행위자·조직·제도·자원·지표·사건·재정)를 뽑아 게임 도메인 모델로 정리 → [docs/concept/domain-entities.md](../docs/concept/domain-entities.md) 신설. 7개 카테고리 약 109개 엔티티 + 문제→엔티티 역인덱스(11개 문제).
 - **왜**: 사용자 요청 — *"필수과 의사 부족 → 엔티티는 과·의사"* 프레임을 시스템 전체로 확장. 흩어진 리서치의 명사 단위를 한 모델로 모아, 게임 메커니즘(병원·배후진료·거절 사유·골든타임)이 어떤 실제 엔티티에 대응하는지 단일 지도로 확보.
 - **결과**: Workflow(멀티에이전트 11 추출 → 병합 → 3표 적대 검증)로 산출, 지어낸 엔티티 0·오귀속 3건 교정 반영. 후속 2건(관계 다이어그램·엔티티별 상세)은 별도 PR.
 
@@ -38,7 +44,7 @@ tags:
 
 ## 2026-07-18 · AI 축 전환 방향(대화형→뒷단 세계 생성형) + 시작 세계관·이벤트 리서치 (PR #54)
 
-- **무엇을**: (1) AI 용도를 실시간 대화형 전원 협상에서 **'매주 현실 세계(법·수가·여론)를 재구성하는 뒷단 엔진'**으로 트는 방향 문서 신설([ai-scenario-generation.md](../docs/ai-scenario-generation.md) — 6+1 결정 + 통합 그림). (2) 그 시작점을 실측으로 채우는 리서치 2편.
+- **무엇을**: (1) AI 용도를 실시간 대화형 전원 협상에서 **'매주 현실 세계(법·수가·여론)를 재구성하는 뒷단 엔진'**으로 트는 방향 문서 신설([ai-scenario-generation.md](../docs/concept/ai-scenario-generation.md) — 6+1 결정 + 통합 그림). (2) 그 시작점을 실측으로 채우는 리서치 2편.
 - **왜**: 사용자 제안 — AI를 '대화 상대'가 아니라 '세계를 짜는 엔진'으로. 대화형은 폐기, 뺑뺑이 골격은 자유텍스트 입력창만 제거(전화 버튼식). 라이브 AI 노출은 포기하고 디렉팅·아키텍처를 문서로 강조(영상 미노출 단점 감안).
 - **리서치**: [current-korea-starting-world.md](../docs/research/current-korea-starting-world.md)(정적 스냅샷 — 응급의료 5등급·전원법 제11조/제48조의2·2024 의정갈등 국면; 숫자 지도 셀 값은 미완) + [current-korea-change-events.md](../docs/research/current-korea-change-events.md)(동적 이벤트 — **개선책조차 상쇄되는 '비대칭'이 게임 메시지의 심장**, D형 상쇄 페어링 등 카드 메커니즘 도출). deep-research 하네스(106·107 에이전트, 3표 적대검증) 2회.
 - **불변**: 판정=코드 원칙 유지 — AI는 세계 파라미터 생성만(한 계층 위), 개별 생사 판정은 `adjudicate.ts`가 잠근다.
@@ -53,7 +59,7 @@ tags:
 
 ## 2026-07-18 · 엔딩 누적 결산형 확정 + 이번 주 신문(7일 누적 돌려보낸 STEMI) 아카이브 (PR #52)
 
-- **무엇을**: (1) 엔딩 방향을 **누적 결산형**으로 확정([game-concept §7](../docs/game-concept.md)) — 엔딩은 쟁취가 아니라 필연, MVP=N=1주 / 본선=N주. (2) 에필로그에 1막 7일 누적 돌려보낸 STEMI를 **'이번 주 신문' 아카이브**로 추가.
+- **무엇을**: (1) 엔딩 방향을 **누적 결산형**으로 확정([game-concept §7](../docs/concept/game-concept.md)) — 엔딩은 쟁취가 아니라 필연, MVP=N=1주 / 본선=N주. (2) 에필로그에 1막 7일 누적 돌려보낸 STEMI를 **'이번 주 신문' 아카이브**로 추가.
 - **왜**: 사용자 물음("일주일+응급1회 후 리셋 — 의도?")에서 출발. 리셋은 의도(단막극)였으나, 결산에 구멍이 드러났다 — 기존 디브리핑은 2막 거절만 셌고 1막에서 돌려보낸 사람들은 다음날 아침 신문으로 한 번 스치고 증발(특히 7일차는 다음 아침이 없어 어디에도 안 나옴). 누적 아카이브가 구멍을 메우고 '사람 명부↔돈 장부' 병치로 논지를 카피 없이 전달.
 - **구현**: `news.morningNews`의 헤드라인 코어를 `renderNews`로 추출(재사용 → 플레이 중 기사와 글자까지 동일). `buildEpilogue`가 `ledgerDays.turnedAway`를 flatten해 `SessionEpilogue.weekNews`로. `Epilogue`에 `WeekPaper`(비면 숨김). 윤리 가드는 같은 코어라 기존 테스트가 커버.
 - **결과**: `tsc` 0 · `vitest` **219 통과**(신규 7건). 워크트리 dev 임시 라우트로 렌더 확인(신문 14명 + 순이익 +290억 병치, 콘솔 0) 후 임시 라우트 제거. 브랜치명(`game-reset-behavior`)은 최초 물음에서 유래 — 작업은 엔딩으로 확장.
@@ -384,6 +390,6 @@ tags:
 
 ## 2026-07-16 · 프로젝트 부트스트랩 & 컨셉 확정
 
-- **무엇을**: 병원 시뮬 게임 저장소 초기 셋업 — Next.js + TS + Tailwind 스캐폴딩, 작업추적 3종·learning-notes 생성, 게임 컨셉 문서([docs/game-concept.md](../docs/game-concept.md)) 작성.
+- **무엇을**: 병원 시뮬 게임 저장소 초기 셋업 — Next.js + TS + Tailwind 스캐폴딩, 작업추적 3종·learning-notes 생성, 게임 컨셉 문서([docs/concept/game-concept.md](../docs/concept/game-concept.md)) 작성.
 - **왜**: NAN 2026 (NHN Game × AI 해커톤) 신청용 프로토타입을 만들기 위한 출발점. 브레인스토밍으로 방향(의료진 시점 · 응급실 뺑뺑이/필수의료/지방격차 3축) 확정.
 - **결정**: AI 핵심 축 = **실시간 전원 협상 + 인과 디브리핑**(6개 설계안 4렌즈 교차채점으로 선정). 아키텍처 원칙 = **판정=코드 / 대사=LLM** 2콜 분리.

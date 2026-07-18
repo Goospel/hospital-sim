@@ -10,7 +10,7 @@ tags:
 
 - **작성일**: 2026-07-16 (KST)
 - **상태**: 설계 확정(브레인스토밍 종료) → 사용자 리뷰 대기 → 구현 계획(writing-plans)
-- **관련**: [plan.md](../../plan.md) · [docs/game-concept.md](../../../docs/game-concept.md) · [docs/research/essential-care-economics.md](../../../docs/research/essential-care-economics.md)
+- **관련**: [plan.md](../../plan.md) · [docs/concept/game-concept.md](../../../docs/concept/game-concept.md) · [docs/research/essential-care-economics.md](../../../docs/research/essential-care-economics.md)
 
 ---
 

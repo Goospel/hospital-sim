@@ -1,13 +1,13 @@
 ---
 tags:
-  - type/research
+  - type/game-concept
 ---
 
 # 리서치 — 의료 시스템 도메인 엔티티 카탈로그
 
 > **목적**: 세계관 리서치 문서들에 **사실로 확증된 시스템 문제**마다, 그 문제를 구성하는 **엔티티**(명사형 행위자·조직·제도·자원·지표·사건·재정 단위)를 뽑아 게임의 도메인 모델로 세운다. 프레임은 단순하다 — *"필수과 의사가 부족하다"는 문제에서 엔티티는 [과]와 [의사]다.* 이 결로 시스템 전체를 산출한다.
 > **방법**: 리서치 문서 11개를 병렬 추출(원시 엔티티 247개) → 중복 병합 → 근거 없이 지어낸/오귀속 엔티티가 없는지 3표 적대 검증. 2026-07-18. 검증 총평: *"지어냄은 없고 소수의 출처 오귀속·정의 누락 수준"* — 그 3건은 아래 §검증에서 교정 반영.
-> **관련**: [domain-entity-graph.md](domain-entity-graph.md)(엔티티-관계 다이어그램) · [domain-entities-detail.md](domain-entities-detail.md)(엔티티별 속성·관계·근거 전체) · [current-korea-starting-world.md](current-korea-starting-world.md) · [current-korea-change-events.md](current-korea-change-events.md) · [medical-system-grounding.md](medical-system-grounding.md) · [../game-concept.md](../game-concept.md)
+> **관련**: [domain-entity-graph.md](domain-entity-graph.md)(엔티티-관계 다이어그램) · [domain-entities-detail.md](domain-entities-detail.md)(엔티티별 속성·관계·근거 전체) · [current-korea-starting-world.md](../research/current-korea-starting-world.md) · [current-korea-change-events.md](../research/current-korea-change-events.md) · [medical-system-grounding.md](../research/medical-system-grounding.md) · [game-concept.md](game-concept.md)
 >
 > ⚠️ **수치의 단일 출처는 이 문서가 아니다.** 여기 grounding에 붙는 숫자는 전부 원 리서치 문서(`docs/research/*`)에서 온 인용이다 — 값을 바꾸려면 원 문서를 고친다. 이 문서는 그 사실들에서 **엔티티를 파생**할 뿐이다.
 

@@ -1,12 +1,12 @@
 ---
 tags:
-  - type/research
+  - type/game-concept
 ---
 
 # 리서치 — 의료 시스템 도메인 엔티티 관계 그래프
 
 > **목적**: [domain-entities.md](domain-entities.md)의 엔티티들이 **어떻게 연결돼 시스템 문제를 만드는지**를 다이어그램으로 본다. 엔티티 목록이 '명사'라면 이 문서는 그 사이의 '동사'(소속·수용/거절·부재→거절·기피 유발)다. mermaid라 GitHub·옵시디언에서 그대로 렌더된다.
-> **관련**: [domain-entities.md](domain-entities.md)(카탈로그·문제→엔티티 역인덱스) · [domain-entities-detail.md](domain-entities-detail.md)(엔티티별 관계 전체) · [../game-concept.md](../game-concept.md) · [current-korea-starting-world.md](current-korea-starting-world.md)
+> **관련**: [domain-entities.md](domain-entities.md)(카탈로그·문제→엔티티 역인덱스) · [domain-entities-detail.md](domain-entities-detail.md)(엔티티별 관계 전체) · [game-concept.md](game-concept.md) · [current-korea-starting-world.md](../research/current-korea-starting-world.md)
 >
 > 관계선은 전부 검증된 엔티티 관계에서 왔다. 가독성을 위해 **핵심 노드만** 그렸다 — 전체 109개 엔티티의 관계는 [domain-entities-detail.md](domain-entities-detail.md)에 있다.
 

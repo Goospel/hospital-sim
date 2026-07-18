@@ -1,13 +1,13 @@
 ---
 tags:
-  - type/research
+  - type/game-concept
 ---
 
 # 리서치 — 의료 시스템 도메인 엔티티 상세 (엔티티별 속성·관계·근거 전체)
 
 > **목적**: [domain-entities.md](domain-entities.md)가 카탈로그(한 줄 요약)라면, 이 문서는 **엔티티 109개 각각의 속성·관계·참여 문제·근거·게임 대응을 전부 펼친** 레퍼런스다. 조회용 — 통독하지 말고 특정 엔티티를 찾아본다.
 > **방법**: Workflow 멀티에이전트 산출물(리서치 11개 추출 → 병합 → 3표 적대 검증)을 결정론 스크립트로 마크다운 변환(무전사). 검증 교정 2건은 본문에 반영. 2026-07-18.
-> **관련**: [domain-entities.md](domain-entities.md)(카탈로그·문제→엔티티 역인덱스) · [domain-entity-graph.md](domain-entity-graph.md)(관계 다이어그램) · [current-korea-starting-world.md](current-korea-starting-world.md) · [../game-concept.md](../game-concept.md)
+> **관련**: [domain-entities.md](domain-entities.md)(카탈로그·문제→엔티티 역인덱스) · [domain-entity-graph.md](domain-entity-graph.md)(관계 다이어그램) · [current-korea-starting-world.md](../research/current-korea-starting-world.md) · [game-concept.md](game-concept.md)
 >
 > ⚠️ **수치의 단일 출처는 원 리서치 문서**(`docs/research/*`)다. 여기 근거에 붙는 값은 인용이며, 게임 번역 시 **부호·대소·비율만** 근거로 쓰고 절대치는 각색한다.
 
