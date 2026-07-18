@@ -25,6 +25,9 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 - **E — 경영 확장(2막)**: 위저드→콜큐→막간→응급→결말 플레이어블 / 7일 루프+달력(분기 폐기) / 하루 진료 자리 제한(과부하) / 랜딩 타이틀 카드. PR #17~#35
 - **F1~F3 — 필수의료 딜레마 장치**: 콜당 수가/원가("가격을 누가 정하나"가 부호를 가름) / 24시간 당직(F1b) / 검사+boarding(인과 사슬 닫힘) / 다음날 아침 신문. PR #38~#41. **📌 구현 후 설계 근거는 [spec §13](superpowers/specs/2026-07-17-essential-care-economics-devices-design.md)**
 - **F4 — 가산금 배분(흉부외과)**: 🔴 **절단**(PR #44). 마감이 아니라 **사실이 세 번 거부** — 흉부외과는 1막에서 도달 불가 화면이었고, 역할을 주려 한 STEMI 게이트·응급 CABG·심장통합진료 삭감이 셋 다 거짓. 근거: [thoracic-surgery-role.md](../docs/research/thoracic-surgery-role.md) · [T-049](troubleshooting/T-049.md)
+- **디자인 테마 Plan A — "의무기록·차트" 시스템**: 방향 확정(5안 심사)·토큰/폰트 3계층 기반(+Arial 버그 수정)·원형(TransferRound)/정점(Epilogue) 리스킨·안전한 카피. PR #49. 근거: [spec](superpowers/specs/2026-07-18-design-theme-dossier-design.md)·[Plan A](superpowers/plans/2026-07-18-design-theme-dossier-foundation.md)
+  - ⬜ **디자인 Plan B(후속)**: 나머지 화면(랜딩·위저드·콜접수·달력·막간·원내응급) + **장부 종이화(SegmentTree+LedgerPanel+CheerfulLedger 한 단위)** 토큰 교체 — 별도 계획. (Plan A에서 SegmentTree는 부모 미리스킨으로 dark-on-dark라 zinc로 되돌림.)
+  - ⬜ **카피/톤 세션(범위 밖 보존)**: 랜딩 태그라인 둘째 문장·Epilogue 헤드라인/부제·transfer placeholder 재작성 + 기관명 가공. 시각과 분리(게임 '내용' 변경).
 
 ---
 

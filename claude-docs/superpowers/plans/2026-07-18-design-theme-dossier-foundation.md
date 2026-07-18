@@ -482,6 +482,7 @@ git commit -F .commit-msg-tmp   # feat(design): 결말 영수증·장부 종이 
 - **작업추적 3종 갱신**: `plan.md`에 "디자인 테마 롤아웃(Plan A)" 항목 ✅ + `changeLog.md` 한 줄(날짜·PR#) + (1분+ 디버깅 시) `troubleshooting/`.
 - **PR 올리고 머지 여부 질의**(글로벌 워크플로우).
 - **후속 Plan B**: 나머지 화면(Landing·SetupWizard·ReceivingPhase[콜접수 종이 절제]·DayEnd[달력=종이]·Interstitial[종이 0·이모지 제거]·InHouseEmergency·LedgerPanel) 기계적 토큰 교체 — 별도 계획으로 작성. Interstitial·ReceivingPhase의 🎉 제거는 Plan B에 포함.
+  - ⚠️ **최종 리뷰 반영(Task 4 되돌림)**: Task 4(SegmentTree 잉크 토큰화)는 그 부모 장부(LedgerPanel·CheerfulLedger)가 Plan A에서 안 리스킨돼 여전히 어두워 **dark-on-dark** 회귀가 났다(opus 최종 리뷰 Critical). → SegmentTree를 zinc로 되돌리고, **장부 종이화(SegmentTree + LedgerPanel + CheerfulLedger)를 Plan B에서 한 단위로** 처리한다. 교훈: 공유 컴포넌트 리스킨은 그 색 계약을 소비하는 부모까지 한 슬라이스에 묶어야 한다.
 
 ---
 
