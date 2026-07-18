@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-19 · 엔티티 코드 반영도 감사 — docs/concept/entity-code-coverage.md 신설
+
+- **무엇을**: [domain-entities.md](../docs/concept/domain-entities.md) 카탈로그의 엔티티가 현재 게임 코드(`src/`)에 얼마나 구현됐는지 대조한 커버리지 스냅샷 문서를 신설. 105개 엔티티를 ✅구현 34·🟡부분 20·⬜없음 51로 카테고리별 표로 집계. 카탈로그에서 백링크 추가.
+- **왜**: 사용자 요청 — "정리한 엔티티가 지금 게임에 얼마나 반영됐나" 파악. 카탈로그(청사진)와 코드(현실)의 간극을 한 지도로 고정해 본선 확장의 재료를 드러냄.
+- **결과**: 7카테고리 병렬 코드감사→적대검증 워크플로우(14 에이전트) + 수동 교차검증(8개 핵심 파일 통독)으로 산출. 판정은 문서 주장이 아니라 `file:line` 코드 증거로만. 코어(STEMI 한 주+병원경제)는 깊게, 시스템 넓이(5등급 위계·제도·법·정치국면)는 대부분 미구현 = MVP 절단선과 일치. 부수 발견: 코드가 카탈로그보다 앞선 곳(거절 5종)·severity 명목값.
+
 ## 2026-07-19 · 게임 콘셉 태그 정렬 — type/game-concept → type/concept
 
 - **무엇을**: `docs/concept/` 5문서의 frontmatter 태그를 `type/game-concept → type/concept`로 바꿔 **폴더명(concept)과 태그를 일치**시킴. CLAUDE.md 「종류=폴더」 표도 `type/concept`(docs/concept/)로 갱신.
