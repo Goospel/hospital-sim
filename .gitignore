@@ -43,3 +43,7 @@ next-env.d.ts
 
 # 한글 커밋 메시지 임시파일 (T-026: PowerShell 5.1 CP949 깨짐 회피용)
 .commit-msg-tmp
+
+# obsidian — 폴더 숨김 설정(app.json)만 기기 간 공유, 나머지(workspace/graph 등 기기별)는 무시
+.obsidian/*
+!.obsidian/app.json
