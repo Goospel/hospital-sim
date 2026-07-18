@@ -33,7 +33,6 @@ describe('round — 한 판 상태기계', () => {
     expect(state.status).toBe('IN_PROGRESS')
     expect(state.timer.remainingSeconds).toBe(720)
     expect(state.attempts).toEqual([])
-    expect(state.acceptedHospitalId).toBeUndefined()
   })
 
   it('수용 가능한 병원에 전원 시도하면 ACCEPTED, 시도가 기록되고 시간이 소모된다', () => {
@@ -42,13 +41,11 @@ describe('round — 한 판 상태기계', () => {
     const next = attemptTransfer(state, 'accept', 90)
 
     expect(next.status).toBe('ACCEPTED')
-    expect(next.acceptedHospitalId).toBe('accept')
     expect(next.timer.remainingSeconds).toBe(630)
     expect(next.attempts).toHaveLength(1)
     expect(next.attempts[0]).toEqual({
       hospitalId: 'accept',
       verdict: { accepted: true },
-      timeCostSeconds: 90,
     })
   })
 
@@ -69,7 +66,6 @@ describe('round — 한 판 상태기계', () => {
 
     expect(next.status).toBe('IN_PROGRESS')
     expect(next.attempts[0].verdict).toEqual({ accepted: false, reason: 'NO_BED' })
-    expect(next.acceptedHospitalId).toBeUndefined()
   })
 
   it('거절당하고 그 콜로 골든타임이 소진되면 DIED (골든타임 놓침)', () => {

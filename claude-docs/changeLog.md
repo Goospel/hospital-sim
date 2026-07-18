@@ -3,6 +3,12 @@
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-18 · ponytail 감사 후속 — 프로덕션 미사용 죽은 코드 5건 절단 (PR #47)
+
+- **왜**: `/ponytail-audit`(전체 트리 과잉설계 스캔)가 프로덕션에서 한 번도 안 읽히는 코드 5건을 순위화했다. 테스트만 부양하던 함수·write-only 구조체 필드·단일 사용 래퍼가 대상.
+- **무엇을**: ① `buildLedger`+`ledgerHospital`(에필로그는 `buildSessionLedger` 경로 — GameState용 장부는 프로덕션 호출 0, 자기 테스트 8건만 살려둠) ② `classifyCall`(유일 호출부가 바로 윗줄에서 이미 `hardlockReason`을 구함 → disposition 인라인 파생, 중복 호출 제거) ③ `TransferAttempt.timeCostSeconds` · ④ `GameState.acceptedHospitalId`(둘 다 쓰기만 하고 읽는 곳 없음) ⑤ `EmergencyChrome`(단일 사용 컴포넌트 → TransferRound에 인라인). 걸린 테스트는 삭제가 아니라 **동치 어서션으로 전환**(classifyCall→hardlockReason의 null 여부, dialogue는 disposition 리터럴)해 커버리지 보존.
+- **결과**: **약 −123줄 · deps 변화 0.** 게이트: tsc green · vitest 212 통과(−8 = buildLedger 스위트) · lint 신규 이슈 0. 추가로 4-렌즈 적대 검증 워크플로(삭제 완전성·인라인 마크업 동일성·라이브니스·커버리지 보존) 전부 CLEAN. 주석·근거 문서는 "메시지 정확도가 핵심"이라 손대지 않음(ponytail은 코드를 다스리지 조를 다스리지 않는다).
+
 ## 2026-07-18 · env 문서 오타 정정 + CLAUDE.md 발견성 포인터 (PR #46)
 
 - **무엇을**: `.env.example`·README·changeLog의 `렙탑` → `랩탑` 오타 4곳 정정. CLAUDE.md 상단에 "환경 변수·기기 간 셋업(데스크톱↔랩탑)" 포인터 섹션 신설 — env 셋업의 실체(README 섹션 + `.env.example`)로 안내하는 3~4줄 요약.

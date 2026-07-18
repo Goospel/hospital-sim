@@ -6,7 +6,6 @@ import { createGoldenTimer, advance, isExpired, type GoldenTimer } from './golde
 export interface TransferAttempt {
   hospitalId: string
   verdict: TransferVerdict
-  timeCostSeconds: number
 }
 
 /** 한 판의 상태 */
@@ -22,7 +21,6 @@ export interface GameState {
   timer: GoldenTimer
   attempts: TransferAttempt[]
   status: GameStatus
-  acceptedHospitalId?: string
 }
 
 /** 새 판을 시작한다. */
@@ -57,10 +55,10 @@ export function attemptTransfer(
 
   const verdict = adjudicateTransfer(hospital, state.patient)
   const timer = advance(state.timer, timeCostSeconds)
-  const attempts = [...state.attempts, { hospitalId, verdict, timeCostSeconds }]
+  const attempts = [...state.attempts, { hospitalId, verdict }]
 
   if (verdict.accepted) {
-    return { ...state, timer, attempts, status: 'ACCEPTED', acceptedHospitalId: hospitalId }
+    return { ...state, timer, attempts, status: 'ACCEPTED' }
   }
   // 거절 — 이 콜로 골든타임이 소진됐으면 환자는 죽는다.
   const status: GameStatus = isExpired(timer) ? 'DIED' : 'IN_PROGRESS'

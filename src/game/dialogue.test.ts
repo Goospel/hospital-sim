@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { fallbackLine, persuasionReply, receivingLine, callerPlea, callerPleaAt, CALLER_PLEA, RECEIVE_HARDLOCK } from './dialogue'
 import type { RejectionReason, TransferVerdict } from './types'
-import { classifyCall, createCallQueue } from './receiving'
-import { buildHospital } from './setup'
+import { createCallQueue } from './receiving'
 
 const accepted: TransferVerdict = { accepted: true }
 const reject = (reason: RejectionReason): TransferVerdict => ({ accepted: false, reason })
@@ -70,8 +69,6 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
   const q = createCallQueue()
   const stemi = q.find((c) => c.kind === 'STEMI')!
   const walkin = q.find((c) => c.kind === 'COSMETIC_WALKIN')!
-  const collaborator = buildHospital({ hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3 } }).hospital
-  const conscientious = buildHospital({ hospitalName: '양심병원', doctors: { CARDIOLOGY: 2 } }).hospital
 
   it('모든 콜 종류에 호소 대사가 있다', () => {
     expect(CALLER_PLEA.STEMI.length).toBeGreaterThan(0)
@@ -80,13 +77,13 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
   })
 
   it('워크인 수용 → 명랑한 확인 대사(🎉 포함)', () => {
-    const line = receivingLine(walkin, classifyCall(collaborator, walkin, 3), true)
+    const line = receivingLine(walkin, 'CHOICE', true)
     expect(line.length).toBeGreaterThan(0)
     expect(line).toContain('🎉')
   })
 
   it('STEMI 하드락(내 병원도 순환기 없음) → 벽을 안쪽에서 배우는 대사', () => {
-    const disposition = classifyCall(collaborator, stemi, 3) // HARDLOCK_REJECT
+    const disposition = 'HARDLOCK_REJECT' // 내 병원도 순환기 없음 → 하드락
     const line = receivingLine(stemi, disposition, false, 0, 'NO_BACKUP_CARE')
     expect(line).toBe(RECEIVE_HARDLOCK)
   })
@@ -103,7 +100,7 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
   })
 
   it('양심 병원의 STEMI 수용 → 명랑/확인 대사(비어있지 않음)', () => {
-    const disposition = classifyCall(conscientious, stemi, 3) // CHOICE
+    const disposition = 'CHOICE' // 순환기 있는 양심 병원 → 선택
     const line = receivingLine(stemi, disposition, true)
     expect(line.length).toBeGreaterThan(0)
   })

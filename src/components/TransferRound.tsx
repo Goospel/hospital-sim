@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { adjudicateTransfer } from "@/game/adjudicate";
 import { fallbackLine, persuasionReply } from "@/game/dialogue";
-import { REJECTION_LABEL } from "@/game/labels";
+import { formatClock, REJECTION_LABEL, SPECIALTY_LABEL } from "@/game/labels";
 import { attemptTransfer, tickTime, type GameState } from "@/game/round";
 import type { TransferVerdict } from "@/game/types";
-import EmergencyChrome from "./EmergencyChrome";
 
 // 전원 콜/매달리기 한 번이 잡아먹는 골든타임(초) — 실시간 소모에 더해 콜 자체의 비용.
 const CALL_COST_SECONDS = 12;
@@ -88,11 +87,28 @@ export default function TransferRound({
           : "bg-zinc-950"
       }`}
     >
-      <EmergencyChrome
-        patient={patient}
-        remainingSeconds={timer.remainingSeconds}
-        lowTime={lowTime}
-      />
+      {/* 골든타임 */}
+      <header className="flex items-baseline justify-between">
+        <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">골든타임</span>
+        <span
+          className={`font-mono text-4xl font-bold tabular-nums ${
+            lowTime ? "animate-pulse text-red-500" : "text-zinc-100"
+          }`}
+        >
+          {formatClock(timer.remainingSeconds)}
+        </span>
+      </header>
+
+      {/* 환자 카드 */}
+      <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
+        <p className="text-xs uppercase tracking-widest text-red-400">응급 환자 도착</p>
+        <h1 className="mt-1 text-lg font-semibold">
+          급성 심근경색(STEMI) 의심 · 중증도 {patient.severity}/5
+        </h1>
+        <p className="mt-1 text-sm text-zinc-400">
+          필요 진료과: <span className="text-zinc-200">{SPECIALTY_LABEL[patient.requiredSpecialty]}</span> · 즉시 전원 필요
+        </p>
+      </section>
 
       {/* 통화 내용 */}
       <div className="min-h-[4.5rem] rounded-lg border border-zinc-800 bg-black/40 p-4 text-sm leading-6">

@@ -1,4 +1,3 @@
-import type { GameState } from './round'
 import type { Hospital, Specialty } from './types'
 
 // 병원 장부 — 한 병원의 경제(부문 손익·신규 채용)를 결정론적으로 산출한다.
@@ -24,11 +23,6 @@ export interface Ledger {
   essentialSpecialty: Specialty // 환자가 필요했던 과
   essentialHires: number // 그 과 배후진료 채용 — backupCare에서 파생(없으면 0)
   totalHires: number
-}
-
-/** 장부 주체 = 경제 데이터를 가진 병원(현재 시나리오에선 대학병원 한 곳). 없으면 undefined. */
-function ledgerHospital(hospitals: Hospital[]): Hospital | undefined {
-  return hospitals.find((h) => h.economics)
 }
 
 /** 소송 비용 실현 단가(억) — 필수·고위험 케이스 수용의 꼬리위험 한 방. 각색(부호만 근거: 축 C). */
@@ -61,12 +55,6 @@ function composeLedger(
     essentialHires,
     totalHires,
   }
-}
-
-export function buildLedger(state: GameState): Ledger | null {
-  const hospital = ledgerHospital(state.hospitals)
-  if (!hospital) return null
-  return composeLedger(hospital, state.patient.requiredSpecialty, [])
 }
 
 /**
