@@ -1,6 +1,6 @@
 ---
 tags:
-  - type/game-concept
+  - type/concept
 ---
 
 # AI 활용 방향 재검토 — "실시간 대화"에서 "세계를 재구성하는 뒷단 AI"로

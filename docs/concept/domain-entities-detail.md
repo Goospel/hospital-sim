@@ -1,6 +1,6 @@
 ---
 tags:
-  - type/game-concept
+  - type/concept
 ---
 
 # 리서치 — 의료 시스템 도메인 엔티티 상세 (엔티티별 속성·관계·근거 전체)

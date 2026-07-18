@@ -1,6 +1,6 @@
 ---
 tags:
-  - type/game-concept
+  - type/concept
 ---
 
 # 리서치 — 의료 시스템 도메인 엔티티 관계 그래프
