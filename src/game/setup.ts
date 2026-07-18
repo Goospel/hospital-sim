@@ -81,8 +81,11 @@ function count(choices: SetupChoices, key: DeptKey): number {
 }
 
 /** 위저드 선택 → 플레이어 병원 + 경제 데이터. */
-export function buildHospital(choices: SetupChoices): { hospital: Hospital; economics: HospitalEconomics } {
-  const staffed = DEPARTMENTS.map((dept) => ({ dept, n: count(choices, dept.key) })).filter((x) => x.n > 0)
+export function buildHospital(
+  choices: SetupChoices,
+  departments: DepartmentSpec[] = DEPARTMENTS,
+): { hospital: Hospital; economics: HospitalEconomics } {
+  const staffed = departments.map((dept) => ({ dept, n: count(choices, dept.key) })).filter((x) => x.n > 0)
 
   const backupCare: Specialty[] = staffed
     .filter((x) => x.dept.providesBackup)
@@ -113,18 +116,18 @@ export function buildHospital(choices: SetupChoices): { hospital: Hospital; econ
 }
 
 /** 선택의 총 채용비(억). */
-export function hiringCost(choices: SetupChoices): number {
-  return DEPARTMENTS.reduce((sum, d) => sum + d.hireCostBillions * count(choices, d.key), 0)
+export function hiringCost(choices: SetupChoices, departments: DepartmentSpec[] = DEPARTMENTS): number {
+  return departments.reduce((sum, d) => sum + d.hireCostBillions * count(choices, d.key), 0)
 }
 
 /** 예산 한도 이내인가. */
-export function withinBudget(choices: SetupChoices): boolean {
-  return hiringCost(choices) <= SETUP_BUDGET_BILLIONS
+export function withinBudget(choices: SetupChoices, departments: DepartmentSpec[] = DEPARTMENTS): boolean {
+  return hiringCost(choices, departments) <= SETUP_BUDGET_BILLIONS
 }
 
 /** 모든 과가 인원 상한 이내인가 — 예산과 독립된 제약이다(미용 10명은 예산은 통과한다). */
-export function withinDeptCaps(choices: SetupChoices): boolean {
-  return DEPARTMENTS.every((d) => count(choices, d.key) <= MAX_DOCTORS_PER_DEPT)
+export function withinDeptCaps(choices: SetupChoices, departments: DepartmentSpec[] = DEPARTMENTS): boolean {
+  return departments.every((d) => count(choices, d.key) <= MAX_DOCTORS_PER_DEPT)
 }
 
 /** 불변 갱신 — 과별 의사 수를 delta만큼 조정. 음수·비정수 방어(0 클램프·정수화)·상한 클램프, 0이면 키 제거. */
@@ -138,6 +141,10 @@ export function adjustDoctors(choices: SetupChoices, key: DeptKey, delta: number
 }
 
 /** 세션을 시작할 수 있는 선택인가 — 이름이 있고 예산·과별 상한 이내. */
-export function isSetupReady(choices: SetupChoices): boolean {
-  return choices.hospitalName.trim().length > 0 && withinBudget(choices) && withinDeptCaps(choices)
+export function isSetupReady(choices: SetupChoices, departments: DepartmentSpec[] = DEPARTMENTS): boolean {
+  return (
+    choices.hospitalName.trim().length > 0 &&
+    withinBudget(choices, departments) &&
+    withinDeptCaps(choices, departments)
+  )
 }

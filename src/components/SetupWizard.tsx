@@ -57,7 +57,13 @@ function DepartmentCard({
  *   DEPTS — 과별 채용. 이름은 위에서 확정됐으니 이제 과 구성에만 집중.
  * onComplete(choices) 계약은 불변 — 두 패널에 걸쳐 쌓은 choices를 마지막에 한 번 커밋한다.
  */
-export default function SetupWizard({ onComplete }: { onComplete: (choices: SetupChoices) => void }) {
+export default function SetupWizard({
+  onComplete,
+  departments = DEPARTMENTS,
+}: {
+  onComplete: (choices: SetupChoices) => void;
+  departments?: DepartmentSpec[];
+}) {
   const [choices, setChoices] = useState<SetupChoices>({ hospitalName: "", doctors: {} });
   const [step, setStep] = useState<"NAME" | "DEPTS">("NAME");
 
@@ -97,9 +103,9 @@ export default function SetupWizard({ onComplete }: { onComplete: (choices: Setu
   }
 
   // step === "DEPTS"
-  const cost = hiringCost(choices);
+  const cost = hiringCost(choices, departments);
   const overBudget = cost > SETUP_BUDGET_BILLIONS;
-  const ready = isSetupReady(choices);
+  const ready = isSetupReady(choices, departments);
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
@@ -117,7 +123,7 @@ export default function SetupWizard({ onComplete }: { onComplete: (choices: Setu
       </header>
 
       <div className="flex flex-col gap-2">
-        {DEPARTMENTS.map((dept) => (
+        {departments.map((dept) => (
           <DepartmentCard
             key={dept.key}
             dept={dept}

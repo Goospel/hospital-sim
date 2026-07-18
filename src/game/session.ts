@@ -1,5 +1,6 @@
 import type { Hospital, SetupChoices, Specialty } from './types'
 import { buildHospital, DAYS_PER_WEEK } from './setup'
+import { initWorld, applyEvent, selectEvent, type WorldState, type WorldEvent } from './world'
 import {
   accruedSegments, createCallQueue, initReceiving, runningNetProfit, type ReceivingState,
 } from './receiving'
@@ -19,7 +20,7 @@ import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
 const STEMI_SPECIALTY: Specialty = 'CARDIOLOGY'
 
 export type SessionPhase =
-  | 'LANDING' | 'SETUP' | 'RECEIVING' | 'DAY_END' | 'INTERSTITIAL' | 'EMERGENCY' | 'EPILOGUE'
+  | 'LANDING' | 'WORLD_EVENT' | 'SETUP' | 'RECEIVING' | 'DAY_END' | 'INTERSTITIAL' | 'EMERGENCY' | 'EPILOGUE'
 
 export type EmergencyState =
   | { mode: 'IN_HOUSE' } // 순환기 배후 있음 → 내 응급실이 직접 PCI → 생존
@@ -55,26 +56,39 @@ export interface SessionState {
    * 인과 사슬의 마지막 고리다: 저수가 → 검사 → boarding → 자리 없음 → 수용 불가 → **다음날 신문**.
    */
   morningNews: NewsItem[]
+  world?: WorldState // 외생 이벤트가 재구성한 세계(채용 경제). 없으면 기본 세계.
+  event?: WorldEvent // WORLD_EVENT 화면에 고지할 이벤트.
 }
 
 export function startSession(): SessionState {
   return { phase: 'LANDING', day: 1, ledgerDays: [], morningNews: [] }
 }
 
-/** 랜딩 "시작" → 위저드. startSession이 단일 진입점이라 재시작도 자동으로 여기로 되돌아온다. */
-export function beginSetup(state: SessionState): SessionState {
+/** 랜딩 → 외생 이벤트 고지. 이벤트를 결정론으로 확정하고 세계(채용 경제)를 재구성한다(spec §5.3: selectEvent(0)). */
+export function enterWorldEvent(state: SessionState): SessionState {
   if (state.phase !== 'LANDING') {
-    throw new Error(`beginSetup requires LANDING, got ${state.phase}`)
+    throw new Error(`enterWorldEvent requires LANDING, got ${state.phase}`)
   }
-  return { phase: 'SETUP', day: 1, ledgerDays: [], morningNews: [] }
+  const event = selectEvent(0)
+  const world = applyEvent(initWorld(), event)
+  return { phase: 'WORLD_EVENT', world, event, day: 1, ledgerDays: [], morningNews: [] }
 }
 
-export function completeSetup(choices: SetupChoices): SessionState {
-  const { hospital } = buildHospital(choices)
+/** 랜딩/이벤트 고지 → 위저드. world를 SETUP으로 실어 나른다(없으면 기본 세계). */
+export function beginSetup(state: SessionState): SessionState {
+  if (state.phase !== 'LANDING' && state.phase !== 'WORLD_EVENT') {
+    throw new Error(`beginSetup requires LANDING or WORLD_EVENT, got ${state.phase}`)
+  }
+  return { phase: 'SETUP', world: state.world, event: state.event, day: 1, ledgerDays: [], morningNews: [] }
+}
+
+export function completeSetup(choices: SetupChoices, world: WorldState = initWorld()): SessionState {
+  const { hospital } = buildHospital(choices, world.departments)
   return {
     phase: 'RECEIVING',
     hospital,
     receiving: initReceiving(hospital, createCallQueue(1)),
+    world,
     day: 1,
     ledgerDays: [],
     morningNews: [], // 개원 첫날 아침엔 어제가 없다
