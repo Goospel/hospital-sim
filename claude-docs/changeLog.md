@@ -43,7 +43,7 @@ tags:
 
 ## 2026-07-18 · 외생 이벤트→WorldState 재구성 최소 슬라이스 구현 (PR #54)
 
-- **무엇을**: [스펙](superpowers/specs/2026-07-18-world-event-slice-design.md) 구현 — 외생 이벤트 1개가 `DEPARTMENTS` 채용 경제를 재구성하고 위저드가 그 위에서 돈다. `world.ts`(순수 코어: `WorldState`·`applyEvent`·개선1+악화1 카탈로그) + setup 5함수 departments 주입(하위호환) + session `WORLD_EVENT` phase(`enterWorldEvent`) + UI(`WorldEventCard`·위저드 주입·`SessionClient` 배선).
+- **무엇을**: [스펙](../docs/superpowers/specs/2026-07-18-world-event-slice-design.md) 구현 — 외생 이벤트 1개가 `DEPARTMENTS` 채용 경제를 재구성하고 위저드가 그 위에서 돈다. `world.ts`(순수 코어: `WorldState`·`applyEvent`·개선1+악화1 카탈로그) + setup 5함수 departments 주입(하위호환) + session `WORLD_EVENT` phase(`enterWorldEvent`) + UI(`WorldEventCard`·위저드 주입·`SessionClient` 배선).
 - **왜**: "계획만 봐선 감이 안 온다"(사용자) → 결정론 코어부터 TDD로 실물화. 판정 불변 원칙의 한 계층 위 연장 — AI가 만질 세계 파라미터(채용 경제)만 이벤트가 바꾸고, 개별 생사 판정은 `adjudicate`가 잠근다(`applyEvent`는 `providesBackup` 불가침, 테스트로 잠금).
 - **결과**: `tsc` 0 · `vitest` 236 green(신규 17). 워크트리 dev(3939) 브라우저 흐름 검증(LANDING→WORLD_EVENT→SETUP, 콘솔 0). 개선 이벤트는 profit(숨김)만 바꿔 위저드 채용비엔 티 안 남 → 효과는 장부·결말에서 드러남(D형 비대칭).
 - **다음**: LLM 서사·다주 루프·전원 병원 이벤트는 확장점(spec §8).
@@ -74,12 +74,12 @@ tags:
 
 - **무엇을**: 게임 전체 시각 테마를 **의무기록·차트 도시에(medical dossier)**로 확정하고 디자인 시스템을 토큰화해 핵심 화면에 적용. 5개 방향 생성·적대심사 → 사용자가 ④(DD 최근접)까지 렌더 확인 후 ② 선택 → [스펙](superpowers/specs/2026-07-18-design-theme-dossier-design.md)·[Plan A](superpowers/plans/2026-07-18-design-theme-dossier-foundation.md) → 서브에이전트 구동 실행. 폰트 3계층 자체 호스팅(+`body{Arial}` 버그 수정) · 색·물성·모션 토큰(globals.css 단일 출처, WCAG 조정 ink-2 #585039·go #1b5e3d·glow 0.35) · TransferRound(원형)·Epilogue/Receipt(정점) 리스킨 · 안전한 카피 3건(이모지 제거·`다시 매달리기`→`다시 걸기`·motion-reduce).
 - **왜**: 11개 컴포넌트가 zinc 유틸을 인라인으로 흩뿌려 단일 출처가 없었고, 한글 게임인데 한글 서체가 의도 없이 시스템 폴백이었다. DD(Darkest Dungeon)의 무게·소모의 가시화·손맛 판넬을 촛불·양피지가 아니라 **실제 임상 서류 물성**으로 번역 — show-don't-tell 유지, 내레이터(해석 카피)는 버림.
-- **결과**: 전 커밋 `tsc --noEmit` 0 + vitest 212 green. 라이브 실측(토큰 색·3계층 한글 커버·rounded 1~2px·콘솔 0). **최종 opus 전체 브랜치 리뷰가 게이트·수동확인이 놓친 Critical(SegmentTree dark-on-dark) 포착 → 픽스**: 공유 컴포넌트 잉크는 부모 장부(LedgerPanel·CheerfulLedger, Plan B)와 함께 가야 해 zinc 복원, 장부 종이화는 Plan B 한 단위로 이관. 서술 카피·나머지 화면은 범위 밖(별도 카피 세션 / Plan B). 신설 [T-051](claude-docs/troubleshooting/T-051.md)(워크트리 preview는 메인 레포에서 돎 → 시각검증은 워크트리 직접 dev).
+- **결과**: 전 커밋 `tsc --noEmit` 0 + vitest 212 green. 라이브 실측(토큰 색·3계층 한글 커버·rounded 1~2px·콘솔 0). **최종 opus 전체 브랜치 리뷰가 게이트·수동확인이 놓친 Critical(SegmentTree dark-on-dark) 포착 → 픽스**: 공유 컴포넌트 잉크는 부모 장부(LedgerPanel·CheerfulLedger, Plan B)와 함께 가야 해 zinc 복원, 장부 종이화는 Plan B 한 단위로 이관. 서술 카피·나머지 화면은 범위 밖(별도 카피 세션 / Plan B). 신설 [T-051](troubleshooting/T-051.md)(워크트리 preview는 메인 레포에서 돎 → 시각검증은 워크트리 직접 dev).
 
 ## 2026-07-18 · 순환기 상한 재검토 — 안 좁힘(상한 3 유지), 판단만 명문화 (PR #48)
 
 - **무엇을**: plan의 🔜 "순환기 상한을 `ROUND_THE_CLOCK_MIN_DOCTORS`(2)로 좁힐지 재검토"를 닫았다. 결론 **안 좁힘 · 코드 로직 0 변경** — `setup.ts` `MAX_DOCTORS_PER_DEPT` 주석에 판단 근거를 박고 plan 항목을 ✅로 이관.
-- **왜**: 필수 배후과 3명째는 게임 로직상 강지배(24시간은 2명에서 성립, 3명째는 손익만 −)다. 하지만 이 질문은 [T-042](claude-docs/troubleshooting/T-042.md)와 **글자 그대로 같은 형태**("N명째가 코드에서 무의미 → 상한 N-1로")고, 답도 같은 방향이다: 강지배는 **코드에서**지 **현실에서**가 아니다 — 3명째는 동시 진료 처리량·당직 로테이션 여유를 산다(medical-system-grounding.md:66 "당직 1명이 이미 3명 동시 진료"). 게임이 그 축을 아직 안 만들었을 뿐. 좁히면 "코드가 표현 못 하는 걸 현실에 없는 것으로 착각"(T-042)을 반복하고, "순환기 최대 2명"은 사용자가 T-042에서 쓴 표현 그대로 *저렴해 보인다*.
+- **왜**: 필수 배후과 3명째는 게임 로직상 강지배(24시간은 2명에서 성립, 3명째는 손익만 −)다. 하지만 이 질문은 [T-042](troubleshooting/T-042.md)와 **글자 그대로 같은 형태**("N명째가 코드에서 무의미 → 상한 N-1로")고, 답도 같은 방향이다: 강지배는 **코드에서**지 **현실에서**가 아니다 — 3명째는 동시 진료 처리량·당직 로테이션 여유를 산다(medical-system-grounding.md:66 "당직 1명이 이미 3명 동시 진료"). 게임이 그 축을 아직 안 만들었을 뿐. 좁히면 "코드가 표현 못 하는 걸 현실에 없는 것으로 착각"(T-042)을 반복하고, "순환기 최대 2명"은 사용자가 T-042에서 쓴 표현 그대로 *저렴해 보인다*.
 - **결과**: 코드 로직·테스트·deps 0 변경(주석만). 명문화 3곳(setup.ts 주석 · plan ✅ · 이 줄). 축 부여(B안 — 동시 처리량 모델링)는 마감 대비 비용이 커 ⏸ 본선 확장 카드. 이 재검토 자체가 T-042의 실천이라 새 troubleshooting은 안 만든다(T-042가 이미 이 계열을 담는다).
 
 ## 2026-07-18 · ponytail 감사 후속 — 프로덕션 미사용 죽은 코드 5건 절단 (PR #47)
