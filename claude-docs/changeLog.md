@@ -1,7 +1,18 @@
+---
+tags:
+  - type/meta
+---
+
 # changeLog — 완료 기록 (역순)
 
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
 > 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
+
+## 2026-07-18 · 옵시디언 추적 문서 51개에 type 태그 부여 (PR #53)
+
+- **무엇을**: git 추적 마크다운 **51개 전부**에 옵시디언 frontmatter `tags: - type/<종류>` 삽입 — 폴더 기반 7종(troubleshooting 26 · research 7 · spec 6 · meta 6 · plan 3 · submission 2 · game-concept 1).
+- **왜**: 옵시디언 그래프 뷰에서 종류별 색 그룹으로 가독성 확보 + Claude의 문서 인덱싱에 태그 활용(사용자 판단). 세분도=종류 단축, 표기=영어 계층 `type/*`(나중에 `status/*` 등 축 추가해도 이름 안 겹침)로 확정.
+- **결과**: 순수 삽입(삭제 0줄 · +177줄 = frontmatter 없던 25파일×5줄 + 있던 26파일×2줄), 파일별 EOL(CRLF)·무BOM 보존해 phantom diff 0. troubleshooting 검사기 26건 OK — 검사기가 `summary`/`promoted`만 읽고 다른 frontmatter 필드는 무시해 tags 추가에 안전. 그래프 색 그룹 설정(graph.json)은 각 기기 옵시디언 UI 몫으로 남김(요청 범위 밖).
 
 ## 2026-07-18 · 엔딩 누적 결산형 확정 + 이번 주 신문(7일 누적 돌려보낸 STEMI) 아카이브 (PR #52)
 

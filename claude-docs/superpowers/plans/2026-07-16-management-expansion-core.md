@@ -1,3 +1,8 @@
+---
+tags:
+  - type/plan
+---
+
 # 경영 확장 — 결정론 로직 코어 Implementation Plan (Part 1/2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
