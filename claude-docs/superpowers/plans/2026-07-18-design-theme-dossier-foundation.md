@@ -1,3 +1,8 @@
+---
+tags:
+  - type/plan
+---
+
 # 디자인 테마 "의무기록·차트" — Plan A(기반 + 핵심 수직 슬라이스) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

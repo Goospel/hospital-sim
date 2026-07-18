@@ -1,8 +1,29 @@
+---
+tags:
+  - type/meta
+---
+
 @AGENTS.md
 
 ## ⚙️ 환경 변수 · 기기 간 셋업 (데스크톱 ↔ 랩탑)
 
 env 셋업 절차는 [README.md](README.md)의 "환경 변수(env) — 여러 기기에서 이어 작업하기" 섹션과 [.env.example](.env.example)에 있다(단일 계약). 요약: 값 목록만 `.env.example`(커밋), 실제 값은 각 기기 `.env.local`(gitignore). 새 기기는 `cp .env.example .env.local` 후 값만 채운다. 시크릿(API 키)은 git이 아니라 비밀번호 관리자 또는 배포 후 `vercel env pull`로 동기화하고, `NEXT_PUBLIC_`을 붙이지 않는다(붙이면 브라우저 번들 노출).
+
+## 🏷️ 옵시디언 문서 태그 — frontmatter `type/*` (검사기로 강제)
+
+옵시디언이 추적하는 **모든 git 마크다운**은 frontmatter에 문서 종류 태그 하나를 갖는다 — 옵시디언 그래프 뷰의 색 그룹 + Claude의 문서 인덱싱 필터의 단일 출처다.
+
+```yaml
+---
+tags:
+  - type/research
+---
+```
+
+- **종류 = 폴더**: `type/troubleshooting`(claude-docs/troubleshooting/) · `type/research`(docs/research/) · `type/spec`(superpowers/specs/) · `type/plan`(superpowers/plans/) · `type/submission`(docs/submission/) · `type/game-concept`(docs/game-concept.md) · `type/meta`(운영문서 — CLAUDE·AGENTS·README·plan·changeLog·troubleshooting 허브). 계층 태그(`type/*`)라 나중에 `status/*` 같은 다른 축을 더해도 이름이 안 겹친다.
+- **새 문서도 반드시**: 새 md를 만들면 그 폴더의 type 태그를 넣는다. **안 넣으면 pre-commit이 거부한다** — `scripts/check-doc-tags.ps1`(테스트 `scripts/test-check-doc-tags.ps1`, TDD)이 git 추적 md 전수를 검사하고 `.githooks/pre-commit`이 md 를 건드리는 커밋마다 돌린다.
+- **T-\*.md 안전**: troubleshooting 항목은 이미 frontmatter(`summary`)가 있어 `tags`를 그 안에 같이 둔다 — rebuild 검사기는 `summary`/`promoted`만 읽어 `tags`를 무시한다.
+- **왜 검사기까지**: 태그는 소프트 규칙이라 새 문서에서 조용히 누락돼도 그래프에만 색 없는 노드로 뜨고 아무도 모른다. 바로 아래 「AI 활용 추적」이 뼈아프게 남긴 교훈 — *"검사기 없는 규약은 죽는 게 아니라 썩는다"* — 을 이번엔 규약 신설과 **동시에** 적용했다(그 규약은 검사기 없이 형식만 100% 준수되며 목적이 증발했다).
 
 ## 📊 AI 활용 추적 — 커밋 메시지에 사용 스킬·플러그인 명시 (이 프로젝트 한정 · 승격 후보)
 
