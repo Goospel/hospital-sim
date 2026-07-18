@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-19 · README 최신화 — 게임 설명을 실제 경영 아크(주 반복)로 정합
+
+- **무엇을**: [README.md](../README.md)의 게임 소개(상단 요약·"무엇을 겪나"·"플레이 방법")를 STEMI 단막극 서술에서 현재 게임의 전체 아크(개원→7일 진료→주말 응급→주간 결산→세계 재구성→반복→결말)로 갱신. 문서 내비게이터 경로 정합(submission-plan 표시경로 수정 + ai-usage-doc 행 추가), '현재 배포본' 노트에 세계 재구성이 아직 **결정론 카탈로그**로 도는 사실을 반영.
+- **왜**: 사용자 요청 — GitHub 메인 README 최신화. README가 주 반복 루프·경영 확장(2막) 이전의 "골든타임 180초 단막극"만 설명해 실제 배포본과 크게 어긋나 있었다.
+- **결과**: changeLog가 아니라 **실제 코드/UI**로 사실 검증(랜딩 카피·session 상태기계·TransferRound 자유텍스트 입력창·scenarios 6병원·golden 180초) — changeLog의 "자유텍스트 입력창 제거"는 방향 결정일 뿐 미구현이라 코드 확인으로 README의 '자유 텍스트로 매달린다'를 정확히 보존. 상대 링크 10건 전수 실재 검증, 해석 최소·사실 병치(메모 game-show-dont-tell) 톤 유지.
+
 ## 2026-07-19 · 엔티티 코드 반영도 감사 — docs/concept/entity-code-coverage.md 신설
 
 - **무엇을**: [domain-entities.md](../docs/concept/domain-entities.md) 카탈로그의 엔티티가 현재 게임 코드(`src/`)에 얼마나 구현됐는지 대조한 커버리지 스냅샷 문서를 신설. 105개 엔티티를 ✅구현 34·🟡부분 20·⬜없음 51로 카테고리별 표로 집계. 카탈로그에서 백링크 추가.
