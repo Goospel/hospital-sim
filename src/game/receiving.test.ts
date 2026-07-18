@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  createCallQueue, classifyCall, hardlockReason, initReceiving, decide, runningNetProfit,
+  createCallQueue, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
   WORKUP_ECONOMICS, workupDelta, canOrderWorkup,
 } from './receiving'
@@ -262,24 +262,24 @@ describe('createCallQueue — 고정 5통(결정론)', () => {
   })
 })
 
-describe('classifyCall — 하드락 vs 선택', () => {
+describe('하드락 vs 선택 — hardlockReason의 null 여부가 곧 disposition', () => {
   const q = createCallQueue()
   const stemi = q.find((c) => c.kind === 'STEMI')!
   const walkin = q.find((c) => c.kind === 'COSMETIC_WALKIN')!
   const general = q.find((c) => c.kind === 'GENERAL_EMERGENCY')!
   const OPEN = 3 // 자리 넉넉 — 이 describe는 자리 축이 아니라 자격 축만 본다
 
-  it('워크인은 자리가 있으면 CHOICE(명랑하게 받을 수 있음)', () => {
-    expect(classifyCall(hospitalOf(collaborator), walkin, OPEN)).toBe('CHOICE')
+  it('워크인은 자리가 있으면 선택(사유 없음 = CHOICE)', () => {
+    expect(hardlockReason(hospitalOf(collaborator), walkin, OPEN)).toBeNull()
   })
 
-  it('STEMI: 순환기 없으면 하드락, 있으면 선택', () => {
-    expect(classifyCall(hospitalOf(collaborator), stemi, OPEN)).toBe('HARDLOCK_REJECT')
-    expect(classifyCall(hospitalOf(conscientious), stemi, OPEN)).toBe('CHOICE')
+  it('STEMI: 순환기 없으면 하드락(사유 있음), 있으면 선택(사유 없음)', () => {
+    expect(hardlockReason(hospitalOf(collaborator), stemi, OPEN)).not.toBeNull()
+    expect(hardlockReason(hospitalOf(conscientious), stemi, OPEN)).toBeNull()
   })
 
   it('일반응급: 병상+응급실 있으면 선택(배후 무관)', () => {
-    expect(classifyCall(hospitalOf(collaborator), general, OPEN)).toBe('CHOICE')
+    expect(hardlockReason(hospitalOf(collaborator), general, OPEN)).toBeNull()
   })
 })
 
@@ -291,7 +291,6 @@ describe('자리(하루 진료 역량) 소진 — 능력 대비 환자가 많다
 
   it('자리가 0이면 어떤 콜이든 NO_BED 하드락 — 내 선택이 아니라 구조가 거절한다', () => {
     for (const call of [walkin, general, stemi]) {
-      expect(classifyCall(hospitalOf(collaborator), call, 0)).toBe('HARDLOCK_REJECT')
       expect(hardlockReason(hospitalOf(collaborator), call, 0)).toBe('NO_BED')
     }
     // 순환기를 갖춘 양심 병원도 자리가 없으면 STEMI를 못 받는다(자격 ≠ 총량).

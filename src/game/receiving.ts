@@ -212,11 +212,6 @@ export function hardlockReason(hospital: Hospital, call: IncomingCall, bedsFree:
   }
 }
 
-/** 이 콜을 받을 수 있는가(선택) vs 판정상 못 받는가(하드락). */
-export function classifyCall(hospital: Hospital, call: IncomingCall, bedsFree: number): CallDisposition {
-  return hardlockReason(hospital, call, bedsFree) === null ? 'CHOICE' : 'HARDLOCK_REJECT'
-}
-
 /**
  * 하루 시작 — `boardedBeds`는 **어제 검사를 붙인 환자 수**다(기본 0).
  *

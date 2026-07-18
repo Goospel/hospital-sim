@@ -6,7 +6,6 @@ import {
   accruedSegments,
   callDelta,
   canOrderWorkup,
-  classifyCall,
   hardlockReason,
   runningNetProfit,
   workupDelta,
@@ -183,7 +182,7 @@ export default function ReceivingPhase({
 
   const call = receiving.queue[receiving.index];
   const reason = hardlockReason(receiving.hospital, call, receiving.bedsFree);
-  const disposition = classifyCall(receiving.hospital, call, receiving.bedsFree);
+  const disposition = reason === null ? "CHOICE" : "HARDLOCK_REJECT";
   const plea = callerPleaAt(receiving.queue, receiving.index);
 
   const prevCall = receiving.index > 0 ? receiving.queue[receiving.index - 1] : undefined;
