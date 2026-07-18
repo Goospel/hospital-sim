@@ -1,5 +1,9 @@
 @AGENTS.md
 
+## ⚙️ 환경 변수 · 기기 간 셋업 (데스크톱 ↔ 랩탑)
+
+env 셋업 절차는 [README.md](README.md)의 "환경 변수(env) — 여러 기기에서 이어 작업하기" 섹션과 [.env.example](.env.example)에 있다(단일 계약). 요약: 값 목록만 `.env.example`(커밋), 실제 값은 각 기기 `.env.local`(gitignore). 새 기기는 `cp .env.example .env.local` 후 값만 채운다. 시크릿(API 키)은 git이 아니라 비밀번호 관리자 또는 배포 후 `vercel env pull`로 동기화하고, `NEXT_PUBLIC_`을 붙이지 않는다(붙이면 브라우저 번들 노출).
+
 ## 📊 AI 활용 추적 — 커밋 메시지에 사용 스킬·플러그인 명시 (이 프로젝트 한정 · 승격 후보)
 
 **목적**: 어떤 스킬/플러그인이 (a) 얼마나 자주 쓰이는지, (b) 있는데 안 쓰이는 건 뭔지, (c) 실제로 어떤 이점을 줬는지 측정한다.
