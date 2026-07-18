@@ -1,15 +1,26 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
+import { Noto_Serif_KR } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+const pretendard = localFont({
+  src: "./fonts/Pretendard-Variable.woff2",
+  variable: "--font-pretendard",
+  display: "swap",
+  weight: "45 920",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const d2coding = localFont({
+  src: "./fonts/D2Coding.woff2",
+  variable: "--font-d2coding",
+  display: "swap",
+});
+
+const notoSerifKr = Noto_Serif_KR({
+  variable: "--font-noto-serif-kr",
   subsets: ["latin"],
+  weight: ["600", "700"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -20,16 +31,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
-    // suppressHydrationWarning: DarkReader 등 브라우저 확장이 하이드레이션 전에 <html>에 data-* 속성을
-    // 주입해 서버/클라이언트 속성이 어긋나는 것을 억제(우리 코드 무관·확장 유발·dev 오버레이 전용).
-    // <html> 이 한 요소의 속성 불일치만 억제하며, 자식·컴포넌트의 실제 하이드레이션 버그는 그대로 잡힌다.
     <html
       lang="ko"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${pretendard.variable} ${notoSerifKr.variable} ${d2coding.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">{children}</body>
