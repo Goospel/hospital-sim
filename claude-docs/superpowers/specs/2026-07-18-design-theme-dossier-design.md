@@ -6,7 +6,7 @@ tags:
 # 디자인 테마 — 설계: "의무기록·차트 도시에" (medical dossier) (2026-07-18)
 
 > 게임 전체의 **시각 테마**를 확정하고 토큰화한다. 지금까지 11개 컴포넌트가 zinc/emerald/red Tailwind 유틸을 인라인으로 흩뿌려 써 단일 출처가 없었다. 이 스펙은 그걸 **의무기록·차트 물성**의 디자인 시스템(색·타이포·물성·모션 토큰 + 컴포넌트 규칙 + 전 화면 적용)으로 정리한다.
-> 관련: [game-concept §6 톤](../../../docs/game-concept.md) · [landing-title-card 설계](2026-07-17-landing-title-card-design.md) · [plan.md](../../plan.md)
+> 관련: [game-concept §6 톤](../../../docs/concept/game-concept.md) · [landing-title-card 설계](2026-07-17-landing-title-card-design.md) · [plan.md](../../plan.md)
 
 ---
 

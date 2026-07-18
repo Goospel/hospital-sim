@@ -7,7 +7,7 @@ tags:
 
 > **목적**: AI가 뒷단에서 매주 세계에 떨어뜨릴 **외생 변경(법·수가·여론) 이벤트 카드**의 원본을, 실제 최근(2020~2025) 대한민국의 의료 '변화 사건'으로 채운다. [current-korea-starting-world.md](current-korea-starting-world.md)가 **정적 스냅샷(출발점)**이라면, 이 문서는 **그 세계가 어떻게 변하는가(동적 재료)**다.
 > **방법**: deep-research 하네스(A~E 5각도 · 다중 소스 fetch → 3표 적대 검증 → 12 확증 / 1 반증). 2026-07-18.
-> **관련**: [current-korea-starting-world.md](current-korea-starting-world.md)(짝 문서) · [../ai-scenario-generation.md](../ai-scenario-generation.md)(새 축 설계) · [fee-schedule-and-subsidies.md](fee-schedule-and-subsidies.md) · [essential-care-economics.md](essential-care-economics.md) · [medical-system-grounding.md](medical-system-grounding.md)
+> **관련**: [current-korea-starting-world.md](current-korea-starting-world.md)(짝 문서) · [../ai-scenario-generation.md](../concept/ai-scenario-generation.md)(새 축 설계) · [fee-schedule-and-subsidies.md](fee-schedule-and-subsidies.md) · [essential-care-economics.md](essential-care-economics.md) · [medical-system-grounding.md](medical-system-grounding.md)
 
 ---
 

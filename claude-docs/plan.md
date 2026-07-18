@@ -6,7 +6,7 @@ tags:
 # plan — 앞으로 할 일 (살아있는 계획)
 
 > 범례: ✅완료 · 🔜다음 · ⬜예정 · ⏸의도적 보류(본선/v2) · ⚠️리스크·전제 · 🔴기각된 답(이력 보존)
-> 관련 문서: [changeLog.md](changeLog.md)(완료 상세·역순) · [troubleshooting.md](troubleshooting.md) · [docs/game-concept.md](../docs/game-concept.md) · **[submission-plan.md](../docs/submission/submission-plan.md)**(25일 제출 로드맵 상세)
+> 관련 문서: [changeLog.md](changeLog.md)(완료 상세·역순) · [troubleshooting.md](troubleshooting.md) · [docs/concept/game-concept.md](../docs/concept/game-concept.md) · **[submission-plan.md](../docs/submission/submission-plan.md)**(25일 제출 로드맵 상세)
 >
 > 📏 **이 문서의 규율**: plan은 **"앞으로 할 일 + 살아있는 제약"**만 담는다. 구현이 끝나 changeLog에 기록된 완료 서사는 여기 쌓지 않는다 — 완료 마일스톤은 "무엇이 끝났나" **한 줄(지도)**로만, 상세는 changeLog·PR·git이 가진다. (2026-07-18 정리: 완료 서사 130줄을 걷어냈고, F1~F3의 📌 설계 근거는 [spec §13](superpowers/specs/2026-07-17-essential-care-economics-devices-design.md)으로 이관. 이 규율 자체가 "문서가 뚱뚱해진다"의 처방 — 읽기 패턴이 통독인 plan에 조회용 완료 기록이 섞이면 안 된다.)
 
@@ -44,7 +44,7 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 
 ## 크리티컬 패스 — 남은 것 (상세: [submission-plan.md](../docs/submission/submission-plan.md))
 
-- 🔜 **엔딩 누적 결산형 — 이번 주 신문 아카이브** (진행 중): 에필로그에 7일 누적 돌려보낸 STEMI를 신문 헤드라인 아카이브로(결정론, 플레이 중 본 기사와 글자까지 동일). 7일차 거절이 증발하던 구멍을 메움 + '사람 명부↔돈 장부' 병치. 북극성 = **누적 결산형**(엔딩은 쟁취 아닌 필연 · 본선은 N주 확장). 근거: [game-concept.md §7 엔딩 구조](../docs/game-concept.md)
+- 🔜 **엔딩 누적 결산형 — 이번 주 신문 아카이브** (진행 중): 에필로그에 7일 누적 돌려보낸 STEMI를 신문 헤드라인 아카이브로(결정론, 플레이 중 본 기사와 글자까지 동일). 7일차 거절이 증발하던 구멍을 메움 + '사람 명부↔돈 장부' 병치. 북극성 = **누적 결산형**(엔딩은 쟁취 아닌 필연 · 본선은 N주 확장). 근거: [game-concept.md §7 엔딩 구조](../docs/concept/game-concept.md)
 - ✅ **주 반복 루프 — N주 확장 첫 삽** (2026-07-18, PR 예정): 게임이 한 주로 안 끝나고 `WEEK_SUMMARY`에서 [다음 주](다음 세계 이벤트를 현재 세계에 누적·같은 병원으로 재개)/[종료](EPILOGUE). 매주 재구성되는 세계를 여러 주에 걸쳐 노출 — "한 주면 끝나 변화가 안 보인다"(사용자) 해소. 응급 매주 반복(사용자 선택). 에필로그 장부는 **최종 주** 결산(N주 누적 장부는 구조 손익 ×N 스케일 + 일회성 채용 분리 필요 → ⏸ 후속); 주 간 누적은 WEEK_SUMMARY의 `cumulativeNetBillions`로 노출.
 - ⬜ **U2 실LLM 극소판** — 거절 대사 1종만 실제 Anthropic 왕복으로 렌더(무키면 폴백) + 영상 20초 throwaway 유튜브 업로드 테스트·LLM 왕복 지연 실측. ⚠️ 결제 활성 확인 후(선결②). `ANTHROPIC_API_KEY` Vercel 환경변수 등록도 이때
 - 🔜 **R3.7 research 나머지 26건 재검증** (P7 직전, 8/1~8/3) — "이 문장을 문서가 **의도적으로 비판**한 것인가" 렌즈를 추가해 다시 돌리거나 건별로 사람이 판정. **지금 목록을 그대로 적용하면 리서치를 코드에 맞춰 파괴한다.** 살릴 후보: `essential-care-economics` 내부 모순 3건(:42·:93·:99) · `fee-schedule:248` 단위 표기 · 깨진 앵커 2건

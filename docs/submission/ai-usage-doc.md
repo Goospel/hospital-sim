@@ -226,6 +226,6 @@ Andrej Karpathy가 2026-04에 제안한 [LLM Wiki](https://gist.github.com/karpa
 ### 관련 문서
 🎛️ **[시각화·PDF판 — 디렉터의 운영체계](ai-usage-directing.html)** (라이브 아티팩트 · 최종 브라우저 인쇄로 PDF)
 
-[game-concept](../game-concept.md) · [submission-plan](submission-plan.md) · [plan](../../claude-docs/plan.md) · [changeLog](../../claude-docs/changeLog.md) · [troubleshooting](../../claude-docs/troubleshooting.md)
+[game-concept](../concept/game-concept.md) · [submission-plan](submission-plan.md) · [plan](../../claude-docs/plan.md) · [changeLog](../../claude-docs/changeLog.md) · [troubleshooting](../../claude-docs/troubleshooting.md)
 
 *문서 상태: 작업 초안 (2026-07-17 갱신). 라이브 로그·스크린샷·최종 수치는 P7(8/3~8/7)에 채워 확정.*

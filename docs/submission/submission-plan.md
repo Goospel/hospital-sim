@@ -8,7 +8,7 @@ tags:
 > **NAN 2026 사전 과제 마감: 2026-08-10** (본선 9/4~9/6, 판교 NHN · 내부 심사 10팀 진출).
 > **전략: 최소 제출선 먼저(Option A).** LLM 없이 결정론 폴백 대사로도 "한 판 플레이 + Vercel 배포"를 먼저 확보 → 그 위에 실LLM을 **비파괴 가산 레이어**로 얹는다.
 > 이 안은 3관점(의존성·리스크·데모서사) 독립 설계 → 종합 → **적대적 비평까지 반영**한 결과다.
-> 관련: [../plan.md](../../claude-docs/plan.md) · [game-concept.md](../game-concept.md)
+> 관련: [../plan.md](../../claude-docs/plan.md) · [game-concept.md](../concept/game-concept.md)
 
 ---
 
