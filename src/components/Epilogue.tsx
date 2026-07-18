@@ -1,8 +1,33 @@
 "use client";
 
 import type { SessionEpilogue } from "@/game/session";
+import type { NewsItem } from "@/game/news";
 import Receipt from "./Receipt";
 import LedgerPanel from "./LedgerPanel";
+
+/**
+ * 이번 주 신문 — 1막 7일 누적 돌려보낸 STEMI(누적 결산). 플레이 중 아침마다 한 건씩 스치던 기사가
+ * 여기 한꺼번에 쌓인다. 해석 0(메모 game-show-dont-tell): 카피 없이 헤드라인과 숫자만 — '사람 명부'가
+ * 바로 아래 '돈 장부' 옆에 놓이는 병치가 논지다. 비어 있으면(다 받은 주) 숨긴다.
+ */
+function WeekPaper({ news }: { news: NewsItem[] }) {
+  if (news.length === 0) return null;
+  return (
+    <div className="w-full max-w-sm">
+      <p className="mb-3 text-center text-xs uppercase tracking-[0.3em] text-ink-2">
+        이번 주 신문 · {news.length}명
+      </p>
+      <ul className="flex flex-col gap-2 paper-card px-5 py-4">
+        {news.map((n) => (
+          <li key={n.id} className="border-l-2 border-rule pl-3">
+            <p className="text-sm font-medium leading-snug text-ink">{n.headline}</p>
+            <p className="mt-0.5 text-[11px] text-ink-2">{n.outlet}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /**
  * 결말 — 이 세션 톤 아크의 냉정(red) 극. buildEpilogue(순수 함수)가 파생한 값만 렌더한다.
@@ -17,7 +42,7 @@ export default function Epilogue({
   epilogue: SessionEpilogue;
   onRestart: () => void;
 }) {
-  const { survived, ledger, debrief } = epilogue;
+  const { survived, ledger, debrief, weekNews } = epilogue;
 
   // 헤드라인도 낙차를 따라간다 — 공범·생존은 "살았다"(다른 병원이 대신 받았을 뿐, 내 손으로 한 일이 아니다),
   // 양심·생존만 "살렸습니다"(내 응급실이 직접 받아 낸 결과). 부제의 구분을 헤드라인까지 밀어 냉정 톤을 강화한다.
@@ -49,9 +74,11 @@ export default function Epilogue({
         <p className="text-sm text-on-desk-muted">{subtitle}</p>
       </section>
 
+      {/* 배치 = 논지: 제목 → 이번 주 신문(사람) → 장부(돈) → 전원 기록(2막). 사람 바로 옆에 돈. */}
       <div className="flex flex-col items-center gap-4">
-        {debrief && <Receipt debrief={debrief} />}
+        <WeekPaper news={weekNews} />
         {ledger && <LedgerPanel ledger={ledger} />}
+        {debrief && <Receipt debrief={debrief} />}
       </div>
 
       <button

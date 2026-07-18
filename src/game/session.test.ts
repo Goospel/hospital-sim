@@ -268,6 +268,38 @@ describe('toEpilogue 가드 + buildEpilogue', () => {
   })
 })
 
+describe('에필로그 누적 결산 — 이번 주 신문(1막 7일 돌려보낸 STEMI)', () => {
+  /**
+   * collaborator(순환기 0) + 전부 거절 → 매일 STEMI가 하드락/거절로 증발한다.
+   * 전원은 출구 h6로 완료해 EPILOGUE에 도달시킨다(응급 결과는 이 테스트와 무관).
+   */
+  function collaboratorEpilogue(): SessionState {
+    const s = beginEmergency(runWeek(collaborator, false))
+    const em = s.emergency!
+    const game = attemptTransfer(
+      em.mode === 'TRANSFER' ? em.game : (() => { throw new Error() })(), 'h6', 12,
+    )
+    return toEpilogue({ ...s, emergency: { mode: 'TRANSFER', game } })
+  }
+
+  it('[누적] 7일 동안 돌려보낸 STEMI가 전부 결말 신문에 모인다', () => {
+    const s = collaboratorEpilogue()
+    const total = s.ledgerDays.reduce((n, d) => n + d.turnedAway.length, 0)
+    expect(total).toBeGreaterThan(0)
+    const epi = buildEpilogue(s)
+    expect(epi.weekNews.length).toBe(total)
+    expect(epi.weekNews[0].headline).toContain("'뺑뺑이'")
+  })
+
+  it('[누적] 7일차 거절도 포함된다 — morningNews로는 다음 아침이 없어 증발하던 사람들', () => {
+    const s = collaboratorEpilogue()
+    const day7 = s.ledgerDays[6].turnedAway
+    expect(day7.length).toBeGreaterThan(0)
+    const ids = new Set(buildEpilogue(s).weekNews.map((n) => n.id))
+    for (const t of day7) expect(ids.has(`news-${t.callId}`)).toBe(true)
+  })
+})
+
 describe('통합 불변식', () => {
   it('공범 병원은 STEMI를 받는 쪽에서도 하드락(1막), 2막에선 전원으로 던져짐', () => {
     const s = completeSetup(collaborator)

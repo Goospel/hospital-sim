@@ -115,13 +115,13 @@ function formatDelay(minutes: number): string {
 }
 
 /**
- * 어제 돌려보낸 사람들 → 오늘 아침 기사.
+ * 돌려보낸 사람들 → 기사(NewsItem[]). **날짜 게이트 없는 순수 렌더 코어.**
  *
- * day는 **오늘**이다 — 1일차 아침엔 어제가 없으니 신문도 없다.
- * 순서는 `turnedAway` 그대로다(어제 콜 순서). 2번째부터 "또"가 붙는다 — 패턴의 n번째라는 선언.
+ * 아침 신문(morningNews)과 결말 누적 아카이브(session.buildEpilogue)가 이 코어를 공유한다 —
+ * 그래서 같은 콜은 어디서 렌더되든 **글자까지 같은 기사**다(플레이 중 본 기사 = 결말 아카이브, 재인식).
+ * 순서는 `turnedAway` 그대로. 2번째부터 "또"가 붙는다 — 패턴의 n번째라는 선언.
  */
-export function morningNews(day: number, turnedAway: TurnedAway[]): NewsItem[] {
-  if (day <= 1) return []
+export function renderNews(turnedAway: TurnedAway[]): NewsItem[] {
   return turnedAway.map((t, i) => {
     const seed = seedOf(t.callId)
     // 사유는 지어내지 않는다 — 내가 거절한 건 '수용 거부'다(신문이 거짓말하면 안 된다).
@@ -144,4 +144,13 @@ export function morningNews(day: number, turnedAway: TurnedAway[]): NewsItem[] {
       delayMinutes,
     }
   })
+}
+
+/**
+ * 어제 돌려보낸 사람들 → 오늘 아침 기사. day는 **오늘**이다 — 1일차 아침엔 어제가 없으니 신문도 없다.
+ * (7일차에 돌려보낸 사람들은 다음 아침이 없어 여기선 안 나온다 — 결말 누적 아카이브가 그 구멍을 메운다.)
+ */
+export function morningNews(day: number, turnedAway: TurnedAway[]): NewsItem[] {
+  if (day <= 1) return []
+  return renderNews(turnedAway)
 }
