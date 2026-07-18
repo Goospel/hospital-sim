@@ -6,9 +6,16 @@ tags:
 # changeLog — 완료 기록 (역순)
 
 > 매 작업(대체로 PR) 완료 시 맨 위에 한 항목. 코드 세부는 PR·커밋에, 여기선 **왜/무엇을**만.
-> 날짜는 KST 절대일자. 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
+> 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
+> 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
-## 2026-07-18 · 주 반복 루프 — 한 주로 안 끝나고 사용자가 종료(종료 버튼) (진행 중 · PR 예정)
+## 2026-07-18 · changeLog 규약 — PR 번호 생략으로 stale 원천 제거
+
+- **무엇을**: changeLog 항목 제목에서 **PR 번호를 뺀다**(`날짜 · 제목`까지만). 프로젝트 [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)에 규칙·이유 명문화(글로벌 override). 직전 「주 반복 루프」 항목의 `(진행 중 · PR 예정)` 플레이스홀더 제거. 과거 `(PR #NN)` 항목은 보존(역사·정확).
+- **왜**: 사용자 지적 — PR 번호는 머지돼야 확정되는데 항목은 커밋 시점에 써져, `(PR 예정)`→`(PR #N)` sweep이 필요했고 그 소프트 sweep이 잊혀 **#54·#55에서 stale 2회 재발**(직전에 #54를 고치며 #55를 또 남겼다). squash 머지 커밋 제목의 `(#N)`이 이미 단일 출처라 changeLog가 다시 적는 건 이중 기재 — 안 적어 **원천을 제거**(「옵시디언 태그」·「troubleshooting 분할」과 같은 drift 방지 발상, = `MEMORY.md` 자동생성).
+- **결과**: 이 항목부터 번호 없음(자기적용). 일반 패턴이라 글로벌 `~/.claude/CLAUDE.md` 승격 후보 — 글로벌은 별도 레포(main·훅 보호)라 별도 브랜치·머지 필요, 프로젝트 override를 1단계로.
+
+## 2026-07-18 · 주 반복 루프 — 한 주로 안 끝나고 사용자가 종료(종료 버튼)
 
 - **무엇을**: 게임이 한 주(7일+응급)로 끝나던 걸 **주 반복 루프**로 전환. 매 주말 응급 뒤 `WEEK_SUMMARY`(이번 주·누적 손익 + 응급 생존 + [다음 주]/[종료])에서 갈라진다 — [다음 주]는 **다음 외생 이벤트를 현재 세계 위에 누적**하고 같은 병원으로 새 주를 연다(위저드 스킵), [종료]는 그때 EPILOGUE로. session 상태기계에 `WEEK_SUMMARY` phase + `week`·`history` 필드 + `completeWeek`·`nextWeek`·`beginWeek`·`endGame`·`survivedEmergency`·`cumulativeNetBillions`. 콜 큐 id는 전역 일차((week−1)×7+day)로 고유화해 누적 신문 React 키 충돌 차단. UI: `WeekSummary` 신설, `WorldEventCard` 주차 배지·CTA 분기.
 - **왜**: 사용자 — "한 주 지나면 게임이 끝나버려 세계관 변화가 눈에 안 띈다. 계속 돌아가야 하고 끝은 사용자가 정한다." 세계가 매주 재구성되는 걸 여러 주에 걸쳐 보이게 하는 게 핵심. 응급은 매주 반복(사용자 선택).
