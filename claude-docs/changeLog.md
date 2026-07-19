@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 세계 이벤트 용어 풀이 — opt-in 용어집(show-don't-tell 유지)
+
+- **무엇을**: 세계 이벤트 헤드라인의 전문용어(수가·재정중립·급여/비급여·필수의료·배후진료)를 원하는 사람만 헤드라인 아래 '용어 풀이'를 펼쳐 **단어 정의만**으로 읽는 기능. 순수 감지(`src/game/glossary.ts` — 긴것우선 비중복 매칭)/컴포넌트(`TermGlossary.tsx`)/`WorldEventCard` 배선. 컴포넌트·데이터는 재사용 가능하게 두되 이번엔 세계 이벤트만 배선.
+- **왜**: 일반 플레이어가 헤드라인 뜻을 몰라도 게임의 show-don't-tell(해석 카피 금지)은 지켜야 한다 → **기본 접힘 opt-in + 단어 정의만**으로 양립. 처음엔 '정의+현실 맥락'이었으나 렌더 확인 후 맥락 줄이 단어를 현 의료 문제와 엮어 원칙을 침식함이 드러나 정의만으로 좁힘(사용자 지시) — 문제는 플레이로 느끼게. `context` 필드 삭제.
+- **결과**: TDD(RED 어설션 확인 → GREEN) 감지 8케이스(`비급여⊃급여`·`정책수가⊃수가` 오탐 방지·`급여수가` 급여+수가 분해·중복제거·읽는순서). `tsc --noEmit` 0 + vitest **241 green**. ⚠️ 브라우저 pane이 `hidden`이라(백그라운드 throttle로 하이드레이션 멈춤) 클릭 펼침 인터랙션은 라이브 미검증 — 대신 초기 페이즈를 WORLD_EVENT로 임시 시드해 **SSR 강제 렌더**로 용어 4개·읽는순서·`aria-expanded` 마크업 실측(bisect로 hidden-탭이 원인·내 코드 무죄 확인). 렌더 확인 뒤 맥락 줄은 사용자 지시로 제거(정의만). 콘텐츠는 [fee-schedule-and-subsidies.md](../docs/research/fee-schedule-and-subsidies.md) 등 근거("과별 수가" 오표현 금지 준수). 설계: [term-glossary](../docs/superpowers/specs/2026-07-20-world-event-term-glossary-design.md).
+
 ## 2026-07-20 · 셋업·플레이 전 화면 컨테이너 폭 통일 — 데스크톱 일관·모바일 유동
 
 - **무엇을**: 페이즈마다 제각각이던 `<main>` 컨테이너 max-width(세계이벤트·병원이름·주간결산 `max-w-md` 448px, 응급접수 `max-w-3xl` 768px)를 **전 화면 `max-w-2xl`(672px)로 통일**. 4개 컴포넌트(WorldEventCard·SetupWizard NAME·WeekSummary·ReceivingPhase) 5줄.
