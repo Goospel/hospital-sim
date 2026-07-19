@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initWorld, applyEvent, selectEvent, EVENT_CATALOG } from './world'
+import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT } from './world'
 import { DEPARTMENTS } from './setup'
 import type { DeptKey, DepartmentSpec } from './types'
 
@@ -64,5 +64,37 @@ describe('world — 외생 이벤트 세계 재구성 (순수)', () => {
   it('selectEvent(0)은 개선 이벤트를 결정론적으로 고른다', () => {
     expect(selectEvent(0)).toBe(EVENT_CATALOG[0])
     expect(EVENT_CATALOG[0].direction).toBe('improve')
+  })
+})
+
+// 1주차 개원 전용 큐레이션 이벤트 — 순환 카탈로그(EVENT_CATALOG)와 별개.
+// 재정중립 정책수가 패키지: 순환기 수가를 올린 만큼 급여 풀 안에서 산부가 내려가 profit 합=0.
+// 미용(비급여)은 풀 밖이라 무풍지대 — "급여 안에서 재분배해도 비급여를 못 이긴다".
+describe('OPENING_EVENT — 1주차 개원 재정중립 정책수가 패키지', () => {
+  it('다효과 패키지다 — 순환기 +6 / 산부 −6 (한 이벤트가 두 과를 동시에)', () => {
+    expect(OPENING_EVENT.effects).toHaveLength(2)
+    const cardio = OPENING_EVENT.effects.find((e) => e.dept === 'CARDIOLOGY')!
+    const ob = OPENING_EVENT.effects.find((e) => e.dept === 'OBSTETRICS')!
+    expect(cardio).toMatchObject({ field: 'profitPerDoctorBillions', delta: 6 })
+    expect(ob).toMatchObject({ field: 'profitPerDoctorBillions', delta: -6 })
+  })
+
+  it('[재정중립] 급여과 profit 델타 합이 0이다 — 급여 풀 안에서 제로섬', () => {
+    const essentialKeys = new Set(DEPARTMENTS.filter((d) => d.essential).map((d) => d.key))
+    const sum = OPENING_EVENT.effects
+      .filter((e) => e.field === 'profitPerDoctorBillions' && essentialKeys.has(e.dept))
+      .reduce((n, e) => n + e.delta, 0)
+    expect(sum).toBe(0)
+  })
+
+  it('적용하면 순환기 −6·산부 −16이 되고 미용(+70)은 손 안 댄다 — 비급여 무풍지대', () => {
+    const world = applyEvent(initWorld(), OPENING_EVENT)
+    expect(deptProfit(world.departments, 'CARDIOLOGY')).toBe(-6) // -12 + 6
+    expect(deptProfit(world.departments, 'OBSTETRICS')).toBe(-16) // -10 - 6
+    expect(deptProfit(world.departments, 'AESTHETICS')).toBe(70) // 비급여 불변
+  })
+
+  it('명목상 개선으로 고지된다 (direction=improve) — 아이러니는 숫자에서', () => {
+    expect(OPENING_EVENT.direction).toBe('improve')
   })
 })
