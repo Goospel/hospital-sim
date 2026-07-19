@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 응급 재설계 문서 부채 정합 — 5개 문서의 '골든타임 뺑뺑이 간판' 서술 정리(슬라이스 A/B 이월)
+
+- **무엇을**: 슬라이스 A/B로 은퇴한 2막(골든타임 뺑뺑이 미니게임·실시간 전원 협상)을 아직 게임 간판/승부축으로 서술하던 문서 5종을 정합. **README.md**(주말 단일 STEMI·뺑뺑이 발신자 시점 → 7일 진료에 섞인 응급 콜·받는 벽, '응급 생존'→받은/돌려보낸 응급, 영수증 제거) · **ai-usage-doc.md**(§2 방향 reframe·삭제된 `persuasionReply`→`receivingLine`, §3-2 테스트 표를 삭제 모듈(`goldenTime`/`round`/`debrief`)에서 현행 9파일로 교체·54→233, §4 `debrief.ts`"현 구현"·'전원 기록 영수증'→누적 장부+주간 신문 병치) · **submission-plan.md**(방향 전환 배너 + 최소선·영상 샷·PDF 목차를 받는 벽 경영 아크로) · **ai-scenario-generation.md**(4차 결정 추가 — §5-A '뺑뺑이 골격 유지'를 은퇴로 대체) · **game-concept.md**(전환 배너 + `debrief.ts` 현재형 거짓 정정).
+- **왜**: 문서가 사라진 게임을 설명하고 **삭제된 모듈을 "현재 구현됨"으로 주장**하던 부채(spec §8). 이 게임은 메시지 정확도가 핵심이라 제출문서가 은퇴한 승부축을 팔면 심사에서 거짓말이 된다. spec §8·§5-B가 이미 reframe 방향(라이브 협상 승부축 → 문서 강조)을 확정해 설계 재론 없이 실행.
+- **결과**: 코드 무변경(문서만) — tsc/vitest 불필요. 날짜 결정을 기록하는 역사 문서(submission-plan 마일스톤 표·game-concept ✅결정·ai-scenario 2차결정)는 **전면 재작성 대신 상단 전환 배너 + 단일 출처 포인터**로 처리(스펙·README·ai-usage-doc를 단일 출처로) — 이중 기재 drift 회피. 삭제 모듈을 현재형으로 주장하는 거짓 서술 잔여 0(grep 스윕), 새 상대 링크 전수 실재 확인. 설계: [received-side-emergency-redesign](../docs/superpowers/specs/2026-07-19-received-side-emergency-redesign-design.md) §8.
+
 ## 2026-07-19 · 응급 재설계 슬라이스 B — 응급 CallKind 다양화(분만·뇌출혈·중증외상)
 
 - **무엇을**: 받는 콜을 STEMI 하나에서 **필수 응급 4종**으로 넓힘 — `OBSTETRIC_EMERGENCY`(분만·산부인과)·`NEURO_EMERGENCY`(뇌출혈·신경외과)·`TRAUMA_EMERGENCY`(중증외상·외과) 신설. 각자 requiredSpecialty로 배후과를 요구하고, 없으면 `adjudicateTransfer`가 **제네릭으로** NO_BACKUP_CARE를 건다(판정 로직 무변경 — 4종이 hardlockReason 한 case를 공유). DAY_PLANS를 4종 분산으로 재구성(월요일은 기존 STEMI 리듬 보존, 뒤로 갈수록 필수 응급 밀도↑). 하드락/야간 공백 대사와 신문 헤드라인이 **그 응급의 과를 정확히 따라간다**(신경외과/산부인과, 심근경색/뇌출혈/중증외상/만삭 산모) — 과가 뒤바뀌면 게임이 거짓말이다. 결산에 '받은 응급 수'를 돌려보낸 수와 나란히.
