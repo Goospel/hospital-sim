@@ -10,11 +10,10 @@ import {
   completeReceiving,
   advanceDay,
   isLastDay,
-  beginEmergency,
   completeWeek,
   nextWeek,
   endGame,
-  survivedEmergency,
+  weekTurnedAwayCount,
   cumulativeNetBillions,
   buildEpilogue,
   type SessionState,
@@ -25,9 +24,6 @@ import WorldEventCard from "./WorldEventCard";
 import SetupWizard from "./SetupWizard";
 import ReceivingPhase from "./ReceivingPhase";
 import DayEnd from "./DayEnd";
-import Interstitial from "./Interstitial";
-import InHouseEmergency from "./InHouseEmergency";
-import TransferRound from "./TransferRound";
 import WeekSummary from "./WeekSummary";
 import Epilogue from "./Epilogue";
 
@@ -67,42 +63,24 @@ export default function SessionClient() {
         />
       );
     case "DAY_END":
+      // 7일차 마감은 다음 날이 아니라 곧바로 주간 결산으로 간다(completeWeek).
       return (
         <DayEnd
           days={session.ledgerDays}
           currentDay={session.day}
           isLast={isLastDay(session)}
-          onContinue={() => setSession(advanceDay(session))}
-        />
-      );
-    case "INTERSTITIAL":
-      return (
-        <Interstitial
-          days={session.ledgerDays}
-          onContinue={() => setSession(beginEmergency(session))}
-        />
-      );
-    case "EMERGENCY": {
-      const em = session.emergency!;
-      if (em.mode === "IN_HOUSE") {
-        return <InHouseEmergency onContinue={() => setSession(completeWeek(session))} />;
-      }
-      return (
-        <TransferRound
-          game={em.game}
-          onFinish={(final) =>
-            setSession((s) => completeWeek({ ...s, emergency: { mode: "TRANSFER", game: final } }))
+          onContinue={() =>
+            setSession(isLastDay(session) ? completeWeek(session) : advanceDay(session))
           }
         />
       );
-    }
     case "WEEK_SUMMARY":
       return (
         <WeekSummary
           week={session.week}
           weekNetBillions={session.ledgerDays.reduce((n, d) => n + d.netProfitBillions, 0)}
           cumulativeNetBillions={cumulativeNetBillions(session)}
-          survived={survivedEmergency(session.emergency!)}
+          turnedAway={weekTurnedAwayCount(session)}
           onNextWeek={() => setSession(nextWeek(session))}
           onEnd={() => setSession(endGame(session))}
         />

@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-19 · 응급 재설계 슬라이스 A — 2막 뺑뺑이 미니게임 은퇴, 받는 쪽 통합
+
+- **무엇을**: 주말 STEMI 클라이맥스(2막 `EMERGENCY`·`INTERSTITIAL` 페이즈·골든타임 뺑뺑이 미니게임)를 은퇴. `round`·`goldenTime`·`scenarios`·`debrief` 모듈 + `Interstitial`·`InHouseEmergency`·`TransferRound`·`Receipt` 컴포넌트 삭제(테스트 포함 12파일), `dialogue` 2막 함수(`fallbackLine`·`persuasionReply`) 트림. 상태기계는 7일차 `DAY_END` → `WEEK_SUMMARY` 직행. 결산은 생존 대신 '돌려보낸 응급 수', 에필로그는 debrief 없이 주간 신문+장부. 플레이어는 항상 받는 벽 — 못 받은 응급은 다른 데서 뺑뺑이(내가 그 벽).
+- **왜**: 사용자 방향 재설정 — "무조건 주말 STEMI는 억지, 응급은 STEMI만이 아니다." 다양한 응급을 받는 흐름으로 통합하는 재설계의 1단계(삭제·단순화). 브레인스토밍으로 관점(받는 쪽 통합)·삭제 규모를 확정.
+- **결과**: 삭제 12파일. TDD로 상태기계 전이(7일차→결산 직행) 재작성, 회귀 잠금 `tsc --noEmit` 0 + 214 vitest green. 설계·2슬라이스 분해: [received-side-emergency-redesign](../docs/superpowers/specs/2026-07-19-received-side-emergency-redesign-design.md). 슬라이스 B(응급 다양화)가 이 위에 얹힌다. ⚠️ README·제출문서의 '골든타임 뺑뺑이 간판' 서술은 후속 정합 필요.
+
 ## 2026-07-19 · 재정중립 정책수가 패키지 — 1주차 개원 이벤트로 (외생 이벤트 첫 다효과)
 
 - **무엇을**: 개원 외생 이벤트를 단효과 `CARDIO_FEE_HIKE`에서 재정중립 정책수가 패키지 `OPENING_EVENT`(순환기 profit +6 / 산부 −6)로 교체. 급여 풀 profit 합=0(재정중립)이고 미용(비급여)은 손 안 대 무풍지대 — "급여 안에서 재분배해도 비급여를 못 이긴다"가 개원 위저드 숫자에서 드러남. [world.ts](../src/game/world.ts) 상수 추가 + [session.ts](../src/game/session.ts) `enterWorldEvent` 배선 한 줄.
