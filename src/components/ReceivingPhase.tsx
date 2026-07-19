@@ -139,7 +139,7 @@ export default function ReceivingPhase({
   const dayLabel = `${DAY_LABELS[day - 1]}요일`;
   if (receiving.done) {
     return (
-      <main className="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
+      <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
         <header className="flex flex-col gap-1">
           <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">{dayLabel} · 전원 콜 접수</span>
           <h1 className="text-lg font-semibold">
@@ -199,7 +199,7 @@ export default function ReceivingPhase({
       : undefined;
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
+    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
       {/*
         남은 자리 — 이 게임의 유일한 과부하 표시. 숫자만 보여주고 해석하지 않는다:
         콜 5통 > 자리 3이라 매일 2통은 못 받는데, 그걸 말로 하지 않고 숫자가 줄어드는 걸로만 알린다.
