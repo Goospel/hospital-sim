@@ -1,6 +1,7 @@
 "use client";
 
 import type { WorldEvent } from "@/game/world";
+import TermGlossary from "./TermGlossary";
 
 /**
  * 외생 이벤트 고지 — 위저드 전에 "세상이 이렇게 바뀌었다"를 신문 속보로 보여준다.
@@ -26,6 +27,9 @@ export default function WorldEventCard({
         <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">{badge}</span>
         <h1 className="text-xl font-semibold leading-snug">{event.headline}</h1>
       </header>
+
+      <TermGlossary text={event.headline} />
+
       <button
         type="button"
         onClick={onContinue}
