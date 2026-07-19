@@ -26,7 +26,7 @@ export const CALLER_PLEA: Record<CallKind, string[]> = {
 
 /**
  * 발신자 호소 대사 선택 — seed로 같은 콜 종류 안에서 변주(결정론).
- * seed가 음수·범위 밖이어도 항상 풀 안의 유효한 대사로 clamp(fallbackLine과 동일 패턴).
+ * seed가 음수·범위 밖이어도 항상 풀 안의 유효한 대사로 clamp한다(아래 % 이중 모듈로).
  * 대사 선택 로직을 컴포넌트 인라인에서 순수 함수로 통일해 테스트로 잠근다.
  */
 export function callerPlea(call: IncomingCall, seed = 0): string {

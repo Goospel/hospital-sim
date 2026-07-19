@@ -30,9 +30,9 @@ export interface Hospital {
    * 갖춘 PCI 병원이라야 재관류가 되고(medical-system-grounding.md:20), 거절하는 당직의의 정당한
    * 제약이 "당직 1명이 이미 3명 동시 진료"(:66)다. 비면 야간 콜이 NO_BACKUP_CARE가 된다.
    *
-   * **선택 필드인 이유**: 당직을 모델링하는 건 1막의 플레이어 병원뿐이다(buildHospital이 항상 채운다).
-   * 2막 NPC 병원(scenarios.ts)은 시간대 축이 없고 adjudicateTransfer가 야간을 안 본다 —
-   * 생략하면 "이 병원은 교대를 모델링하지 않는다"는 뜻이고 기존대로 backupCare만으로 판정된다.
+   * **선택 필드인 이유**: 당직을 모델링하는 건 플레이어 병원뿐이다(buildHospital이 항상 채운다).
+   * 생략하면 "이 병원은 교대를 모델링하지 않는다"는 뜻이고, adjudicateTransfer가 야간을 안 봐
+   * 기존대로 backupCare만으로 판정된다.
    */
   roundTheClockBackup?: Specialty[]
   economics?: HospitalEconomics // '병원 장부' 에필로그용(있는 병원만)

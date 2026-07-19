@@ -237,6 +237,10 @@ describe('completeWeek 가드 + buildEpilogue', () => {
     expect(() => completeWeek(completeSetup(collaborator))).toThrow() // RECEIVING에서 호출
   })
 
+  it('EPILOGUE가 아니면 buildEpilogue 에러(가드)', () => {
+    expect(() => buildEpilogue(finishWeek(runWeek(collaborator)))).toThrow() // WEEK_SUMMARY에서 호출
+  })
+
   it('양심 경로: 한 주 완주 → 종료 → EPILOGUE, 적자·소송비용·순환기 채용 N', () => {
     // 양심 빌드는 순환기·미용이 함께라 기저는 흑자다(부문 +46억) — 적자·소송은 1막에서 필수 케이스를
     // '수용'할 때 성립한다(비용은 짓기가 아니라 진료함에서 온다).
