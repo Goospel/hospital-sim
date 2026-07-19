@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-19 · 응급 재설계 슬라이스 B — 응급 CallKind 다양화(분만·뇌출혈·중증외상)
+
+- **무엇을**: 받는 콜을 STEMI 하나에서 **필수 응급 4종**으로 넓힘 — `OBSTETRIC_EMERGENCY`(분만·산부인과)·`NEURO_EMERGENCY`(뇌출혈·신경외과)·`TRAUMA_EMERGENCY`(중증외상·외과) 신설. 각자 requiredSpecialty로 배후과를 요구하고, 없으면 `adjudicateTransfer`가 **제네릭으로** NO_BACKUP_CARE를 건다(판정 로직 무변경 — 4종이 hardlockReason 한 case를 공유). DAY_PLANS를 4종 분산으로 재구성(월요일은 기존 STEMI 리듬 보존, 뒤로 갈수록 필수 응급 밀도↑). 하드락/야간 공백 대사와 신문 헤드라인이 **그 응급의 과를 정확히 따라간다**(신경외과/산부인과, 심근경색/뇌출혈/중증외상/만삭 산모) — 과가 뒤바뀌면 게임이 거짓말이다. 결산에 '받은 응급 수'를 돌려보낸 수와 나란히.
+- **왜**: 사용자 원 요청("산부인과 콜 붙이기") + 슬라이스 A 스펙의 B단계. "응급은 STEMI만이 아니다" — 한 병원이 4개 배후과를 다 못 갖춰 어느 과든 하드락이 나 필수의료 붕괴가 여러 과에서 동시에 보인다. 이로써 재정중립 패키지의 산부 −16 상쇄가 장부에서 체감된다.
+- **결과**: TDD(RED 14개 실패 확인 → GREEN). 콜 델타는 4종 균일(급여·원가미달 84.9% 밴드) — 과별 차등은 콜 델타에 섞지 않고 DEPARTMENTS 층이 담당(T-039). 전체 233 vitest green + `tsc --noEmit` 0. 브라우저로 화·수·목 라이브 검증: 뇌출혈/분만 콜 렌더·과별 하드락 대사·종류별 신문(윤리 가드 유지: 가공 지역·40~60대/산모·무주체) 확인, 콘솔 에러 0. 설계: [received-side-emergency-redesign](../docs/superpowers/specs/2026-07-19-received-side-emergency-redesign-design.md). ⚠️ README·제출문서의 '골든타임 뺑뺑이 간판' 서술 후속 정합은 여전히 미해결(슬라이스 A에서 이월).
+
 ## 2026-07-19 · 응급 재설계 슬라이스 A — 2막 뺑뺑이 미니게임 은퇴, 받는 쪽 통합
 
 - **무엇을**: 주말 STEMI 클라이맥스(2막 `EMERGENCY`·`INTERSTITIAL` 페이즈·골든타임 뺑뺑이 미니게임)를 은퇴. `round`·`goldenTime`·`scenarios`·`debrief` 모듈 + `Interstitial`·`InHouseEmergency`·`TransferRound`·`Receipt` 컴포넌트 삭제(테스트 포함 12파일), `dialogue` 2막 함수(`fallbackLine`·`persuasionReply`) 트림. 상태기계는 7일차 `DAY_END` → `WEEK_SUMMARY` 직행. 결산은 생존 대신 '돌려보낸 응급 수', 에필로그는 debrief 없이 주간 신문+장부. 플레이어는 항상 받는 벽 — 못 받은 응급은 다른 데서 뺑뺑이(내가 그 벽).

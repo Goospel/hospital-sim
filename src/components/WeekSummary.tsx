@@ -13,6 +13,7 @@ export default function WeekSummary({
   week,
   weekNetBillions,
   cumulativeNetBillions,
+  received,
   turnedAway,
   onNextWeek,
   onEnd,
@@ -20,6 +21,7 @@ export default function WeekSummary({
   week: number;
   weekNetBillions: number;
   cumulativeNetBillions: number;
+  received: number;
   turnedAway: number;
   onNextWeek: () => void;
   onEnd: () => void;
@@ -37,8 +39,11 @@ export default function WeekSummary({
             {formatSignedBillions(weekNetBillions)}
           </span>
         </p>
+        {/* 받은/돌려보낸 응급을 나란히 — 해석 없이 두 숫자만(show-don't-tell). 돌려보낸 사람이 있으면 붉게. */}
         <span className={`text-xs uppercase tracking-[0.2em] ${turnedAway > 0 ? "text-red-400" : "text-zinc-500"}`}>
-          {turnedAway > 0 ? `응급 · ${turnedAway}명 돌려보냄` : "응급 · 전부 수용"}
+          {turnedAway > 0
+            ? `응급 · ${received}명 수용 · ${turnedAway}명 돌려보냄`
+            : `응급 · ${received}명 전부 수용`}
         </span>
       </header>
 

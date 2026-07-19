@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { morningNews, renderNews, FORBIDDEN_REAL_EVENT_TOKENS, type TurnedAway } from './news'
+import type { CallKind } from './types'
 
-// 어제 돌려보낸 STEMI 한 건 — 기사 하나의 씨앗.
-const one: TurnedAway[] = [{ callId: 'd1c5', reason: 'NO_BED' }]
+// 어제 돌려보낸 응급 한 건 — 기사 하나의 씨앗.
+const one: TurnedAway[] = [{ callId: 'd1c5', kind: 'STEMI', reason: 'NO_BED' }]
 const two: TurnedAway[] = [
-  { callId: 'd1c4', reason: 'NO_NIGHT_BACKUP' },
-  { callId: 'd1c5', reason: 'NO_BED' },
+  { callId: 'd1c4', kind: 'STEMI', reason: 'NO_NIGHT_BACKUP' },
+  { callId: 'd1c5', kind: 'STEMI', reason: 'NO_BED' },
 ]
 
 /**
@@ -16,13 +17,17 @@ const two: TurnedAway[] = [
  * 규칙: 지역·연도·환자 프로필 중 **최소 두 개**를 실제와 어긋나게. 실명·실제 병원명 금지.
  */
 describe('🔴 윤리 가드 — 실제 사건과 겹치면 2차 가해', () => {
-  it('실제 사건의 지역·프로필 토큰이 어떤 기사에도 등장하지 않는다', () => {
-    // 7일 × 모든 사유 조합을 훑어 뱅크 전체를 노출시킨다 — 한 번이라도 새면 red.
+  it('실제 사건의 지역·프로필 토큰이 어떤 기사에도 등장하지 않는다 — 4종 응급 전부', () => {
+    // 7일 × 모든 사유 × 4종 응급 조합을 훑어 뱅크 전체를 노출시킨다 — 한 번이라도 새면 red.
+    // 다양화로 산부(산모)·뇌출혈·중증외상 프로필이 새로 생겼으니 이 스윕이 그 전부를 검사한다.
+    const KINDS: CallKind[] = ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY']
     const all: string[] = []
     for (let day = 2; day <= 7; day++) {
       for (const reason of ['NO_BED', 'NO_NIGHT_BACKUP', 'NO_BACKUP_CARE', 'ER_OVERCROWDED'] as const) {
-        for (let i = 1; i <= 5; i++) {
-          all.push(...morningNews(day, [{ callId: `d${day - 1}c${i}`, reason }]).map((n) => n.headline))
+        for (const kind of KINDS) {
+          for (let i = 1; i <= 5; i++) {
+            all.push(...morningNews(day, [{ callId: `d${day - 1}c${i}`, kind, reason }]).map((n) => n.headline))
+          }
         }
       }
     }
@@ -212,5 +217,45 @@ describe('주간 누적 아카이브(결말 신문) — renderNews', () => {
     for (const token of FORBIDDEN_REAL_EVENT_TOKENS) {
       for (const h of headlines) expect(h).not.toContain(token)
     }
+  })
+})
+
+/**
+ * 종류별 헤드라인 — 다양화된 응급이 신문에 드러난다(슬라이스 B).
+ *
+ * STEMI만 기사가 되던 걸 4종으로 확대했다. 종류가 헤드라인에 실려야 플레이어가 **뭘** 돌려보냈는지
+ * 신문에서 재인식한다 — 아니면 네 응급이 전부 "40대 남성 숨져"로 뭉개져 다양화가 신문에서 증발한다.
+ * 분만은 산모로 지칭한다 — "40대 남성"이라고 쓰면 사실이 틀린다(이 게임의 핵심 = 메시지 정확도).
+ */
+describe('종류별 헤드라인 — 다양화된 응급이 신문에 드러난다', () => {
+  const seed = (kind: CallKind, reason: TurnedAway['reason'] = 'NO_BACKUP_CARE'): TurnedAway => ({
+    callId: 'd1c1',
+    kind,
+    reason,
+  })
+
+  it('응급 종류가 헤드라인에 반영된다 — 심근경색/뇌출혈/중증외상', () => {
+    expect(renderNews([seed('STEMI')])[0].headline).toContain('심근경색')
+    expect(renderNews([seed('NEURO_EMERGENCY')])[0].headline).toMatch(/뇌출혈|뇌졸중/)
+    expect(renderNews([seed('TRAUMA_EMERGENCY')])[0].headline).toMatch(/외상/)
+  })
+
+  it('분만 응급은 산모로 지칭한다 — 나이대 남/녀 프로필이 아니다', () => {
+    const ob = renderNews([seed('OBSTETRIC_EMERGENCY')])[0].headline
+    expect(ob).toContain('산모')
+    expect(ob).not.toMatch(/\d+대 (남성|여성)/)
+  })
+
+  it('종류가 달라도 무주체·"뺑뺑이"·"숨져" 골격은 유지 — 헤드라인 문법 불변', () => {
+    for (const kind of ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY'] as CallKind[]) {
+      const h = renderNews([seed(kind, 'NO_BED')])[0].headline
+      expect(h).toContain("'뺑뺑이'")
+      expect(h).toContain('숨져')
+      expect(h).not.toContain('당신')
+    }
+  })
+
+  it('결정론 — 같은 (종류, 콜 id)는 항상 같은 기사', () => {
+    expect(renderNews([seed('TRAUMA_EMERGENCY', null)])).toEqual(renderNews([seed('TRAUMA_EMERGENCY', null)]))
   })
 })

@@ -2,7 +2,7 @@ import type { Hospital, SetupChoices, Specialty } from './types'
 import { buildHospital, DAYS_PER_WEEK } from './setup'
 import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent } from './world'
 import {
-  accruedSegments, createCallQueue, initReceiving, runningNetProfit, type ReceivingState,
+  accruedSegments, createCallQueue, initReceiving, isCriticalEmergency, runningNetProfit, type ReceivingState,
 } from './receiving'
 import { buildSessionLedger, type Ledger } from './ledger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
@@ -31,10 +31,11 @@ export interface DayRecord {
   workupRevenueBillions: number // 그날 검사 수익 — 진료 수익과 별도로 센다(장부에서 덮는 게 보여야 한다)
   workupCount: number // 그날 검사를 붙인 환자 수 — 내일 자리를 먹는다(boarding)
   /**
-   * 그날 못 받은 STEMI들 — 내일 아침 신문의 씨앗.
+   * 그날 못 받은 필수 응급들(STEMI·분만·뇌출혈·중증외상) — 내일 아침 신문의 씨앗.
    * 구조가 막았든(하드락) 내가 거절했든 **환자는 똑같이 못 들어왔다.** 그래서 둘을 구분하지 않는다.
    */
   turnedAway: TurnedAway[]
+  receivedEmergency: number // 그날 받은 필수 응급 수 — 돌려보낸 수(turnedAway)의 짝(결산 화면)
   netProfitBillions: number // 그날 순이익 = 위 셋의 합 (소송 비용은 결말에서만)
   accepted: number // 받은 콜 수
   blocked: number // 자리가 없어 구조가 막은 콜 수 — 달력엔 안 찍히는 사람들
@@ -129,11 +130,14 @@ function recordDay(day: number, receiving: ReceivingState): DayRecord {
     callDeltaBillions: receiving.netProfitDeltaBillions,
     workupRevenueBillions: receiving.workupRevenueBillions,
     workupCount: receiving.workupCount,
-    // 못 받은 STEMI만 기사가 된다 — 미용 워크인을 돌려보낸 건 뉴스가 아니다.
+    // 못 받은 **필수 응급 4종**이 기사가 된다 — 일반 응급·미용 워크인을 돌려보낸 건 뉴스가 아니다.
+    // kind를 실어 신문이 종류별 헤드라인(심근경색/뇌출혈/중증외상/분만)을 낼 수 있게 한다.
     turnedAway: receiving.log
       .map((e, i) => ({ entry: e, call: receiving.queue[i] }))
-      .filter((x) => x.call.kind === 'STEMI' && !x.entry.accepted)
-      .map((x) => ({ callId: x.entry.callId, reason: x.entry.reason })),
+      .filter((x) => isCriticalEmergency(x.call.kind) && !x.entry.accepted)
+      .map((x) => ({ callId: x.entry.callId, kind: x.call.kind, reason: x.entry.reason })),
+    // 받은 필수 응급 — 돌려보낸 수의 짝. 일반 응급·워크인은 세지 않는다(응급의 '핵심'만).
+    receivedEmergency: receiving.log.filter((e, i) => e.accepted && isCriticalEmergency(receiving.queue[i].kind)).length,
     netProfitBillions: runningNetProfit(receiving),
     accepted: receiving.log.filter((e) => e.accepted).length,
     blocked: receiving.log.filter((e) => e.reason === 'NO_BED').length,
@@ -208,6 +212,11 @@ export function weekTotals(state: SessionState): DayTotals {
 /** 이번 주 돌려보낸 응급 총원 — 주간 결산 화면용(2막 생존 지표를 대체한다). */
 export function weekTurnedAwayCount(state: SessionState): number {
   return state.ledgerDays.reduce((n, d) => n + d.turnedAway.length, 0)
+}
+
+/** 이번 주 받은 필수 응급 총원 — 결산 화면에서 돌려보낸 수와 나란히 보여 준다(받은/돌려보낸). */
+export function weekReceivedEmergencyCount(state: SessionState): number {
+  return state.ledgerDays.reduce((n, d) => n + d.receivedEmergency, 0)
 }
 
 /**

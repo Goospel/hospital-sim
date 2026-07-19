@@ -6,7 +6,7 @@ import {
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK } from './setup'
-import type { CallKind, Hospital, SetupChoices } from './types'
+import type { CallKind, DeptKey, Hospital, IncomingCall, SetupChoices } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
@@ -14,6 +14,28 @@ const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { A
 function hospitalOf(c: SetupChoices): Hospital {
   return buildHospital(c).hospital
 }
+
+/** 한 과만 n명 채운 병원 — 배후과 유무·인원별 판정을 검증하는 픽스처. */
+function hospitalWith(dept: DeptKey, n: number): Hospital {
+  return buildHospital({ hospitalName: '테스트', doctors: { [dept]: n } as SetupChoices['doctors'] }).hospital
+}
+
+/** 한 주 큐 어디에든 있는 그 종류의 콜 한 통(없으면 예외 = 도달성 실패). nightShift로 시간대를 덮어쓴다. */
+function dayCall(kind: CallKind, nightShift?: boolean): IncomingCall {
+  for (let d = 1; d <= DAYS_PER_WEEK; d++) {
+    const c = createCallQueue(d).find((x) => x.kind === kind)
+    if (c) return nightShift === undefined ? c : { ...c, nightShift }
+  }
+  throw new Error(`no ${kind} call in week`)
+}
+
+/** 필수 응급 4종 ↔ 배후과 — 다양화의 핵심 매핑. */
+const CRITICAL: { kind: CallKind; dept: DeptKey }[] = [
+  { kind: 'STEMI', dept: 'CARDIOLOGY' },
+  { kind: 'OBSTETRIC_EMERGENCY', dept: 'OBSTETRICS' },
+  { kind: 'NEURO_EMERGENCY', dept: 'NEUROSURGERY' },
+  { kind: 'TRAUMA_EMERGENCY', dept: 'GENERAL_SURGERY' },
+]
 
 /**
  * 콜당 수가/원가 — 설계 스펙 §3.2·§7 (2026-07-17-essential-care-economics-devices-design.md).
@@ -532,9 +554,90 @@ describe('createCallQueue(day) — 요일별 고정 큐(결정론)', () => {
     }
   })
 
-  it('모든 날에 STEMI가 있다 — 필수의료를 외면할 기회가 매일 온다', () => {
+  it('모든 날에 필수 응급이 있다 — 필수의료를 외면할 기회가 매일 온다(STEMI 전용 아님)', () => {
+    const CRITICAL_KINDS: CallKind[] = ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY']
     for (let day = 1; day <= DAYS_PER_WEEK; day++) {
-      expect(createCallQueue(day).some((c) => c.kind === 'STEMI')).toBe(true)
+      expect(createCallQueue(day).some((c) => CRITICAL_KINDS.includes(c.kind))).toBe(true)
+    }
+  })
+})
+
+describe('응급 다양화 — 4종 필수 응급이 각 배후과를 요구한다(슬라이스 B)', () => {
+  it('네 종류 모두 한 주 큐에 등장한다 — 다양화가 실제로 콜에 반영', () => {
+    const kinds = new Set(
+      Array.from({ length: DAYS_PER_WEEK }, (_, i) => createCallQueue(i + 1)).flatMap((q) => q.map((c) => c.kind)),
+    )
+    for (const { kind } of CRITICAL) expect(kinds.has(kind)).toBe(true)
+  })
+
+  it('배후과 없으면 NO_BACKUP_CARE, 있으면(2명) 받는다 — adjudicate 제네릭 재사용(판정 무변경)', () => {
+    const noBackup = hospitalOf(collaborator) // 미용/검진만 — 어떤 배후과도 없다
+    for (const { kind, dept } of CRITICAL) {
+      const day = { ...dayCall(kind), nightShift: false }
+      expect(hardlockReason(noBackup, day, 3)).toBe('NO_BACKUP_CARE')
+      expect(hardlockReason(hospitalWith(dept, 2), day, 3)).toBeNull()
+    }
+  })
+
+  it('배후과 1명 + 야간 → NO_NIGHT_BACKUP (과는 있는데 당직이 빈다), 2명이면 받는다', () => {
+    for (const { kind, dept } of CRITICAL) {
+      const night = { ...dayCall(kind), nightShift: true }
+      expect(hardlockReason(hospitalWith(dept, 1), night, 3)).toBe('NO_NIGHT_BACKUP')
+      expect(hardlockReason(hospitalWith(dept, 2), night, 3)).toBeNull()
+    }
+  })
+
+  it('자리 0이면 배후과 유무와 무관하게 NO_BED — 게이트 우선순위 유지', () => {
+    for (const { kind, dept } of CRITICAL) {
+      expect(hardlockReason(hospitalWith(dept, 2), dayCall(kind), 0)).toBe('NO_BED')
+    }
+  })
+
+  it('네 종류 모두 콜 델타 < 0, 원가보전율 수술·처치 밴드(0.75~0.95), 급여라 검사 대상', () => {
+    for (const { kind } of CRITICAL) {
+      expect(callDelta(kind)).toBeLessThan(0)
+      const e = CALL_ECONOMICS[kind]
+      const recovery = e.revenueBillions / e.costBillions
+      expect(recovery).toBeGreaterThan(0.75)
+      expect(recovery).toBeLessThan(0.95)
+      expect(canOrderWorkup(kind)).toBe(true)
+    }
+  })
+
+  /**
+   * 세 신규 응급의 콜 경제는 STEMI와 **동형**이다 — 과별 차등(산부 61%·소청 79% 등 과 단위)을
+   * 콜 델타(행위 단위)에 섞으면 T-039 함정이다. "산부가 더 밑진다"는 재정중립 패키지가 만든
+   * DEPARTMENTS 층(산부 −16)이 담당하지, 콜 델타가 아니다.
+   */
+  it('세 신규 응급의 콜 델타는 STEMI와 동일 — 과별 차등은 콜 델타에 섞지 않는다', () => {
+    for (const { kind } of CRITICAL) expect(callDelta(kind)).toBe(callDelta('STEMI'))
+  })
+
+  it('네 종류 모두 lawsuitRisk=true(필수·고위험), 일반응급·워크인은 false', () => {
+    for (const { kind } of CRITICAL) expect(dayCall(kind).lawsuitRisk).toBe(true)
+    for (let d = 1; d <= DAYS_PER_WEEK; d++) {
+      const q = createCallQueue(d)
+      expect(q.filter((c) => c.kind === 'GENERAL_EMERGENCY').every((c) => !c.lawsuitRisk)).toBe(true)
+      expect(q.filter((c) => c.kind === 'COSMETIC_WALKIN').every((c) => !c.lawsuitRisk)).toBe(true)
+    }
+  })
+})
+
+describe('DAY_PLANS — 4종 응급 분산(재구성)', () => {
+  const CRITICAL_KINDS: CallKind[] = ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY']
+  const criticalCount = (day: number) => createCallQueue(day).filter((c) => CRITICAL_KINDS.includes(c.kind)).length
+
+  it('뒤로 갈수록 필수 응급 밀도가 는다 — 후반 3일 합 > 전반 3일 합', () => {
+    const front = criticalCount(1) + criticalCount(2) + criticalCount(3)
+    const back = criticalCount(5) + criticalCount(6) + criticalCount(7)
+    expect(back).toBeGreaterThan(front)
+  })
+
+  it('여전히 하루 5통이고 야간은 마지막 2통 — 시간대 파생 규칙 보존', () => {
+    for (let d = 1; d <= DAYS_PER_WEEK; d++) {
+      const q = createCallQueue(d)
+      expect(q).toHaveLength(5)
+      expect(q.map((c) => c.nightShift)).toEqual([false, false, false, true, true])
     }
   })
 })

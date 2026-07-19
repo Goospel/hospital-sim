@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { receivingLine, callerPlea, callerPleaAt, CALLER_PLEA, RECEIVE_HARDLOCK } from './dialogue'
-import type { RejectionReason } from './types'
+import type { CallKind, IncomingCall, RejectionReason } from './types'
 import { createCallQueue } from './receiving'
+
+/** 한 주 큐 어디에든 있는 그 종류의 콜 한 통. */
+function findCall(kind: CallKind): IncomingCall {
+  for (let d = 1; d <= 7; d++) {
+    const c = createCallQueue(d).find((x) => x.kind === kind)
+    if (c) return c
+  }
+  throw new Error(`no ${kind} call in week`)
+}
 
 const ALL_REASONS: RejectionReason[] = [
   'NO_BED', 'NO_ER_ONCALL', 'ER_OVERCROWDED', 'NO_BACKUP_CARE', 'NO_NIGHT_BACKUP',
@@ -70,6 +79,44 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
 
   it('결정론 — 같은 인자·seed는 같은 대사', () => {
     expect(receivingLine(walkin, 'CHOICE', true, 1)).toBe(receivingLine(walkin, 'CHOICE', true, 1))
+  })
+})
+
+/**
+ * 응급 다양화 — 배후 부재/야간 공백 대사가 **그 응급의 배후과를 따라간다**(슬라이스 B).
+ * "저희도 순환기 시술팀이 없습니다"를 산부 응급에 재사용하면 게임이 거짓말을 한다 — 과가 뒤바뀐다.
+ * 사유별 대사가 과를 지목하지 않으면 T-042 계열(층이 다른 사실)을 반복한다.
+ */
+describe('receivingLine — 다양화된 응급의 배후 부재 대사가 과를 따라간다', () => {
+  const CRITICAL = [
+    { kind: 'STEMI', word: '순환기' },
+    { kind: 'OBSTETRIC_EMERGENCY', word: '산부인과' },
+    { kind: 'NEURO_EMERGENCY', word: '신경외과' },
+    { kind: 'TRAUMA_EMERGENCY', word: '외과' },
+  ] as const
+
+  it('네 종류 모두 호소 대사가 있다', () => {
+    for (const { kind } of CRITICAL) expect(CALLER_PLEA[kind as CallKind].length).toBeGreaterThan(0)
+  })
+
+  it('NO_BACKUP_CARE 대사가 그 응급의 배후과를 정확히 지목한다', () => {
+    for (const { kind, word } of CRITICAL) {
+      const line = receivingLine(findCall(kind as CallKind), 'HARDLOCK_REJECT', false, 0, 'NO_BACKUP_CARE')
+      expect(line).toContain(word)
+    }
+  })
+
+  it('산부 배후 부재 대사는 순환기를 말하지 않는다 — 과가 뒤바뀌면 거짓말', () => {
+    const ob = receivingLine(findCall('OBSTETRIC_EMERGENCY'), 'HARDLOCK_REJECT', false, 0, 'NO_BACKUP_CARE')
+    expect(ob).not.toContain('순환기')
+  })
+
+  it('야간 당직 공백 대사도 과를 따라간다 — "당직" + 그 과', () => {
+    for (const { kind, word } of CRITICAL) {
+      const line = receivingLine(findCall(kind as CallKind), 'HARDLOCK_REJECT', false, 0, 'NO_NIGHT_BACKUP')
+      expect(line).toContain('당직')
+      expect(line).toContain(word)
+    }
   })
 })
 

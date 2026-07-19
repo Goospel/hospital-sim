@@ -109,13 +109,21 @@ export interface SetupChoices {
   doctors: Partial<Record<DeptKey, number>> // 과별 의사 수
 }
 
-/** 1막 콜 종류. */
+/**
+ * 콜 종류. STEMI 외에 세 필수 응급을 더해 "받는 벽"을 여러 과로 다양화한다(슬라이스 B).
+ * 네 필수 응급(STEMI·분만·뇌출혈·중증외상)은 각자 requiredSpecialty로 배후과를 요구하고,
+ * 없으면 adjudicateTransfer가 **제네릭으로** NO_BACKUP_CARE를 건다(판정 로직 무변경).
+ * 한 병원이 4개 배후과를 다 못 갖추므로 어떤 종류든 하드락이 난다 = 필수의료 붕괴가 여러 과에서 동시에.
+ */
 export type CallKind =
   | 'STEMI' // 급성심근경색 — 순환기 배후 필요(없으면 하드락)
+  | 'OBSTETRIC_EMERGENCY' // 분만 응급 — 산부인과 배후 필요
+  | 'NEURO_EMERGENCY' // 뇌출혈/뇌졸중 — 신경외과 배후 필요
+  | 'TRAUMA_EMERGENCY' // 중증외상 — 외과 배후 필요
   | 'GENERAL_EMERGENCY' // 일반 응급 — 병상만 있으면 받을 수 있음(저마진)
   | 'COSMETIC_WALKIN' // 미용·검진 워크인 — 늘 받을 수 있음(명랑)
 
-/** 걸려오는 콜 한 통. patient는 STEMI/일반응급 판정에 쓰인다(워크인은 명목값). */
+/** 걸려오는 콜 한 통. patient는 응급 판정(배후과 요구)에 쓰인다(워크인은 명목값). */
 export interface IncomingCall {
   id: string
   kind: CallKind

@@ -14,6 +14,7 @@ import {
   nextWeek,
   endGame,
   weekTurnedAwayCount,
+  weekReceivedEmergencyCount,
   cumulativeNetBillions,
   buildEpilogue,
   type SessionState,
@@ -80,6 +81,7 @@ export default function SessionClient() {
           week={session.week}
           weekNetBillions={session.ledgerDays.reduce((n, d) => n + d.netProfitBillions, 0)}
           cumulativeNetBillions={cumulativeNetBillions(session)}
+          received={weekReceivedEmergencyCount(session)}
           turnedAway={weekTurnedAwayCount(session)}
           onNextWeek={() => setSession(nextWeek(session))}
           onEnd={() => setSession(endGame(session))}
