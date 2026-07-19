@@ -1,4 +1,4 @@
-import type { RejectionReason } from './types'
+import type { CallKind, RejectionReason } from './types'
 
 // 다음날 아침 신문 — 어제 돌려보낸 환자가 어떻게 됐는지.
 //
@@ -35,6 +35,12 @@ import type { RejectionReason } from './types'
 /** 어제 돌려보낸 한 사람 — 기사 하나의 씨앗. */
 export interface TurnedAway {
   callId: string
+  /**
+   * 응급 종류 — 종류별 프로필(심근경색/뇌출혈/중증외상/분만)로 헤드라인이 **뭘** 돌려보냈는지 드러낸다.
+   * 선택 필드인 이유: 유일 생산자 recordDay는 항상 채우지만, 코어(renderNews) 단위 테스트는
+   * 종류를 안 실을 수 있어야 한다 — 없으면 종류 불문 일반 프로필로 폴백한다.
+   */
+  kind?: CallKind
   reason: RejectionReason | null
 }
 
@@ -62,6 +68,21 @@ const FICTIONAL_REGIONS = ['한내시', '서림시', '금하시', '백천시'] a
 
 /** 환자 지칭 — 이름 없이 나이대만. 실제 사건 프로필(10대·70대·33개월·고교생)을 피해 40~60대로 둔다(가드 1). */
 const PATIENT_PROFILES = ['40대 남성', '50대 여성', '60대 남성', '50대 남성'] as const
+
+/**
+ * 응급 종류별 환자 지칭 — 조건을 프로필에 담아 헤드라인이 **뭘** 돌려보냈는지 드러낸다(다양화, 슬라이스 B).
+ *
+ * 없으면 네 응급이 전부 "40대 남성 숨져"로 뭉개져 다양화가 신문에서 증발한다.
+ * 🔴 나이대는 40~60대로만(가드 1 — 실제 사건 10대·70대·33개월 회피). 분만은 나이대 남/녀가 아니라
+ * '산모'다 — "40대 남성"이라고 쓰면 사실이 틀린다(이 게임의 핵심 = 메시지 정확도). 실제 사건 4건 중
+ * 산부 케이스가 없어 '산모' + 가공 지역으로 두 축 모두 어긋나므로 가드를 만족한다.
+ */
+const PROFILE_BY_KIND: Partial<Record<CallKind, readonly string[]>> = {
+  STEMI: ['심근경색 40대 남성', '심근경색 50대 여성', '심근경색 60대 남성', '심근경색 50대 남성'],
+  NEURO_EMERGENCY: ['뇌출혈 60대 남성', '뇌졸중 50대 남성', '뇌출혈 40대 여성', '뇌졸중 60대 여성'],
+  TRAUMA_EMERGENCY: ['중증외상 40대 남성', '다발성 외상 50대 남성', '중증외상 60대 남성', '중증외상 50대 여성'],
+  OBSTETRIC_EMERGENCY: ['분만 중 산모', '분만 응급 산모', '출산 직후 산모', '만삭 산모'],
+}
 
 const OUTLETS = ['한내일보', '서림신문', '지역언론 종합', '금하매일'] as const
 
@@ -129,7 +150,9 @@ export function renderNews(turnedAway: TurnedAway[]): NewsItem[] {
     const rejectionCount = 8 + (seed % 8) // 8~15곳
     const delayMinutes = 80 + ((seed >>> 8) % 221) // 80~300분 (1시간 20분 ~ 5시간)
     const region = pick(FICTIONAL_REGIONS, seed >>> 20, i)
-    const profile = pick(PATIENT_PROFILES, seed >>> 24, i)
+    // 종류가 있으면 그 응급의 프로필 풀(조건 포함), 없으면 종류 불문 일반 프로필로 폴백.
+    const profilePool = (t.kind && PROFILE_BY_KIND[t.kind]) || PATIENT_PROFILES
+    const profile = pick(profilePool, seed >>> 24, i)
     const outlet = pick(OUTLETS, seed >>> 28, i)
     // 무주체 골격: [지역] '뺑뺑이' … [N]곳 거부 … [T] 만에 [프로필] 숨져
     const lead = i === 0 ? '' : '또 '

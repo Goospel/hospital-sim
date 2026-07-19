@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   startSession, beginSetup, completeSetup, completeReceiving, advanceDay, isLastDay, weekTotals,
-  completeWeek, nextWeek, beginWeek, endGame, weekTurnedAwayCount,
+  completeWeek, nextWeek, beginWeek, endGame, weekTurnedAwayCount, weekReceivedEmergencyCount,
   cumulativeNetBillions, buildEpilogue, enterWorldEvent, type SessionState,
 } from './session'
 import { initWorld, applyEvent, selectEvent, OPENING_EVENT } from './world'
@@ -152,10 +152,11 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     expect(d2.morningNews.length).toBe(hardlockedStemi)
   })
 
-  it('[신문] 내가 거절한 STEMI도 기사가 된다 — 구조가 막았든 내가 막았든 환자는 똑같이 못 들어왔다', () => {
+  it('[신문] 내가 거절한 필수 응급도 기사가 된다 — 구조가 막았든 내가 막았든 환자는 똑같이 못 들어왔다', () => {
+    const CRITICAL: string[] = ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY']
     const d1 = completeReceiving(runDay(completeSetup(conscientious), false)) // 전부 거절
-    const stemiPerDay = d1.receiving!.queue.filter((c) => c.kind === 'STEMI').length
-    expect(d1.ledgerDays[0].turnedAway.length).toBe(stemiPerDay)
+    const criticalPerDay = d1.receiving!.queue.filter((c) => CRITICAL.includes(c.kind)).length
+    expect(d1.ledgerDays[0].turnedAway.length).toBe(criticalPerDay)
   })
 
   it('[I7] 주간 누계에 검사 수익이 별도로 합산된다', () => {
@@ -199,11 +200,19 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
   })
 
   it('weekTurnedAwayCount — 그 주 돌려보낸 응급 총원을 센다', () => {
-    // 미용만 받아 자리를 채우면 STEMI는 전부 하드락/거절로 돌아간다.
+    // 미용만 받아 자리를 채우면 필수 응급은 전부 하드락/거절로 돌아간다.
     const s = runWeek(conscientious, (c) => c.kind === 'COSMETIC_WALKIN')
     const summed = s.ledgerDays.reduce((n, d) => n + d.turnedAway.length, 0)
     expect(summed).toBeGreaterThan(0)
     expect(weekTurnedAwayCount(s)).toBe(summed)
+  })
+
+  it('weekReceivedEmergencyCount — 그 주 받은 필수 응급 총원을 센다(돌려보낸 수의 짝)', () => {
+    // 양심(순환기 2)은 STEMI만 배후가 있어 받고, 나머지 필수 응급은 하드락 → 받은 응급 = 수용된 STEMI.
+    const s = runWeek(conscientious, essentialFirst)
+    const received = s.ledgerDays.reduce((n, d) => n + d.receivedEmergency, 0)
+    expect(received).toBeGreaterThan(0)
+    expect(weekReceivedEmergencyCount(s)).toBe(received)
   })
 
   it('DAY_END가 아니면 advanceDay 에러(가드)', () => {

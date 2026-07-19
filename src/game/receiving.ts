@@ -37,7 +37,27 @@ export interface CallEconomics {
 export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
   COSMETIC_WALKIN: { priceSetter: 'HOSPITAL', revenueBillions: 6, costBillions: 3 },
   GENERAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 3, costBillions: 6 },
+  // 네 필수 응급은 모두 **수술·처치 84.9% 밴드**(행위 단위)라 동형이다(11/13 ≈ 85%).
+  // 🔴 과별 차등(산부 61%·소청 79% 등 과 단위)은 여기 섞지 않는다(T-039) — "산부가 더 밑진다"는
+  // 재정중립 패키지가 만든 DEPARTMENTS 층(산부 −16)이 담당하지, 콜 델타(행위 단위)가 아니다.
   STEMI: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
+  OBSTETRIC_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
+  NEURO_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
+  TRAUMA_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
+}
+
+/**
+ * 배후진료(최종치료)가 필요한 필수 응급 4종 — 각자 requiredSpecialty로 그 과를 요구하고,
+ * 없으면 adjudicateTransfer가 제네릭으로 NO_BACKUP_CARE를 건다(판정 로직 무변경).
+ * 이 목록이 곧 "lawsuitRisk가 붙는 콜"이자 "못 받으면 신문이 되는 콜"이다 — 세 개념이 같은 집합.
+ */
+export const CRITICAL_EMERGENCY_KINDS: CallKind[] = [
+  'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY',
+]
+
+/** 배후과를 요구하는 필수 응급인가 — 하드락(배후/야간)·소송·신문 대상 판별의 단일 출처. */
+export function isCriticalEmergency(kind: CallKind): boolean {
+  return CRITICAL_EMERGENCY_KINDS.includes(kind)
 }
 
 /** 콜 한 통 수용으로 누적되는 손익 델타(억). */
@@ -105,7 +125,11 @@ export interface ReceivingState {
   done: boolean
 }
 
+// 필수 응급 4종 — 각자 배후과를 requiredSpecialty로 요구한다(adjudicateTransfer가 제네릭으로 판정).
 const stemiPatient: Patient = { id: 'call-stemi', requiredSpecialty: 'CARDIOLOGY', severity: 5 }
+const obstetricPatient: Patient = { id: 'call-ob', requiredSpecialty: 'OBSTETRICS', severity: 5 }
+const neuroPatient: Patient = { id: 'call-neuro', requiredSpecialty: 'NEUROSURGERY', severity: 5 }
+const traumaPatient: Patient = { id: 'call-trauma', requiredSpecialty: 'GENERAL_SURGERY', severity: 5 }
 const generalPatient: Patient = { id: 'call-general', requiredSpecialty: 'GENERAL_SURGERY', severity: 3 }
 const walkinPatient: Patient = { id: 'call-walkin', requiredSpecialty: 'CARDIOLOGY', severity: 1 } // 명목값(판정 안 함)
 
@@ -116,18 +140,20 @@ const walkinPatient: Patient = { id: 'call-walkin', requiredSpecialty: 'CARDIOLO
  * 지루해지므로(game-concept.md:113이 '하루/교대' 장르를 기각한 사유가 바로 콘텐츠 양 부담),
  * 종류 배열만 손으로 짠다 — 라벨·대사는 kind별 풀에서 등장 순번으로 파생시켜 콘텐츠를 늘리지 않는다.
  *
- * 배치 원칙: (1) 모든 날에 STEMI가 있다 — 필수의료를 외면할 기회가 매일 온다.
- * (2) 뒤로 갈수록 STEMI가 는다 — 자리를 미용으로 채우던 습관의 대가가 커진다.
- * (3) 자리 3 < 5통이라 어느 날이든 2통은 못 받는다.
+ * 배치 원칙: (1) 모든 날에 필수 응급이 있다 — 외면할 기회가 매일 온다(STEMI 전용 아님, 4종 분산).
+ * (2) 뒤로 갈수록 필수 응급이 는다 — 자리를 미용으로 채우던 습관의 대가가 커진다.
+ * (3) 자리 3 < 5통이라 어느 날이든 못 받는다. 한 병원이 4개 배후과를 다 못 갖춰 어느 과든 하드락이 난다.
+ * (4) 월요일은 기존 리듬(STEMI 전용)을 보존한다 — 첫날은 익숙하게, 다양성은 화요일부터 번진다.
+ * 야간(마지막 2통)엔 STEMI가 최소 하루는 온다(순환기 2번째 의사의 도달성 보장).
  */
 const DAY_PLANS: CallKind[][] = [
-  ['COSMETIC_WALKIN', 'STEMI', 'COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'STEMI'], // 월 — 기존 리듬
-  ['COSMETIC_WALKIN', 'COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'STEMI', 'COSMETIC_WALKIN'], // 화
-  ['STEMI', 'COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'COSMETIC_WALKIN', 'STEMI'], // 수
-  ['COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'STEMI', 'COSMETIC_WALKIN', 'STEMI'], // 목
-  ['STEMI', 'STEMI', 'COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'COSMETIC_WALKIN'], // 금
-  ['COSMETIC_WALKIN', 'STEMI', 'GENERAL_EMERGENCY', 'STEMI', 'COSMETIC_WALKIN'], // 토
-  ['STEMI', 'COSMETIC_WALKIN', 'STEMI', 'GENERAL_EMERGENCY', 'STEMI'], // 일 — 그날 밤 응급으로 이어진다
+  ['COSMETIC_WALKIN', 'STEMI', 'COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'STEMI'], // 월 — 기존 리듬(필수=STEMI×2)
+  ['COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'NEURO_EMERGENCY', 'COSMETIC_WALKIN', 'STEMI'], // 화 — 뇌출혈 등장, 야간 STEMI
+  ['STEMI', 'COSMETIC_WALKIN', 'OBSTETRIC_EMERGENCY', 'GENERAL_EMERGENCY', 'NEURO_EMERGENCY'], // 수 — 산부 등장
+  ['COSMETIC_WALKIN', 'TRAUMA_EMERGENCY', 'STEMI', 'GENERAL_EMERGENCY', 'OBSTETRIC_EMERGENCY'], // 목 — 중증외상 등장
+  ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'COSMETIC_WALKIN'], // 금 — 낮에 4과 동시 붕괴
+  ['STEMI', 'NEURO_EMERGENCY', 'GENERAL_EMERGENCY', 'OBSTETRIC_EMERGENCY', 'TRAUMA_EMERGENCY'], // 토
+  ['STEMI', 'TRAUMA_EMERGENCY', 'NEURO_EMERGENCY', 'OBSTETRIC_EMERGENCY', 'STEMI'], // 일 — 다섯 통 전부 필수 응급, 야간 STEMI
 ]
 
 /** 요일 라벨 — 달력 칸과 콜 화면이 공유한다. */
@@ -147,12 +173,18 @@ const CALL_LABELS: Record<CallKind, string[]> = {
   COSMETIC_WALKIN: ['보톡스 상담 워크인', '검진 패키지 문의'],
   GENERAL_EMERGENCY: ['복통 응급 — 병상 요청', '고열 응급 — 입원 문의'],
   STEMI: ['급성심근경색 — 타 병원 전원 요청', '급성심근경색 — 재이송'],
+  OBSTETRIC_EMERGENCY: ['분만 응급 — 산부인과 전원 요청', '분만 중 출혈 — 재이송'],
+  NEURO_EMERGENCY: ['뇌출혈 의심 — 신경외과 전원 요청', '뇌졸중 — 재이송'],
+  TRAUMA_EMERGENCY: ['중증외상 — 외과 전원 요청', '다발성 외상 — 재이송'],
 }
 
 const PATIENT_OF: Record<CallKind, Patient> = {
   COSMETIC_WALKIN: walkinPatient,
   GENERAL_EMERGENCY: generalPatient,
   STEMI: stemiPatient,
+  OBSTETRIC_EMERGENCY: obstetricPatient,
+  NEURO_EMERGENCY: neuroPatient,
+  TRAUMA_EMERGENCY: traumaPatient,
 }
 
 /**
@@ -171,7 +203,7 @@ export function createCallQueue(day = 1): IncomingCall[] {
       kind,
       label: pool[occurrence % pool.length],
       patient: PATIENT_OF[kind],
-      lawsuitRisk: kind === 'STEMI',
+      lawsuitRisk: isCriticalEmergency(kind), // 필수 응급 4종 = 고위험(소송 노출), 일반응급·워크인은 아님
       nightShift: i >= NIGHT_SHIFT_FROM_INDEX,
     }
   })
@@ -197,7 +229,12 @@ export function hardlockReason(hospital: Hospital, call: IncomingCall, bedsFree:
       if (!hospital.hasErOnCall) return 'NO_ER_ONCALL'
       if (hospital.overcrowded) return 'ER_OVERCROWDED'
       return null
-    case 'STEMI': {
+    // 필수 응급 4종은 배후과(최종치료) 게이트를 **공유**한다 — adjudicateTransfer가
+    // call.patient.requiredSpecialty로 제네릭 판정하므로 종류별 분기가 필요 없다(다양화의 핵심).
+    case 'STEMI':
+    case 'OBSTETRIC_EMERGENCY':
+    case 'NEURO_EMERGENCY':
+    case 'TRAUMA_EMERGENCY': {
       const verdict = adjudicateTransfer(hospital, call.patient)
       if (!verdict.accepted) return verdict.reason ?? 'NO_BACKUP_CARE'
       // 배후과가 있어도 **밤엔 당직이 서 있어야** 받는다 — 의사 1명은 24시간을 못 버틴다(T-042).

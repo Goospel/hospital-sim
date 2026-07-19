@@ -1,5 +1,5 @@
-import type { RejectionReason, CallKind, IncomingCall } from './types'
-import type { CallDisposition } from './receiving'
+import type { RejectionReason, CallKind, IncomingCall, Specialty } from './types'
+import { isCriticalEmergency, type CallDisposition } from './receiving'
 
 // 확정된 판정(코드)을 받는 쪽(내 병원) 담당자의 "대사"로 옮기는 결정론적 폴백.
 // LLM이 붙기 전에도 게임이 돌아가고, 붙은 뒤에도 무키·실패 시 여기로 강등된다.
@@ -17,6 +17,18 @@ export const CALLER_PLEA: Record<CallKind, string[]> = {
   GENERAL_EMERGENCY: [
     '복통 응급인데 병상이 없어서요. 자리 하나만 부탁드립니다.',
     '지금 받아줄 곳을 못 찾고 있어요. 입원 가능할까요?',
+  ],
+  OBSTETRIC_EMERGENCY: [
+    '분만 중인데 산부인과가 없어서요. 산모를 받아주실 수 있나요?',
+    '태반조기박리 의심입니다. 분만 되는 데가… 거기 되나요?',
+  ],
+  NEURO_EMERGENCY: [
+    '뇌출혈 의심 환자입니다. 신경외과 수술이 급해요. 받아주실 수 있나요?',
+    '의식이 떨어지고 있어요. 신경외과 되는 곳을 못 찾고 있습니다.',
+  ],
+  TRAUMA_EMERGENCY: [
+    '교통사고 중증외상입니다. 수술할 외과가 없어서요. 받아주실 수 있나요?',
+    '다발성 외상이에요. 벌써 몇 군데를 돌았습니다. 거기 되나요?',
   ],
   COSMETIC_WALKIN: [
     '보톡스 상담 예약 가능할까요?',
@@ -53,6 +65,9 @@ export function callerPleaAt(queue: IncomingCall[], index: number): string {
 /** 수용 시 시스템의 명랑한 확인. */
 export const RECEIVE_ACCEPT: Record<CallKind, string> = {
   STEMI: '…받겠습니다. 준비하고 있겠습니다.',
+  OBSTETRIC_EMERGENCY: '…받겠습니다. 분만 준비하겠습니다.',
+  NEURO_EMERGENCY: '…받겠습니다. 수술방 열어두겠습니다.',
+  TRAUMA_EMERGENCY: '…받겠습니다. 외상팀 부르겠습니다.',
   GENERAL_EMERGENCY: '네, 병상 하나 내드리죠. 보내세요.',
   COSMETIC_WALKIN: '물론이죠! 바로 접수해 드릴게요',
 }
@@ -60,22 +75,49 @@ export const RECEIVE_ACCEPT: Record<CallKind, string> = {
 /** 선택 거절 시. */
 export const RECEIVE_REJECT: Record<CallKind, string> = {
   STEMI: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
+  OBSTETRIC_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
+  NEURO_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
+  TRAUMA_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
   GENERAL_EMERGENCY: '지금은 병상을 비워두겠습니다. 다른 곳을 알아보세요.',
   COSMETIC_WALKIN: '오늘은 예약이 다 찼습니다. 다음에 오세요.',
 }
 
-/** STEMI인데 내 병원도 순환기 배후가 없어 못 받는다 — 벽을 안쪽에서 배운다. */
+/** STEMI인데 내 병원도 순환기 배후가 없어 못 받는다 — 벽을 안쪽에서 배운다. (하위호환 export) */
 export const RECEIVE_HARDLOCK =
   '자리는 있는데, 저희도 순환기 시술팀이 없습니다. 받아도 못 뚫어요.'
 
 /**
- * STEMI인데 순환기는 있고 **야간 당직만** 비었다 — 낮이었으면 받았을 환자다.
+ * STEMI인데 순환기는 있고 **야간 당직만** 비었다 — 낮이었으면 받았을 환자다. (하위호환 export)
  *
  * RECEIVE_HARDLOCK("저희도 순환기 시술팀이 없습니다")을 재사용하면 안 된다. 이 병원엔 있다.
  * 30억을 내고 뽑은 플레이어에게 게임이 거짓말을 하게 된다(T-042 계열 — 층이 다른 사실).
  */
 export const RECEIVE_NIGHT_HARDLOCK =
   '순환기 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.'
+
+/**
+ * 배후 부재(NO_BACKUP_CARE) 대사 — **그 응급의 배후과를 정확히 지목한다.**
+ *
+ * 다양화의 핵심 함정: "저희도 순환기 시술팀이 없습니다"를 산부/신경외과/외과 응급에 재사용하면
+ * 과가 뒤바뀌어 게임이 거짓말을 한다(T-042 계열 — 층이 다른 사실). 그래서 사유가 벽의 종류를
+ * 정하듯, 배후과가 대사의 과를 정한다. call.patient.requiredSpecialty로 조회한다.
+ */
+const RECEIVE_NO_BACKUP_BY_SPECIALTY: Record<Specialty, string> = {
+  CARDIOLOGY: RECEIVE_HARDLOCK,
+  OBSTETRICS: '자리는 있는데, 저희도 분만을 받을 산부인과가 없습니다.',
+  NEUROSURGERY: '자리는 있는데, 저희도 신경외과가 없습니다. 받아도 수술을 못 해요.',
+  GENERAL_SURGERY: '자리는 있는데, 저희도 중증외상을 감당할 외과가 없습니다.',
+  THORACIC_SURGERY: '자리는 있는데, 저희도 흉부외과가 없습니다.',
+}
+
+/** 야간 당직 공백(NO_NIGHT_BACKUP) 대사 — 과는 있는데 밤에 당직이 빈다(배후 부재와 다른 사유). */
+const RECEIVE_NIGHT_BY_SPECIALTY: Record<Specialty, string> = {
+  CARDIOLOGY: RECEIVE_NIGHT_HARDLOCK,
+  OBSTETRICS: '산부인과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
+  NEUROSURGERY: '신경외과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
+  GENERAL_SURGERY: '외과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
+  THORACIC_SURGERY: '흉부외과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
+}
 
 /**
  * 자리 소진(NO_BED) 하드락 — 오늘 진료 역량을 이미 다 썼다.
@@ -85,22 +127,17 @@ export const RECEIVE_NIGHT_HARDLOCK =
 export const RECEIVE_NO_BED =
   '오늘 자리가 다 찼습니다. 더는 못 받아요.'
 
-/**
- * 하드락 사유별 받는 쪽 대사.
- * RECEIVE_HARDLOCK은 "**자리는 있는데**, 저희도 순환기 시술팀이 없습니다"라서 자리 소진에 재사용하면
- * 정면으로 거짓말이 된다 — 사유가 벽의 종류를 정하므로 대사도 사유를 따라간다.
- */
-const RECEIVE_HARDLOCK_BY_REASON: Record<RejectionReason, string> = {
+/** 자리·응급실 축 하드락(콜 종류·배후과와 무관한 벽). */
+const RECEIVE_BY_STRUCTURAL_REASON: Record<'NO_BED' | 'NO_ER_ONCALL' | 'ER_OVERCROWDED', string> = {
   NO_BED: RECEIVE_NO_BED,
   NO_ER_ONCALL: '지금 응급실 당직이 없습니다. 접수 자체가 안 됩니다.',
   ER_OVERCROWDED: '자리는 있어도 응급실이 꽉 차서 지금은 못 받습니다.',
-  NO_BACKUP_CARE: RECEIVE_HARDLOCK,
-  NO_NIGHT_BACKUP: RECEIVE_NIGHT_HARDLOCK,
 }
 
 /**
  * 콜 처리 결과 → 받는 쪽 폴백 대사(순수·결정론).
- * reason은 하드락일 때만 쓰인다 — 없으면 기존 동작(STEMI=배후 부재의 벽)으로 폴백한다.
+ * reason은 하드락일 때만 쓰인다 — 없으면 기존 동작(필수 응급=배후 부재의 벽)으로 폴백한다.
+ * 배후/야간 사유는 call.patient.requiredSpecialty로 그 응급의 과를 정확히 지목한다(과 뒤바뀜 = 거짓말).
  * seed는 아직 변주에 쓰이지 않는다(받는 쪽 대사는 종류별 1개) — 호출부 시그니처 유지용.
  */
 export function receivingLine(
@@ -111,14 +148,22 @@ export function receivingLine(
   reason?: RejectionReason,
 ): string {
   if (disposition === 'HARDLOCK_REJECT') {
+    const spec = call.patient.requiredSpecialty
     if (reason) {
-      // 자리 소진은 콜 종류를 안 가린다 — 워크인이든 STEMI든 같은 벽에 막힌다.
-      return reason === 'NO_BED' && call.kind === 'COSMETIC_WALKIN'
-        ? RECEIVE_REJECT[call.kind] // 워크인엔 '예약이 다 찼습니다'가 이미 정합(명랑 유지)
-        : RECEIVE_HARDLOCK_BY_REASON[reason]
+      switch (reason) {
+        case 'NO_BACKUP_CARE':
+          return RECEIVE_NO_BACKUP_BY_SPECIALTY[spec]
+        case 'NO_NIGHT_BACKUP':
+          return RECEIVE_NIGHT_BY_SPECIALTY[spec]
+        case 'NO_BED':
+          // 자리 소진은 콜 종류를 안 가린다 — 워크인엔 '예약이 다 찼습니다'가 이미 정합(명랑 유지).
+          return call.kind === 'COSMETIC_WALKIN' ? RECEIVE_REJECT[call.kind] : RECEIVE_NO_BED
+        default:
+          return RECEIVE_BY_STRUCTURAL_REASON[reason]
+      }
     }
-    // STEMI 하드락은 배후 부재의 벽, 그 외 하드락은 일반 거절.
-    return call.kind === 'STEMI' ? RECEIVE_HARDLOCK : RECEIVE_REJECT[call.kind]
+    // 사유 없이 하드락(하위호환) — 필수 응급이면 배후 부재의 벽, 그 외엔 일반 거절.
+    return isCriticalEmergency(call.kind) ? RECEIVE_NO_BACKUP_BY_SPECIALTY[spec] : RECEIVE_REJECT[call.kind]
   }
   return accepted ? RECEIVE_ACCEPT[call.kind] : RECEIVE_REJECT[call.kind]
 }
