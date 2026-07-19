@@ -32,7 +32,7 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 - **응급 재설계 B — 응급 CallKind 다양화**: 분만(산부)·뇌출혈(신경외과)·중증외상(외과)을 받는 콜로 신설 — 4종이 hardlockReason 한 case를 공유(adjudicate 제네릭 재사용, 판정 무변경). DAY_PLANS 4종 분산 재구성, 하드락 대사·신문 헤드라인이 과를 정확히 따라감, 결산에 받은/돌려보낸 응급 병치. 재정중립 산부 −16 상쇄가 장부에서 체감. 233 vitest green + tsc 0 + 브라우저 라이브 검증
 
 ### 🔜 다음
-- ⚠️ **문서 부채(슬라이스 A/B 이월)**: README·docs/submission의 '골든타임 뺑뺑이 간판' 서술을 받는 쪽 통합·응급 다양화로 정합(spec §8)
+- ✅ **문서 부채(슬라이스 A/B 이월)**: README·docs/submission(ai-usage-doc·submission-plan)·docs/concept(ai-scenario-generation·game-concept) 5종의 '골든타임 뺑뺑이 간판'·삭제 모듈 거짓 현재서술을 받는 쪽 통합·응급 다양화로 정합(spec §8). 역사 문서는 전환 배너+단일 출처 포인터로 처리. (2026-07-20, 상세 changeLog)
 - **F1~F3 — 필수의료 딜레마 장치**: 콜당 수가/원가("가격을 누가 정하나"가 부호를 가름) / 24시간 당직(F1b) / 검사+boarding(인과 사슬 닫힘) / 다음날 아침 신문. PR #38~#41. **📌 구현 후 설계 근거는 [spec §13](superpowers/specs/2026-07-17-essential-care-economics-devices-design.md)**
 - **F4 — 가산금 배분(흉부외과)**: 🔴 **절단**(PR #44). 마감이 아니라 **사실이 세 번 거부** — 흉부외과는 1막에서 도달 불가 화면이었고, 역할을 주려 한 STEMI 게이트·응급 CABG·심장통합진료 삭감이 셋 다 거짓. 근거: [thoracic-surgery-role.md](../docs/research/thoracic-surgery-role.md) · [T-049](troubleshooting/T-049.md)
 - **디자인 테마 Plan A — "의무기록·차트" 시스템**: 방향 확정(5안 심사)·토큰/폰트 3계층 기반(+Arial 버그 수정)·원형(TransferRound)/정점(Epilogue) 리스킨·안전한 카피. PR #49. 근거: [spec](superpowers/specs/2026-07-18-design-theme-dossier-design.md)·[Plan A](superpowers/plans/2026-07-18-design-theme-dossier-foundation.md)
