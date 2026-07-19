@@ -42,6 +42,8 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-054](troubleshooting/T-054.md) · 워크트리에서 preview_start(및 next dev)는 여러 lockfile을 감지해 워크스페이스 루트를 메인 레포로 추론해 서빙 → 워크트리 변경이 프리뷰에 안 보인다. 워크트리 변경의 시각검증은 워크트리 cwd에서 직접 next dev를 다른 포트로 띄워라
+- [T-053](troubleshooting/T-053.md) · 브라우저 pane 탭이 hidden이면 크롬 throttle로 React 하이드레이션 commit·effect가 멈춰 클릭·상태변경·useEffect·스크린샷이 다 죽는다 — 코드부터 의심 말고 visibilityState 먼저 확인, 우회는 SSR 강제 렌더로 마크업만
 - [T-052](troubleshooting/T-052.md) · .git/info/exclude(로컬 전용)로 가린 폴더·파일은 clone에 안 실린다 — 기기 간 공유는 커밋되는 .gitignore로 옮기고 git add -f로 추적
 - [T-051](troubleshooting/T-051.md) · 워크트리 시각검증 시 preview_start는 워크스페이스 루트 추론으로 메인 레포에서 dev 서버를 띄운다 — 워크트리 변경이 안 보이면 워크트리에서 직접 next dev
 - [T-050](troubleshooting/T-050.md) · block-stale-base 훅은 편집을 막지 편집 전 읽기·분류를 안 막는다 — stale 기반 "쓰기"는 잡아도 stale 기반 "사고"는 통과시킨다
