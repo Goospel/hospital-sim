@@ -26,7 +26,7 @@ const notoSerifKr = Noto_Serif_KR({
 export const metadata: Metadata = {
   title: "수화기 너머의 벽",
   description:
-    "골든타임 안에 응급환자를 받아줄 병원을 찾는 실시간 전원 협상 시뮬레이션 — 대한민국 의료 시스템의 구조적 벽을 의료진 시점에서 겪는다.",
+    "걸려오는 응급 전원 요청 앞에서 누구를 받고 누구를 돌려보낼지 정하는 병원 경영 시뮬레이션 — 대한민국 의료 시스템의 구조적 벽을 의료진 시점에서 겪는다.",
 };
 
 export default function RootLayout({

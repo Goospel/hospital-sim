@@ -4,31 +4,24 @@ import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT, type 
 import {
   accruedSegments, createCallQueue, initReceiving, runningNetProfit, type ReceivingState,
 } from './receiving'
-import { startGame, type GameState } from './round'
-import { createStemiScenario } from './scenarios'
-import { buildDebrief, type Debrief } from './debrief'
 import { buildSessionLedger, type Ledger } from './ledger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
 
-// 2막 단막극 세션 상태기계 — 순수·결정론.
-// LANDING → WORLD_EVENT → SETUP → (RECEIVING → DAY_END) ×7일 → INTERSTITIAL → EMERGENCY
+// 세션 상태기계 — 순수·결정론.
+// LANDING → WORLD_EVENT → SETUP → (RECEIVING → DAY_END) ×7일 → WEEK_SUMMARY
 //   → WEEK_SUMMARY ─┬─ nextWeek → WORLD_EVENT(다음 주, 같은 병원) → …          (계속)
 //                   └─ endGame  → EPILOGUE (그때까지 모든 주 누적 결산)          (종료)
-// 한 주 = 7일. 하루마다 콜 5통을 받고 마감하면 달력에 그날 손익이 한 칸 찍힌다. 7일차 밤 응급.
+// 한 주 = 7일. 하루마다 콜 5통을 받고 마감하면 달력에 그날 손익이 한 칸 찍힌다. 7일차 마감은 곧바로 결산이다.
+// 플레이어는 항상 '받는 벽'이다 — 응급을 못 받으면 그 환자가 다른 데서 뺑뺑이가 된다(내가 그 벽). 못 받은 응급은 신문이 된다.
 // 게임은 한 주로 끝나지 않는다 — 사용자가 WEEK_SUMMARY에서 '종료'를 누를 때까지 주가 반복된다.
 // 그래야 매주 재구성되는 세계(외생 이벤트)의 변화가 여러 주에 걸쳐 눈에 보인다.
-// beginEmergency가 hospital.backupCare로 in-house 생존 vs 기존 전원 뺑뺑이를 가른다(철학 ii).
 
-/** STEMI 슬라이스가 요구하는 배후과(이번 주 유일 축, spec ⓐ). */
+/** 결말 장부(buildSessionLedger)의 필수 배후과 축 — 이 슬라이스는 CARDIOLOGY 채용을 결산에 반영한다. */
 const STEMI_SPECIALTY: Specialty = 'CARDIOLOGY'
 
 export type SessionPhase =
-  | 'LANDING' | 'WORLD_EVENT' | 'SETUP' | 'RECEIVING' | 'DAY_END' | 'INTERSTITIAL' | 'EMERGENCY'
+  | 'LANDING' | 'WORLD_EVENT' | 'SETUP' | 'RECEIVING' | 'DAY_END'
   | 'WEEK_SUMMARY' | 'EPILOGUE'
-
-export type EmergencyState =
-  | { mode: 'IN_HOUSE' } // 순환기 배후 있음 → 내 응급실이 직접 PCI → 생존
-  | { mode: 'TRANSFER'; game: GameState } // 순환기 없음 → 기존 STEMI 뺑뺑이
 
 /** 마감된 하루 한 칸 — 달력의 데이터 소스. 숫자만 담는다(해석은 어디에도 없다). */
 export interface DayRecord {
@@ -52,7 +45,6 @@ export interface SessionState {
   phase: SessionPhase
   hospital?: Hospital
   receiving?: ReceivingState
-  emergency?: EmergencyState
   week: number // 1..∞ — 현재 주(사용자가 종료할 때까지 늘어난다)
   day: number // 1..DAYS_PER_WEEK — 현재 주의 날
   ledgerDays: DayRecord[] // 이번 주 마감된 날들(역순 아님, 1일차부터). 새 주에 리셋된다.
@@ -123,7 +115,7 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
   }
 }
 
-/** 7일차인가 — 이 날 마감은 다음 날이 아니라 응급으로 이어진다. */
+/** 7일차인가 — 이 날 마감은 다음 날이 아니라 주간 결산으로 이어진다. */
 export function isLastDay(state: SessionState): boolean {
   return state.day >= DAYS_PER_WEEK
 }
@@ -165,17 +157,15 @@ export function completeReceiving(state: SessionState): SessionState {
 }
 
 /**
- * 하루 마감 뒤 전진 — DAY_END에서 두 갈래다.
- *   day < 7 → 다음 날 RECEIVING(새 큐·자리 리셋·그날 델타 0에서 시작)
- *   day = 7 → INTERSTITIAL (그날 밤 응급)
- * 이 분기가 "완주"의 정의라 completeReceiving과 나눠 둔다 — 한 함수가 두 방향을 반환하면 가드가 흐려진다.
+ * 하루 마감 뒤 전진 — DAY_END(day < 7) → 다음 날 RECEIVING(새 큐·자리 리셋·그날 델타 0에서 시작).
+ * 7일차는 다음 날이 없다 — 그날 DAY_END는 advanceDay가 아니라 completeWeek(→ 주간 결산)으로 간다.
  */
 export function advanceDay(state: SessionState): SessionState {
   if (state.phase !== 'DAY_END') {
     throw new Error(`advanceDay requires DAY_END, got ${state.phase}`)
   }
   if (isLastDay(state)) {
-    return { ...state, phase: 'INTERSTITIAL' }
+    throw new Error('advanceDay: last day ends the week — use completeWeek')
   }
   const day = state.day + 1
   // 어제 검사를 붙인 환자는 결과를 기다리며 자리를 물고 있다 — 그만큼 오늘 자리가 준다(boarding).
@@ -215,6 +205,11 @@ export function weekTotals(state: SessionState): DayTotals {
   return sumTotals(state.ledgerDays)
 }
 
+/** 이번 주 돌려보낸 응급 총원 — 주간 결산 화면용(2막 생존 지표를 대체한다). */
+export function weekTurnedAwayCount(state: SessionState): number {
+  return state.ledgerDays.reduce((n, d) => n + d.turnedAway.length, 0)
+}
+
 /**
  * 완주한 모든 주의 누적 순손익(억) — 주가 쌓일수록 커진다(주간 결산 화면의 '지금까지' 숫자).
  * netProfitBillions는 일당 구조 손익 1/7을 이미 포함하므로 N주를 그냥 더하면 N주치가 맞는다(스케일 문제 없음).
@@ -223,35 +218,16 @@ export function cumulativeNetBillions(state: SessionState): number {
   return state.history.reduce((n, d) => n + d.netProfitBillions, 0)
 }
 
-export function beginEmergency(state: SessionState): SessionState {
-  if (state.phase !== 'INTERSTITIAL') {
-    throw new Error(`beginEmergency requires INTERSTITIAL, got ${state.phase}`)
-  }
-  const hospital = state.hospital!
-  if (hospital.backupCare.includes(STEMI_SPECIALTY)) {
-    return { ...state, phase: 'EMERGENCY', emergency: { mode: 'IN_HOUSE' } }
-  }
-  const scenario = createStemiScenario()
-  const game = startGame(scenario.patient, scenario.hospitals, scenario.goldenSeconds)
-  return { ...state, phase: 'EMERGENCY', emergency: { mode: 'TRANSFER', game } }
-}
-
-/** 응급의 결과 = 생존 여부. IN_HOUSE는 항상 생존, TRANSFER는 전원 성공(ACCEPTED)만 생존. */
-export function survivedEmergency(em: EmergencyState): boolean {
-  return em.mode === 'IN_HOUSE' || em.game.status === 'ACCEPTED'
-}
-
 /**
- * 한 주 완주 — EMERGENCY(끝난 상태) → WEEK_SUMMARY. 이번 주 ledgerDays를 history에 접어 넣는다.
+ * 한 주 완주 — 7일차 DAY_END → WEEK_SUMMARY. 이번 주 ledgerDays를 history에 접어 넣는다.
  * 여기서 게임이 끝나지 않는다: 이어서 nextWeek(다음 주) 또는 endGame(종료)을 사용자가 고른다.
  */
 export function completeWeek(state: SessionState): SessionState {
-  if (state.phase !== 'EMERGENCY') {
-    throw new Error(`completeWeek requires EMERGENCY, got ${state.phase}`)
+  if (state.phase !== 'DAY_END') {
+    throw new Error(`completeWeek requires DAY_END, got ${state.phase}`)
   }
-  const em = state.emergency!
-  if (em.mode === 'TRANSFER' && em.game.status === 'IN_PROGRESS') {
-    throw new Error('emergency transfer not finished')
+  if (!isLastDay(state)) {
+    throw new Error('completeWeek requires the last day (day 7)')
   }
   return { ...state, phase: 'WEEK_SUMMARY', history: [...state.history, ...state.ledgerDays] }
 }
@@ -259,7 +235,7 @@ export function completeWeek(state: SessionState): SessionState {
 /**
  * 다음 주로 — WEEK_SUMMARY → WORLD_EVENT. 병원은 유지하고, 다음 외생 이벤트를 **현재 세계 위에 누적**한다.
  * 카탈로그를 주차로 순환(selectEvent((week−1)%N))해 매주 새 헤드라인이 뜬다 — 세계 변화가 여러 주에 걸쳐 쌓인다.
- * 이번 주 진행 상태(day·달력·콜·응급)만 리셋하고, history는 보존한다.
+ * 이번 주 진행 상태(day·달력·콜)만 리셋하고, history는 보존한다.
  */
 export function nextWeek(state: SessionState): SessionState {
   if (state.phase !== 'WEEK_SUMMARY') {
@@ -277,7 +253,6 @@ export function nextWeek(state: SessionState): SessionState {
     day: 1,
     ledgerDays: [],
     receiving: undefined,
-    emergency: undefined,
     morningNews: [],
   }
 }
@@ -312,11 +287,9 @@ export function endGame(state: SessionState): SessionState {
 }
 
 export interface SessionEpilogue {
-  survived: boolean
   ledger: Ledger | null
-  debrief: Debrief | null // 전원 뺑뺑이한 경우만(IN_HOUSE는 null)
   /**
-   * 이번 주 신문 — 1막 7일 누적 돌려보낸 STEMI(누적 결산). 플레이 중 아침 신문으로 스친 기사와
+   * 이번 주 신문 — 1막 7일 누적 돌려보낸 응급(누적 결산). 플레이 중 아침 신문으로 스친 기사와
    * 글자까지 동일하되, **7일차 것까지** 모은다(아침 신문은 8일차가 없어 마지막 날을 놓친다).
    */
   weekNews: NewsItem[]
@@ -327,16 +300,11 @@ export function buildEpilogue(state: SessionState): SessionEpilogue {
     throw new Error(`buildEpilogue requires EPILOGUE, got ${state.phase}`)
   }
   const hospital = state.hospital!
-  const em = state.emergency!
   // 에필로그는 **최종 주** 결산을 보고한다(구조 손익은 econ.segments의 1주치라 ledgerDays 기준으로 정합).
   // 여러 주를 누적하려면 구조 손익을 ×주수로 스케일하고 일회성 채용을 분리해야 해 이 슬라이스 밖이다 —
   // 주 간 누적은 매 WEEK_SUMMARY의 cumulativeNetBillions로 보여 준다(스케일 문제 없는 경로).
   const ledger = buildSessionLedger(hospital, STEMI_SPECIALTY, weekTotals(state))
-  // 최종 주 신문: 그 주 7일 내내 돌려보낸 STEMI를 한 자리에 모은다(turnedAway를 flatten).
+  // 최종 주 신문: 그 주 7일 내내 돌려보낸 응급을 한 자리에 모은다(turnedAway를 flatten).
   const weekNews = renderNews(state.ledgerDays.flatMap((d) => d.turnedAway))
-  const survived = survivedEmergency(em)
-  if (em.mode === 'IN_HOUSE') {
-    return { survived, ledger, debrief: null, weekNews }
-  }
-  return { survived, ledger, debrief: buildDebrief(em.game), weekNews }
+  return { ledger, weekNews }
 }
