@@ -1,6 +1,6 @@
 import type { Hospital, SetupChoices, Specialty } from './types'
 import { buildHospital, DAYS_PER_WEEK } from './setup'
-import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, type WorldState, type WorldEvent } from './world'
+import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent } from './world'
 import {
   accruedSegments, createCallQueue, initReceiving, runningNetProfit, type ReceivingState,
 } from './receiving'
@@ -84,12 +84,15 @@ function weekDayQueue(week: number, day: number) {
   return createCallQueue((week - 1) * DAYS_PER_WEEK + day)
 }
 
-/** 랜딩 → 외생 이벤트 고지. 이벤트를 결정론으로 확정하고 세계(채용 경제)를 재구성한다(spec §5.3: selectEvent(0)). */
+/**
+ * 랜딩 → 외생 이벤트 고지. 1주차 개원은 OPENING_EVENT(재정중립 정책수가 패키지)로 세계를 재구성한다.
+ * 개원 이벤트인 이유: 월드 이벤트가 경제에 물리는 유일 지점이 이어지는 completeSetup뿐이라(world.ts OPENING_EVENT 주석).
+ */
 export function enterWorldEvent(state: SessionState): SessionState {
   if (state.phase !== 'LANDING') {
     throw new Error(`enterWorldEvent requires LANDING, got ${state.phase}`)
   }
-  const event = selectEvent(0)
+  const event = OPENING_EVENT
   const world = applyEvent(initWorld(), event)
   return { phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [] }
 }

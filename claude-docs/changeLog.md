@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-19 · 재정중립 정책수가 패키지 — 1주차 개원 이벤트로 (외생 이벤트 첫 다효과)
+
+- **무엇을**: 개원 외생 이벤트를 단효과 `CARDIO_FEE_HIKE`에서 재정중립 정책수가 패키지 `OPENING_EVENT`(순환기 profit +6 / 산부 −6)로 교체. 급여 풀 profit 합=0(재정중립)이고 미용(비급여)은 손 안 대 무풍지대 — "급여 안에서 재분배해도 비급여를 못 이긴다"가 개원 위저드 숫자에서 드러남. [world.ts](../src/game/world.ts) 상수 추가 + [session.ts](../src/game/session.ts) `enterWorldEvent` 배선 한 줄.
+- **왜**: 사용자 요청 — 엔티티 우선순위 2·5위(재정중립·정책수가 패키지)를 게임에 녹임. 브레인스토밍 중 코드 발견(월드 이벤트가 경제에 물리는 유일 지점이 1주차 `completeSetup`뿐)으로 "후속 주 헤드라인"이 아니라 개원 이벤트로 배치를 뒤집음.
+- **결과**: TDD(RED 6개 실패 확인 → GREEN). 재정중립 불변식(급여과 profit 델타 합=0)을 테스트로 잠금. 전체 255 vitest green + `tsc --noEmit` 0. hireCost 손잡이는 `LITIGATION_CHILL` 누적 충돌·불변식 흐림으로 제외(YAGNI) — 2주차 누적 테스트가 계속 통과해 회귀 잠금. 설계: [2026-07-19-fiscal-neutral-opening-event-design.md](../docs/superpowers/specs/2026-07-19-fiscal-neutral-opening-event-design.md).
+
 ## 2026-07-19 · 미구현 엔티티 구현 우선순위 판정 — docs/concept/entity-implementation-priority.md 신설
 
 - **무엇을**: [entity-code-coverage.md](../docs/concept/entity-code-coverage.md)의 ⬜ABSENT 51개(+🟡PARTIAL 심화 4개)를 **M×2+F+C+S**(메시지 가중, 25점)로 채점해 구현 우선순위를 확정한 문서 신설. 상위: 거리·이송 축(취약지)·재정중립·방어진료·저수가 소청/산부 시나리오. 실명 사건 4건은 톤 가드레일상 영구 배제(S=1).

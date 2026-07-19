@@ -50,6 +50,27 @@ export const EVENT_CATALOG: WorldEvent[] = [
   },
 ]
 
+/**
+ * 1주차 개원 전용 큐레이션 이벤트 — 순환 카탈로그(EVENT_CATALOG)와 별개.
+ *
+ * 재정중립 정책수가 패키지: 순환기 수가를 올린(+6) 만큼 급여 풀 안에서 산부가 내려간다(−6) → profit 합=0.
+ * 미용(비급여)은 이 풀 밖이라 손 안 댄다 — "급여 안에서 재분배해도 비급여를 못 이긴다"가
+ * 개원 위저드 숫자에서 드러난다.
+ *
+ * ⚠️ 왜 하필 개원 이벤트인가: 월드 이벤트가 병원 경제에 물리는 유일 지점이 1주차 completeSetup뿐이다
+ * (session.ts — 2주차+는 beginWeek이 기존 병원을 재사용해 헤드라인만 뜬다). 그래서 재정중립을 장부에서
+ * 겪게 하려면 개원 이벤트여야 한다. 근거: docs/superpowers/specs/2026-07-19-fiscal-neutral-opening-event-design.md.
+ */
+export const OPENING_EVENT: WorldEvent = {
+  id: 'FEE_REFORM_PACKAGE',
+  headline: '필수의료 정책수가 인상 의결 — 재정중립 원칙 따라 타 급여수가 동반 조정',
+  direction: 'improve', // 명목상 개선으로 고지 — 순효과 0의 아이러니는 플레이어가 숫자에서 발견(show-don't-tell)
+  effects: [
+    { dept: 'CARDIOLOGY', field: 'profitPerDoctorBillions', delta: 6 }, // 개혁 본체: 순환기 −12 → −6
+    { dept: 'OBSTETRICS', field: 'profitPerDoctorBillions', delta: -6 }, // 재정중립 상쇄: 산부 −10 → −16
+  ],
+}
+
 /** 기본 세계 — 손대지 않은 DEPARTMENTS 복제본. */
 export function initWorld(): WorldState {
   return { departments: DEPARTMENTS.map((d) => ({ ...d })) }
