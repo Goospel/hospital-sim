@@ -43,12 +43,11 @@ describe('termsInText — 헤드라인에서 아는 용어 감지', () => {
 })
 
 describe('GLOSSARY — 콘텐츠 무결성', () => {
-  it('모든 항목이 대표어·정의·맥락·감지문자열을 갖는다', () => {
+  it('모든 항목이 대표어·정의·감지문자열을 갖는다', () => {
     expect(GLOSSARY.length).toBeGreaterThan(0)
     for (const e of GLOSSARY) {
       expect(e.term).toBeTruthy()
       expect(e.def).toBeTruthy()
-      expect(e.context).toBeTruthy()
       expect(e.match.length).toBeGreaterThan(0)
     }
   })

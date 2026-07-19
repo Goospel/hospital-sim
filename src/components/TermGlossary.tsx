@@ -35,7 +35,6 @@ export default function TermGlossary({ text }: { text: string }) {
             <div key={e.term} className="flex flex-col gap-0.5">
               <dt className="text-sm font-semibold text-zinc-200">{e.term}</dt>
               <dd className="text-xs leading-5 text-zinc-400">{e.def}</dd>
-              <dd className="text-xs leading-5 text-zinc-500">{e.context}</dd>
             </div>
           ))}
         </dl>
