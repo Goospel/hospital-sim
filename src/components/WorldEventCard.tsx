@@ -21,7 +21,7 @@ export default function WorldEventCard({
 }) {
   const badge = week && week > 1 ? `${week}주차 · 속보 · 의료계` : "속보 · 의료계";
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-md flex-1 flex-col justify-center gap-6 px-5 py-12 text-zinc-100 bg-zinc-950">
+    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-6 px-5 py-12 text-zinc-100 bg-zinc-950">
       <header className="flex flex-col gap-2">
         <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">{badge}</span>
         <h1 className="text-xl font-semibold leading-snug">{event.headline}</h1>

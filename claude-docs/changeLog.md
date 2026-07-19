@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 셋업·플레이 전 화면 컨테이너 폭 통일 — 데스크톱 일관·모바일 유동
+
+- **무엇을**: 페이즈마다 제각각이던 `<main>` 컨테이너 max-width(세계이벤트·병원이름·주간결산 `max-w-md` 448px, 응급접수 `max-w-3xl` 768px)를 **전 화면 `max-w-2xl`(672px)로 통일**. 4개 컴포넌트(WorldEventCard·SetupWizard NAME·WeekSummary·ReceivingPhase) 5줄.
+- **왜**: 앞 화면은 폰 컬럼처럼 좁고(448) 뒷 화면은 갑자기 넓어(768) 데스크톱에서 화면을 넘길 때마다 폭이 널뛰어 "앞은 모바일·뒤는 데스크톱"으로 보였다(사용자 지적). 대회 심사는 데스크톱이라 일관된 중앙 컬럼이 필요 — 672는 좁은 폰 컬럼과 과한 3xl의 중간값이고, 사용자가 이미 본 채용 화면과 같은 폭.
+- **결과**: 로직 무변경(Tailwind 폭 토큰만). `w-full`+`px-5`는 그대로라 모바일은 여전히 유동(375px 풀폭·응급 2컬럼 세로 스택)·데스크톱만 672로 cap. 브라우저 실측(워크트리 dev): 데스크톱 1280 전 화면 672px 균일·가로 오버플로 0, 모바일 375 오버플로 0. `tsc --noEmit` 0 + vitest 233 green. ⏸ 컨테이너 단일화(공유 `<Screen>` 래퍼로 drift 구조적 차단)는 지금 max-w만 정렬하면 tailwind-merge 없이 bg/gap 충돌이 생겨 보류 — 재드리프트가 실제로 재발하면 승격.
+
 ## 2026-07-20 · 응급 재설계 문서 부채 정합 — 5개 문서의 '골든타임 뺑뺑이 간판' 서술 정리(슬라이스 A/B 이월)
 
 - **무엇을**: 슬라이스 A/B로 은퇴한 2막(골든타임 뺑뺑이 미니게임·실시간 전원 협상)을 아직 게임 간판/승부축으로 서술하던 문서 5종을 정합. **README.md**(주말 단일 STEMI·뺑뺑이 발신자 시점 → 7일 진료에 섞인 응급 콜·받는 벽, '응급 생존'→받은/돌려보낸 응급, 영수증 제거) · **ai-usage-doc.md**(§2 방향 reframe·삭제된 `persuasionReply`→`receivingLine`, §3-2 테스트 표를 삭제 모듈(`goldenTime`/`round`/`debrief`)에서 현행 9파일로 교체·54→233, §4 `debrief.ts`"현 구현"·'전원 기록 영수증'→누적 장부+주간 신문 병치) · **submission-plan.md**(방향 전환 배너 + 최소선·영상 샷·PDF 목차를 받는 벽 경영 아크로) · **ai-scenario-generation.md**(4차 결정 추가 — §5-A '뺑뺑이 골격 유지'를 은퇴로 대체) · **game-concept.md**(전환 배너 + `debrief.ts` 현재형 거짓 정정).

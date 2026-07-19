@@ -27,7 +27,7 @@ export default function WeekSummary({
   onEnd: () => void;
 }) {
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-md flex-1 flex-col justify-center gap-8 px-5 py-10 text-zinc-100 bg-zinc-950">
+    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-8 px-5 py-10 text-zinc-100 bg-zinc-950">
       <header className="flex flex-col items-center gap-1 text-center">
         <span className="text-xs uppercase tracking-[0.3em] text-zinc-600">{week}주차 마감</span>
         <p className="text-3xl font-semibold">

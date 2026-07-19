@@ -71,7 +71,7 @@ export default function SetupWizard({
 
   if (step === "NAME") {
     return (
-      <main className="mx-auto flex min-h-full w-full max-w-md flex-1 flex-col justify-center gap-6 px-5 py-12 text-zinc-100 bg-zinc-950">
+      <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-6 px-5 py-12 text-zinc-100 bg-zinc-950">
         <header className="flex flex-col gap-1">
           <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">병원 설립</span>
           <h1 className="text-2xl font-semibold">어떤 병원을 세우시겠습니까</h1>
