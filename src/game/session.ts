@@ -85,9 +85,10 @@ export function startSession(): SessionState {
  * (week−1)×7 + day. 1주차는 day 그대로라 기존 큐·id와 완전히 동일하다(하위호환).
  * DAY_PLANS는 (전역일−1)%7로 순환하므로 콜 구성은 주마다 같지만, id는 d8·d9…로 고유해져
  * 누적 신문(결말)의 React 키 충돌을 구조적으로 막는다.
+ * beds를 그대로 createCallQueue에 넘겨 병상 티어가 클수록 콜 볼륨도 는다(Task 6).
  */
-function weekDayQueue(week: number, day: number) {
-  return createCallQueue((week - 1) * DAYS_PER_WEEK + day)
+function weekDayQueue(week: number, day: number, beds: number) {
+  return createCallQueue((week - 1) * DAYS_PER_WEEK + day, beds)
 }
 
 /**
@@ -123,7 +124,7 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
   return {
     phase: 'RECEIVING',
     hospital,
-    receiving: initReceiving(hospital, weekDayQueue(1, 1)),
+    receiving: initReceiving(hospital, weekDayQueue(1, 1, FIXED_BEDS)),
     world,
     week: 1,
     day: 1,
@@ -217,7 +218,9 @@ export function advanceDay(state: SessionState): SessionState {
     ...state,
     phase: 'RECEIVING',
     day,
-    receiving: initReceiving(state.hospital!, weekDayQueue(state.week, day), boardedBusyUntilFrom(state.receiving)),
+    receiving: initReceiving(
+      state.hospital!, weekDayQueue(state.week, day, state.beds), boardedBusyUntilFrom(state.receiving),
+    ),
     morningNews: morningNews(day, yesterday?.turnedAway ?? []),
   }
 }
@@ -379,7 +382,7 @@ export function beginWeek(state: SessionState): SessionState {
     phase: 'RECEIVING',
     day: 1,
     ledgerDays: [],
-    receiving: initReceiving(state.hospital, weekDayQueue(state.week, 1)),
+    receiving: initReceiving(state.hospital, weekDayQueue(state.week, 1, state.beds)),
     morningNews: [],
   }
 }

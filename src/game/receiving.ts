@@ -1,7 +1,7 @@
 import type { CallKind, Doctor, Hospital, IncomingCall, Patient, RejectionReason, Specialty } from './types'
 import { adjudicateTransfer } from './adjudicate'
 import { handlingDept } from './doctor'
-import { DAYS_PER_WEEK, DEPARTMENTS } from './setup'
+import { DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
 import {
   arrivalMinFor, DAY_LENGTH_MIN, freeDoctorsOfDept, NIGHT_START_MIN, pickAssignee, procedureDurationMin,
 } from './daysim'
@@ -256,26 +256,37 @@ const PATIENT_OF: Record<CallKind, Patient> = {
   SPECIALIST_ELECTIVE: electivePatient,
 }
 
+/** 병상 연동 하루 콜 수 — 큰 병원 = 더 많은 환자(사용자 결정). 3→5·5→7·7→9. */
+export function callsForBeds(beds: number): number {
+  return beds + 2
+}
+
 /**
- * 그날의 콜 큐 — 결정론(같은 day는 항상 같은 큐), 도착순 정렬.
+ * 그날의 콜 큐 — 결정론(같은 day·beds는 항상 같은 큐), 도착순 정렬.
  *
  * DAY_PLANS 순서대로 id·라벨·patient를 부여한 뒤(원래 인덱스 기반이라 결정론·고유성이 유지된다),
  * daysim의 seed 원시함수로 arrivalMin·durationMin을 매기고 **마지막에** 도착시각 오름차순으로 정렬한다.
  * nightShift는 위치가 아니라 arrivalMin(≥ NIGHT_START_MIN)에서 파생 — 정렬해도 시간대는 안 흔들린다.
  *
- * week는 1로 고정한다(createCallQueue는 단일 인자 유지 — session.ts weekDayQueue가 이미 전역일을
- * day로 넘기므로 이 함수 시그니처를 바꾸면 그쪽이 깨진다. week 축은 Task 6 몫).
+ * beds는 병상 티어별 콜 수(callsForBeds)를 결정한다 — 기본값 FIXED_BEDS면 기존과 동일한 5통(하위호환).
+ * count가 base plan(5통)보다 크면 인덱스를 순환(`i % basePlan.length`)해 늘린다 — 새 콘텐츠 0,
+ * kind 믹스 비율 보존, 결정론 유지(Task 6).
+ * week는 1로 고정한다(createCallQueue는 (day, beds) 두 인자 유지 — session.ts weekDayQueue가 이미
+ * 전역일을 day로 넘기므로 이 함수 시그니처를 더 바꾸면 그쪽이 깨진다).
  * 라벨은 kind 내 등장 순번으로 고른다 — callerPleaAt(dialogue.ts)의 seed 규칙과 같아야 라벨↔대사가 맞는다(PR #29).
  */
-export function createCallQueue(day = 1): IncomingCall[] {
-  const plan = DAY_PLANS[(day - 1) % DAY_PLANS.length]
+export function createCallQueue(day = 1, beds = FIXED_BEDS): IncomingCall[] {
+  const basePlan = DAY_PLANS[(day - 1) % DAY_PLANS.length]
+  const count = callsForBeds(beds)
+  // 티어별로 기본 플랜(5통)을 순환 연장해 count통을 채운다 — 새 콘텐츠 0, 믹스 비율 보존, 결정론.
+  const plan = Array.from({ length: count }, (_, i) => basePlan[i % basePlan.length])
   const seen: Partial<Record<CallKind, number>> = {}
   const timed = plan.map(({ kind, dept }, i) => {
     const occurrence = seen[kind] ?? 0
     seen[kind] = occurrence + 1
     const arrivalMin = arrivalMinFor(1, day, i, plan.length)
     return {
-      id: `d${day}c${i + 1}`, // 원래 plan 인덱스 기반 — 날짜별 고유, 정렬 위치와 무관(로그·React key 충돌 방지)
+      id: `d${day}c${i + 1}`, // 순환 후 인덱스 기반 — 날짜별 고유, 정렬 위치와 무관(로그·React key 충돌 방지)
       kind,
       label: kind === 'SPECIALIST_ELECTIVE'
         ? electiveLabel(dept ?? 'CARDIOLOGY')
