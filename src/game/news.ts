@@ -82,6 +82,8 @@ const PROFILE_BY_KIND: Partial<Record<CallKind, readonly string[]>> = {
   NEURO_EMERGENCY: ['뇌출혈 60대 남성', '뇌졸중 50대 남성', '뇌출혈 40대 여성', '뇌졸중 60대 여성'],
   TRAUMA_EMERGENCY: ['중증외상 40대 남성', '다발성 외상 50대 남성', '중증외상 60대 남성', '중증외상 50대 여성'],
   OBSTETRIC_EMERGENCY: ['분만 중 산모', '분만 응급 산모', '출산 직후 산모', '만삭 산모'],
+  ABDOMINAL_EMERGENCY: ['급성복증 50대 남성', '복막염 60대 남성', '급성복증 40대 여성', '장폐색 50대 남성'],
+  MEDICAL_EMERGENCY: ['고열·감염 60대 남성', '패혈증 의심 50대 여성', '중증 감염 40대 남성', '고열 50대 남성'],
 }
 
 const OUTLETS = ['한내일보', '서림신문', '지역언론 종합', '금하매일'] as const
