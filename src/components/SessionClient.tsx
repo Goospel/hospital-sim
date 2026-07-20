@@ -95,6 +95,9 @@ export default function SessionClient() {
           onRestart={() => setSession(startSession())}
         />
       );
+    case "GROWTH":
+      // 임시 스텁 — Task 9에서 GrowthPhase 배선(enterGrowth 진입 + applyGrowth→beginWeek). 현재 미도달.
+      return null;
     default: {
       const _exhaustive: never = session.phase;
       return _exhaustive;
