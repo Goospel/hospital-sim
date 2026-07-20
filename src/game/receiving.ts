@@ -1,7 +1,10 @@
-import type { CallKind, Hospital, IncomingCall, Patient, RejectionReason, Specialty } from './types'
+import type { CallKind, Doctor, Hospital, IncomingCall, Patient, RejectionReason, Specialty } from './types'
 import { adjudicateTransfer } from './adjudicate'
+import { handlingDept } from './doctor'
 import { DAYS_PER_WEEK } from './setup'
-import { arrivalMinFor, NIGHT_START_MIN, procedureDurationMin } from './daysim'
+import {
+  arrivalMinFor, DAY_LENGTH_MIN, freeDoctorsOfDept, NIGHT_START_MIN, pickAssignee, procedureDurationMin,
+} from './daysim'
 
 // 1막 콜 큐 — 받는 병원. 기존 adjudicateTransfer를 플레이어 손으로 돌린다(벽의 양쪽).
 // 순수·결정론·불변. 다크코미디는 대사(dialogue.ts)와 UI가, 여기선 숫자만.
@@ -114,19 +117,25 @@ export interface ReceivingState {
   queue: IncomingCall[]
   index: number
   /**
-   * 남은 하루 진료 자리 — 병원의 "능력의 한계"를 담는 유일한 동적 값.
-   * 병상=총량 / 의사=자격 모델의 총량 축(설계: 2026-07-17-daily-capacity-calendar-design.md §2.1).
-   * hospital.beds는 정적 스톡이라 소진되지 않는다 — 그래서 이 필드가 따로 있다.
+   * 하루 시각(분, 0..DAY_LENGTH_MIN) — 현재 콜 처리 지점. decide가 콜의 arrivalMin으로 전진시킨다.
+   * 벽이 병상(총량)에서 **전문의 점유(시간)**로 바뀌면서, 하루 진행률의 축도 '처리한 콜 수'가 아니라
+   * '시각'이 된다(dayProgress = clockMin / DAY_LENGTH_MIN).
    */
-  bedsFree: number
+  clockMin: number
+  /**
+   * 유닛별 점유 종료 시각(분) — busyUntil[doctorId] ≤ 현재 시각이면 그 의사는 자유.
+   * 이게 능력의 한계를 담는 동적 값이다: 병상 총량이 아니라 **누가 언제까지 바쁜가**.
+   * 초기값은 어제 넘어온 점유(boardedBusyUntil) — 지금은 빈 맵, 실제 이월 계산은 후속(Task 6).
+   */
+  busyUntil: Record<string, number>
   netProfitDeltaBillions: number
   /**
-   * 오늘 검사 수익 — 진료 수익과 **별도로** 쌓는다.
-   * 합쳐버리면 이 게임이 하려는 말이 사라진다: 진료 수익은 음수인데 검사 수익이 덮어서 순이익이 양수다.
-   * 아무도 "과잉진료"라고 말하지 않는다 — 두 줄이 나란히 있을 뿐이다.
+   * 오늘 검사 수익 — 진료 수익과 **별도로** 쌓는 장부 라인.
+   * ⚠️ Task 5에서 플레이어의 검사 액션(withWorkup)이 제거돼 **항상 0**이다(검사 흑자는 SPECIALIST_ELECTIVE가 계승).
+   * 필드를 남기는 건 DayRecord·UI 장부 파급을 막기 위함 — 완전 제거는 후속.
    */
   workupRevenueBillions: number
-  /** 오늘 검사를 붙인 환자 수 — 내일 자리를 먹는다(boarding). */
+  /** 오늘 검사를 붙인 환자 수 — Task 5에서 검사 액션 제거로 **항상 0**(boarding 이월은 Task 6). */
   workupCount: number
   lawsuitExposure: number
   /** reason = 하드락 사유(못 받은 이유). 받았거나 내가 거절한 콜은 null — 구조가 막은 것만 사유가 남는다. */
@@ -252,23 +261,28 @@ export function createCallQueue(day = 1): IncomingCall[] {
 }
 
 /**
- * 이 콜을 못 받는 사유 — 받을 수 있으면 null.
+ * 이 콜을 못 받는 **구조적** 사유 — 받을 수 있으면 null.
  *
- * 게이트 우선순위는 adjudicateTransfer(adjudicate.ts:9-13)를 따르되, 맨 앞에 **자리(총량)**를 둔다:
- *   0) 자리 0 → NO_BED — 자격이 있어도 앉힐 데가 없다. 오늘 이미 다 썼기 때문이다.
- *   1~3) 당직·과밀·배후 → 기존 판정(자격)
+ * 벽이 병상(총량)에서 **전문의 점유(시간)**로 바뀌었다. 게이트 우선순위(필수 응급):
+ *   1) 응급실 당직·과밀·배후 → adjudicateTransfer (NO_ER_ONCALL / ER_OVERCROWDED / NO_BACKUP_CARE)
+ *   2) 야간 당직 공백        → NO_NIGHT_BACKUP  (과는 있는데 밤엔 당직이 빈다, T-042)
+ *   3) 그 과 의사가 다 진료 중 → NO_FREE_SPECIALIST (평일 배후 공백의 형상화 — 예약이 응급을 밀어낸다)
  *
- * 이 순서가 곧 논지다. 순환기를 갖춘 병원조차 미용으로 자리를 채우면 STEMI 앞에서 NO_BED가 된다 —
- * 벽의 종류가 "역량 부재"에서 "이미 다 썼음"으로 바뀔 뿐 환자는 똑같이 못 들어온다.
+ * 선택진료(미용·배후과 예약)는 하드락이 없다(null) — 자유 의사가 없으면 decide가 '못 받음'으로 처리하지
+ * 구조가 막는 게 아니다. busyUntil·roster는 3)의 점유 판정에 쓴다.
  */
-export function hardlockReason(hospital: Hospital, call: IncomingCall, bedsFree: number): RejectionReason | null {
-  if (bedsFree <= 0) return 'NO_BED'
+export function hardlockReason(
+  hospital: Hospital,
+  call: IncomingCall,
+  busyUntil: Record<string, number>,
+  roster: Doctor[],
+): RejectionReason | null {
   switch (call.kind) {
     case 'COSMETIC_WALKIN':
     case 'SPECIALIST_ELECTIVE':
-      return null // 선택진료 — 자리만 있으면 받는다(점유 벽 판정은 Task 5)
+      return null // 선택진료 — 하드락 없음(자유 의사 유무는 decide가 판단)
     case 'GENERAL_EMERGENCY':
-      // 응급실 당직·과밀만 보면 된다(배후 무관, 저마진).
+      // 응급실 당직·과밀만 보면 된다(배후 무관, 저마진). 담당 전문의가 없어도 받는다.
       if (!hospital.hasErOnCall) return 'NO_ER_ONCALL'
       if (hospital.overcrowded) return 'ER_OVERCROWDED'
       return null
@@ -287,28 +301,33 @@ export function hardlockReason(hospital: Hospital, call: IncomingCall, bedsFree:
       if (call.nightShift && !onCallNow.includes(call.patient.requiredSpecialty)) {
         return 'NO_NIGHT_BACKUP' // 과는 있는데 당직이 비었다 — NO_BACKUP_CARE와 다른 사유다
       }
+      // 과·당직이 있어도 그 과 의사가 지금(도착 시각) 다 진료 중이면 못 받는다 — 점유 벽.
+      if (freeDoctorsOfDept(roster, busyUntil, handlingDept(call), call.arrivalMin ?? 0).length === 0) {
+        return 'NO_FREE_SPECIALIST'
+      }
       return null
     }
   }
 }
 
 /**
- * 하루 시작 — `boardedBeds`는 **어제 검사를 붙인 환자 수**다(기본 0).
+ * 하루 시작 — `boardedBusyUntil`은 **어제 넘어온 유닛별 점유 종료 시각**이다(기본 빈 맵).
  *
- * 이게 달력에 처음으로 의미를 준다: 지금까지 7일은 서로 독립이었다(매일 자리 리셋).
- * 검사가 자리를 이월시키면 **어제의 흑자가 오늘의 자리를 먹는다.**
- * 기본값 0인 선택적 인자라 이월을 안 쓰는 호출부(테스트 포함)는 기존 동작 그대로다.
+ * 병상 총량이 아니라 시각 기반 점유가 능력의 한계를 담는다: 어제 늦게까지 점유된 유닛은 오늘 아침에도
+ * 아직 바쁠 수 있다(boarding의 시간 버전). 실제 이월 계산은 후속(Task 6) — 지금 호출부는 빈 맵을 넘긴다.
+ * 기본값이 빈 맵인 선택적 인자라 이월을 안 쓰는 호출부(테스트 포함)는 하루를 전 유닛 자유로 연다.
  */
 export function initReceiving(
   hospital: Hospital,
   queue: IncomingCall[] = createCallQueue(),
-  boardedBeds = 0,
+  boardedBusyUntil: Record<string, number> = {},
 ): ReceivingState {
   return {
     hospital,
     queue,
     index: 0,
-    bedsFree: Math.max(0, hospital.beds - boardedBeds), // 어제 검사가 물고 있는 자리만큼 덜 시작한다
+    clockMin: 0,
+    busyUntil: { ...boardedBusyUntil }, // 어제 넘어온 점유에서 출발(지금은 빈 맵)
     netProfitDeltaBillions: 0,
     workupRevenueBillions: 0,
     workupCount: 0,
@@ -319,41 +338,50 @@ export function initReceiving(
 }
 
 /**
- * 현재 콜에 수용/거절을 정한다. 하드락 콜은 accept=true여도 수용되지 않는다(가드).
+ * 현재 콜을 처리한다 — **응급은 자동 판정, 선택진료만 플레이어가 결정**한다.
  *
- * `withWorkup` — 수용하면서 검사를 붙인다. 급여 환자에게만 유효하고(canOrderWorkup),
- * 실제로 수용된 경우에만 붙는다. 안 받은 환자를 검사할 수는 없다.
+ * - 응급(일반·필수 4종): `accept`를 무시하고 자동으로 판정한다. 구조적 하드락(hardlockReason)이 없으면
+ *   수용, 있으면 turnedAway. "아무리 애원해도, 아무리 거절하려 해도" 결과는 병원의 제약이 정한다.
+ * - 선택진료(미용·배후과 예약): `accept && 그 과 자유 의사 있음`일 때만 수용. accept=false거나 담당
+ *   의사가 다 바쁘면 미수용(하드락이 아니라 '못 받음' — 사유 없음).
+ *
+ * 수용하면 담당 의사(handlingDept)를 `arrivalMin + durationMin`까지 점유한다. 담당 과에 자유 의사가
+ * 없어도 받는 콜(일반 응급 — 배후 무관)은 아무도 점유하지 않는다(pickAssignee는 자유 의사가 있을 때만).
  */
-export function decide(state: ReceivingState, accept: boolean, withWorkup = false): ReceivingState {
+export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   if (state.done) {
     throw new Error('receiving already done')
   }
   const call = state.queue[state.index]
-  const reason = hardlockReason(state.hospital, call, state.bedsFree)
+  const roster = state.hospital.roster ?? []
+  const reason = hardlockReason(state.hospital, call, state.busyUntil, roster)
   const disposition: CallDisposition = reason === null ? 'CHOICE' : 'HARDLOCK_REJECT'
-  const effectiveAccept = disposition === 'CHOICE' && accept
-  const effectiveWorkup = effectiveAccept && withWorkup && canOrderWorkup(call.kind)
 
-  // 수용한 환자만 자리를 먹는다 — 거절·하드락은 자리를 소모하지 않는다.
-  const bedsFree = effectiveAccept ? state.bedsFree - 1 : state.bedsFree
+  const arrivalMin = call.arrivalMin ?? 0
+  const free = freeDoctorsOfDept(roster, state.busyUntil, handlingDept(call), arrivalMin)
+
+  // 응급은 accept 무관 자동(하드락이 없으면 수용). 선택진료는 accept + 그 과 자유 의사가 있어야 수용.
+  const effectiveAccept = disposition === 'CHOICE' && (isElective(call.kind) ? accept && free.length > 0 : true)
+
+  // 수용한 콜은 담당 의사를 점유한다 — 자유 의사가 없으면(일반 응급) 아무도 점유하지 않는다(가드).
+  let busyUntil = state.busyUntil
+  if (effectiveAccept && free.length > 0) {
+    const assignee = pickAssignee(free, state.busyUntil)
+    busyUntil = { ...state.busyUntil, [assignee.id]: arrivalMin + (call.durationMin ?? 0) }
+  }
+
   const netProfitDeltaBillions = effectiveAccept
     ? state.netProfitDeltaBillions + callDelta(call.kind)
     : state.netProfitDeltaBillions
-  // 검사 수익은 진료 수익과 섞지 않는다 — 덮는 게 뭔지 장부에서 보여야 한다.
-  const workupRevenueBillions = effectiveWorkup
-    ? state.workupRevenueBillions + workupDelta()
-    : state.workupRevenueBillions
-  const workupCount = effectiveWorkup ? state.workupCount + 1 : state.workupCount
   const lawsuitExposure = effectiveAccept && call.lawsuitRisk ? state.lawsuitExposure + 1 : state.lawsuitExposure
 
   const log = [...state.log, { callId: call.id, accepted: effectiveAccept, disposition, reason }]
   const index = state.index + 1
   return {
     ...state,
-    bedsFree,
+    clockMin: arrivalMin, // 현재 콜 도착 시각으로 하루를 전진시킨다
+    busyUntil,
     netProfitDeltaBillions,
-    workupRevenueBillions,
-    workupCount,
     lawsuitExposure,
     log,
     index,
@@ -361,10 +389,16 @@ export function decide(state: ReceivingState, accept: boolean, withWorkup = fals
   }
 }
 
-/** 하루 진행률(0~1) — 처리한 콜 수 / 전체. 빈 큐(콜 없음)는 하루 완료로 보아 1. */
+/**
+ * 하루 진행률(0~1) — **시각 기반**(clockMin / DAY_LENGTH_MIN).
+ *
+ * 하루 완료(done)나 빈 큐는 1로 고정한다 — 이게 "7일치 부문 손익 오늘치 합 = 주간 전액" 등식을 지킨다
+ * (accruedSegments가 이 값을 곱한다). 마지막 콜의 도착 시각은 DAY_LENGTH_MIN보다 이르지만, 하루가
+ * 끝나면 그날 몫(주간/7)을 온전히 벌었다고 본다 — 그 앞의 진행 중 값만 시각에 비례한다.
+ */
 export function dayProgress(state: ReceivingState): number {
-  if (state.queue.length === 0) return 1
-  return state.index / state.queue.length
+  if (state.done || state.queue.length === 0) return 1
+  return Math.min(1, Math.max(0, state.clockMin / DAY_LENGTH_MIN))
 }
 
 /**

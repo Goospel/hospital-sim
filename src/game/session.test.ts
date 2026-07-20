@@ -5,7 +5,7 @@ import {
   cumulativeNetBillions, buildEpilogue, enterWorldEvent, type SessionState,
 } from './session'
 import { initWorld, applyEvent, OPENING_EVENT } from './world'
-import { canOrderWorkup, decide, isElective } from './receiving'
+import { decide, isElective } from './receiving'
 import { DAYS_PER_WEEK } from './setup'
 import type { IncomingCall, SetupChoices } from './types'
 
@@ -17,33 +17,32 @@ type Policy = boolean | ((call: IncomingCall) => boolean)
 /**
  * 그날의 RECEIVING을 끝까지 흘린다(하루 마감은 하지 않는다). 방침은 불리언(전부) 또는 콜별 함수.
  *
- * 자리가 유한해진 뒤로 **"전부 수용"은 더 이상 하나의 전략이 아니다** — 앞선 워크인이 자리를 먹으면
- * 뒤의 STEMI가 NO_BED로 막힌다. 그래서 '양심'은 전부 수용이 아니라 **워크인을 거절해 자리를 비워두는
- * 선택**으로만 표현된다. 이 헬퍼가 콜별 함수를 받는 이유다.
+ * 응급(일반·필수)은 decide가 자동 판정하므로 accept를 무시한다 — 방침은 **선택진료**(미용·배후과 예약)에만
+ * 먹는다. 그래서 '양심'은 선택진료를 거절해 그 과 의사를 응급에 비워두는 선택으로 표현된다(essentialFirst).
  */
-function runDay(state: SessionState, accept: Policy, withWorkup = false) {
+function runDay(state: SessionState, accept: Policy) {
   let s = state
   while (!s.receiving!.done) {
     const call = s.receiving!.queue[s.receiving!.index]
     const yes = typeof accept === 'function' ? accept(call) : accept
-    s = { ...s, receiving: decide(s.receiving!, yes, withWorkup) }
+    s = { ...s, receiving: decide(s.receiving!, yes) }
   }
   return s
 }
 
 /** day-1 RECEIVING 상태에서 7일을 통째로 흘려 7일차 DAY_END까지 간다(각 날 마감 + 다음 날 전진). */
-function runWeekFrom(start: SessionState, accept: Policy = false, withWorkup = false) {
-  let s = runDay(start, accept, withWorkup)
+function runWeekFrom(start: SessionState, accept: Policy = false) {
+  let s = runDay(start, accept)
   for (let d = 1; d < DAYS_PER_WEEK; d++) {
     s = advanceDay(completeReceiving(s)) // 마감 → 다음 날 RECEIVING
-    s = runDay(s, accept, withWorkup)
+    s = runDay(s, accept)
   }
   return completeReceiving(s) // 7일차 마감 → DAY_END (다음 날 없음 → 결산으로)
 }
 
 /** 개원(위저드 완료)부터 한 주를 흘려 7일차 DAY_END까지 간다. */
-function runWeek(choices: SetupChoices, accept: Policy = false, withWorkup = false) {
-  return runWeekFrom(completeSetup(choices), accept, withWorkup)
+function runWeek(choices: SetupChoices, accept: Policy = false) {
+  return runWeekFrom(completeSetup(choices), accept)
 }
 
 /** 한 주 완주: 7일차 DAY_END → WEEK_SUMMARY. */
@@ -102,41 +101,19 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     expect(d2.day).toBe(2)
     expect(d2.receiving!.index).toBe(0)
     expect(d2.receiving!.done).toBe(false)
-    expect(d2.receiving!.bedsFree).toBe(d2.hospital!.beds) // 검사를 안 붙였으면 새 하루엔 병상이 다 빈다
+    expect(d2.receiving!.clockMin).toBe(0) // 새 하루는 시각 0에서 연다
+    expect(d2.receiving!.busyUntil).toEqual({}) // 전 유닛 자유(어제 점유 이월은 Task 6)
     expect(d2.receiving!.netProfitDeltaBillions).toBe(0) // 그날 진료 수익은 0에서 시작
     expect(d2.receiving!.queue[0].id).toContain('d2') // 2일차 큐
   })
 
   /**
-   * boarding — 검사가 날짜를 처음으로 묶는다(설계 스펙 §3.3).
-   * 지금까지 7일은 서로 독립이었다(매일 자리 리셋). 이제 **어제의 흑자가 오늘의 자리를 먹는다.**
-   */
-  it('[boarding] 어제 검사를 붙인 만큼 오늘 자리가 준다 — 달력이 처음으로 의미를 갖는다', () => {
-    // 1일차: 급여 환자만 받고 전부 검사를 붙인다
-    const d1 = completeReceiving(runDay(completeSetup(conscientious), (c) => canOrderWorkup(c.kind), true))
-    const boarded = d1.receiving!.workupCount
-    expect(boarded).toBeGreaterThan(0) // 실제로 검사가 붙었어야 이 테스트가 의미 있다
-    const d2 = advanceDay(d1)
-    expect(d2.receiving!.bedsFree).toBe(d2.hospital!.beds - boarded)
-  })
-
-  it('[boarding] 자기제한적 — 자리가 0이면 검사 붙일 환자도 없어 다음날 자리가 돌아온다', () => {
-    const d1 = completeReceiving(runDay(completeSetup(conscientious), (c) => canOrderWorkup(c.kind), true))
-    const d2 = advanceDay(d1)
-    // 2일차는 자리가 줄어든 채 시작 → 받을 수 있는 환자가 적으니 검사도 적게 붙는다
-    const d2done = completeReceiving(runDay(d2, (c) => canOrderWorkup(c.kind), true))
-    expect(d2done.receiving!.workupCount).toBeLessThanOrEqual(d2.receiving!.bedsFree)
-    const d3 = advanceDay(d2done)
-    expect(d3.receiving!.bedsFree).toBeGreaterThanOrEqual(d2.receiving!.bedsFree) // 무한 악화가 불가능
-  })
-
-  /**
    * 다음날 아침 신문 — 사용자 피드백 "돌려보낸 환자가 어떻게 됐는지 알 수 없다"의 답.
-   * 인과 사슬의 마지막 고리: 저수가 → 검사 → boarding → 자리 없음 → 수용 불가 → **다음날 신문**.
+   * 인과 사슬의 마지막 고리: 배후과 부재/점유 → 수용 불가 → **다음날 신문**.
    */
-  it('[신문] 어제 돌려보낸 STEMI가 오늘 아침 기사로 온다', () => {
-    // 미용만 받아 자리를 채우면 STEMI는 NO_BED로 막힌다 — 그게 기사가 된다.
-    const d1 = completeReceiving(runDay(completeSetup(conscientious), (c) => c.kind === 'COSMETIC_WALKIN'))
+  it('[신문] 어제 돌려보낸 필수 응급이 오늘 아침 기사로 온다', () => {
+    // 배후과가 하나도 없는 공범 병원은 필수 응급을 못 받는다(NO_BACKUP_CARE) — 그게 기사가 된다.
+    const d1 = completeReceiving(runDay(completeSetup(collaborator), false))
     expect(d1.ledgerDays[0].turnedAway.length).toBeGreaterThan(0)
     const d2 = advanceDay(d1)
     expect(d2.morningNews.length).toBe(d1.ledgerDays[0].turnedAway.length)
@@ -155,22 +132,14 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     expect(d2.morningNews.length).toBe(hardlockedStemi)
   })
 
-  it('[신문] 내가 거절한 필수 응급도 기사가 된다 — 구조가 막았든 내가 막았든 환자는 똑같이 못 들어왔다', () => {
+  it('[신문] 배후과가 없어 못 받은 필수 응급이 전부 기사가 된다 — 능동 거절이 아니라 구조가 막는다', () => {
+    // 응급은 자동 판정이라 플레이어가 거절할 수 없다. 배후과가 하나도 없는 공범 병원에선 그날 온 필수
+    // 응급이 전부 NO_BACKUP_CARE로 막히고, 그 전원이 기사가 된다.
     const CRITICAL: string[] = ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY']
-    const d1 = completeReceiving(runDay(completeSetup(conscientious), false)) // 전부 거절
+    const d1 = completeReceiving(runDay(completeSetup(collaborator), false)) // 배후과 0
     const criticalPerDay = d1.receiving!.queue.filter((c) => CRITICAL.includes(c.kind)).length
+    expect(criticalPerDay).toBeGreaterThan(0)
     expect(d1.ledgerDays[0].turnedAway.length).toBe(criticalPerDay)
-  })
-
-  it('[I7] 주간 누계에 검사 수익이 별도로 합산된다', () => {
-    // SPECIALIST_ELECTIVE도 급여(canOrderWorkup)지만 예약 자체가 흑자라 이 불변식(적자를 검사가 덮는다)의
-    // 대상이 아니다 — 이 테스트는 "적자 나는 급여 응급"만 겨냥한다(isElective로 제외).
-    const week = runWeek(conscientious, (c) => canOrderWorkup(c.kind) && !isElective(c.kind), true)
-    const totals = weekTotals(week)
-    expect(totals.workupRevenueBillions).toBeGreaterThan(0)
-    // 급여 환자만 받고 전량 검사 → 진료 수익은 음수인데 검사가 덮는다
-    expect(totals.netProfitDeltaBillions).toBeLessThan(0)
-    expect(totals.workupRevenueBillions).toBeGreaterThan(Math.abs(totals.netProfitDeltaBillions))
   })
 
   it('하루를 마감할 때마다 달력에 한 칸씩 쌓인다', () => {
@@ -182,12 +151,13 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     expect(d2.ledgerDays.map((r) => r.day)).toEqual([1, 2])
   })
 
-  it('달력 한 칸 = 부문 손익 오늘치 + 그날 진료 수익, 그리고 못 받은 콜 수를 남긴다', () => {
+  it('달력 한 칸 = 부문 손익 오늘치 + 그날 진료 수익, 그리고 못 받은 필수 응급을 남긴다', () => {
     const d1 = completeReceiving(runDay(completeSetup(collaborator), true)) // 전부 수용 시도
     const rec = d1.ledgerDays[0]
     expect(rec.netProfitBillions).toBe(rec.segmentShareBillions + rec.callDeltaBillions)
-    expect(rec.accepted).toBe(3) // 자리 3
-    expect(rec.blocked).toBeGreaterThan(0) // 자리가 없어 구조가 막은 콜이 있다
+    // 미용 2 + 일반응급 1(응급은 자동). 순환기 예약은 담당 없어 미수용, STEMI는 배후 없어 못 받는다.
+    expect(rec.accepted).toBe(3)
+    expect(rec.turnedAway.length).toBeGreaterThan(0) // 배후과가 없어 못 받은 필수 응급
     expect(rec.accepted + rec.blocked).toBeLessThanOrEqual(5)
   })
 

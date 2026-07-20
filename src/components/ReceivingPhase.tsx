@@ -5,10 +5,8 @@ import { formatSignedBillions } from "@/game/labels";
 import {
   accruedSegments,
   callDelta,
-  canOrderWorkup,
   hardlockReason,
   runningNetProfit,
-  workupDelta,
   CALL_ECONOMICS,
   DAY_LABELS,
   type ReceivingState,
@@ -136,7 +134,7 @@ export default function ReceivingPhase({
   day: number;
   news: NewsItem[];
   fatigue: Record<string, number>;
-  onDecide: (accept: boolean, withWorkup?: boolean) => void;
+  onDecide: (accept: boolean) => void;
   onContinue: () => void;
 }) {
   const dayLabel = `${DAY_LABELS[day - 1]}요일`;
@@ -184,7 +182,12 @@ export default function ReceivingPhase({
   }
 
   const call = receiving.queue[receiving.index];
-  const reason = hardlockReason(receiving.hospital, call, receiving.bedsFree);
+  const reason = hardlockReason(
+    receiving.hospital,
+    call,
+    receiving.busyUntil,
+    receiving.hospital.roster ?? [],
+  );
   const disposition = reason === null ? "CHOICE" : "HARDLOCK_REJECT";
   const plea = callerPleaAt(receiving.queue, receiving.index);
 
@@ -204,8 +207,8 @@ export default function ReceivingPhase({
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
       {/*
-        남은 자리 — 이 게임의 유일한 과부하 표시. 숫자만 보여주고 해석하지 않는다:
-        콜 5통 > 자리 3이라 매일 2통은 못 받는데, 그걸 말로 하지 않고 숫자가 줄어드는 걸로만 알린다.
+        시각 — 벽이 병상에서 전문의 점유(시간)로 바뀌면서 하루의 축이 '남은 자리'가 아니라 '시각'이 된다.
+        지금은 콜 진행만 임시 표시한다(시계·점유 배지 같은 폴리시 UX는 Task 7).
       */}
       <header className="flex items-baseline justify-between gap-3">
         <div className="flex flex-col gap-1">
@@ -213,16 +216,6 @@ export default function ReceivingPhase({
           <h1 className="text-lg font-semibold">
             콜 {receiving.index + 1} / {receiving.queue.length}
           </h1>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <span className="text-xs uppercase tracking-[0.25em] text-zinc-600">남은 자리</span>
-          <span
-            className={`font-mono text-lg font-semibold tabular-nums ${
-              receiving.bedsFree === 0 ? "text-amber-500" : "text-zinc-200"
-            }`}
-          >
-            {receiving.bedsFree} / {receiving.hospital.beds}
-          </span>
         </div>
       </header>
 
@@ -260,8 +253,8 @@ export default function ReceivingPhase({
           )}
 
           {/*
-            검사 버튼 — 급여 환자에게만. 해석 카피 0: "과잉진료"라고 쓰지 않는다.
-            숫자만 놓는다(+4억, 자리 내일까지). 플레이어가 일곱 번 누른 뒤 장부에서 스스로 본다.
+            수용/거절 버튼 — 응급은 decide가 자동 판정하므로 눌러도 결과가 병원 제약이 정한다(임시 유지).
+            응급/선택 분기 UI·자동 배너 같은 폴리시 UX는 Task 7. 지금은 컴파일·미충돌만.
           */}
           <div className="mt-1 flex flex-wrap gap-3">
             <button
@@ -271,22 +264,8 @@ export default function ReceivingPhase({
               aria-label={`${call.label} 수용`}
               className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             >
-              {canOrderWorkup(call.kind) ? "그냥 받기" : "수용"}
+              수용
             </button>
-            {canOrderWorkup(call.kind) && (
-              <button
-                type="button"
-                onClick={() => onDecide(true, true)}
-                disabled={disposition === "HARDLOCK_REJECT"}
-                aria-label={`${call.label} 검사를 추가해 수용`}
-                className="flex-1 rounded-lg border border-emerald-700 bg-emerald-950/40 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-900 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-              >
-                검사를 추가한다
-                <span className="ml-1.5 font-mono text-xs font-normal opacity-80">
-                  {formatSignedBillions(workupDelta())} · 자리 내일까지
-                </span>
-              </button>
-            )}
             <button
               type="button"
               onClick={() => onDecide(false)}

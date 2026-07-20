@@ -126,22 +126,12 @@ const RECEIVE_NIGHT_BY_SPECIALTY: Record<Specialty, string> = {
 }
 
 /**
- * 자리 소진(NO_BED) 하드락 — 오늘 진료 역량을 이미 다 썼다.
- * 톤은 1막의 명랑한 태연함 그대로 유지한다. 과녁은 시스템의 태연함이지 환자가 아니다.
- * 앞서 무엇을 받느라 자리가 없어졌는지는 말하지 않는다 — 플레이어가 자기 선택을 스스로 안다(show-don't-tell).
- */
-export const RECEIVE_NO_BED =
-  '오늘 자리가 다 찼습니다. 더는 못 받아요.'
-
-/**
- * 자리·응급실 축 하드락(콜 종류·배후과와 무관한 벽).
+ * 응급실 축 + 점유 벽 하드락(콜 종류·배후과와 무관한 벽).
  *
- * NO_FREE_SPECIALIST(배후과 의사 점유)도 여기 묶는다 — Task 3은 이 사유를 실제로 발생시키지
- * 않는다(hardlockReason이 SPECIALIST_ELECTIVE엔 항상 null을 반환, 점유 판정은 Task 5).
- * 지금은 RejectionReason 완전성(Record<RejectionReason,...>)만 지키는 자리표시 대사.
+ * NO_FREE_SPECIALIST(그 과 의사가 다 진료 중)가 이제 실제 사유로 발생한다(점유 판정 = Task 5) —
+ * 배후과 예약이 그 과 의사를 점유해 같은 날 응급을 밀어낸 상황이다. 병상 축(NO_BED)은 제거됐다.
  */
-const RECEIVE_BY_STRUCTURAL_REASON: Record<'NO_BED' | 'NO_ER_ONCALL' | 'ER_OVERCROWDED' | 'NO_FREE_SPECIALIST', string> = {
-  NO_BED: RECEIVE_NO_BED,
+const RECEIVE_BY_STRUCTURAL_REASON: Record<'NO_ER_ONCALL' | 'ER_OVERCROWDED' | 'NO_FREE_SPECIALIST', string> = {
   NO_ER_ONCALL: '지금 응급실 당직이 없습니다. 접수 자체가 안 됩니다.',
   ER_OVERCROWDED: '자리는 있어도 응급실이 꽉 차서 지금은 못 받습니다.',
   NO_FREE_SPECIALIST: '그 과 의사가 지금 다른 진료 중입니다. 예약이 밀려 있어서요.',
@@ -168,9 +158,6 @@ export function receivingLine(
           return RECEIVE_NO_BACKUP_BY_SPECIALTY[spec]
         case 'NO_NIGHT_BACKUP':
           return RECEIVE_NIGHT_BY_SPECIALTY[spec]
-        case 'NO_BED':
-          // 자리 소진은 콜 종류를 안 가린다 — 워크인엔 '예약이 다 찼습니다'가 이미 정합(명랑 유지).
-          return call.kind === 'COSMETIC_WALKIN' ? RECEIVE_REJECT[call.kind] : RECEIVE_NO_BED
         default:
           return RECEIVE_BY_STRUCTURAL_REASON[reason]
       }

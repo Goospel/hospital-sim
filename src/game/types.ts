@@ -69,7 +69,6 @@ export interface Patient {
  * '인력부족'(2023→2024 **2.3배**)이라 오히려 이쪽이 지배적이다(stemi-factsheet.md:19).
  */
 export type RejectionReason =
-  | 'NO_BED' // 가용 병상 없음
   | 'NO_ER_ONCALL' // 응급의학과 당직 부재 — 초기 수용 자체 불가
   | 'ER_OVERCROWDED' // 과밀·boarding 으로 실질 포화
   | 'NO_BACKUP_CARE' // 배후진료 불가 — 최종치료 역량 부재 (지배 병목)

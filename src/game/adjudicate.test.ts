@@ -25,17 +25,11 @@ function hospital(overrides: Partial<Hospital>): Hospital {
   }
 }
 
-describe('adjudicateTransfer — 결정론적 전원 판정 (거절 사유 4종)', () => {
+describe('adjudicateTransfer — 결정론적 전원 판정 (거절 사유 3종)', () => {
   it('모든 조건을 갖추면 수용, reason 없음', () => {
     const verdict = adjudicateTransfer(hospital({}), patient)
     expect(verdict.accepted).toBe(true)
     expect(verdict.reason).toBeUndefined()
-  })
-
-  it('병상이 0이면 거절, 사유는 NO_BED', () => {
-    const verdict = adjudicateTransfer(hospital({ beds: 0 }), patient)
-    expect(verdict.accepted).toBe(false)
-    expect(verdict.reason).toBe('NO_BED')
   })
 
   it('응급실 당직이 없으면 거절, 사유는 NO_ER_ONCALL', () => {
@@ -60,10 +54,10 @@ describe('adjudicateTransfer — 결정론적 전원 판정 (거절 사유 4종)
     expect(verdict.reason).toBe('NO_BACKUP_CARE')
   })
 
-  it('배후진료가 있어도 병상이 0이면, 물리적 벽인 NO_BED 가 우선한다(사유 우선순위)', () => {
-    const verdict = adjudicateTransfer(hospital({ beds: 0, hasErOnCall: false }), patient)
+  it('당직이 없으면서 배후진료도 없을 때, 접수 벽인 NO_ER_ONCALL 이 먼저 잡힌다(사유 우선순위)', () => {
+    const verdict = adjudicateTransfer(hospital({ hasErOnCall: false, backupCare: [] }), patient)
     expect(verdict.accepted).toBe(false)
-    expect(verdict.reason).toBe('NO_BED')
+    expect(verdict.reason).toBe('NO_ER_ONCALL')
   })
 
   it('병상은 있고 당직도 있으나 과밀이면서 배후진료도 없을 때, 과밀(ER_OVERCROWDED)이 먼저 잡힌다', () => {

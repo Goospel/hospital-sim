@@ -39,7 +39,7 @@ export interface DayRecord {
   receivedEmergency: number // 그날 받은 필수 응급 수 — 돌려보낸 수(turnedAway)의 짝(결산 화면)
   netProfitBillions: number // 그날 순이익 = 위 셋의 합 (소송 비용은 결말에서만)
   accepted: number // 받은 콜 수
-  blocked: number // 자리가 없어 구조가 막은 콜 수 — 달력엔 안 찍히는 사람들
+  blocked: number // 그 과 의사가 다 진료 중이라 구조가 막은 콜 수(NO_FREE_SPECIALIST) — 달력엔 안 찍히는 사람들
   lawsuitExposure: number // 그날 쌓인 소송 노출
 }
 
@@ -144,7 +144,7 @@ function recordDay(day: number, receiving: ReceivingState): DayRecord {
     receivedEmergency: receiving.log.filter((e, i) => e.accepted && isCriticalEmergency(receiving.queue[i].kind)).length,
     netProfitBillions: runningNetProfit(receiving),
     accepted: receiving.log.filter((e) => e.accepted).length,
-    blocked: receiving.log.filter((e) => e.reason === 'NO_BED').length,
+    blocked: receiving.log.filter((e) => e.reason === 'NO_FREE_SPECIALIST').length,
     lawsuitExposure: receiving.lawsuitExposure,
   }
 }
@@ -179,16 +179,15 @@ export function advanceDay(state: SessionState): SessionState {
     throw new Error('advanceDay: last day ends the week — use completeWeek')
   }
   const day = state.day + 1
-  // 어제 검사를 붙인 환자는 결과를 기다리며 자리를 물고 있다 — 그만큼 오늘 자리가 준다(boarding).
-  // 이게 7일을 처음으로 서로 묶는다. 지금까지 하루는 서로 독립이었다(매일 자리 리셋).
-  const boardedBeds = state.receiving!.workupCount
+  // 어제 넘어온 유닛 점유(boarding의 시간 버전)는 아직 계산하지 않는다 — 빈 맵으로 새 하루를 연다.
+  // 실제 이월(어제 늦게까지 바쁜 유닛이 오늘 아침에도 바쁨)은 후속(Task 6)이 boardedBusyUntil로 넘긴다.
   // 어제 돌려보낸 사람들이 오늘 아침 신문으로 온다 — 이틀 뒤가 아니라 바로 다음 날이다.
   const yesterday = state.ledgerDays[state.ledgerDays.length - 1]
   return {
     ...state,
     phase: 'RECEIVING',
     day,
-    receiving: initReceiving(state.hospital!, weekDayQueue(state.week, day), boardedBeds),
+    receiving: initReceiving(state.hospital!, weekDayQueue(state.week, day)),
     morningNews: morningNews(day, yesterday?.turnedAway ?? []),
   }
 }
