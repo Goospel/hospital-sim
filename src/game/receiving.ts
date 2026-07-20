@@ -1,6 +1,7 @@
-import type { CallKind, Hospital, IncomingCall, Patient, RejectionReason } from './types'
+import type { CallKind, Hospital, IncomingCall, Patient, RejectionReason, Specialty } from './types'
 import { adjudicateTransfer } from './adjudicate'
 import { DAYS_PER_WEEK } from './setup'
+import { arrivalMinFor, NIGHT_START_MIN, procedureDurationMin } from './daysim'
 
 // 1막 콜 큐 — 받는 병원. 기존 adjudicateTransfer를 플레이어 손으로 돌린다(벽의 양쪽).
 // 순수·결정론·불변. 다크코미디는 대사(dialogue.ts)와 UI가, 여기선 숫자만.
@@ -141,8 +142,14 @@ const traumaPatient: Patient = { id: 'call-trauma', requiredSpecialty: 'GENERAL_
 const generalPatient: Patient = { id: 'call-general', requiredSpecialty: 'GENERAL_SURGERY', severity: 3 }
 const walkinPatient: Patient = { id: 'call-walkin', requiredSpecialty: 'CARDIOLOGY', severity: 1 } // 명목값(판정 안 함)
 
+/** 요일별 콜 한 통 — SPECIALIST_ELECTIVE만 dept로 대상 배후과를 정한다(그 외는 PATIENT_OF 고정). */
+interface CallPlanEntry {
+  kind: CallKind
+  dept?: Specialty
+}
+
 /**
- * 요일별 콜 구성 — 하루 5통 고정, 콜 종류만 날마다 다르다.
+ * 요일별 콜 구성 — 하루 5통 고정(응급·워크인 자리 하나를 배후과 예약으로 바꿔친다), 콜 종류만 날마다 다르다.
  *
  * 결정론 유지가 이 게임의 원칙이라 RNG를 쓰지 않는다. 그렇다고 7일을 같은 큐로 채우면 3일째부터
  * 지루해지므로(game-concept.md:113이 '하루/교대' 장르를 기각한 사유가 바로 콘텐츠 양 부담),
@@ -151,30 +158,35 @@ const walkinPatient: Patient = { id: 'call-walkin', requiredSpecialty: 'CARDIOLO
  * 배치 원칙: (1) 모든 날에 필수 응급이 있다 — 외면할 기회가 매일 온다(STEMI 전용 아님, 4종 분산).
  * (2) 뒤로 갈수록 필수 응급이 는다 — 자리를 미용으로 채우던 습관의 대가가 커진다.
  * (3) 자리 3 < 5통이라 어느 날이든 못 받는다. 한 병원이 4개 배후과를 다 못 갖춰 어느 과든 하드락이 난다.
- * (4) 월요일은 기존 리듬(STEMI 전용)을 보존한다 — 첫날은 익숙하게, 다양성은 화요일부터 번진다.
- * 야간(마지막 2통)엔 STEMI가 최소 하루는 온다(순환기 2번째 의사의 도달성 보장).
+ * (4) 월요일은 기존 리듬(필수=STEMI 위주)을 대체로 보존한다 — 첫날은 익숙하게, 다양성은 화요일부터 번진다.
+ * (5) SPECIALIST_ELECTIVE를 날마다 한 통, **그날 이미 오는 필수 응급과 같은 dept**로 배치한다 —
+ * 그 과 의사가 예약을 도는 동안 같은 날 같은 과 응급이 오면 실제로 점유가 경쟁한다(판정 자체는 Task 5).
+ * 비필수(워크인/일반응급) 자리를 우선 바꿔치고, 그런 자리가 없는 날만(월·일) 중복된 필수 응급 한 통을 바꾼다
+ * — 그래도 날마다 필수 응급 ≥1은 유지된다(원칙 1이 원칙 5보다 우선).
+ *
+ * 시간대(야간)는 더 이상 이 배열의 위치가 아니라 arrivalMin(도착순 정렬 후 시각)에서 파생된다 —
+ * createCallQueue가 각 콜에 daysim seed로 도착시각·소요시간을 매기고 도착순으로 재정렬한다.
+ * count=5 슬롯에선 산수가 정직하다: 슬롯 폭 120분에 NIGHT_START_MIN=480이 걸쳐, 항상 **마지막 1통만** 야간이다.
  */
-const DAY_PLANS: CallKind[][] = [
-  ['COSMETIC_WALKIN', 'STEMI', 'COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'STEMI'], // 월 — 기존 리듬(필수=STEMI×2)
-  ['COSMETIC_WALKIN', 'GENERAL_EMERGENCY', 'NEURO_EMERGENCY', 'COSMETIC_WALKIN', 'STEMI'], // 화 — 뇌출혈 등장, 야간 STEMI
-  ['STEMI', 'COSMETIC_WALKIN', 'OBSTETRIC_EMERGENCY', 'GENERAL_EMERGENCY', 'NEURO_EMERGENCY'], // 수 — 산부 등장
-  ['COSMETIC_WALKIN', 'TRAUMA_EMERGENCY', 'STEMI', 'GENERAL_EMERGENCY', 'OBSTETRIC_EMERGENCY'], // 목 — 중증외상 등장
-  ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'COSMETIC_WALKIN'], // 금 — 낮에 4과 동시 붕괴
-  ['STEMI', 'NEURO_EMERGENCY', 'GENERAL_EMERGENCY', 'OBSTETRIC_EMERGENCY', 'TRAUMA_EMERGENCY'], // 토
-  ['STEMI', 'TRAUMA_EMERGENCY', 'NEURO_EMERGENCY', 'OBSTETRIC_EMERGENCY', 'STEMI'], // 일 — 다섯 통 전부 필수 응급, 야간 STEMI
+const DAY_PLANS: CallPlanEntry[][] = [
+  [{ kind: 'COSMETIC_WALKIN' }, { kind: 'SPECIALIST_ELECTIVE', dept: 'CARDIOLOGY' }, { kind: 'COSMETIC_WALKIN' },
+   { kind: 'GENERAL_EMERGENCY' }, { kind: 'STEMI' }], // 월 — STEMI 한 자리를 순환기 예약으로(점유 경쟁), 야간 STEMI
+  [{ kind: 'COSMETIC_WALKIN' }, { kind: 'SPECIALIST_ELECTIVE', dept: 'NEUROSURGERY' }, { kind: 'NEURO_EMERGENCY' },
+   { kind: 'COSMETIC_WALKIN' }, { kind: 'STEMI' }], // 화 — 뇌출혈 등장, 신경외과 예약이 경쟁
+  [{ kind: 'STEMI' }, { kind: 'COSMETIC_WALKIN' }, { kind: 'OBSTETRIC_EMERGENCY' },
+   { kind: 'SPECIALIST_ELECTIVE', dept: 'OBSTETRICS' }, { kind: 'NEURO_EMERGENCY' }], // 수 — 산부 등장, 산부 예약이 경쟁, 주간 STEMI
+  [{ kind: 'SPECIALIST_ELECTIVE', dept: 'GENERAL_SURGERY' }, { kind: 'TRAUMA_EMERGENCY' }, { kind: 'STEMI' },
+   { kind: 'GENERAL_EMERGENCY' }, { kind: 'OBSTETRIC_EMERGENCY' }], // 목 — 중증외상 등장, 외과 예약이 경쟁
+  [{ kind: 'STEMI' }, { kind: 'OBSTETRIC_EMERGENCY' }, { kind: 'NEURO_EMERGENCY' }, { kind: 'TRAUMA_EMERGENCY' },
+   { kind: 'SPECIALIST_ELECTIVE', dept: 'CARDIOLOGY' }], // 금 — 낮에 4과 동시 붕괴, 순환기 예약이 야간에 경쟁
+  [{ kind: 'STEMI' }, { kind: 'NEURO_EMERGENCY' }, { kind: 'SPECIALIST_ELECTIVE', dept: 'NEUROSURGERY' },
+   { kind: 'OBSTETRIC_EMERGENCY' }, { kind: 'TRAUMA_EMERGENCY' }], // 토
+  [{ kind: 'STEMI' }, { kind: 'TRAUMA_EMERGENCY' }, { kind: 'NEURO_EMERGENCY' }, { kind: 'OBSTETRIC_EMERGENCY' },
+   { kind: 'SPECIALIST_ELECTIVE', dept: 'OBSTETRICS' }], // 일 — 중복 STEMI 한 자리를 산부 예약으로
 ]
 
 /** 요일 라벨 — 달력 칸과 콜 화면이 공유한다. */
 export const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일']
-
-/**
- * 이 인덱스부터 야간 콜 — 하루 5통 중 **마지막 2통**이 밤이다.
- *
- * 시간대를 DAY_PLANS 위치에서 파생시켜 **RNG 0**을 지킨다(같은 day는 항상 같은 큐).
- * 야간이 하는 일: 배후과 의사가 1명뿐이면 당직이 비어 못 받는다(roundTheClockBackup).
- * 금요일만 야간 STEMI가 없다 — 1명으로도 다 받는 날이 하루는 있어야 대비가 보인다.
- */
-const NIGHT_SHIFT_FROM_INDEX = 3
 
 /** kind별 상황 라벨 풀. 같은 kind가 하루에 여러 번 오면 등장 순번으로 고른다(callerPleaAt과 같은 규칙). */
 const CALL_LABELS: Record<CallKind, string[]> = {
@@ -187,9 +199,14 @@ const CALL_LABELS: Record<CallKind, string[]> = {
   SPECIALIST_ELECTIVE: ['심장 예약 시술', '정기 배후과 진료'],
 }
 
-// 배후과 예약진료의 명목 환자 — requiredSpecialty가 doctorCaseloads·점유 판정에 그 과를 실어야 한다.
-// 예약의 실제 대상 과를 요일·순번으로 다양화하는 건 createCallQueue의 몫(Task 4) — 여기선 기본값(CARDIOLOGY)만.
-const electivePatient: Patient = { id: 'call-elective', requiredSpecialty: 'CARDIOLOGY', severity: 1 }
+// 배후과 예약진료의 명목 환자 — requiredSpecialty가 doctorCaseloads·점유 판정에 그 과를 실어야
+// handlingDept가 그 과로 라우팅돼 응급과 같은 의사를 두고 경쟁한다(DAY_PLANS의 dept로 정해짐).
+const electivePatient: Patient = { id: 'call-elective', requiredSpecialty: 'CARDIOLOGY', severity: 1 } // dept 미지정 시 폴백
+
+/** SPECIALIST_ELECTIVE 예약의 실제 대상 과 — DAY_PLANS 엔트리의 dept를 patient.requiredSpecialty로 싣는다. */
+function electivePatientFor(dept: Specialty): Patient {
+  return { id: 'call-elective', requiredSpecialty: dept, severity: 1 }
+}
 
 const PATIENT_OF: Record<CallKind, Patient> = {
   COSMETIC_WALKIN: walkinPatient,
@@ -202,25 +219,36 @@ const PATIENT_OF: Record<CallKind, Patient> = {
 }
 
 /**
- * 그날의 고정 5통 콜 큐 — 결정론(같은 day는 항상 같은 큐).
+ * 그날의 콜 큐 — 결정론(같은 day는 항상 같은 큐), 도착순 정렬.
+ *
+ * DAY_PLANS 순서대로 id·라벨·patient를 부여한 뒤(원래 인덱스 기반이라 결정론·고유성이 유지된다),
+ * daysim의 seed 원시함수로 arrivalMin·durationMin을 매기고 **마지막에** 도착시각 오름차순으로 정렬한다.
+ * nightShift는 위치가 아니라 arrivalMin(≥ NIGHT_START_MIN)에서 파생 — 정렬해도 시간대는 안 흔들린다.
+ *
+ * week는 1로 고정한다(createCallQueue는 단일 인자 유지 — session.ts weekDayQueue가 이미 전역일을
+ * day로 넘기므로 이 함수 시그니처를 바꾸면 그쪽이 깨진다. week 축은 Task 6 몫).
  * 라벨은 kind 내 등장 순번으로 고른다 — callerPleaAt(dialogue.ts)의 seed 규칙과 같아야 라벨↔대사가 맞는다(PR #29).
  */
 export function createCallQueue(day = 1): IncomingCall[] {
   const plan = DAY_PLANS[(day - 1) % DAY_PLANS.length]
   const seen: Partial<Record<CallKind, number>> = {}
-  return plan.map((kind, i) => {
+  const timed = plan.map(({ kind, dept }, i) => {
     const occurrence = seen[kind] ?? 0
     seen[kind] = occurrence + 1
     const pool = CALL_LABELS[kind]
+    const arrivalMin = arrivalMinFor(1, day, i, plan.length)
     return {
-      id: `d${day}c${i + 1}`, // 날짜별 고유 — 로그·React key 충돌 방지
+      id: `d${day}c${i + 1}`, // 원래 plan 인덱스 기반 — 날짜별 고유, 정렬 위치와 무관(로그·React key 충돌 방지)
       kind,
       label: pool[occurrence % pool.length],
-      patient: PATIENT_OF[kind],
+      patient: kind === 'SPECIALIST_ELECTIVE' ? electivePatientFor(dept ?? 'CARDIOLOGY') : PATIENT_OF[kind],
       lawsuitRisk: isCriticalEmergency(kind), // 필수 응급 4종 = 고위험(소송 노출), 일반응급·워크인은 아님
-      nightShift: i >= NIGHT_SHIFT_FROM_INDEX,
+      nightShift: arrivalMin >= NIGHT_START_MIN,
+      arrivalMin,
+      durationMin: procedureDurationMin(kind, 1, day, i),
     }
   })
+  return timed.sort((a, b) => a.arrivalMin - b.arrivalMin)
 }
 
 /**

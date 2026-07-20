@@ -7,6 +7,7 @@ import {
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK } from './setup'
 import type { CallKind, DeptKey, Hospital, IncomingCall, SetupChoices } from './types'
+import { NIGHT_START_MIN } from './daysim'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
@@ -115,17 +116,46 @@ describe('SPECIALIST_ELECTIVE (배후과 예약진료)', () => {
   })
 })
 
+describe('createCallQueue (시간 큐)', () => {
+  it('각 콜에 arrivalMin·durationMin이 붙고 도착순 정렬', () => {
+    const q = createCallQueue(1)
+    for (const c of q) {
+      expect(c.arrivalMin).toBeGreaterThanOrEqual(0)
+      expect(c.durationMin).toBeGreaterThan(0)
+    }
+    const times = q.map((c) => c.arrivalMin)
+    expect([...times]).toEqual([...times].sort((a, b) => a! - b!))
+  })
+  it('결정론 — 같은 day는 항상 같은 큐(arrivalMin·durationMin 포함)', () => {
+    expect(createCallQueue(3)).toEqual(createCallQueue(3))
+  })
+  it('nightShift는 arrivalMin ≥ NIGHT_START_MIN에서 파생', () => {
+    const q = createCallQueue(1)
+    for (const c of q) expect(c.nightShift).toBe(c.arrivalMin! >= NIGHT_START_MIN)
+  })
+  it('선택진료(미용·배후과 예약)와 응급이 섞여 있다', () => {
+    const q = createCallQueue(1)
+    expect(q.some((c) => isElective(c.kind))).toBe(true)
+    expect(q.some((c) => !isElective(c.kind))).toBe(true)
+  })
+  it('선택진료 중 배후과 예약(SPECIALIST_ELECTIVE)이 실제로 큐에 있다', () => {
+    const days = Array.from({ length: DAYS_PER_WEEK }, (_, i) => createCallQueue(i + 1))
+    expect(days.some((q) => q.some((c) => c.kind === 'SPECIALIST_ELECTIVE'))).toBe(true)
+  })
+})
+
 /**
  * 야간 당직 — 배후진료가 '있냐/없냐'가 아니라 '몇 시냐'가 된다(T-042·F1b).
  *
  * 순환기 1명은 24시간을 못 버틴다. 그래서 2번째 의사가 사는 건 처리량이 아니라 **시간대**다 —
  * 밤에 오는 STEMI를 받을 수 있느냐. 이게 없으면 2명째는 손익만 −12 깎는 순수 함정이었다.
  */
-describe('야간 콜 — 시간대는 DAY_PLANS 위치에서 파생(RNG 0)', () => {
-  it('하루 5통 중 마지막 2통이 야간 — 결정론', () => {
+describe('야간 콜 — 시간대는 arrivalMin(도착시각)에서 파생(RNG 0)', () => {
+  it('하루 5통 중 마지막 1통이 야간 — 결정론', () => {
+    // count=5면 슬롯 폭 120분, NIGHT_START_MIN=480은 슬롯 경계라 마지막 슬롯([480,600))만 야간이다.
     for (let day = 1; day <= DAYS_PER_WEEK; day++) {
       const q = createCallQueue(day)
-      expect(q.map((c) => c.nightShift)).toEqual([false, false, false, true, true])
+      expect(q.map((c) => c.nightShift)).toEqual([false, false, false, false, true])
     }
     // 같은 day는 항상 같은 큐
     expect(createCallQueue(3).map((c) => c.nightShift)).toEqual(createCallQueue(3).map((c) => c.nightShift))
@@ -649,11 +679,11 @@ describe('DAY_PLANS — 4종 응급 분산(재구성)', () => {
     expect(back).toBeGreaterThan(front)
   })
 
-  it('여전히 하루 5통이고 야간은 마지막 2통 — 시간대 파생 규칙 보존', () => {
+  it('여전히 하루 5통이고 야간은 마지막 1통 — 시간대 파생 규칙 보존', () => {
     for (let d = 1; d <= DAYS_PER_WEEK; d++) {
       const q = createCallQueue(d)
       expect(q).toHaveLength(5)
-      expect(q.map((c) => c.nightShift)).toEqual([false, false, false, true, true])
+      expect(q.map((c) => c.nightShift)).toEqual([false, false, false, false, true])
     }
   })
 })
