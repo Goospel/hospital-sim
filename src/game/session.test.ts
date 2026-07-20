@@ -551,6 +551,13 @@ describe('GROWTH — 재투자 적용', () => {
     expect(canApplyGrowth(s, next, 3)).toBe(false)
   })
 
+  it('world 미정의여도 해고 방지 가드가 유지된다 (deps 폴백 = DEPARTMENTS)', () => {
+    const base = completeSetup({ hospitalName: '한바다', doctors: { AESTHETICS: 1, CARDIOLOGY: 1 } })
+    const s = { ...base, phase: 'GROWTH' as const, treasury: 200, world: undefined }
+    const firing = { hospitalName: '한바다', doctors: { CARDIOLOGY: 0 } } // 미용·순환기 감원 시도
+    expect(canApplyGrowth(s, firing, 3)).toBe(false)
+  })
+
   it('enterGrowth: WORLD_EVENT(병원 있음) → GROWTH', () => {
     let s = completeSetup({ hospitalName: '한바다', doctors: { AESTHETICS: 1 } })
     s = { ...s, phase: 'WORLD_EVENT', week: 2 }

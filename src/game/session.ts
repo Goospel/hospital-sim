@@ -1,5 +1,5 @@
 import type { Hospital, SetupChoices, Specialty } from './types'
-import { buildHospital, bedExpansionCost, withinDeptCaps, DAYS_PER_WEEK, FIXED_BEDS } from './setup'
+import { buildHospital, bedExpansionCost, withinDeptCaps, DEPARTMENTS, DAYS_PER_WEEK, FIXED_BEDS } from './setup'
 import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent } from './world'
 import {
   accruedSegments, createCallQueue, initReceiving, requiresBackupCare, runningNetProfit, type ReceivingState,
@@ -311,13 +311,13 @@ export function nextWeek(state: SessionState): SessionState {
 
 /** 성장 총비용(억) = 채용 증분 + 병상 증설. */
 export function growthCostOf(state: SessionState, nextChoices: SetupChoices, nextBeds: number): number {
-  const deps = state.world?.departments
+  const deps = state.world?.departments ?? DEPARTMENTS
   return doctorDeltaCost(state.choices, nextChoices, deps) + bedExpansionCost(state.beds, nextBeds)
 }
 
 /** 배후과 증분(양수)만 뽑아 풀 검증에 쓴다. */
 function backupDeltas(state: SessionState, next: SetupChoices): Partial<Record<Specialty, number>> {
-  const deps = state.world?.departments ?? []
+  const deps = state.world?.departments ?? DEPARTMENTS
   const out: Partial<Record<Specialty, number>> = {}
   for (const d of deps) {
     if (!d.providesBackup) continue
@@ -329,9 +329,9 @@ function backupDeltas(state: SessionState, next: SetupChoices): Partial<Record<S
 
 /** 성장 가능한가 — 해고 없음 · 금고·상한·풀 이내. */
 export function canApplyGrowth(state: SessionState, next: SetupChoices, nextBeds: number): boolean {
-  const deps = state.world?.departments
+  const deps = state.world?.departments ?? DEPARTMENTS
   // 해고 방지: 모든 과가 현재 이상
-  const noFiring = (deps ?? []).every((d) => (next.doctors[d.key] ?? 0) >= (state.choices.doctors[d.key] ?? 0))
+  const noFiring = deps.every((d) => (next.doctors[d.key] ?? 0) >= (state.choices.doctors[d.key] ?? 0))
   if (!noFiring) return false
   if (!withinDeptCaps(next, deps, nextBeds)) return false
   if (!withinTreasury(growthCostOf(state, next, nextBeds), state.treasury)) return false
