@@ -40,6 +40,11 @@ describe('handlingDept — 콜 한 통을 담당 과로', () => {
     expect(handlingDept(q[1])).toBe('CARDIOLOGY') // STEMI
     expect(handlingDept(q[0])).toBe('AESTHETICS') // 보톡스 워크인
   })
+
+  it('일반응급은 외과(GENERAL_SURGERY)로 라우팅된다 — requiredSpecialty 권위 출처', () => {
+    const q = createCallQueue(1)
+    expect(handlingDept(q[3])).toBe('GENERAL_SURGERY') // 월 index3 = GENERAL_EMERGENCY
+  })
 })
 
 describe('doctorCaseloads — 받은 콜을 유닛에 분배', () => {
