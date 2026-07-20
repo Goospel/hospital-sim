@@ -43,7 +43,7 @@ export default function SessionClient() {
         <WorldEventCard
           event={session.event!}
           week={session.week}
-          ctaLabel={session.hospital ? "이번 주 진료로" : "병원 설립으로"}
+          ctaLabel={session.hospital ? "이번 주 재투자로" : "병원 설립으로"}
           onContinue={() => setSession(session.hospital ? enterGrowth(session) : beginSetup(session))}
         />
       );

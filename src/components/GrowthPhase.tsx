@@ -91,7 +91,7 @@ export default function GrowthPhase({
         <div className="flex items-baseline justify-between">
           <span className="text-xs uppercase tracking-widest text-zinc-600">이번 성장 비용 / 금고</span>
           <span className={`font-mono text-lg tabular-nums ${ok ? "text-zinc-100" : "text-red-500"}`}>
-            {cost} / {state.treasury}억
+            {cost}억 / {state.treasury}억
           </span>
         </div>
       </div>
