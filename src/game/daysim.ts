@@ -27,6 +27,7 @@ export const DURATION_MIN: Record<CallKind, readonly [number, number]> = {
   OBSTETRIC_EMERGENCY: [60, 120],
   NEURO_EMERGENCY: [90, 180],
   TRAUMA_EMERGENCY: [90, 180],
+  ABDOMINAL_EMERGENCY: [90, 180], // 급성복증 — 응급 수술급 소요
   SPECIALIST_ELECTIVE: [90, 180], // 예약 시술 — 응급 수술급 소요(그 과 의사를 오래 점유)
 }
 

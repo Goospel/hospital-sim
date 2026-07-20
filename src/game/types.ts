@@ -122,6 +122,7 @@ export type CallKind =
   | 'OBSTETRIC_EMERGENCY' // 분만 응급 — 산부인과 배후 필요
   | 'NEURO_EMERGENCY' // 뇌출혈/뇌졸중 — 신경외과 배후 필요
   | 'TRAUMA_EMERGENCY' // 중증외상 — 외과 배후 필요
+  | 'ABDOMINAL_EMERGENCY' // 급성복증(충수염·장폐색·복막염) — 외과 배후(소송+신문)
   | 'GENERAL_EMERGENCY' // 일반 응급 — 병상만 있으면 받을 수 있음(저마진)
   | 'COSMETIC_WALKIN' // 미용·검진 워크인 — 늘 받을 수 있음(명랑)
   | 'SPECIALIST_ELECTIVE' // 배후과 예약진료(시술·검사) — 흑자, 그 과 의사를 점유해 응급과 경쟁

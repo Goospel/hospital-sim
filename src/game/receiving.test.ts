@@ -24,6 +24,22 @@ describe('무게 술어 분리 — requiresBackupCare / carriesLawsuitRisk', () 
   })
 })
 
+describe('급성복증(ABDOMINAL_EMERGENCY) — 외과 배후·소송+신문', () => {
+  const noSurgery: Hospital = { id: 'p', name: 'x', beds: 3, hasErOnCall: true, overcrowded: false, backupCare: [], roundTheClockBackup: [], roster: [] }
+  const abCall: IncomingCall = { id: 'c', kind: 'ABDOMINAL_EMERGENCY', label: '급성복증', patient: { id: 'a', requiredSpecialty: 'GENERAL_SURGERY', severity: 4 }, lawsuitRisk: true, nightShift: false, arrivalMin: 60, durationMin: 120 }
+
+  it('외과 배후를 요구하고 소송·신문 대상이다(인과 선명)', () => {
+    expect(requiresBackupCare('ABDOMINAL_EMERGENCY')).toBe(true)
+    expect(carriesLawsuitRisk('ABDOMINAL_EMERGENCY')).toBe(true)
+  })
+  it('외과 배후가 없으면 NO_BACKUP_CARE 벽이다', () => {
+    expect(hardlockReason(noSurgery, abCall, {}, [])).toBe('NO_BACKUP_CARE')
+  })
+  it('델타는 수술·처치 밴드(11/13, STEMI 동형)다', () => {
+    expect(callDelta('ABDOMINAL_EMERGENCY')).toBe(11 - 13)
+  })
+})
+
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
 

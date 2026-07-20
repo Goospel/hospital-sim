@@ -30,6 +30,10 @@ export const CALLER_PLEA: Record<CallKind, string[]> = {
     '교통사고 중증외상입니다. 수술할 외과가 없어서요. 받아주실 수 있나요?',
     '다발성 외상이에요. 벌써 몇 군데를 돌았습니다. 거기 되나요?',
   ],
+  ABDOMINAL_EMERGENCY: [
+    '급성복증인데 수술할 외과가 없어서요. 받아주실 수 있나요?',
+    '충수염 천공 의심입니다. 외과 되는 데가… 거기 되나요?',
+  ],
   COSMETIC_WALKIN: [
     '보톡스 상담 예약 가능할까요?',
     '검진 패키지 문의드려요. 오늘 접수되나요?',
@@ -72,6 +76,7 @@ export const RECEIVE_ACCEPT: Record<CallKind, string> = {
   OBSTETRIC_EMERGENCY: '…받겠습니다. 분만 준비하겠습니다.',
   NEURO_EMERGENCY: '…받겠습니다. 수술방 열어두겠습니다.',
   TRAUMA_EMERGENCY: '…받겠습니다. 외상팀 부르겠습니다.',
+  ABDOMINAL_EMERGENCY: '…받겠습니다. 외과 수술 준비하겠습니다.',
   GENERAL_EMERGENCY: '네, 병상 하나 내드리죠. 보내세요.',
   COSMETIC_WALKIN: '물론이죠! 바로 접수해 드릴게요',
   SPECIALIST_ELECTIVE: '네, 예약대로 진행하겠습니다.',
@@ -83,6 +88,7 @@ export const RECEIVE_REJECT: Record<CallKind, string> = {
   OBSTETRIC_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
   NEURO_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
   TRAUMA_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
+  ABDOMINAL_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
   GENERAL_EMERGENCY: '지금은 병상을 비워두겠습니다. 다른 곳을 알아보세요.',
   COSMETIC_WALKIN: '오늘은 예약이 다 찼습니다. 다음에 오세요.',
   SPECIALIST_ELECTIVE: '죄송하지만 예약을 다른 날로 옮겨야겠습니다.',

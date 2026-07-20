@@ -48,6 +48,8 @@ export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
   OBSTETRIC_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
   NEURO_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
   TRAUMA_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
+  // 급성복증도 응급수술이라 같은 수술·처치 84.9% 밴드(11/13, STEMI 동형).
+  ABDOMINAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
   // 배후과 예약진료 — 검사 흑자 밴드 계승(10/6 ≈ 167% — 검체 160% 밴드). 그 과 의사가 응급 대신
   // 예약을 도는 이유가 곧 이 흑자다(점유 판정 자체는 Task 5).
   SPECIALIST_ELECTIVE: { priceSetter: 'GOVERNMENT', revenueBillions: 10, costBillions: 6 },
@@ -62,7 +64,7 @@ export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
  * 갈려(고열감염=방어 성공 전형) 두 술어로 분리했다: 배후·신문은 이 집합, 소송은 LAWSUIT_RISK_KINDS.
  */
 export const BACKUP_CARE_KINDS: CallKind[] = [
-  'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY',
+  'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'ABDOMINAL_EMERGENCY',
 ]
 
 /** 배후과(최종치료)를 요구하는 응급인가 — 배후 게이트·신문·응급 카운트 판별의 단일 출처. */
@@ -75,7 +77,7 @@ export function requiresBackupCare(kind: CallKind): boolean {
  * (고열감염은 "초기 장염과 구별 불가"라 방어 성공이 전형이라 제외 — grounding §2.)
  */
 export const LAWSUIT_RISK_KINDS: CallKind[] = [
-  'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY',
+  'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'ABDOMINAL_EMERGENCY',
 ]
 
 /** 수용 시 소송 노출(lawsuitExposure)을 쌓는 응급인가. */
@@ -164,6 +166,7 @@ const stemiPatient: Patient = { id: 'call-stemi', requiredSpecialty: 'CARDIOLOGY
 const obstetricPatient: Patient = { id: 'call-ob', requiredSpecialty: 'OBSTETRICS', severity: 5 }
 const neuroPatient: Patient = { id: 'call-neuro', requiredSpecialty: 'NEUROSURGERY', severity: 5 }
 const traumaPatient: Patient = { id: 'call-trauma', requiredSpecialty: 'GENERAL_SURGERY', severity: 5 }
+const abdominalPatient: Patient = { id: 'call-abdominal', requiredSpecialty: 'GENERAL_SURGERY', severity: 4 } // 급성복증 = 외과 수술 배후
 const generalPatient: Patient = { id: 'call-general', requiredSpecialty: 'GENERAL_SURGERY', severity: 3 }
 const walkinPatient: Patient = { id: 'call-walkin', requiredSpecialty: 'CARDIOLOGY', severity: 1 } // 명목값(판정 안 함)
 
@@ -224,6 +227,7 @@ const CALL_LABELS: Record<Exclude<CallKind, 'SPECIALIST_ELECTIVE'>, string[]> = 
   OBSTETRIC_EMERGENCY: ['분만 응급 — 산부인과 전원 요청', '분만 중 출혈 — 재이송'],
   NEURO_EMERGENCY: ['뇌출혈 의심 — 신경외과 전원 요청', '뇌졸중 — 재이송'],
   TRAUMA_EMERGENCY: ['중증외상 — 외과 전원 요청', '다발성 외상 — 재이송'],
+  ABDOMINAL_EMERGENCY: ['급성복증 — 외과 전원 요청', '충수염 의심 — 수술 요청'],
 }
 
 /** SPECIALIST_ELECTIVE 라벨 — DEPARTMENTS.label에서 파생(단일 출처라 과 오표기가 구조적으로 불가능). */
@@ -247,6 +251,7 @@ const PATIENT_OF: Record<CallKind, Patient> = {
   OBSTETRIC_EMERGENCY: obstetricPatient,
   NEURO_EMERGENCY: neuroPatient,
   TRAUMA_EMERGENCY: traumaPatient,
+  ABDOMINAL_EMERGENCY: abdominalPatient,
   SPECIALIST_ELECTIVE: electivePatient,
 }
 
@@ -315,7 +320,8 @@ export function hardlockReason(
     case 'STEMI':
     case 'OBSTETRIC_EMERGENCY':
     case 'NEURO_EMERGENCY':
-    case 'TRAUMA_EMERGENCY': {
+    case 'TRAUMA_EMERGENCY':
+    case 'ABDOMINAL_EMERGENCY': {
       const verdict = adjudicateTransfer(hospital, call.patient)
       if (!verdict.accepted) return verdict.reason ?? 'NO_BACKUP_CARE'
       // 배후과가 있어도 **밤엔 당직이 서 있어야** 받는다 — 의사 1명은 24시간을 못 버틴다(T-042).
