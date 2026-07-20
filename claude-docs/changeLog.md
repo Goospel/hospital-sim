@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 설계 스펙 — 병원 등급 = 획득한 법적 자격(개원 위저드 파생 라벨)
+
+- **무엇을**: 개원 위저드에 **등급 정체성**을 부여하는 설계 확정([2026-07-20-hospital-tier-credential-design.md](../docs/superpowers/specs/2026-07-20-hospital-tier-credential-design.md)) — 필수 배후과 수에서 법적 등급(미지정/지역기관/지역센터/권역)을 **파생**해 위저드에 실시간 라벨로 표시(A안 = 판정·경제 불변식 0 침습, `backupCare` 읽는 순수 함수 1개 + UI). plan F4 활성화(정체성 슬라이스 = 마감 전, 재지정/철회는 본선).
+- **왜**: 설정 페이지가 "예산 계산기"로 얇음 → 경영자의 창립 결정 자리로. 등급 = 획득 자격이라 **안티-퍼즐**(이익 최대화 ↔ 등급 상승이 정반대로 당김, 지배 전략 없음)·**show-don't-tell**(자격 미달을 카피 아닌 '명칭 안 열림'으로) 정합. 근거: [emergency-tier-designation-law.md](../docs/research/emergency-tier-designation-law.md).
+- **결과**: 스펙 확정, 코드 무변경(설계 문서). 다음 = 사용자 스펙 리뷰 → writing-plans.
+
 ## 2026-07-20 · 리서치 — 응급의료기관 등급 = 법적 지정 명칭(자칭 불가)
 
 - **무엇을**: [emergency-tier-designation-law.md](../docs/research/emergency-tier-designation-law.md) 신설 — "권역응급의료센터" 등 등급명이 자칭 간판이 아니라 (1) 지정권자(복지부장관/시·도지사/시장군수구청장)가 (2) 시행규칙 별표 시설·인력·장비 기준 심사로 지정하고 (3) 미지정 기관의 유사명칭 사용은 제59조 과태료라는 법적 지정 명칭임을 1차 출처(easylaw·법제처 유권해석·law.go.kr 별표)로 확정. [starting-world.md](../docs/research/current-korea-starting-world.md) §1에 교차링크.
