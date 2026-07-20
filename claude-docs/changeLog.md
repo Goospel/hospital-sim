@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 리서치 — 응급의료기관 등급 = 법적 지정 명칭(자칭 불가)
+
+- **무엇을**: [emergency-tier-designation-law.md](../docs/research/emergency-tier-designation-law.md) 신설 — "권역응급의료센터" 등 등급명이 자칭 간판이 아니라 (1) 지정권자(복지부장관/시·도지사/시장군수구청장)가 (2) 시행규칙 별표 시설·인력·장비 기준 심사로 지정하고 (3) 미지정 기관의 유사명칭 사용은 제59조 과태료라는 법적 지정 명칭임을 1차 출처(easylaw·법제처 유권해석·law.go.kr 별표)로 확정. [starting-world.md](../docs/research/current-korea-starting-world.md) §1에 교차링크.
+- **왜**: 설정 페이지 '등급' 메커닉의 전제 검증([fact-grounding-before-mechanics]) — "등급 = 획득하는 자격"과 "지정 게이트 딜레마(상위 등급일수록 필수 배후과·24h 유지 의무, 못 하면 지정 취소)"가 각색이 아니라 **법 그대로**임을 확인. 현재 자유입력 병원 이름이 권역센터를 공짜로 자칭하게 두는 함정도 드러남.
+- **결과**: 등급 설계 스펙이 인용할 단일 출처 확보. 코드 무변경(리서치 문서만).
+
 ## 2026-07-20 · 플레이어 시점 재정의 — 의사 단일 1인칭 → 경영자·의사·환자 다중 시점
 
 - **무엇을**: [game-concept.md](../docs/concept/game-concept.md) §2와 [domain-entities.md](../docs/concept/domain-entities.md) 행위자 표의 "플레이어 = 의사 1인칭" 서술을, 플레이어가 한 판에서 **경영자·의사·환자 세 자리를 모두 차지하는 다중 시점**으로 재정의. 정의의 단일 출처는 game-concept §2.
