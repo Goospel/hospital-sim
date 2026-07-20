@@ -132,3 +132,9 @@ export interface IncomingCall {
   lawsuitRisk: boolean // 수용 시 소송 노출 누적 여부(고위험 필수 케이스)
   nightShift: boolean // 야간 콜 — 배후과 의사 1명뿐이면 당직이 비어 못 받는다(roundTheClockBackup)
 }
+
+/**
+ * 응급의료기관 법적 등급 — backupCare 수에서 파생하는 자칭 불가 지정 명칭(획득 자격).
+ * 판정에 쓰이지 않는 표현 전용 파생값이다. 근거: docs/research/emergency-tier-designation-law.md.
+ */
+export type HospitalTier = 'UNDESIGNATED' | 'LOCAL_INSTITUTION' | 'LOCAL_CENTER' | 'REGIONAL_CENTER'

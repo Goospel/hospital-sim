@@ -80,6 +80,16 @@ function count(choices: SetupChoices, key: DeptKey): number {
   return choices.doctors[key] ?? 0
 }
 
+/**
+ * 위저드 선택 → 배후진료 가능 진료과 목록. buildHospital과 위저드 등급 표시가 공유하는 단일 출처.
+ * providesBackup이 있고 1명 이상 채운 과만 배후로 잡는다(미용·검진 제외).
+ */
+export function backupCareOf(choices: SetupChoices, departments: DepartmentSpec[] = DEPARTMENTS): Specialty[] {
+  return departments
+    .filter((d) => d.providesBackup && count(choices, d.key) > 0)
+    .map((d) => d.providesBackup as Specialty)
+}
+
 /** 위저드 선택 → 플레이어 병원 + 경제 데이터. */
 export function buildHospital(
   choices: SetupChoices,
@@ -87,9 +97,7 @@ export function buildHospital(
 ): { hospital: Hospital; economics: HospitalEconomics } {
   const staffed = departments.map((dept) => ({ dept, n: count(choices, dept.key) })).filter((x) => x.n > 0)
 
-  const backupCare: Specialty[] = staffed
-    .filter((x) => x.dept.providesBackup)
-    .map((x) => x.dept.providesBackup as Specialty)
+  const backupCare: Specialty[] = backupCareOf(choices, departments)
 
   // 그중 24시간 돌아가는 과 — 당직 로테이션이 서는 인원(2명)부터. 3명째는 24시간을 두 번 사지 못한다.
   const roundTheClockBackup: Specialty[] = staffed
