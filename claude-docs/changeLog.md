@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 구현 계획 — 병원 등급 자격(개원 위저드 파생 라벨)
+
+- **무엇을**: 등급 스펙의 TDD 구현 계획 3태스크 확정([2026-07-20-hospital-tier-credential.md](../docs/superpowers/plans/2026-07-20-hospital-tier-credential.md)) — ① `hospitalTier`·`TIER_LABELS`·`TIER_ORDER` ② `backupCareOf` 추출(위저드·`buildHospital` 배후과 단일 출처) ③ 위저드 '자격' 라벨·사다리. 태스크마다 Red→Green + `tsc --noEmit` 게이트.
+- **왜**: 스펙을 zero-context 실행 가능한 바이트사이즈 태스크로 분해. "판정·경제 불변식 0 침습"을 계획 제약(Global Constraints)으로 못박음.
+- **결과**: 계획 확정, 코드 무변경. 다음 = 실행(subagent-driven 또는 inline).
+
 ## 2026-07-20 · 설계 스펙 — 병원 등급 = 획득한 법적 자격(개원 위저드 파생 라벨)
 
 - **무엇을**: 개원 위저드에 **등급 정체성**을 부여하는 설계 확정([2026-07-20-hospital-tier-credential-design.md](../docs/superpowers/specs/2026-07-20-hospital-tier-credential-design.md)) — 필수 배후과 수에서 법적 등급(미지정/지역기관/지역센터/권역)을 **파생**해 위저드에 실시간 라벨로 표시(A안 = 판정·경제 불변식 0 침습, `backupCare` 읽는 순수 함수 1개 + UI). plan F4 활성화(정체성 슬라이스 = 마감 전, 재지정/철회는 본선).
