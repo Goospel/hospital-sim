@@ -5,6 +5,8 @@ import {
   startSession,
   beginSetup,
   enterWorldEvent,
+  enterGrowth,
+  applyGrowth,
   beginWeek,
   completeSetup,
   completeReceiving,
@@ -27,6 +29,7 @@ import ReceivingPhase from "./ReceivingPhase";
 import DayEnd from "./DayEnd";
 import WeekSummary from "./WeekSummary";
 import Epilogue from "./Epilogue";
+import GrowthPhase from "./GrowthPhase";
 
 export default function SessionClient() {
   const [session, setSession] = useState<SessionState>(startSession);
@@ -35,13 +38,13 @@ export default function SessionClient() {
     case "LANDING":
       return <Landing onStart={() => setSession(enterWorldEvent(session))} />;
     case "WORLD_EVENT":
-      // 1주차는 개원(beginSetup), 2주차 이후는 이미 병원이 있어 위저드를 건너뛴다(beginWeek).
+      // 1주차는 개원(beginSetup), 2주차 이후는 이미 병원이 있어 위저드를 건너뛰고 재투자(GROWTH)로 간다.
       return (
         <WorldEventCard
           event={session.event!}
           week={session.week}
           ctaLabel={session.hospital ? "이번 주 진료로" : "병원 설립으로"}
-          onContinue={() => setSession(session.hospital ? beginWeek(session) : beginSetup(session))}
+          onContinue={() => setSession(session.hospital ? enterGrowth(session) : beginSetup(session))}
         />
       );
     case "SETUP":
@@ -97,8 +100,12 @@ export default function SessionClient() {
         />
       );
     case "GROWTH":
-      // 임시 스텁 — Task 9에서 GrowthPhase 배선(enterGrowth 진입 + applyGrowth→beginWeek). 현재 미도달.
-      return null;
+      return (
+        <GrowthPhase
+          state={session}
+          onComplete={(choices, beds) => setSession(beginWeek(applyGrowth(session, choices, beds)))}
+        />
+      );
     default: {
       const _exhaustive: never = session.phase;
       return _exhaustive;
