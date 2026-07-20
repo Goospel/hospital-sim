@@ -75,6 +75,9 @@ export const DEPARTMENTS: DepartmentSpec[] = [
   { key: 'OBSTETRICS', label: '산부인과', essential: true, profitPerDoctorBillions: -10, hireCostBillions: 28, lawsuitRisk: true, providesBackup: 'OBSTETRICS' },
   { key: 'NEUROSURGERY', label: '신경외과', essential: true, profitPerDoctorBillions: -13, hireCostBillions: 30, lawsuitRisk: true, providesBackup: 'NEUROSURGERY' },
   { key: 'GENERAL_SURGERY', label: '외과', essential: true, profitPerDoctorBillions: -8, hireCostBillions: 22, lawsuitRisk: true, providesBackup: 'GENERAL_SURGERY' },
+  // 내과: 24h 대기 고정비인 다른 배후과(-8~-15)와 달리 **저수가 외래 박리다매**라 덜 적자(원가 72% > 산부 61%).
+  // ⚠️ lawsuitRisk:false는 소송 '미구현'이지 "안전과"가 아니다 — essential:true·적자로 미용(흑자)과 분리한다.
+  { key: 'INTERNAL_MEDICINE', label: '내과', essential: true, profitPerDoctorBillions: -5, hireCostBillions: 20, lawsuitRisk: false, providesBackup: 'INTERNAL_MEDICINE' },
 ]
 
 function count(choices: SetupChoices, key: DeptKey): number {

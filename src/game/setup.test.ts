@@ -240,3 +240,24 @@ describe('backupCareOf — 필수 배후과 목록(tier 단일 출처)', () => {
     expect(buildHospital(choices).hospital.backupCare).toEqual(['CARDIOLOGY', 'OBSTETRICS'])
   })
 })
+
+// 내과: 24h 대기 고정비인 다른 배후과와 달리 저수가 외래 박리다매라 덜 적자.
+// lawsuitRisk:false는 소송 '미구현'이지 "안전과"가 아니다(essential:true·적자로 미용과 분리).
+describe('내과 진료과 — 저수가 박리다매 배후과', () => {
+  it('내과는 필수 배후과이고 저수가 소폭 적자다', () => {
+    const im = DEPARTMENTS.find((d) => d.key === 'INTERNAL_MEDICINE')
+    expect(im).toBeDefined()
+    expect(im!.essential).toBe(true) // 미용·검진과 분리 — 안전과 아님
+    expect(im!.profitPerDoctorBillions).toBeLessThan(0) // 적자(원가 72%)
+    expect(im!.profitPerDoctorBillions).toBeGreaterThan(-8) // 24h 대기 배후과(-8~-15)보다 덜 적자
+    expect(im!.lawsuitRisk).toBe(false) // 소송 미구현(안전이 아니라 미구현)
+    expect(im!.providesBackup).toBe('INTERNAL_MEDICINE')
+  })
+
+  it('내과를 채용하면 배후진료에 INTERNAL_MEDICINE이 잡힌다', () => {
+    const choices: SetupChoices = { hospitalName: '내과병원', doctors: { INTERNAL_MEDICINE: 1 } }
+    expect(backupCareOf(choices)).toContain('INTERNAL_MEDICINE')
+    const { hospital } = buildHospital(choices)
+    expect(hospital.backupCare).toContain('INTERNAL_MEDICINE')
+  })
+})

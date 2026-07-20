@@ -7,6 +7,7 @@ export type Specialty =
   | 'OBSTETRICS' // 산부인과
   | 'NEUROSURGERY' // 신경외과
   | 'CARDIOLOGY' // 순환기내과
+  | 'INTERNAL_MEDICINE' // 내과 — 고열·감염·비수술 복통의 배후과
 
 /**
  * 병원 — 모든 필드가 플레이어에게 보이지 않는 "숨은 제약".

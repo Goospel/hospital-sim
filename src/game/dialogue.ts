@@ -114,6 +114,7 @@ const RECEIVE_NO_BACKUP_BY_SPECIALTY: Record<Specialty, string> = {
   NEUROSURGERY: '자리는 있는데, 저희도 신경외과가 없습니다. 받아도 수술을 못 해요.',
   GENERAL_SURGERY: '자리는 있는데, 저희도 중증외상을 감당할 외과가 없습니다.',
   THORACIC_SURGERY: '자리는 있는데, 저희도 흉부외과가 없습니다.',
+  INTERNAL_MEDICINE: '자리는 있는데, 저희도 입원 진료할 내과가 없습니다.',
 }
 
 /** 야간 당직 공백(NO_NIGHT_BACKUP) 대사 — 과는 있는데 밤에 당직이 빈다(배후 부재와 다른 사유). */
@@ -123,6 +124,7 @@ const RECEIVE_NIGHT_BY_SPECIALTY: Record<Specialty, string> = {
   NEUROSURGERY: '신경외과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
   GENERAL_SURGERY: '외과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
   THORACIC_SURGERY: '흉부외과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
+  INTERNAL_MEDICINE: '내과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
 }
 
 /**
