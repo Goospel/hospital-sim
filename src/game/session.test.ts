@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   startSession, beginSetup, completeSetup, completeReceiving, advanceDay, isLastDay, weekTotals,
   completeWeek, nextWeek, beginWeek, endGame, weekTurnedAwayCount, weekReceivedEmergencyCount,
-  cumulativeNetBillions, buildEpilogue, enterWorldEvent, type SessionState,
+  cumulativeNetBillions, buildEpilogue, enterWorldEvent, enterGrowth, growthCostOf, canApplyGrowth,
+  applyGrowth, type SessionState,
 } from './session'
 import { initWorld, applyEvent, OPENING_EVENT } from './world'
 import { decide, isElective } from './receiving'
@@ -397,7 +398,7 @@ describe('주 반복 루프 — WEEK_SUMMARY와 주 경계 전이', () => {
   })
 
   it('beginWeek: WORLD_EVENT(병원 있음) → RECEIVING, 같은 병원으로 새 주 1일차', () => {
-    const wk2 = beginWeek(nextWeek(finishWeek(runWeek(conscientious, essentialFirst))))
+    const wk2 = beginWeek(enterGrowth(nextWeek(finishWeek(runWeek(conscientious, essentialFirst)))))
     expect(wk2.phase).toBe('RECEIVING')
     expect(wk2.day).toBe(1)
     expect(wk2.week).toBe(2)
@@ -407,12 +408,16 @@ describe('주 반복 루프 — WEEK_SUMMARY와 주 경계 전이', () => {
   })
 
   it('beginWeek 콜 큐 id는 주마다 고유하다 — 누적 신문 키 충돌 방지', () => {
-    const wk2 = beginWeek(nextWeek(finishWeek(runWeek(conscientious, essentialFirst))))
+    const wk2 = beginWeek(enterGrowth(nextWeek(finishWeek(runWeek(conscientious, essentialFirst)))))
     expect(wk2.receiving!.queue[0].id).toBe('d8c1') // 전역 (2-1)*7+1 = 8일차 큐
   })
 
+  it('GROWTH가 아니면 beginWeek 에러(가드) — WORLD_EVENT에서 직접 호출', () => {
+    expect(() => beginWeek(nextWeek(finishWeek(runWeek(conscientious, essentialFirst))))).toThrow()
+  })
+
   it('병원이 없으면 beginWeek 에러(가드)', () => {
-    expect(() => beginWeek(enterWorldEvent(startSession()))).toThrow()
+    expect(() => beginWeek({ ...enterWorldEvent(startSession()), phase: 'GROWTH' })).toThrow()
   })
 
   it('WEEK_SUMMARY가 아니면 nextWeek·endGame 에러(가드)', () => {
@@ -428,7 +433,7 @@ describe('주 반복 루프 — WEEK_SUMMARY와 주 경계 전이', () => {
   it('[누적] history는 완주한 모든 주를 보존한다 — 2주 플레이 후 14일', () => {
     const w1 = finishWeek(runWeek(collaborator, false))
     expect(w1.history).toHaveLength(DAYS_PER_WEEK)
-    const w2 = finishWeek(runWeekFrom(beginWeek(nextWeek(w1)), false))
+    const w2 = finishWeek(runWeekFrom(beginWeek(enterGrowth(nextWeek(w1))), false))
     expect(w2.history).toHaveLength(DAYS_PER_WEEK * 2)
     expect(w2.week).toBe(2)
   })
@@ -436,7 +441,7 @@ describe('주 반복 루프 — WEEK_SUMMARY와 주 경계 전이', () => {
   it('[누적] 누적 순손익은 주가 쌓일수록 커진다 — 매주 결산 화면의 "지금까지"', () => {
     const w1 = finishWeek(runWeek(collaborator, true)) // 미용 흑자 루트
     const net1 = cumulativeNetBillions(w1)
-    const w2 = finishWeek(runWeekFrom(beginWeek(nextWeek(w1)), true))
+    const w2 = finishWeek(runWeekFrom(beginWeek(enterGrowth(nextWeek(w1))), true))
     const net2 = cumulativeNetBillions(w2)
     expect(net1).toBeGreaterThan(0)
     expect(net2).toBe(net1 * 2) // 같은 병원·방침 두 주 → 정확히 두 배(결정론)
@@ -444,7 +449,7 @@ describe('주 반복 루프 — WEEK_SUMMARY와 주 경계 전이', () => {
 
   it('[에필로그] 여러 주 플레이해도 최종 주 결산을 보고한다 — 구조 손익 1주치·내부 일관', () => {
     // 2주 플레이 → 종료. 장부는 최종 주 기준(구조 손익 ×N 스케일 문제를 피하는 알려진 단순화).
-    const w2 = finishWeek(runWeekFrom(beginWeek(nextWeek(finishWeek(runWeek(collaborator, false)))), false))
+    const w2 = finishWeek(runWeekFrom(beginWeek(enterGrowth(nextWeek(finishWeek(runWeek(collaborator, false))))), false))
     const epi = buildEpilogue(endGame(w2))
     const finalWeekAway = w2.ledgerDays.reduce((n, d) => n + d.turnedAway.length, 0)
     expect(epi.weekNews.length).toBe(finalWeekAway) // 최종 주 신문만(누적 아님)
@@ -498,5 +503,71 @@ describe('성장 상태 — 개원 보존 + 금고', () => {
     const before = s.treasury
     const after = completeWeek(s)
     expect(after.treasury).toBe(before + 40)
+  })
+})
+
+describe('GROWTH — 재투자 적용', () => {
+  // 금고 넉넉한 상태를 만든다(2주차 진입 흉내)
+  function grown() {
+    let s = completeSetup({ hospitalName: '한바다', doctors: { AESTHETICS: 1, CARDIOLOGY: 1 } })
+    s = { ...s, treasury: 200, phase: 'GROWTH', week: 2 }
+    return s
+  }
+
+  it('성장 비용 = 채용 증분 + 병상 증설', () => {
+    const s = grown() // 현재 순환기1, beds 3
+    const next = { hospitalName: '한바다', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
+    expect(growthCostOf(s, next, 5)).toBe(30 + 60) // 순환기 1명(30) + 병상 3→5(60)
+  })
+
+  it('applyGrowth: 병원 재구성 + 금고·풀 차감 + choices 갱신', () => {
+    const s = grown()
+    const next = { hospitalName: '한바다', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
+    const after = applyGrowth(s, next, 5)
+    expect(after.beds).toBe(5)
+    expect(after.choices).toEqual(next)
+    expect(after.treasury).toBe(200 - 90)
+    expect(after.hospital!.roster!.filter((d) => d.dept === 'CARDIOLOGY')).toHaveLength(2)
+    expect(after.system.pool.CARDIOLOGY).toBe(POOL_INITIAL.CARDIOLOGY - 1) // 증분 1만 차감
+    expect(after.hospital!.roundTheClockBackup).toContain('CARDIOLOGY') // 2명 → 24h
+  })
+
+  it('풀 소진 과는 성장 불가(돈 있어도)', () => {
+    let s = grown()
+    s = { ...s, system: { ...s.system, pool: { ...s.system.pool, CARDIOLOGY: 1 } } }
+    const next = { hospitalName: '한바다', doctors: { AESTHETICS: 1, CARDIOLOGY: 3 } } // +2 필요, 잔여 1
+    expect(canApplyGrowth(s, next, 3)).toBe(false)
+  })
+
+  it('금고 초과 성장 불가', () => {
+    const s = { ...grown(), treasury: 20 }
+    const next = { hospitalName: '한바다', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } } // 30억 필요
+    expect(canApplyGrowth(s, next, 3)).toBe(false)
+  })
+
+  it('해고(증분 음수)는 불가', () => {
+    const s = grown()
+    const next = { hospitalName: '한바다', doctors: { CARDIOLOGY: 0 } }
+    expect(canApplyGrowth(s, next, 3)).toBe(false)
+  })
+
+  it('enterGrowth: WORLD_EVENT(병원 있음) → GROWTH', () => {
+    let s = completeSetup({ hospitalName: '한바다', doctors: { AESTHETICS: 1 } })
+    s = { ...s, phase: 'WORLD_EVENT', week: 2 }
+    expect(enterGrowth(s).phase).toBe('GROWTH')
+  })
+
+  it('beginWeek: GROWTH → RECEIVING(같은 병원)', () => {
+    const s = { ...grown(), phase: 'GROWTH' as const }
+    expect(beginWeek(s).phase).toBe('RECEIVING')
+  })
+
+  it('nextWeek이 배경 풀 감소를 적용한다', () => {
+    let s = completeSetup({ hospitalName: '한바다', doctors: { AESTHETICS: 1 } })
+    s = { ...s, phase: 'WEEK_SUMMARY' }
+    const before = Object.values(s.system.pool).reduce((a, b) => a + b, 0)
+    const after = nextWeek(s)
+    const total = Object.values(after.system.pool).reduce((a, b) => a + b, 0)
+    expect(total).toBeLessThan(before)
   })
 })
