@@ -87,7 +87,7 @@ const PROFILE_BY_KIND: Partial<Record<CallKind, readonly string[]>> = {
 const OUTLETS = ['한내일보', '서림신문', '지역언론 종합', '금하매일'] as const
 
 /** 거절 사유별 부제 — 벽의 종류가 다르면 부제가 다르다. 전부 무주체(병원명 없음). */
-const REASON_CLAUSE: Record<RejectionReason, string> = {
+export const REASON_CLAUSE: Record<RejectionReason, string> = {
   NO_ER_ONCALL: '응급실 당직 부재',
   ER_OVERCROWDED: '응급실 과밀',
   NO_BACKUP_CARE: '배후진료 불가',
