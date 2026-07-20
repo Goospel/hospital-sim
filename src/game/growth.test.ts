@@ -23,4 +23,10 @@ describe('금고 산수', () => {
     expect(withinTreasury(30, 46)).toBe(true)
     expect(withinTreasury(50, 46)).toBe(false)
   })
+
+  it('감소한 과는 비용을 낮추지 않는다 (증분만 카운트)', () => {
+    const prev: SetupChoices = { hospitalName: 'h', doctors: { CHECKUP: 2 } }
+    const next: SetupChoices = { hospitalName: 'h', doctors: { CARDIOLOGY: 1 } } // CHECKUP 2→0, CARDIOLOGY 0→1
+    expect(doctorDeltaCost(prev, next)).toBe(30) // 순환기 +1(=30)만, CHECKUP 감소는 음의 기여 0
+  })
 })
