@@ -41,3 +41,18 @@ export function arrivalMinFor(week: number, day: number, index: number, count: n
   const jitter = seededUnit(callSeed(week, day, index, 2)) * slot
   return Math.min(DAY_LENGTH_MIN - 1, Math.floor(index * slot + jitter))
 }
+
+/** 시각 atMin에 자유로운(busyUntil ≤ atMin) 그 과 유닛들. busyUntil 미기록=0(자유). */
+export function freeDoctorsOfDept(
+  roster: Doctor[],
+  busyUntil: Record<string, number>,
+  dept: DeptKey,
+  atMin: number,
+): Doctor[] {
+  return roster.filter((d) => d.dept === dept && (busyUntil[d.id] ?? 0) <= atMin)
+}
+
+/** 자유 유닛 중 가장 일찍 비었던(busyUntil 최소) 유닛 — 부하 분산. */
+export function pickAssignee(free: Doctor[], busyUntil: Record<string, number>): Doctor {
+  return free.reduce((min, d) => ((busyUntil[d.id] ?? 0) < (busyUntil[min.id] ?? 0) ? d : min))
+}

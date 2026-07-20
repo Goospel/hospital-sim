@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { seededUnit, callSeed, procedureDurationMin, arrivalMinFor, DURATION_MIN, DAY_LENGTH_MIN } from './daysim'
+import {
+  seededUnit,
+  callSeed,
+  procedureDurationMin,
+  arrivalMinFor,
+  DURATION_MIN,
+  DAY_LENGTH_MIN,
+  freeDoctorsOfDept,
+  pickAssignee,
+} from './daysim'
+import type { Doctor } from './types'
 
 describe('seededUnit', () => {
   it('같은 seed는 항상 같은 값(결정론)', () => {
@@ -56,5 +66,34 @@ describe('callSeed', () => {
   })
   it('salt가 다르면 seed도 달라 서로 다른 스트림(소요시간·도착시각 비상관)', () => {
     expect(callSeed(1, 1, 0, 1)).not.toBe(callSeed(1, 1, 0, 2))
+  })
+})
+
+const roster: Doctor[] = [
+  { id: 'doc-CARDIOLOGY-1', name: '이수아', dept: 'CARDIOLOGY' },
+  { id: 'doc-CARDIOLOGY-2', name: '김민준', dept: 'CARDIOLOGY' },
+  { id: 'doc-AESTHETICS-1', name: '박현우', dept: 'AESTHETICS' },
+]
+
+describe('freeDoctorsOfDept', () => {
+  it('busyUntil <= atMin 인 그 과 유닛만 자유', () => {
+    const busy = { 'doc-CARDIOLOGY-1': 120, 'doc-CARDIOLOGY-2': 0 }
+    const free = freeDoctorsOfDept(roster, busy, 'CARDIOLOGY', 60)
+    expect(free.map((d) => d.id)).toEqual(['doc-CARDIOLOGY-2'])
+  })
+  it('그 과 유닛이 다 점유면 빈 배열(=벽)', () => {
+    const busy = { 'doc-CARDIOLOGY-1': 200, 'doc-CARDIOLOGY-2': 200 }
+    expect(freeDoctorsOfDept(roster, busy, 'CARDIOLOGY', 60)).toEqual([])
+  })
+  it('미채용 과는 빈 배열', () => {
+    expect(freeDoctorsOfDept(roster, {}, 'OBSTETRICS', 0)).toEqual([])
+  })
+})
+
+describe('pickAssignee', () => {
+  it('가장 일찍 자유로워진(busyUntil 최소) 유닛', () => {
+    const busy = { 'doc-CARDIOLOGY-1': 0, 'doc-CARDIOLOGY-2': 30 }
+    const free = [roster[0], roster[1]]
+    expect(pickAssignee(free, busy).id).toBe('doc-CARDIOLOGY-1')
   })
 })
