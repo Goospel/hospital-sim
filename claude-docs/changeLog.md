@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 구현 — 내과 진료과 추가 + 복통 응급 세분(급성복증=외과 / 고열감염=내과)
+
+- **무엇을**: 진료과에 **내과(INTERNAL_MEDICINE)** 추가(저수가 박리다매 −5·essential·lawsuitRisk 미구현). catch-all `GENERAL_EMERGENCY`를 **급성복증(`ABDOMINAL_EMERGENCY`, 외과 배후)**·**고열감염(`MEDICAL_EMERGENCY`, 내과 배후)**으로 세분해 각자 그 과로 라우팅·점유 경쟁. `isCriticalEmergency` 하나를 `requiresBackupCare`(배후·신문)/`carriesLawsuitRisk`(소송) 술어 2개로 분리 — **무게 비대칭**(급성복증=소송+신문 / 고열감염=신문만, 소송 미구현). `decide`·`ReceivingPhase`의 GENERAL 점유 특례 가드 제거(설계 A→B), `DAY_PLANS` 재배치(수 고열감염↔내과 예약·목 급성복증↔외과 예약↔외상), 신문 프로필·대사 세분 반영.
+- **왜**: time-loop에서 `GENERAL_EMERGENCY`를 배후 무관 catch-all(설계 A)로 임시 추상화했으나, 팩트체크상 복통은 원인에 따라 분업(수술복통=외과, 비수술·고열=내과)이고 게임에 내과가 없었다. 내과 추가로 고열·감염이 내과로 정확 라우팅되고 내과 예약↔응급 점유 경쟁이 완성. 소송 비대칭은 리서치 근거(급성복증=인과 선명·배상 확정 / 고열감염=초기 장염 구별 불가라 형사 무죄 파기 전형). **"내과=안전과" 오독 방지**(essential·적자, 소송은 후속). 근거: [internal-medicine-emergency-grounding.md](../docs/research/internal-medicine-emergency-grounding.md)(4각도 26주장 검증).
+- **결과**: TDD 7태스크(내과 과·술어 분리·급성복증·고열감염·GENERAL 제거·신문 프로필·완주)로 vitest **302 green** + `tsc --noEmit` 0. 브라우저 7일 완주 실측(내과 위저드 자동 노출·고열감염→내과 수용·STEMI 벽→신문·**I8 +47억 ≤ 400억**·콘솔 0). ⏸ 후속: 내과 법적 리스크(소송) 구현·회색지대 노이즈·내과↔외과 오분류. 설계: [2026-07-20-internal-medicine-department-design.md](../docs/superpowers/specs/2026-07-20-internal-medicine-department-design.md).
+
 ## 2026-07-20 · 문서 — 트러블슈팅 공백 진단 → T-055 등재 + SDD 종료 trap 스윕 규칙
 
 - **무엇을**: 게이트/실행 비대칭 트랩을 [T-055](troubleshooting/T-055.md)로 등재 — `hardlockReason`은 일반응급을 점유 벽에서 제외했는데 `decide`는 자유 전문의를 점유(판정≠자원). 94c9767에서 이미 고친 것을 **사후 등재**. CLAUDE.md에 「SDD 종료 trap 스윕」 규칙 신설.

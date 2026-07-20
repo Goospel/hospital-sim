@@ -40,7 +40,6 @@ export interface CallEconomics {
  */
 export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
   COSMETIC_WALKIN: { priceSetter: 'HOSPITAL', revenueBillions: 6, costBillions: 3 },
-  GENERAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 3, costBillions: 6 },
   // 네 필수 응급은 모두 **수술·처치 84.9% 밴드**(행위 단위)라 동형이다(11/13 ≈ 85%).
   // 🔴 과별 차등(산부 61%·소청 79% 등 과 단위)은 여기 섞지 않는다(T-039) — "산부가 더 밑진다"는
   // 재정중립 패키지가 만든 DEPARTMENTS 층(산부 −16)이 담당하지, 콜 델타(행위 단위)가 아니다.
@@ -48,23 +47,43 @@ export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
   OBSTETRIC_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
   NEURO_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
   TRAUMA_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
+  // 급성복증도 응급수술이라 같은 수술·처치 84.9% 밴드(11/13, STEMI 동형).
+  ABDOMINAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
+  // 고열·감염(내과 급여)은 기본진료 50.5%·응급 45% 밴드라 원가 미달(3/6 ≈ 50%).
+  MEDICAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 3, costBillions: 6 },
   // 배후과 예약진료 — 검사 흑자 밴드 계승(10/6 ≈ 167% — 검체 160% 밴드). 그 과 의사가 응급 대신
   // 예약을 도는 이유가 곧 이 흑자다(점유 판정 자체는 Task 5).
   SPECIALIST_ELECTIVE: { priceSetter: 'GOVERNMENT', revenueBillions: 10, costBillions: 6 },
 }
 
 /**
- * 배후진료(최종치료)가 필요한 필수 응급 4종 — 각자 requiredSpecialty로 그 과를 요구하고,
+ * 배후진료(최종치료)를 요구하는 응급 — 각자 requiredSpecialty로 그 과를 요구하고,
  * 없으면 adjudicateTransfer가 제네릭으로 NO_BACKUP_CARE를 건다(판정 로직 무변경).
- * 이 목록이 곧 "lawsuitRisk가 붙는 콜"이자 "못 받으면 신문이 되는 콜"이다 — 세 개념이 같은 집합.
+ * 배후 게이트(하드락)·아침 신문·받은/돌려보낸 응급 카운트의 단일 출처다.
+ *
+ * ⚠️ 과거엔 이 집합 하나(isCriticalEmergency)가 배후·소송·신문을 겸했으나, 복통 세분에서 소송 성격이
+ * 갈려(고열감염=방어 성공 전형) 두 술어로 분리했다: 배후·신문은 이 집합, 소송은 LAWSUIT_RISK_KINDS.
  */
-export const CRITICAL_EMERGENCY_KINDS: CallKind[] = [
-  'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY',
+export const BACKUP_CARE_KINDS: CallKind[] = [
+  'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'ABDOMINAL_EMERGENCY', 'MEDICAL_EMERGENCY',
 ]
 
-/** 배후과를 요구하는 필수 응급인가 — 하드락(배후/야간)·소송·신문 대상 판별의 단일 출처. */
-export function isCriticalEmergency(kind: CallKind): boolean {
-  return CRITICAL_EMERGENCY_KINDS.includes(kind)
+/** 배후과(최종치료)를 요구하는 응급인가 — 배후 게이트·신문·응급 카운트 판별의 단일 출처. */
+export function requiresBackupCare(kind: CallKind): boolean {
+  return BACKUP_CARE_KINDS.includes(kind)
+}
+
+/**
+ * 수용 시 소송 노출을 쌓는 응급 — 인과가 선명해 배상이 확정적인 계열만. requiresBackupCare의 부분집합.
+ * (고열감염은 "초기 장염과 구별 불가"라 방어 성공이 전형이라 제외 — grounding §2.)
+ */
+export const LAWSUIT_RISK_KINDS: CallKind[] = [
+  'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'ABDOMINAL_EMERGENCY',
+]
+
+/** 수용 시 소송 노출(lawsuitExposure)을 쌓는 응급인가. */
+export function carriesLawsuitRisk(kind: CallKind): boolean {
+  return LAWSUIT_RISK_KINDS.includes(kind)
 }
 
 /** 선택진료(플레이어가 받을지 정하는 콜) — 미용·검진 워크인 + 배후과 예약. 응급이 아니다. */
@@ -148,7 +167,8 @@ const stemiPatient: Patient = { id: 'call-stemi', requiredSpecialty: 'CARDIOLOGY
 const obstetricPatient: Patient = { id: 'call-ob', requiredSpecialty: 'OBSTETRICS', severity: 5 }
 const neuroPatient: Patient = { id: 'call-neuro', requiredSpecialty: 'NEUROSURGERY', severity: 5 }
 const traumaPatient: Patient = { id: 'call-trauma', requiredSpecialty: 'GENERAL_SURGERY', severity: 5 }
-const generalPatient: Patient = { id: 'call-general', requiredSpecialty: 'GENERAL_SURGERY', severity: 3 }
+const abdominalPatient: Patient = { id: 'call-abdominal', requiredSpecialty: 'GENERAL_SURGERY', severity: 4 } // 급성복증 = 외과 수술 배후
+const medicalPatient: Patient = { id: 'call-medical', requiredSpecialty: 'INTERNAL_MEDICINE', severity: 3 } // 고열·감염 = 내과 배후
 const walkinPatient: Patient = { id: 'call-walkin', requiredSpecialty: 'CARDIOLOGY', severity: 1 } // 명목값(판정 안 함)
 
 /** 요일별 콜 한 통 — SPECIALIST_ELECTIVE만 dept로 대상 배후과를 정한다(그 외는 PATIENT_OF 고정). */
@@ -179,13 +199,13 @@ interface CallPlanEntry {
  */
 const DAY_PLANS: CallPlanEntry[][] = [
   [{ kind: 'COSMETIC_WALKIN' }, { kind: 'SPECIALIST_ELECTIVE', dept: 'CARDIOLOGY' }, { kind: 'COSMETIC_WALKIN' },
-   { kind: 'GENERAL_EMERGENCY' }, { kind: 'STEMI' }], // 월 — STEMI 한 자리를 순환기 예약으로(점유 경쟁), 야간 STEMI
+   { kind: 'MEDICAL_EMERGENCY' }, { kind: 'STEMI' }], // 월 — 고열감염(내과 배후)·STEMI↔순환기 예약 경쟁, 야간 STEMI
   [{ kind: 'COSMETIC_WALKIN' }, { kind: 'SPECIALIST_ELECTIVE', dept: 'NEUROSURGERY' }, { kind: 'NEURO_EMERGENCY' },
    { kind: 'COSMETIC_WALKIN' }, { kind: 'STEMI' }], // 화 — 뇌출혈 등장, 신경외과 예약이 경쟁
-  [{ kind: 'STEMI' }, { kind: 'COSMETIC_WALKIN' }, { kind: 'OBSTETRIC_EMERGENCY' },
-   { kind: 'SPECIALIST_ELECTIVE', dept: 'OBSTETRICS' }, { kind: 'NEURO_EMERGENCY' }], // 수 — 산부 등장, 산부 예약이 경쟁, 주간 STEMI
-  [{ kind: 'SPECIALIST_ELECTIVE', dept: 'GENERAL_SURGERY' }, { kind: 'TRAUMA_EMERGENCY' }, { kind: 'STEMI' },
-   { kind: 'GENERAL_EMERGENCY' }, { kind: 'OBSTETRIC_EMERGENCY' }], // 목 — 중증외상 등장, 외과 예약이 경쟁
+  [{ kind: 'STEMI' }, { kind: 'MEDICAL_EMERGENCY' }, { kind: 'OBSTETRIC_EMERGENCY' },
+   { kind: 'SPECIALIST_ELECTIVE', dept: 'INTERNAL_MEDICINE' }, { kind: 'NEURO_EMERGENCY' }], // 수 — 고열감염↔내과 예약 점유 경쟁, 산부·주간 STEMI
+  [{ kind: 'SPECIALIST_ELECTIVE', dept: 'GENERAL_SURGERY' }, { kind: 'ABDOMINAL_EMERGENCY' }, { kind: 'STEMI' },
+   { kind: 'TRAUMA_EMERGENCY' }, { kind: 'OBSTETRIC_EMERGENCY' }], // 목 — 급성복증↔외과 예약↔중증외상 경쟁(외과 부하 집중)
   [{ kind: 'STEMI' }, { kind: 'OBSTETRIC_EMERGENCY' }, { kind: 'NEURO_EMERGENCY' }, { kind: 'TRAUMA_EMERGENCY' },
    { kind: 'SPECIALIST_ELECTIVE', dept: 'CARDIOLOGY' }], // 금 — 낮에 4과 동시 붕괴, 순환기 예약이 야간에 경쟁
   [{ kind: 'STEMI' }, { kind: 'NEURO_EMERGENCY' }, { kind: 'SPECIALIST_ELECTIVE', dept: 'NEUROSURGERY' },
@@ -203,11 +223,12 @@ export const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일']
  */
 const CALL_LABELS: Record<Exclude<CallKind, 'SPECIALIST_ELECTIVE'>, string[]> = {
   COSMETIC_WALKIN: ['보톡스 상담 워크인', '검진 패키지 문의'],
-  GENERAL_EMERGENCY: ['복통 응급 — 병상 요청', '고열 응급 — 입원 문의'],
   STEMI: ['급성심근경색 — 타 병원 전원 요청', '급성심근경색 — 재이송'],
   OBSTETRIC_EMERGENCY: ['분만 응급 — 산부인과 전원 요청', '분만 중 출혈 — 재이송'],
   NEURO_EMERGENCY: ['뇌출혈 의심 — 신경외과 전원 요청', '뇌졸중 — 재이송'],
   TRAUMA_EMERGENCY: ['중증외상 — 외과 전원 요청', '다발성 외상 — 재이송'],
+  ABDOMINAL_EMERGENCY: ['급성복증 — 외과 전원 요청', '충수염 의심 — 수술 요청'],
+  MEDICAL_EMERGENCY: ['고열·패혈증 의심 — 내과 전원 요청', '중증 장염 — 입원 요청'],
 }
 
 /** SPECIALIST_ELECTIVE 라벨 — DEPARTMENTS.label에서 파생(단일 출처라 과 오표기가 구조적으로 불가능). */
@@ -226,11 +247,12 @@ function electivePatientFor(dept: Specialty): Patient {
 
 const PATIENT_OF: Record<CallKind, Patient> = {
   COSMETIC_WALKIN: walkinPatient,
-  GENERAL_EMERGENCY: generalPatient,
   STEMI: stemiPatient,
   OBSTETRIC_EMERGENCY: obstetricPatient,
   NEURO_EMERGENCY: neuroPatient,
   TRAUMA_EMERGENCY: traumaPatient,
+  ABDOMINAL_EMERGENCY: abdominalPatient,
+  MEDICAL_EMERGENCY: medicalPatient,
   SPECIALIST_ELECTIVE: electivePatient,
 }
 
@@ -259,7 +281,7 @@ export function createCallQueue(day = 1): IncomingCall[] {
         ? electiveLabel(dept ?? 'CARDIOLOGY')
         : CALL_LABELS[kind][occurrence % CALL_LABELS[kind].length],
       patient: kind === 'SPECIALIST_ELECTIVE' ? electivePatientFor(dept ?? 'CARDIOLOGY') : PATIENT_OF[kind],
-      lawsuitRisk: isCriticalEmergency(kind), // 필수 응급 4종 = 고위험(소송 노출), 일반응급·워크인은 아님
+      lawsuitRisk: carriesLawsuitRisk(kind), // 소송 노출 계열(인과 선명)만 — 고열감염은 제외(방어 성공 전형)
       nightShift: arrivalMin >= NIGHT_START_MIN,
       arrivalMin,
       durationMin: procedureDurationMin(kind, 1, day, i),
@@ -289,17 +311,14 @@ export function hardlockReason(
     case 'COSMETIC_WALKIN':
     case 'SPECIALIST_ELECTIVE':
       return null // 선택진료 — 하드락 없음(자유 의사 유무는 decide가 판단)
-    case 'GENERAL_EMERGENCY':
-      // 응급실 당직·과밀만 보면 된다(배후 무관, 저마진). 담당 전문의가 없어도 받는다.
-      if (!hospital.hasErOnCall) return 'NO_ER_ONCALL'
-      if (hospital.overcrowded) return 'ER_OVERCROWDED'
-      return null
-    // 필수 응급 4종은 배후과(최종치료) 게이트를 **공유**한다 — adjudicateTransfer가
-    // call.patient.requiredSpecialty로 제네릭 판정하므로 종류별 분기가 필요 없다(다양화의 핵심).
+    // 배후과를 요구하는 응급(필수 4종 + 급성복증 + 고열감염)은 게이트를 **공유**한다 — adjudicateTransfer가
+    // call.patient.requiredSpecialty로 제네릭 판정하므로 종류별 분기가 필요 없다(세분·다양화의 핵심).
     case 'STEMI':
     case 'OBSTETRIC_EMERGENCY':
     case 'NEURO_EMERGENCY':
-    case 'TRAUMA_EMERGENCY': {
+    case 'TRAUMA_EMERGENCY':
+    case 'ABDOMINAL_EMERGENCY':
+    case 'MEDICAL_EMERGENCY': {
       const verdict = adjudicateTransfer(hospital, call.patient)
       if (!verdict.accepted) return verdict.reason ?? 'NO_BACKUP_CARE'
       // 배후과가 있어도 **밤엔 당직이 서 있어야** 받는다 — 의사 1명은 24시간을 못 버틴다(T-042).
@@ -348,13 +367,13 @@ export function initReceiving(
 /**
  * 현재 콜을 처리한다 — **응급은 자동 판정, 선택진료만 플레이어가 결정**한다.
  *
- * - 응급(일반·필수 4종): `accept`를 무시하고 자동으로 판정한다. 구조적 하드락(hardlockReason)이 없으면
+ * - 응급(급성복증·고열감염·필수 4종): `accept`를 무시하고 자동으로 판정한다. 구조적 하드락(hardlockReason)이 없으면
  *   수용, 있으면 turnedAway. "아무리 애원해도, 아무리 거절하려 해도" 결과는 병원의 제약이 정한다.
  * - 선택진료(미용·배후과 예약): `accept && 그 과 자유 의사 있음`일 때만 수용. accept=false거나 담당
  *   의사가 다 바쁘면 미수용(하드락이 아니라 '못 받음' — 사유 없음).
  *
- * 수용하면 담당 의사(handlingDept)를 `arrivalMin + durationMin`까지 점유한다. 담당 과에 자유 의사가
- * 없어도 받는 콜(일반 응급 — 배후 무관)은 아무도 점유하지 않는다(pickAssignee는 자유 의사가 있을 때만).
+ * 수용하면 담당 과(handlingDept)의 자유 의사를 `arrivalMin + durationMin`까지 점유한다.
+ * 그 과에 자유 의사가 없으면(미채용) 아무도 점유하지 않는다(pickAssignee는 자유 의사가 있을 때만).
  */
 export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   if (state.done) {
@@ -371,10 +390,9 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   // 응급은 accept 무관 자동(하드락이 없으면 수용). 선택진료는 accept + 그 과 자유 의사가 있어야 수용.
   const effectiveAccept = disposition === 'CHOICE' && (isElective(call.kind) ? accept && free.length > 0 : true)
 
-  // 수용한 콜은 담당 의사를 점유한다 — 자유 의사가 없거나(일반 응급 배후 미보유) 일반 응급 자체(설계 A:
-  // 특정 배후과를 요구하지 않는 ER 당직 범주라 어떤 의사도 잡지 않는다)면 아무도 점유하지 않는다(가드).
+  // 수용한 콜은 담당 과(handlingDept)의 자유 의사를 점유한다. 그 과에 자유 의사가 없으면(미채용) 아무도 안 잡는다.
   let busyUntil = state.busyUntil
-  if (effectiveAccept && free.length > 0 && call.kind !== 'GENERAL_EMERGENCY') {
+  if (effectiveAccept && free.length > 0) {
     const assignee = pickAssignee(free, state.busyUntil)
     busyUntil = { ...state.busyUntil, [assignee.id]: arrivalMin + (call.durationMin ?? 0) }
   }

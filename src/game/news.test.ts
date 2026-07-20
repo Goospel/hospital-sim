@@ -9,6 +9,21 @@ const two: TurnedAway[] = [
   { callId: 'd1c5', kind: 'STEMI', reason: 'NO_BACKUP_CARE' },
 ]
 
+describe('세분 응급 신문 프로필 — 급성복증·고열감염', () => {
+  it('급성복증·고열감염 신문은 종류별 프로필로 뜬다', () => {
+    const ab = renderNews([{ callId: 'd1c1', kind: 'ABDOMINAL_EMERGENCY', reason: 'NO_FREE_SPECIALIST' }])
+    expect(ab[0].headline).toMatch(/급성복증|복막염|장폐색/) // 외과 계열 프로필
+    const me = renderNews([{ callId: 'd1c1', kind: 'MEDICAL_EMERGENCY', reason: 'NO_BACKUP_CARE' }])
+    expect(me[0].headline).toMatch(/고열|감염|패혈증/) // 내과 계열 프로필
+  })
+  it('두 세분 응급 프로필도 윤리 가드(실제 사건 토큰 회피)를 지킨다', () => {
+    for (const kind of ['ABDOMINAL_EMERGENCY', 'MEDICAL_EMERGENCY'] as const) {
+      const n = renderNews([{ callId: 'd1c1', kind, reason: 'NO_BACKUP_CARE' }])
+      for (const bad of FORBIDDEN_REAL_EVENT_TOKENS) expect(n[0].headline).not.toContain(bad)
+    }
+  })
+})
+
 /**
  * 🔴 윤리 가드 — 이 describe가 이 파일에서 가장 중요하다.
  *

@@ -7,6 +7,7 @@ export const SPECIALTY_LABEL: Record<Specialty, string> = {
   OBSTETRICS: '산부인과',
   NEUROSURGERY: '신경외과',
   CARDIOLOGY: '순환기내과',
+  INTERNAL_MEDICINE: '내과',
 }
 
 /**

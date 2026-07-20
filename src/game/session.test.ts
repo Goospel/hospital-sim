@@ -157,7 +157,7 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
   it('[신문] 배후과가 없어 못 받은 필수 응급이 전부 기사가 된다 — 능동 거절이 아니라 구조가 막는다', () => {
     // 응급은 자동 판정이라 플레이어가 거절할 수 없다. 배후과가 하나도 없는 공범 병원에선 그날 온 필수
     // 응급이 전부 NO_BACKUP_CARE로 막히고, 그 전원이 기사가 된다.
-    const CRITICAL: string[] = ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY']
+    const CRITICAL: string[] = ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'ABDOMINAL_EMERGENCY', 'MEDICAL_EMERGENCY'] // 배후과 요구 응급 전체(신문 대상)
     const d1 = completeReceiving(runDay(completeSetup(collaborator), false)) // 배후과 0
     const criticalPerDay = d1.receiving!.queue.filter((c) => CRITICAL.includes(c.kind)).length
     expect(criticalPerDay).toBeGreaterThan(0)
@@ -177,8 +177,8 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     const d1 = completeReceiving(runDay(completeSetup(collaborator), true)) // 전부 수용 시도
     const rec = d1.ledgerDays[0]
     expect(rec.netProfitBillions).toBe(rec.segmentShareBillions + rec.callDeltaBillions)
-    // 미용 2 + 일반응급 1(응급은 자동). 순환기 예약은 담당 없어 미수용, STEMI는 배후 없어 못 받는다.
-    expect(rec.accepted).toBe(3)
+    // 미용 2(선택진료·미용 담당 있음). 순환기 예약·고열감염·STEMI는 담당/배후가 없어 미수용(세분 응급도 배후 필요).
+    expect(rec.accepted).toBe(2)
     expect(rec.turnedAway.length).toBeGreaterThan(0) // 배후과가 없어 못 받은 필수 응급
     expect(rec.accepted + rec.blocked).toBeLessThanOrEqual(5)
   })

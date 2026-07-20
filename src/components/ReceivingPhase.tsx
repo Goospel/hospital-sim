@@ -218,8 +218,8 @@ export default function ReceivingPhase({
   const dept = handlingDept(call);
   const arrivalMin = call.arrivalMin ?? 0;
   const free = freeDoctorsOfDept(receiving.hospital.roster ?? [], receiving.busyUntil, dept, arrivalMin);
-  // decide()와 같은 가드 — 일반 응급은 자유 의사가 있어도 아무도 점유하지 않는다(배후 무관 콜).
-  const assignee = free.length > 0 && call.kind !== "GENERAL_EMERGENCY" ? pickAssignee(free, receiving.busyUntil) : undefined;
+  // decide()와 같은 가드 — 담당 과 자유 의사가 있으면 점유한다(세분 응급 포함, GENERAL 특례 제거).
+  const assignee = free.length > 0 ? pickAssignee(free, receiving.busyUntil) : undefined;
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">

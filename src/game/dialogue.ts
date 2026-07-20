@@ -1,5 +1,5 @@
 import type { RejectionReason, CallKind, IncomingCall, Specialty } from './types'
-import { isCriticalEmergency, type CallDisposition } from './receiving'
+import { requiresBackupCare, type CallDisposition } from './receiving'
 
 // 확정된 판정(코드)을 받는 쪽(내 병원) 담당자의 "대사"로 옮기는 결정론적 폴백.
 // LLM이 붙기 전에도 게임이 돌아가고, 붙은 뒤에도 무키·실패 시 여기로 강등된다.
@@ -14,10 +14,6 @@ export const CALLER_PLEA: Record<CallKind, string[]> = {
     '심근경색 환자입니다. 재관류 가능한 데가 없어요. 받아주실 수 있나요?',
     '벌써 네 번째 병원입니다. 순환기 되는 곳이… 거기 되나요?',
   ],
-  GENERAL_EMERGENCY: [
-    '복통 응급인데 병상이 없어서요. 자리 하나만 부탁드립니다.',
-    '지금 받아줄 곳을 못 찾고 있어요. 입원 가능할까요?',
-  ],
   OBSTETRIC_EMERGENCY: [
     '분만 중인데 산부인과가 없어서요. 산모를 받아주실 수 있나요?',
     '태반조기박리 의심입니다. 분만 되는 데가… 거기 되나요?',
@@ -29,6 +25,14 @@ export const CALLER_PLEA: Record<CallKind, string[]> = {
   TRAUMA_EMERGENCY: [
     '교통사고 중증외상입니다. 수술할 외과가 없어서요. 받아주실 수 있나요?',
     '다발성 외상이에요. 벌써 몇 군데를 돌았습니다. 거기 되나요?',
+  ],
+  ABDOMINAL_EMERGENCY: [
+    '급성복증인데 수술할 외과가 없어서요. 받아주실 수 있나요?',
+    '충수염 천공 의심입니다. 외과 되는 데가… 거기 되나요?',
+  ],
+  MEDICAL_EMERGENCY: [
+    '고열에 의식이 처지는데 입원할 내과가 없어서요. 받아주실 수 있나요?',
+    '패혈증 의심입니다. 내과 되는 데를 못 찾고 있어요. 거기 되나요?',
   ],
   COSMETIC_WALKIN: [
     '보톡스 상담 예약 가능할까요?',
@@ -72,7 +76,8 @@ export const RECEIVE_ACCEPT: Record<CallKind, string> = {
   OBSTETRIC_EMERGENCY: '…받겠습니다. 분만 준비하겠습니다.',
   NEURO_EMERGENCY: '…받겠습니다. 수술방 열어두겠습니다.',
   TRAUMA_EMERGENCY: '…받겠습니다. 외상팀 부르겠습니다.',
-  GENERAL_EMERGENCY: '네, 병상 하나 내드리죠. 보내세요.',
+  ABDOMINAL_EMERGENCY: '…받겠습니다. 외과 수술 준비하겠습니다.',
+  MEDICAL_EMERGENCY: '…받겠습니다. 내과 입원 준비하겠습니다.',
   COSMETIC_WALKIN: '물론이죠! 바로 접수해 드릴게요',
   SPECIALIST_ELECTIVE: '네, 예약대로 진행하겠습니다.',
 }
@@ -83,7 +88,8 @@ export const RECEIVE_REJECT: Record<CallKind, string> = {
   OBSTETRIC_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
   NEURO_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
   TRAUMA_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
-  GENERAL_EMERGENCY: '지금은 병상을 비워두겠습니다. 다른 곳을 알아보세요.',
+  ABDOMINAL_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
+  MEDICAL_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
   COSMETIC_WALKIN: '오늘은 예약이 다 찼습니다. 다음에 오세요.',
   SPECIALIST_ELECTIVE: '죄송하지만 예약을 다른 날로 옮겨야겠습니다.',
 }
@@ -114,6 +120,7 @@ const RECEIVE_NO_BACKUP_BY_SPECIALTY: Record<Specialty, string> = {
   NEUROSURGERY: '자리는 있는데, 저희도 신경외과가 없습니다. 받아도 수술을 못 해요.',
   GENERAL_SURGERY: '자리는 있는데, 저희도 중증외상을 감당할 외과가 없습니다.',
   THORACIC_SURGERY: '자리는 있는데, 저희도 흉부외과가 없습니다.',
+  INTERNAL_MEDICINE: '자리는 있는데, 저희도 입원 진료할 내과가 없습니다.',
 }
 
 /** 야간 당직 공백(NO_NIGHT_BACKUP) 대사 — 과는 있는데 밤에 당직이 빈다(배후 부재와 다른 사유). */
@@ -123,6 +130,7 @@ const RECEIVE_NIGHT_BY_SPECIALTY: Record<Specialty, string> = {
   NEUROSURGERY: '신경외과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
   GENERAL_SURGERY: '외과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
   THORACIC_SURGERY: '흉부외과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
+  INTERNAL_MEDICINE: '내과 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.',
 }
 
 /**
@@ -163,7 +171,7 @@ export function receivingLine(
       }
     }
     // 사유 없이 하드락(하위호환) — 필수 응급이면 배후 부재의 벽, 그 외엔 일반 거절.
-    return isCriticalEmergency(call.kind) ? RECEIVE_NO_BACKUP_BY_SPECIALTY[spec] : RECEIVE_REJECT[call.kind]
+    return requiresBackupCare(call.kind) ? RECEIVE_NO_BACKUP_BY_SPECIALTY[spec] : RECEIVE_REJECT[call.kind]
   }
   return accepted ? RECEIVE_ACCEPT[call.kind] : RECEIVE_REJECT[call.kind]
 }
