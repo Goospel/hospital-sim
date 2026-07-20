@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { adjustDoctors, isSetupReady, DEPARTMENTS, FIXED_BEDS, MAX_DOCTORS_PER_DEPT, ROUND_THE_CLOCK_MIN_DOCTORS, SETUP_BUDGET_BILLIONS, buildHospital, backupCareOf, hiringCost, withinBudget, withinDeptCaps } from './setup'
+import { adjustDoctors, isSetupReady, DEPARTMENTS, FIXED_BEDS, MAX_DOCTORS_PER_DEPT, ROUND_THE_CLOCK_MIN_DOCTORS, SETUP_BUDGET_BILLIONS, buildHospital, backupCareOf, hiringCost, withinBudget, withinDeptCaps, BED_TIERS, deptCap, bedExpansionCost } from './setup'
 import type { SetupChoices, DepartmentSpec } from './types'
 
 // 합리적 공범 빌드: 미용·검진만(흑자·필수과 0)
@@ -259,5 +259,44 @@ describe('내과 진료과 — 저수가 박리다매 배후과', () => {
     expect(backupCareOf(choices)).toContain('INTERNAL_MEDICINE')
     const { hospital } = buildHospital(choices)
     expect(hospital.backupCare).toContain('INTERNAL_MEDICINE')
+  })
+})
+
+describe('병상 티어 — 성장의 용량 축', () => {
+  it('티어는 [3,5,7]이고 기본은 FIXED_BEDS(3)', () => {
+    expect(BED_TIERS).toEqual([3, 5, 7])
+    expect(BED_TIERS[0]).toBe(FIXED_BEDS)
+  })
+
+  it('필수과 상한 = beds, 수익과 상한 = 3 고정(머니프린터 방지)', () => {
+    const cardio = DEPARTMENTS.find((d) => d.key === 'CARDIOLOGY')!
+    const aesth = DEPARTMENTS.find((d) => d.key === 'AESTHETICS')!
+    expect(deptCap(cardio, 5)).toBe(5)  // 필수과는 병상 따라 오름
+    expect(deptCap(aesth, 5)).toBe(MAX_DOCTORS_PER_DEPT) // 수익과는 3 고정
+    expect(deptCap(aesth, 7)).toBe(MAX_DOCTORS_PER_DEPT)
+  })
+
+  it('병상 증설 비용은 체증하고, 같은 티어면 0', () => {
+    expect(bedExpansionCost(3, 3)).toBe(0)
+    expect(bedExpansionCost(3, 5)).toBe(60)
+    expect(bedExpansionCost(5, 7)).toBe(100)
+    expect(bedExpansionCost(3, 7)).toBe(160) // 누적
+  })
+
+  it('withinDeptCaps: 필수과는 beds까지 허용', () => {
+    const c = { hospitalName: 'h', doctors: { CARDIOLOGY: 5 } }
+    expect(withinDeptCaps(c, DEPARTMENTS, 3)).toBe(false) // beds 3이면 상한 3
+    expect(withinDeptCaps(c, DEPARTMENTS, 5)).toBe(true)  // beds 5면 5 허용
+  })
+
+  it('buildHospital(beds)는 hospital.beds에 반영', () => {
+    const { hospital } = buildHospital({ hospitalName: 'h', doctors: { CARDIOLOGY: 2 } }, DEPARTMENTS, 5)
+    expect(hospital.beds).toBe(5)
+  })
+
+  it('adjustDoctors(cap): 명시 상한까지 허용', () => {
+    const c = { hospitalName: 'h', doctors: {} }
+    expect(adjustDoctors(c, 'CARDIOLOGY', 5, 5).doctors.CARDIOLOGY).toBe(5)
+    expect(adjustDoctors(c, 'CARDIOLOGY', 9, 5).doctors.CARDIOLOGY).toBe(5) // 상한 클램프
   })
 })

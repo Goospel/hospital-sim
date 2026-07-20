@@ -41,7 +41,7 @@ export default function Epilogue({
   epilogue: SessionEpilogue;
   onRestart: () => void;
 }) {
-  const { ledger, weekNews } = epilogue;
+  const { ledger, weekNews, poolDepletion } = epilogue;
   const turnedAway = weekNews.length;
 
   const title = turnedAway > 0 ? `이번 주, ${turnedAway}명이 돌아갔다` : "이번 주, 아무도 돌려보내지 않았다";
@@ -71,6 +71,18 @@ export default function Epilogue({
       <div className="flex flex-col items-center gap-4">
         <WeekPaper news={weekNews} />
         {ledger && <LedgerPanel ledger={ledger} />}
+        <div className="w-full max-w-sm">
+          <p className="mb-3 text-center text-xs uppercase tracking-[0.3em] text-on-desk-muted">전국 · 같은 기간</p>
+          <ul className="flex flex-col gap-2 paper-card px-5 py-4 text-sm text-ink">
+            {poolDepletion.map((p) => (
+              <li key={p.label} className="flex items-baseline justify-between border-l-2 border-rule pl-3">
+                <span>{p.label} 전국 배후 전문의</span>
+                <span className="font-mono tabular-nums">{p.initial} → {p.remaining}</span>
+              </li>
+            ))}
+            <li className="border-l-2 border-rule pl-3 text-[12px] text-ink-2">강원 산부인과 입원 40.3%가 수도권으로 · 수도권 분원 6,600병상 추진 · 재이송 5,657건(2024)</li>
+          </ul>
+        </div>
       </div>
 
       <button

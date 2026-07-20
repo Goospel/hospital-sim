@@ -5,6 +5,8 @@ import {
   startSession,
   beginSetup,
   enterWorldEvent,
+  enterGrowth,
+  applyGrowth,
   beginWeek,
   completeSetup,
   completeReceiving,
@@ -27,6 +29,7 @@ import ReceivingPhase from "./ReceivingPhase";
 import DayEnd from "./DayEnd";
 import WeekSummary from "./WeekSummary";
 import Epilogue from "./Epilogue";
+import GrowthPhase from "./GrowthPhase";
 
 export default function SessionClient() {
   const [session, setSession] = useState<SessionState>(startSession);
@@ -35,13 +38,13 @@ export default function SessionClient() {
     case "LANDING":
       return <Landing onStart={() => setSession(enterWorldEvent(session))} />;
     case "WORLD_EVENT":
-      // 1주차는 개원(beginSetup), 2주차 이후는 이미 병원이 있어 위저드를 건너뛴다(beginWeek).
+      // 1주차는 개원(beginSetup), 2주차 이후는 이미 병원이 있어 위저드를 건너뛰고 재투자(GROWTH)로 간다.
       return (
         <WorldEventCard
           event={session.event!}
           week={session.week}
-          ctaLabel={session.hospital ? "이번 주 진료로" : "병원 설립으로"}
-          onContinue={() => setSession(session.hospital ? beginWeek(session) : beginSetup(session))}
+          ctaLabel={session.hospital ? "이번 주 재투자로" : "병원 설립으로"}
+          onContinue={() => setSession(session.hospital ? enterGrowth(session) : beginSetup(session))}
         />
       );
     case "SETUP":
@@ -84,6 +87,7 @@ export default function SessionClient() {
           cumulativeNetBillions={cumulativeNetBillions(session)}
           received={weekReceivedEmergencyCount(session)}
           turnedAway={weekTurnedAwayCount(session)}
+          treasury={session.treasury}
           onNextWeek={() => setSession(nextWeek(session))}
           onEnd={() => setSession(endGame(session))}
         />
@@ -93,6 +97,13 @@ export default function SessionClient() {
         <Epilogue
           epilogue={buildEpilogue(session)}
           onRestart={() => setSession(startSession())}
+        />
+      );
+    case "GROWTH":
+      return (
+        <GrowthPhase
+          state={session}
+          onComplete={(choices, beds) => setSession(beginWeek(applyGrowth(session, choices, beds)))}
         />
       );
     default: {

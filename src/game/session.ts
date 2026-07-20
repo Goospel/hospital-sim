@@ -1,5 +1,5 @@
 import type { Hospital, SetupChoices, Specialty } from './types'
-import { buildHospital, DAYS_PER_WEEK } from './setup'
+import { buildHospital, bedExpansionCost, withinDeptCaps, DEPARTMENTS, DAYS_PER_WEEK, FIXED_BEDS } from './setup'
 import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent } from './world'
 import {
   accruedSegments, createCallQueue, initReceiving, requiresBackupCare, runningNetProfit, type ReceivingState,
@@ -8,6 +8,9 @@ import { DAY_LENGTH_MIN } from './daysim'
 import { buildSessionLedger, type Ledger } from './ledger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
 import { doctorCaseloads, stepFatigue } from './doctor'
+import { initSystem, backgroundAttrition, hireDelta, canHire, type SystemState } from './system'
+import { initialTreasury, doctorDeltaCost, withinTreasury } from './growth'
+import { SPECIALTY_LABEL } from './labels'
 
 // 세션 상태기계 — 순수·결정론.
 // LANDING → WORLD_EVENT → SETUP → (RECEIVING → DAY_END) ×7일 → WEEK_SUMMARY
@@ -22,7 +25,7 @@ import { doctorCaseloads, stepFatigue } from './doctor'
 const STEMI_SPECIALTY: Specialty = 'CARDIOLOGY'
 
 export type SessionPhase =
-  | 'LANDING' | 'WORLD_EVENT' | 'SETUP' | 'RECEIVING' | 'DAY_END'
+  | 'LANDING' | 'WORLD_EVENT' | 'GROWTH' | 'SETUP' | 'RECEIVING' | 'DAY_END'
   | 'WEEK_SUMMARY' | 'EPILOGUE'
 
 /** 마감된 하루 한 칸 — 달력의 데이터 소스. 숫자만 담는다(해석은 어디에도 없다). */
@@ -65,10 +68,17 @@ export interface SessionState {
   event?: WorldEvent // WORLD_EVENT 화면에 고지할 이벤트.
   /** 유닛별 피로도(0~100). 표시 전용·판정 무관. 하루 마감(completeReceiving)에 스텝, 주 간 유지. */
   fatigue: Record<string, number>
+  choices: SetupChoices   // 현재 병원 명단(매주 성장). 1주차 이후 재투자의 시작점.
+  beds: number            // 병상 티어(초기 FIXED_BEDS).
+  treasury: number        // 금고 잔고(억).
+  system: SystemState     // 전국 의사 풀.
 }
 
 export function startSession(): SessionState {
-  return { phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {} }
+  return {
+    phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, system: initSystem(),
+  }
 }
 
 /**
@@ -76,9 +86,10 @@ export function startSession(): SessionState {
  * (week−1)×7 + day. 1주차는 day 그대로라 기존 큐·id와 완전히 동일하다(하위호환).
  * DAY_PLANS는 (전역일−1)%7로 순환하므로 콜 구성은 주마다 같지만, id는 d8·d9…로 고유해져
  * 누적 신문(결말)의 React 키 충돌을 구조적으로 막는다.
+ * beds를 그대로 createCallQueue에 넘겨 병상 티어가 클수록 콜 볼륨도 는다(Task 6).
  */
-function weekDayQueue(week: number, day: number) {
-  return createCallQueue((week - 1) * DAYS_PER_WEEK + day)
+function weekDayQueue(week: number, day: number, beds: number) {
+  return createCallQueue((week - 1) * DAYS_PER_WEEK + day, beds)
 }
 
 /**
@@ -91,7 +102,10 @@ export function enterWorldEvent(state: SessionState): SessionState {
   }
   const event = OPENING_EVENT
   const world = applyEvent(initWorld(), event)
-  return { phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {} }
+  return {
+    phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, system: initSystem(),
+  }
 }
 
 /** 랜딩/이벤트 고지 → 위저드. world를 SETUP으로 실어 나른다(없으면 기본 세계). */
@@ -102,6 +116,7 @@ export function beginSetup(state: SessionState): SessionState {
   return {
     phase: 'SETUP', world: state.world, event: state.event,
     week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, system: initSystem(),
   }
 }
 
@@ -110,7 +125,7 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
   return {
     phase: 'RECEIVING',
     hospital,
-    receiving: initReceiving(hospital, weekDayQueue(1, 1)),
+    receiving: initReceiving(hospital, weekDayQueue(1, 1, FIXED_BEDS)),
     world,
     week: 1,
     day: 1,
@@ -118,6 +133,10 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
     history: [],
     morningNews: [], // 개원 첫날 아침엔 어제가 없다
     fatigue: {},
+    choices,
+    beds: FIXED_BEDS,
+    treasury: initialTreasury(choices, world.departments),
+    system: initSystem(),
   }
 }
 
@@ -200,7 +219,9 @@ export function advanceDay(state: SessionState): SessionState {
     ...state,
     phase: 'RECEIVING',
     day,
-    receiving: initReceiving(state.hospital!, weekDayQueue(state.week, day), boardedBusyUntilFrom(state.receiving)),
+    receiving: initReceiving(
+      state.hospital!, weekDayQueue(state.week, day, state.beds), boardedBusyUntilFrom(state.receiving),
+    ),
     morningNews: morningNews(day, yesterday?.turnedAway ?? []),
   }
 }
@@ -257,7 +278,13 @@ export function completeWeek(state: SessionState): SessionState {
   if (!isLastDay(state)) {
     throw new Error('completeWeek requires the last day (day 7)')
   }
-  return { ...state, phase: 'WEEK_SUMMARY', history: [...state.history, ...state.ledgerDays] }
+  const weekNet = state.ledgerDays.reduce((n, d) => n + d.netProfitBillions, 0)
+  return {
+    ...state,
+    phase: 'WEEK_SUMMARY',
+    history: [...state.history, ...state.ledgerDays],
+    treasury: state.treasury + weekNet,
+  }
 }
 
 /**
@@ -282,16 +309,71 @@ export function nextWeek(state: SessionState): SessionState {
     ledgerDays: [],
     receiving: undefined,
     morningNews: [],
+    system: backgroundAttrition(state.system, week),
+  }
+}
+
+/** 성장 총비용(억) = 채용 증분 + 병상 증설. */
+export function growthCostOf(state: SessionState, nextChoices: SetupChoices, nextBeds: number): number {
+  const deps = state.world?.departments ?? DEPARTMENTS
+  return doctorDeltaCost(state.choices, nextChoices, deps) + bedExpansionCost(state.beds, nextBeds)
+}
+
+/** 배후과 증분(양수)만 뽑아 풀 검증에 쓴다. */
+function backupDeltas(state: SessionState, next: SetupChoices): Partial<Record<Specialty, number>> {
+  const deps = state.world?.departments ?? DEPARTMENTS
+  const out: Partial<Record<Specialty, number>> = {}
+  for (const d of deps) {
+    if (!d.providesBackup) continue
+    const delta = (next.doctors[d.key] ?? 0) - (state.choices.doctors[d.key] ?? 0)
+    if (delta !== 0) out[d.providesBackup] = (out[d.providesBackup] ?? 0) + delta
+  }
+  return out
+}
+
+/** 성장 가능한가 — 해고 없음 · 금고·상한·풀 이내. */
+export function canApplyGrowth(state: SessionState, next: SetupChoices, nextBeds: number): boolean {
+  const deps = state.world?.departments ?? DEPARTMENTS
+  // 해고 방지: 모든 과가 현재 이상
+  const noFiring = deps.every((d) => (next.doctors[d.key] ?? 0) >= (state.choices.doctors[d.key] ?? 0))
+  if (!noFiring) return false
+  if (!withinDeptCaps(next, deps, nextBeds)) return false
+  if (!withinTreasury(growthCostOf(state, next, nextBeds), state.treasury)) return false
+  const deltas = backupDeltas(state, next)
+  return (Object.keys(deltas) as Specialty[]).every((s) => canHire(state.system, s, deltas[s] ?? 0))
+}
+
+/** WORLD_EVENT(병원 있음) → GROWTH. */
+export function enterGrowth(state: SessionState): SessionState {
+  if (state.phase !== 'WORLD_EVENT') throw new Error(`enterGrowth requires WORLD_EVENT, got ${state.phase}`)
+  if (!state.hospital) throw new Error('enterGrowth requires an existing hospital')
+  return { ...state, phase: 'GROWTH' }
+}
+
+/** 성장 적용 — 병원 재구성 + 금고/풀 차감 + choices/beds 갱신. GROWTH 유지(이어서 beginWeek). */
+export function applyGrowth(state: SessionState, next: SetupChoices, nextBeds: number): SessionState {
+  if (state.phase !== 'GROWTH') throw new Error(`applyGrowth requires GROWTH, got ${state.phase}`)
+  const deps = state.world?.departments
+  const cost = growthCostOf(state, next, nextBeds)
+  const { hospital } = buildHospital(next, deps, nextBeds)
+  return {
+    ...state,
+    hospital,
+    choices: next,
+    beds: nextBeds,
+    treasury: state.treasury - cost,
+    system: hireDelta(state.system, backupDeltas(state, next)),
   }
 }
 
 /**
- * 새 주 개시 — WORLD_EVENT(2주차 이후) → RECEIVING. 재설립 없이 **같은 병원**으로 새 주 1일차를 연다.
- * 1주차는 WORLD_EVENT → SETUP(개원)이지만, 2주차부터는 병원이 이미 있으므로 위저드를 건너뛴다.
+ * 새 주 개시 — GROWTH(2주차 이후) → RECEIVING. 재설립 없이 **같은 병원**으로 새 주 1일차를 연다.
+ * 1주차는 WORLD_EVENT → SETUP(개원)이지만, 2주차부터는 WORLD_EVENT → GROWTH(재투자)를 거쳐 병원이 이미
+ * 있으므로 위저드를 건너뛴다.
  */
 export function beginWeek(state: SessionState): SessionState {
-  if (state.phase !== 'WORLD_EVENT') {
-    throw new Error(`beginWeek requires WORLD_EVENT, got ${state.phase}`)
+  if (state.phase !== 'GROWTH') {
+    throw new Error(`beginWeek requires GROWTH, got ${state.phase}`)
   }
   if (!state.hospital) {
     throw new Error('beginWeek requires an existing hospital (use beginSetup for week 1)')
@@ -301,7 +383,7 @@ export function beginWeek(state: SessionState): SessionState {
     phase: 'RECEIVING',
     day: 1,
     ledgerDays: [],
-    receiving: initReceiving(state.hospital, weekDayQueue(state.week, 1)),
+    receiving: initReceiving(state.hospital, weekDayQueue(state.week, 1, state.beds)),
     morningNews: [],
   }
 }
@@ -321,6 +403,8 @@ export interface SessionEpilogue {
    * 글자까지 동일하되, **7일차 것까지** 모은다(아침 신문은 8일차가 없어 마지막 날을 놓친다).
    */
   weekNews: NewsItem[]
+  /** 전국 배후과 풀 소진 — 채용(또는 배경 감소)으로 잔여가 초기보다 준 과만(에필로그 전국·지방 병치). */
+  poolDepletion: { label: string; initial: number; remaining: number }[]
 }
 
 export function buildEpilogue(state: SessionState): SessionEpilogue {
@@ -334,5 +418,8 @@ export function buildEpilogue(state: SessionState): SessionEpilogue {
   const ledger = buildSessionLedger(hospital, STEMI_SPECIALTY, weekTotals(state))
   // 최종 주 신문: 그 주 7일 내내 돌려보낸 응급을 한 자리에 모은다(turnedAway를 flatten).
   const weekNews = renderNews(state.ledgerDays.flatMap((d) => d.turnedAway))
-  return { ledger, weekNews }
+  const poolDepletion = (Object.keys(state.system.poolInitial) as Specialty[])
+    .map((s) => ({ label: SPECIALTY_LABEL[s], initial: state.system.poolInitial[s], remaining: state.system.pool[s] }))
+    .filter((p) => p.remaining < p.initial) // 잔여가 준 것만(내가 뽑았거나 배경 감소)
+  return { ledger, weekNews, poolDepletion }
 }

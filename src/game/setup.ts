@@ -32,6 +32,26 @@ export const SETUP_BUDGET_BILLIONS = 100
  */
 export const MAX_DOCTORS_PER_DEPT = FIXED_BEDS
 
+/** 병상 티어 — 성장의 용량 축. 첫 티어 = FIXED_BEDS(개원값). */
+export const BED_TIERS = [FIXED_BEDS, 5, 7]
+
+/** 티어 상승 누적 비용(억) — 체증. key = 목표 병상. */
+const BED_STEP_COST: Record<number, number> = { 5: 60, 7: 100 }
+
+/** 병상 fromBeds→toBeds 증설 비용(억) — 지나는 티어 스텝 비용의 합(체증·같은 티어면 0). */
+export function bedExpansionCost(fromBeds: number, toBeds: number): number {
+  let cost = 0
+  for (const tier of BED_TIERS) {
+    if (tier > fromBeds && tier <= toBeds) cost += BED_STEP_COST[tier] ?? 0
+  }
+  return cost
+}
+
+/** 과별 채용 상한 — 필수과는 병상 따라 오르고, 수익과는 3 고정(I8 머니프린터 방지). */
+export function deptCap(dept: DepartmentSpec, beds: number): number {
+  return dept.essential ? beds : MAX_DOCTORS_PER_DEPT
+}
+
 /**
  * 그 과의 배후진료가 **24시간** 돌아가려면 필요한 의사 수 — 당직 로테이션 최소 인원.
  *
@@ -98,6 +118,7 @@ export function backupCareOf(choices: SetupChoices, departments: DepartmentSpec[
 export function buildHospital(
   choices: SetupChoices,
   departments: DepartmentSpec[] = DEPARTMENTS,
+  beds: number = FIXED_BEDS,
 ): { hospital: Hospital; economics: HospitalEconomics } {
   const staffed = departments.map((dept) => ({ dept, n: count(choices, dept.key) })).filter((x) => x.n > 0)
 
@@ -117,7 +138,7 @@ export function buildHospital(
   const hospital: Hospital = {
     id: 'player',
     name: choices.hospitalName,
-    beds: FIXED_BEDS,
+    beds,
     hasErOnCall: true,
     overcrowded: false,
     backupCare,
@@ -139,14 +160,23 @@ export function withinBudget(choices: SetupChoices, departments: DepartmentSpec[
 }
 
 /** 모든 과가 인원 상한 이내인가 — 예산과 독립된 제약이다(미용 10명은 예산은 통과한다). */
-export function withinDeptCaps(choices: SetupChoices, departments: DepartmentSpec[] = DEPARTMENTS): boolean {
-  return departments.every((d) => count(choices, d.key) <= MAX_DOCTORS_PER_DEPT)
+export function withinDeptCaps(
+  choices: SetupChoices,
+  departments: DepartmentSpec[] = DEPARTMENTS,
+  beds: number = FIXED_BEDS,
+): boolean {
+  return departments.every((d) => count(choices, d.key) <= deptCap(d, beds))
 }
 
 /** 불변 갱신 — 과별 의사 수를 delta만큼 조정. 음수·비정수 방어(0 클램프·정수화)·상한 클램프, 0이면 키 제거. */
-export function adjustDoctors(choices: SetupChoices, key: DeptKey, delta: number): SetupChoices {
+export function adjustDoctors(
+  choices: SetupChoices,
+  key: DeptKey,
+  delta: number,
+  cap: number = MAX_DOCTORS_PER_DEPT,
+): SetupChoices {
   const current = choices.doctors[key] ?? 0
-  const next = Math.min(MAX_DOCTORS_PER_DEPT, Math.max(0, Math.floor(current + delta)))
+  const next = Math.min(cap, Math.max(0, Math.floor(current + delta)))
   const doctors = { ...choices.doctors }
   if (next === 0) delete doctors[key]
   else doctors[key] = next

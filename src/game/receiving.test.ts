@@ -3,9 +3,10 @@ import {
   createCallQueue, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
   WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective, requiresBackupCare, carriesLawsuitRisk,
+  callsForBeds,
 } from './receiving'
 import type { ReceivingState } from './receiving'
-import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS } from './setup'
+import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
 import type { CallKind, DeptKey, Doctor, Hospital, IncomingCall, SetupChoices } from './types'
 import { DAY_LENGTH_MIN, NIGHT_START_MIN } from './daysim'
 
@@ -787,5 +788,34 @@ describe('DAY_PLANS — 4종 응급 분산(재구성)', () => {
       expect(q).toHaveLength(5)
       expect(q.map((c) => c.nightShift)).toEqual([false, false, false, false, true])
     }
+  })
+})
+
+describe('병상 연동 콜 볼륨 — 커지면 환자도 더 온다', () => {
+  it('콜 수 = beds + 2 (3→5, 5→7, 7→9)', () => {
+    expect(callsForBeds(3)).toBe(5)
+    expect(callsForBeds(5)).toBe(7)
+    expect(callsForBeds(7)).toBe(9)
+  })
+
+  it('기본(beds 미지정)은 5통 — 기존 동작 불변', () => {
+    expect(createCallQueue(1)).toHaveLength(5)
+    expect(createCallQueue(1, FIXED_BEDS)).toHaveLength(5)
+  })
+
+  it('큰 병원은 더 많은 콜(같은 날 결정론)', () => {
+    expect(createCallQueue(1, 5)).toHaveLength(7)
+    expect(createCallQueue(1, 7)).toHaveLength(9)
+    expect(createCallQueue(1, 7)).toEqual(createCallQueue(1, 7)) // 결정론
+  })
+
+  it('콜 id는 고유(볼륨 늘어도 React key 충돌 없음)', () => {
+    const ids = createCallQueue(1, 7).map((c) => c.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('야간은 arrivalMin에서 파생 — 볼륨 늘어도 정합', () => {
+    const q = createCallQueue(1, 7)
+    expect(q.every((c) => c.nightShift === (c.arrivalMin! >= 480))).toBe(true)
   })
 })

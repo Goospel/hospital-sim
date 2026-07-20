@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-21 · 구현 — 병원 성장 시스템(재투자 루프): 커져도 안 풀리는 제로섬
+
+- **무엇을**: 주 사이에 **재투자(GROWTH) 페이즈** 신설 — 누적 순이익을 **금고(treasury)**로 삼아 배후과 채용·병상 증설로 병원을 키운다. 세 딜레마를 기계화: **① 인력 제로섬** = 전국 배후과 풀(하드코딩 유한 `system.ts`)에서 채용이 차감되고 소진 시 **돈 있어도 못 뽑음**(하드게이트) + 매주 배경 감소. **② 재정 지속불가** = 배후과 적자가 금고를 말림(수익과 없이 지속 불가). **③ 지방 공백** = 병상 증설이 하루 콜 볼륨↑(3→5·5→7·7→9)이라 커질수록 배후 없으면 더 뺑뺑이. 에필로그에 `내 신문 ↔ 전국 풀 소진 + 고정 실제 앵커(강원 산부 40.3%·6,600병상 추진·재이송 5,657)` 병치. 새 순수 모듈 2(`system`·`growth`) + 새 컴포넌트 `GrowthPhase` + 기존 위저드·신문·장부 재사용.
+- **왜**: "돈을 벌어도 병원을 못 키운다 — 마냥 돈만 번다"(사용자). 성장 장치를 붙이되 리서치로 "성장·선의로도 시스템 문제가 안 풀린다"를 근거([hospital-growth-dilemma-grounding.md](../docs/research/hospital-growth-dilemma-grounding.md), deep-research 4축 1차 출처 검증). ①과 ③은 한 제로섬 풀의 두 라벨이라 하나로 통합, ④(제도 게이트)는 병상 총량만 얇게(상급종합 지위는 후속). 판정 불가침·show-don't-tell·왜곡 금지 헌법 계승.
+- **결과**: TDD 11태스크(SDD·태스크당 spec+quality 리뷰) — vitest **337 green** + `tsc --noEmit` 0 + `next build` 성공. **I8 결정론 계산**: 최대 병상 극단빌드 |주간순이익| ≤ **353**(수익과 3 고정캡이 머니프린터 차단). **브라우저 e2e 완주**(콘솔 0): 금고 189=개원잔액50+주간139 · GROWTH·병상 3→5→7(비용 192=160+32) · **풀 소진 하드게이트**(흉부 잔여1→+비활성) · 금고 제약(192>189→확정 비활성) · 병상 볼륨 5→9 · 병상7 weekNet +137 · 에필로그 전국패널 전부 실측, **딜레마 실현(돌려보냄 20→33 = 커질수록 배후 없으면 더 뺑뺑이)**. 설계: [2026-07-20-hospital-growth-system-design.md](../docs/superpowers/specs/2026-07-20-hospital-growth-system-design.md). 트랩: [T-056](troubleshooting/T-056.md)(exhaustive switch union 확장이 태스크당 tsc 게이트를 깸). ⏸ 후속: 상급종합 지위(④+② 정점)·③ 공간화·**개원 채용의 전국 풀 차감 여부**(설계 확인 대기).
+
 ## 2026-07-20 · 구현 — 내과 진료과 추가 + 복통 응급 세분(급성복증=외과 / 고열감염=내과)
 
 - **무엇을**: 진료과에 **내과(INTERNAL_MEDICINE)** 추가(저수가 박리다매 −5·essential·lawsuitRisk 미구현). catch-all `GENERAL_EMERGENCY`를 **급성복증(`ABDOMINAL_EMERGENCY`, 외과 배후)**·**고열감염(`MEDICAL_EMERGENCY`, 내과 배후)**으로 세분해 각자 그 과로 라우팅·점유 경쟁. `isCriticalEmergency` 하나를 `requiresBackupCare`(배후·신문)/`carriesLawsuitRisk`(소송) 술어 2개로 분리 — **무게 비대칭**(급성복증=소송+신문 / 고열감염=신문만, 소송 미구현). `decide`·`ReceivingPhase`의 GENERAL 점유 특례 가드 제거(설계 A→B), `DAY_PLANS` 재배치(수 고열감염↔내과 예약·목 급성복증↔외과 예약↔외상), 신문 프로필·대사 세분 반영.
