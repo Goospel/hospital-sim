@@ -33,23 +33,17 @@ export function materializeRoster(choices: SetupChoices, departments: Department
   return roster
 }
 
-// kind만으로 담당 과가 정해지는 5종. 워크인은 라벨이 필요해 handlingDept에서 분기한다.
-const HANDLING_DEPT: Record<Exclude<IncomingCall['kind'], 'COSMETIC_WALKIN'>, DeptKey> = {
-  STEMI: 'CARDIOLOGY',
-  OBSTETRIC_EMERGENCY: 'OBSTETRICS',
-  NEURO_EMERGENCY: 'NEUROSURGERY',
-  TRAUMA_EMERGENCY: 'GENERAL_SURGERY',
-  GENERAL_EMERGENCY: 'GENERAL_SURGERY', // 명목상 외과(외과 미채용 시 무배정)
-}
-
 /** 워크인 라벨로 미용/검진 판별. receiving.ts CALL_LABELS와 커플링(표시 전용). */
 export function walkinDept(label: string): DeptKey {
   return label.includes('검진') ? 'CHECKUP' : 'AESTHETICS'
 }
 
-/** 받은 콜 한 통을 어느 과 의사가 짊어지나 — requiredSpecialty 명목값 함정을 피한 단일 출처. */
+/**
+ * 받은 콜 한 통을 어느 과 의사가 짊어지나. 비-워크인은 patient.requiredSpecialty가 곧 담당 과(권위 출처).
+ * COSMETIC_WALKIN만 requiredSpecialty가 명목값('CARDIOLOGY', receiving.ts '판정 안 함')이라 라벨로 가른다.
+ */
 export function handlingDept(call: IncomingCall): DeptKey {
-  return call.kind === 'COSMETIC_WALKIN' ? walkinDept(call.label) : HANDLING_DEPT[call.kind]
+  return call.kind === 'COSMETIC_WALKIN' ? walkinDept(call.label) : call.patient.requiredSpecialty
 }
 
 /**
