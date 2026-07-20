@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { materializeRoster, walkinDept, handlingDept, doctorCaseloads, stepFatigue, FATIGUE_MAX } from './doctor'
 import { createCallQueue, decide, initReceiving } from './receiving'
 import { buildHospital, DEPARTMENTS } from './setup'
-import type { SetupChoices } from './types'
+import type { SetupChoices, IncomingCall } from './types'
 
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
 
@@ -44,10 +44,10 @@ describe('handlingDept — 콜 한 통을 담당 과로', () => {
     expect(handlingDept(q[0])).toBe('AESTHETICS') // 보톡스 워크인(첫 도착)
   })
 
-  it('일반응급은 외과(GENERAL_SURGERY)로 라우팅된다 — requiredSpecialty 권위 출처', () => {
+  it('고열감염은 내과(INTERNAL_MEDICINE)로 라우팅된다 — requiredSpecialty 권위 출처', () => {
     const q = createCallQueue(1)
-    const general = q.find((c) => c.kind === 'GENERAL_EMERGENCY')!
-    expect(handlingDept(general)).toBe('GENERAL_SURGERY')
+    const medical = q.find((c) => c.kind === 'MEDICAL_EMERGENCY')!
+    expect(handlingDept(medical)).toBe('INTERNAL_MEDICINE')
   })
 })
 
@@ -65,14 +65,13 @@ describe('doctorCaseloads — 받은 콜을 유닛에 분배', () => {
     expect(Math.max(...per) - Math.min(...per)).toBeLessThanOrEqual(1) // 균등(2명에 1·0)
   })
 
-  it('담당 과에 유닛이 없으면 아무에게도 안 붙는다', () => {
-    // 외과 0인 병원에서 일반응급을 받아도(병상만으로 수용) 담당 유닛 없음
-    let r = initReceiving(hospital, createCallQueue(1))
-    while (!r.done) r = decide(r, true) // 전부 수용 시도
+  it('담당 과에 유닛이 없는 콜은 caseload에 안 붙는다(무배정 가드)', () => {
+    // 순환기 유닛만 있는데 외과 응급(급성복증) 수용 로그가 있으면, 외과 유닛이 없어 아무에게도 안 붙는다.
+    const abCall: IncomingCall = { id: 'ab', kind: 'ABDOMINAL_EMERGENCY', label: '급성복증', patient: { id: 'a', requiredSpecialty: 'GENERAL_SURGERY', severity: 4 }, lawsuitRisk: true, nightShift: false, arrivalMin: 60, durationMin: 120 }
+    const r = { ...initReceiving(hospital, [abCall]), log: [{ callId: 'ab', accepted: true, disposition: 'CHOICE' as const, reason: null }] }
     const { total } = doctorCaseloads(roster, r)
     const sum = roster.map((d) => total.get(d.id)!).reduce((a, b) => a + b, 0)
-    // 순환기 유닛엔 STEMI만 붙는다 — 워크인/일반응급은 순환기 담당 아님
-    expect(sum).toBeLessThan(r.log.filter((e) => e.accepted).length)
+    expect(sum).toBe(0) // 외과 응급이라 순환기 유닛엔 안 붙는다
   })
 })
 

@@ -24,7 +24,7 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
   it('모든 콜 종류에 호소 대사가 있다', () => {
     expect(CALLER_PLEA.STEMI.length).toBeGreaterThan(0)
     expect(CALLER_PLEA.COSMETIC_WALKIN.length).toBeGreaterThan(0)
-    expect(CALLER_PLEA.GENERAL_EMERGENCY.length).toBeGreaterThan(0)
+    expect(CALLER_PLEA.MEDICAL_EMERGENCY.length).toBeGreaterThan(0)
   })
 
   it('배후과 예약(SPECIALIST_ELECTIVE) 대사는 "심장" 같은 장기 특정 용어로 다른 과를 오표기하지 않는다', () => {
