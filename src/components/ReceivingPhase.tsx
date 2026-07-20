@@ -16,6 +16,7 @@ import {
 import type { NewsItem } from "@/game/news";
 import type { IncomingCall } from "@/game/types";
 import SegmentTree from "./SegmentTree";
+import DoctorRoster from "./DoctorRoster";
 
 /**
  * 콜당 수가/원가 내역 — "가격을 누가 정하는가"를 두 줄로만 놓는다.
@@ -127,12 +128,14 @@ export default function ReceivingPhase({
   receiving,
   day,
   news,
+  fatigue,
   onDecide,
   onContinue,
 }: {
   receiving: ReceivingState;
   day: number;
   news: NewsItem[];
+  fatigue: Record<string, number>;
   onDecide: (accept: boolean, withWorkup?: boolean) => void;
   onContinue: () => void;
 }) {
@@ -295,7 +298,8 @@ export default function ReceivingPhase({
           </div>
         </section>
 
-        <div className="w-full sm:w-72 sm:shrink-0">
+        <div className="flex w-full flex-col gap-4 sm:w-72 sm:shrink-0">
+          <DoctorRoster roster={receiving.hospital.roster ?? []} receiving={receiving} fatigue={fatigue} />
           <CheerfulLedger receiving={receiving} />
         </div>
       </div>
