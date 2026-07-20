@@ -35,7 +35,7 @@ export const CALLER_PLEA: Record<CallKind, string[]> = {
     '검진 패키지 문의드려요. 오늘 접수되나요?',
   ],
   SPECIALIST_ELECTIVE: [
-    '예약된 심장 시술 때문에 연락드렸습니다. 오늘 시간 괜찮으실까요?',
+    '예약된 진료 때문에 연락드렸습니다. 오늘 시간 괜찮으실까요?',
     '정기 진료 예약 확인차 연락드려요.',
   ],
 }

@@ -5,7 +5,7 @@ import {
   WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective,
 } from './receiving'
 import type { ReceivingState } from './receiving'
-import { buildHospital, DAYS_PER_WEEK } from './setup'
+import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS } from './setup'
 import type { CallKind, DeptKey, Doctor, Hospital, IncomingCall, SetupChoices } from './types'
 import { DAY_LENGTH_MIN, NIGHT_START_MIN } from './daysim'
 
@@ -645,6 +645,24 @@ describe('createCallQueue(day) — 요일별 고정 큐(결정론)', () => {
     for (let day = 1; day <= DAYS_PER_WEEK; day++) {
       expect(createCallQueue(day).some((c) => CRITICAL_KINDS.includes(c.kind))).toBe(true)
     }
+  })
+})
+
+describe('SPECIALIST_ELECTIVE 라벨 — 과 정합(오표기 방지)', () => {
+  it('라벨이 그 예약의 실제 대상 과를 반영한다 — 다른 과 용어로 오표기하지 않는다', () => {
+    for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+      const elective = createCallQueue(day).find((c) => c.kind === 'SPECIALIST_ELECTIVE')
+      if (!elective) continue
+      const deptLabel = DEPARTMENTS.find((d) => d.key === elective.patient.requiredSpecialty)!.label
+      expect(elective.label).toContain(deptLabel)
+    }
+  })
+
+  it('화요일(신경외과 예약) 라벨은 "심장"을 포함하지 않는다 — 브라우저 실측 회귀(과 오표기 버그)', () => {
+    const tue = createCallQueue(2).find((c) => c.kind === 'SPECIALIST_ELECTIVE')!
+    expect(tue.patient.requiredSpecialty).toBe('NEUROSURGERY')
+    expect(tue.label).not.toContain('심장')
+    expect(tue.label).toContain('신경외과')
   })
 })
 

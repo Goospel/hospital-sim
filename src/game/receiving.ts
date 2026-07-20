@@ -1,7 +1,7 @@
 import type { CallKind, Doctor, Hospital, IncomingCall, Patient, RejectionReason, Specialty } from './types'
 import { adjudicateTransfer } from './adjudicate'
 import { handlingDept } from './doctor'
-import { DAYS_PER_WEEK } from './setup'
+import { DAYS_PER_WEEK, DEPARTMENTS } from './setup'
 import {
   arrivalMinFor, DAY_LENGTH_MIN, freeDoctorsOfDept, NIGHT_START_MIN, pickAssignee, procedureDurationMin,
 } from './daysim'
@@ -197,15 +197,22 @@ const DAY_PLANS: CallPlanEntry[][] = [
 /** 요일 라벨 — 달력 칸과 콜 화면이 공유한다. */
 export const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일']
 
-/** kind별 상황 라벨 풀. 같은 kind가 하루에 여러 번 오면 등장 순번으로 고른다(callerPleaAt과 같은 규칙). */
-const CALL_LABELS: Record<CallKind, string[]> = {
+/**
+ * kind별 상황 라벨 풀. 같은 kind가 하루에 여러 번 오면 등장 순번으로 고른다(callerPleaAt과 같은 규칙).
+ * SPECIALIST_ELECTIVE는 여기 없다 — 과마다 대상이 달라 고정 풀로 못 쓰고 electiveLabel로 파생한다.
+ */
+const CALL_LABELS: Record<Exclude<CallKind, 'SPECIALIST_ELECTIVE'>, string[]> = {
   COSMETIC_WALKIN: ['보톡스 상담 워크인', '검진 패키지 문의'],
   GENERAL_EMERGENCY: ['복통 응급 — 병상 요청', '고열 응급 — 입원 문의'],
   STEMI: ['급성심근경색 — 타 병원 전원 요청', '급성심근경색 — 재이송'],
   OBSTETRIC_EMERGENCY: ['분만 응급 — 산부인과 전원 요청', '분만 중 출혈 — 재이송'],
   NEURO_EMERGENCY: ['뇌출혈 의심 — 신경외과 전원 요청', '뇌졸중 — 재이송'],
   TRAUMA_EMERGENCY: ['중증외상 — 외과 전원 요청', '다발성 외상 — 재이송'],
-  SPECIALIST_ELECTIVE: ['심장 예약 시술', '정기 배후과 진료'],
+}
+
+/** SPECIALIST_ELECTIVE 라벨 — DEPARTMENTS.label에서 파생(단일 출처라 과 오표기가 구조적으로 불가능). */
+function electiveLabel(dept: Specialty): string {
+  return `${DEPARTMENTS.find((d) => d.key === dept)?.label ?? dept} 예약 진료`
 }
 
 // 배후과 예약진료의 명목 환자 — requiredSpecialty가 doctorCaseloads·점유 판정에 그 과를 실어야
@@ -244,12 +251,13 @@ export function createCallQueue(day = 1): IncomingCall[] {
   const timed = plan.map(({ kind, dept }, i) => {
     const occurrence = seen[kind] ?? 0
     seen[kind] = occurrence + 1
-    const pool = CALL_LABELS[kind]
     const arrivalMin = arrivalMinFor(1, day, i, plan.length)
     return {
       id: `d${day}c${i + 1}`, // 원래 plan 인덱스 기반 — 날짜별 고유, 정렬 위치와 무관(로그·React key 충돌 방지)
       kind,
-      label: pool[occurrence % pool.length],
+      label: kind === 'SPECIALIST_ELECTIVE'
+        ? electiveLabel(dept ?? 'CARDIOLOGY')
+        : CALL_LABELS[kind][occurrence % CALL_LABELS[kind].length],
       patient: kind === 'SPECIALIST_ELECTIVE' ? electivePatientFor(dept ?? 'CARDIOLOGY') : PATIENT_OF[kind],
       lawsuitRisk: isCriticalEmergency(kind), // 필수 응급 4종 = 고위험(소송 노출), 일반응급·워크인은 아님
       nightShift: arrivalMin >= NIGHT_START_MIN,

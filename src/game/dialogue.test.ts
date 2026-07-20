@@ -27,6 +27,10 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
     expect(CALLER_PLEA.GENERAL_EMERGENCY.length).toBeGreaterThan(0)
   })
 
+  it('배후과 예약(SPECIALIST_ELECTIVE) 대사는 "심장" 같은 장기 특정 용어로 다른 과를 오표기하지 않는다', () => {
+    for (const line of CALLER_PLEA.SPECIALIST_ELECTIVE) expect(line).not.toContain('심장')
+  })
+
   it('워크인 수용 → 명랑한 확인 대사(이모지 없음)', () => {
     const line = receivingLine(walkin, 'CHOICE', true)
     expect(line.length).toBeGreaterThan(0)
