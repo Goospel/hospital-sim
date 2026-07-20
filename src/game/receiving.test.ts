@@ -40,6 +40,22 @@ describe('급성복증(ABDOMINAL_EMERGENCY) — 외과 배후·소송+신문', (
   })
 })
 
+describe('고열감염(MEDICAL_EMERGENCY) — 내과 배후·신문만(소송 X, 비대칭)', () => {
+  const noInternal: Hospital = { id: 'p', name: 'x', beds: 3, hasErOnCall: true, overcrowded: false, backupCare: [], roundTheClockBackup: [], roster: [] }
+  const meCall: IncomingCall = { id: 'c', kind: 'MEDICAL_EMERGENCY', label: '고열', patient: { id: 'm', requiredSpecialty: 'INTERNAL_MEDICINE', severity: 3 }, lawsuitRisk: false, nightShift: false, arrivalMin: 60, durationMin: 60 }
+
+  it('내과 배후·신문 대상이되 소송은 안 쌓는다(방어 성공 전형)', () => {
+    expect(requiresBackupCare('MEDICAL_EMERGENCY')).toBe(true)
+    expect(carriesLawsuitRisk('MEDICAL_EMERGENCY')).toBe(false) // 급성복증과 다른 지점
+  })
+  it('내과 배후가 없으면 NO_BACKUP_CARE 벽이다', () => {
+    expect(hardlockReason(noInternal, meCall, {}, [])).toBe('NO_BACKUP_CARE')
+  })
+  it('델타는 급여 원가미달 밴드(3/6)다', () => {
+    expect(callDelta('MEDICAL_EMERGENCY')).toBe(3 - 6)
+  })
+})
+
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
 
