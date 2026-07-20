@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { DEPARTMENTS, SETUP_BUDGET_BILLIONS, adjustDoctors, hiringCost, isSetupReady } from "@/game/setup";
+import { DEPARTMENTS, SETUP_BUDGET_BILLIONS, adjustDoctors, backupCareOf, hiringCost, isSetupReady } from "@/game/setup";
+import { hospitalTier, TIER_LABELS, TIER_ORDER } from "@/game/tier";
 import type { DepartmentSpec, SetupChoices } from "@/game/types";
 
 /**
@@ -106,6 +107,7 @@ export default function SetupWizard({
   const cost = hiringCost(choices, departments);
   const overBudget = cost > SETUP_BUDGET_BILLIONS;
   const ready = isSetupReady(choices, departments);
+  const tier = hospitalTier(backupCareOf(choices, departments).length);
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
@@ -131,6 +133,23 @@ export default function SetupWizard({
             onAdjust={(delta) => setChoices((c) => adjustDoctors(c, dept.key, delta))}
           />
         ))}
+      </div>
+
+      <div className="rounded-lg border border-zinc-800 bg-black/40 px-4 py-3">
+        <div className="flex items-baseline justify-between text-xs uppercase tracking-widest text-zinc-600">
+          <span>자격</span>
+        </div>
+        <div className="mt-1 font-mono text-lg tabular-nums text-zinc-100">{TIER_LABELS[tier]}</div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
+          {TIER_ORDER.map((t, i) => (
+            <span key={t} className="flex items-center gap-1.5">
+              {i > 0 && <span aria-hidden className="text-zinc-700">›</span>}
+              <span className={t === tier ? "font-semibold text-emerald-400" : "text-zinc-600"}>
+                {t === "UNDESIGNATED" ? "미지정" : TIER_LABELS[t]}
+              </span>
+            </span>
+          ))}
+        </div>
       </div>
 
       <div className="rounded-lg border border-zinc-800 bg-black/40 px-4 py-3">
