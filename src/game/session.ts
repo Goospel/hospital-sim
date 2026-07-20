@@ -10,6 +10,7 @@ import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
 import { doctorCaseloads, stepFatigue } from './doctor'
 import { initSystem, backgroundAttrition, hireDelta, canHire, type SystemState } from './system'
 import { initialTreasury, doctorDeltaCost, withinTreasury } from './growth'
+import { SPECIALTY_LABEL } from './labels'
 
 // 세션 상태기계 — 순수·결정론.
 // LANDING → WORLD_EVENT → SETUP → (RECEIVING → DAY_END) ×7일 → WEEK_SUMMARY
@@ -402,6 +403,8 @@ export interface SessionEpilogue {
    * 글자까지 동일하되, **7일차 것까지** 모은다(아침 신문은 8일차가 없어 마지막 날을 놓친다).
    */
   weekNews: NewsItem[]
+  /** 전국 배후과 풀 소진 — 채용(또는 배경 감소)으로 잔여가 초기보다 준 과만(에필로그 전국·지방 병치). */
+  poolDepletion: { label: string; initial: number; remaining: number }[]
 }
 
 export function buildEpilogue(state: SessionState): SessionEpilogue {
@@ -415,5 +418,8 @@ export function buildEpilogue(state: SessionState): SessionEpilogue {
   const ledger = buildSessionLedger(hospital, STEMI_SPECIALTY, weekTotals(state))
   // 최종 주 신문: 그 주 7일 내내 돌려보낸 응급을 한 자리에 모은다(turnedAway를 flatten).
   const weekNews = renderNews(state.ledgerDays.flatMap((d) => d.turnedAway))
-  return { ledger, weekNews }
+  const poolDepletion = (Object.keys(state.system.poolInitial) as Specialty[])
+    .map((s) => ({ label: SPECIALTY_LABEL[s], initial: state.system.poolInitial[s], remaining: state.system.pool[s] }))
+    .filter((p) => p.remaining < p.initial) // 잔여가 준 것만(내가 뽑았거나 배경 감소)
+  return { ledger, weekNews, poolDepletion }
 }
