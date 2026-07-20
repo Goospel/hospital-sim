@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 구현 — 시간 기반 하루 루프(전문의 점유 벽)
+
+- **무엇을**: 하루를 "콜 5통 고정 큐"에서 **9시~마감 시계**로 전환. 진료마다 seed 결정론 소요시간(`daysim.ts`)을 줘 배후과 의사가 그 시간만큼 점유(`busyUntil`)되고, 응급이 왔을 때 그 과 자유 전문의가 없으면 **`NO_FREE_SPECIALIST` 벽**. 능동 거절 버튼 제거 — 응급은 자유 의사 있으면 자동 수용·없으면 벽, 플레이어의 유일한 능동 결정은 **선택진료(미용·배후과 예약)를 받아 자리를 채울지**. 병상 벽(`bedsFree`/`NO_BED`) 제거, boarding은 마감 초과 진료의 의사 점유를 다음날로 이월, `dayProgress`는 시계 기반. 배후과 예약(`SPECIALIST_ELECTIVE`)은 흑자원(10/6, 검체 160% 밴드)이자 점유 경쟁원 — 라벨은 `DEPARTMENTS`에서 파생(과 오표기 구조적 불가). 일반응급(GENERAL_EMERGENCY)은 설계 A(EM 처리·배후과 불요·무점유).
+- **왜**: "자리 있는데 STEMI를 거절"이 만화적 악행 버튼처럼 느껴진다는 사용자 지적. 현실 병원의 거절은 능동이 아니라 구조적("전문의가 지금 딴 걸 하느라 없다") — 뺑뺑이 1위 원인이 병상(15%)이 아니라 배후 전문의 부재·점유(41.9%, 평일 외래·예정수술 공백). 시간 모델이 이걸 재현: 돈 되는 예약으로 배후과를 채운 선택이 나중 응급 앞의 벽으로 돌아온다. 거절은 능동 행위가 아니라 시스템이 이미 다 쓴 귀결 — "문제는 개인이 아니라 시스템"을 더 날카롭게. 근거: [physician-workflow-and-backup-occupancy.md](../docs/research/physician-workflow-and-backup-occupancy.md).
+- **결과**: TDD 7태스크(seed 원시함수·점유 헬퍼·SPECIALIST_ELECTIVE·시간 큐·점유 벽·boarding 이월·UI) subagent-driven + 전체-브랜치 최종 리뷰(**Ready to merge: Yes** — I8 불변식을 구조로 방어: 흑자원이 인원 캡 3에 묶이고 콜델타는 큐 고정이라 의사 수로 farming 불가). vitest **289 green** + `tsc --noEmit` 0 + `next build`. 브라우저 실측(시계 전진·일일 리셋·선택진료 받기/보내기·점유 진료중/자유·응급 자동 배너·야간 벽·아침 신문·콘솔 0). 설계: [2026-07-20-time-based-day-loop-design.md](../docs/superpowers/specs/2026-07-20-time-based-day-loop-design.md). ⏸ 후속: **내과 과 추가**(일반응급=고열·비수술복통을 정확 라우팅 — 별도 기능으로 등록).
+
 ## 2026-07-20 · 구현 — 의사 개인 유닛(담당 환자 수·피로도 표시 레이어)
 
 - **무엇을**: 채용 인원수(과별 숫자)를 이름 붙은 개인 의사 유닛으로 만들고(개원 시 `materializeRoster`로 결정론 명명), 플레이(RECEIVING) 화면에 각 의사의 오늘 담당 환자 수(실시간)와 피로도 막대를 보여주는 순수 표시 레이어. 새 모듈 `src/game/doctor.ts`(런타임 임포트 0 — 타입만) + `Hospital.roster?` + `SessionState.fatigue`(하루 마감 `stepFatigue`, 주 간 누적) + `DoctorRoster.tsx`. 담당 수는 받은 콜을 담당 과(비-워크인 = `requiredSpecialty` 권위 출처, 워크인 = 라벨)로 매핑해 라운드로빈 분배 — 실제 count(정직).

@@ -5,18 +5,27 @@ import { formatSignedBillions } from "@/game/labels";
 import {
   accruedSegments,
   callDelta,
-  canOrderWorkup,
   hardlockReason,
+  isElective,
   runningNetProfit,
-  workupDelta,
   CALL_ECONOMICS,
   DAY_LABELS,
   type ReceivingState,
 } from "@/game/receiving";
-import type { NewsItem } from "@/game/news";
+import { DAY_OPEN_MIN, freeDoctorsOfDept, pickAssignee } from "@/game/daysim";
+import { handlingDept } from "@/game/doctor";
+import { REASON_CLAUSE, type NewsItem } from "@/game/news";
 import type { IncomingCall } from "@/game/types";
 import SegmentTree from "./SegmentTree";
 import DoctorRoster from "./DoctorRoster";
+
+/** 09:00(DAY_OPEN_MIN) 기준 하루 시각(분)을 HH:MM으로. */
+function formatClock(clockMin: number): string {
+  const total = DAY_OPEN_MIN + clockMin;
+  const h = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
 
 /**
  * 콜당 수가/원가 내역 — "가격을 누가 정하는가"를 두 줄로만 놓는다.
@@ -136,7 +145,7 @@ export default function ReceivingPhase({
   day: number;
   news: NewsItem[];
   fatigue: Record<string, number>;
-  onDecide: (accept: boolean, withWorkup?: boolean) => void;
+  onDecide: (accept: boolean) => void;
   onContinue: () => void;
 }) {
   const dayLabel = `${DAY_LABELS[day - 1]}요일`;
@@ -184,8 +193,12 @@ export default function ReceivingPhase({
   }
 
   const call = receiving.queue[receiving.index];
-  const reason = hardlockReason(receiving.hospital, call, receiving.bedsFree);
-  const disposition = reason === null ? "CHOICE" : "HARDLOCK_REJECT";
+  const reason = hardlockReason(
+    receiving.hospital,
+    call,
+    receiving.busyUntil,
+    receiving.hospital.roster ?? [],
+  );
   const plea = callerPleaAt(receiving.queue, receiving.index);
 
   const prevCall = receiving.index > 0 ? receiving.queue[receiving.index - 1] : undefined;
@@ -201,11 +214,18 @@ export default function ReceivingPhase({
         )
       : undefined;
 
+  const elective = isElective(call.kind);
+  const dept = handlingDept(call);
+  const arrivalMin = call.arrivalMin ?? 0;
+  const free = freeDoctorsOfDept(receiving.hospital.roster ?? [], receiving.busyUntil, dept, arrivalMin);
+  // decide()와 같은 가드 — 일반 응급은 자유 의사가 있어도 아무도 점유하지 않는다(배후 무관 콜).
+  const assignee = free.length > 0 && call.kind !== "GENERAL_EMERGENCY" ? pickAssignee(free, receiving.busyUntil) : undefined;
+
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
       {/*
-        남은 자리 — 이 게임의 유일한 과부하 표시. 숫자만 보여주고 해석하지 않는다:
-        콜 5통 > 자리 3이라 매일 2통은 못 받는데, 그걸 말로 하지 않고 숫자가 줄어드는 걸로만 알린다.
+        시각 — 벽이 병상에서 전문의 점유(시간)로 바뀌면서 하루의 축이 '남은 자리'가 아니라 '시각'이 됐다.
+        DAY_OPEN_MIN(09:00) 기준 clockMin을 HH:MM으로 표시 — bedsFree(남은 자리) 표시는 없다.
       */}
       <header className="flex items-baseline justify-between gap-3">
         <div className="flex flex-col gap-1">
@@ -214,16 +234,7 @@ export default function ReceivingPhase({
             콜 {receiving.index + 1} / {receiving.queue.length}
           </h1>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <span className="text-xs uppercase tracking-[0.25em] text-zinc-600">남은 자리</span>
-          <span
-            className={`font-mono text-lg font-semibold tabular-nums ${
-              receiving.bedsFree === 0 ? "text-amber-500" : "text-zinc-200"
-            }`}
-          >
-            {receiving.bedsFree} / {receiving.hospital.beds}
-          </span>
-        </div>
+        <span className="font-mono text-sm tabular-nums text-zinc-400">{formatClock(receiving.clockMin)}</span>
       </header>
 
       {/* 신문이 먼저다 — 어제의 결과를 보고 오늘의 콜을 받는다. */}
@@ -253,49 +264,50 @@ export default function ReceivingPhase({
 
           <CallEconomicsBreakdown call={call} />
 
-          {disposition === "HARDLOCK_REJECT" && (
-            <p className="text-xs text-amber-500">
-              {receivingLine(call, "HARDLOCK_REJECT", false, receiving.index, reason ?? undefined)}
-            </p>
-          )}
-
-          {/*
-            검사 버튼 — 급여 환자에게만. 해석 카피 0: "과잉진료"라고 쓰지 않는다.
-            숫자만 놓는다(+4억, 자리 내일까지). 플레이어가 일곱 번 누른 뒤 장부에서 스스로 본다.
-          */}
-          <div className="mt-1 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => onDecide(true)}
-              disabled={disposition === "HARDLOCK_REJECT"}
-              aria-label={`${call.label} 수용`}
-              className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-            >
-              {canOrderWorkup(call.kind) ? "그냥 받기" : "수용"}
-            </button>
-            {canOrderWorkup(call.kind) && (
+          {elective ? (
+            // 선택진료 — 플레이어가 받기/보내기를 정한다. 하드락은 없다(reason은 항상 null) —
+            // 그 과 자유 의사가 없으면 '받기'만 비활성(구조가 막은 게 아니라 자원이 없는 것).
+            <div className="mt-1 flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() => onDecide(true, true)}
-                disabled={disposition === "HARDLOCK_REJECT"}
-                aria-label={`${call.label} 검사를 추가해 수용`}
-                className="flex-1 rounded-lg border border-emerald-700 bg-emerald-950/40 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-900 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                onClick={() => onDecide(true)}
+                disabled={free.length === 0}
+                aria-label={`${call.label} 받기`}
+                className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
               >
-                검사를 추가한다
-                <span className="ml-1.5 font-mono text-xs font-normal opacity-80">
-                  {formatSignedBillions(workupDelta())} · 자리 내일까지
-                </span>
+                받기
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onDecide(false)}
-              aria-label={`${call.label} 거절`}
-              className="flex-1 rounded-lg border border-zinc-700 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-            >
-              거절
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => onDecide(false)}
+                aria-label={`${call.label} 보내기`}
+                className="flex-1 rounded-lg border border-zinc-700 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+              >
+                보내기
+              </button>
+            </div>
+          ) : (
+            // 응급 — decide가 accept를 무시하고 자동 판정한다. 여기선 그 결과만 먼저 보여주고
+            // '계속'이 실제 decide(true)를 부른다(전개는 그대로, accept 값은 무의미).
+            <div className="mt-1 flex flex-col gap-3">
+              <div
+                className={`rounded-lg border px-4 py-3 text-sm font-medium ${
+                  reason === null
+                    ? "border-emerald-800/60 bg-emerald-950/30 text-emerald-300"
+                    : "border-amber-800/60 bg-amber-950/30 text-amber-300"
+                }`}
+              >
+                {reason === null ? `수용${assignee ? ` · ${assignee.name}` : ""}` : `전원 불가 · ${REASON_CLAUSE[reason]}`}
+              </div>
+              <button
+                type="button"
+                onClick={() => onDecide(true)}
+                className="rounded-lg bg-zinc-100 py-3 text-sm font-semibold text-zinc-900 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+              >
+                계속
+              </button>
+            </div>
+          )}
         </section>
 
         <div className="flex w-full flex-col gap-4 sm:w-72 sm:shrink-0">

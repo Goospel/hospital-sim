@@ -35,15 +35,19 @@ describe('walkinDept — 워크인 라벨로 미용/검진 판별', () => {
 })
 
 describe('handlingDept — 콜 한 통을 담당 과로', () => {
-  it('필수 응급은 requiredSpecialty 과로, 워크인은 라벨로', () => {
-    const q = createCallQueue(1) // 월: [워크인, STEMI, 워크인, 일반응급, STEMI]
-    expect(handlingDept(q[1])).toBe('CARDIOLOGY') // STEMI
-    expect(handlingDept(q[0])).toBe('AESTHETICS') // 보톡스 워크인
+  it('필수 응급·배후과 예약은 requiredSpecialty 과로, 워크인은 라벨로', () => {
+    const q = createCallQueue(1) // 월: [워크인, 순환기 예약, 워크인, 일반응급, STEMI](도착순)
+    const stemi = q.find((c) => c.kind === 'STEMI')!
+    const elective = q.find((c) => c.kind === 'SPECIALIST_ELECTIVE')!
+    expect(handlingDept(stemi)).toBe('CARDIOLOGY')
+    expect(handlingDept(elective)).toBe('CARDIOLOGY') // 월요일 예약은 순환기 배치(STEMI와 점유 경쟁)
+    expect(handlingDept(q[0])).toBe('AESTHETICS') // 보톡스 워크인(첫 도착)
   })
 
   it('일반응급은 외과(GENERAL_SURGERY)로 라우팅된다 — requiredSpecialty 권위 출처', () => {
     const q = createCallQueue(1)
-    expect(handlingDept(q[3])).toBe('GENERAL_SURGERY') // 월 index3 = GENERAL_EMERGENCY
+    const general = q.find((c) => c.kind === 'GENERAL_EMERGENCY')!
+    expect(handlingDept(general)).toBe('GENERAL_SURGERY')
   })
 })
 
@@ -57,8 +61,8 @@ describe('doctorCaseloads — 받은 콜을 유닛에 분배', () => {
     while (!r.done) r = decide(r, r.queue[r.index].kind === 'STEMI') // STEMI만 수용
     const { total } = doctorCaseloads(roster, r)
     const per = roster.map((d) => total.get(d.id)!)
-    expect(per.reduce((a, b) => a + b, 0)).toBe(2) // 월요일 STEMI 2통(자리 3 이내) 수용
-    expect(Math.max(...per) - Math.min(...per)).toBeLessThanOrEqual(1) // 균등(2명에 1·1)
+    expect(per.reduce((a, b) => a + b, 0)).toBe(1) // 월요일 STEMI 1통(나머지 한 자리는 순환기 예약으로 바뀜)
+    expect(Math.max(...per) - Math.min(...per)).toBeLessThanOrEqual(1) // 균등(2명에 1·0)
   })
 
   it('담당 과에 유닛이 없으면 아무에게도 안 붙는다', () => {

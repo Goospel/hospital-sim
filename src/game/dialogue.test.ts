@@ -13,7 +13,7 @@ function findCall(kind: CallKind): IncomingCall {
 }
 
 const ALL_REASONS: RejectionReason[] = [
-  'NO_BED', 'NO_ER_ONCALL', 'ER_OVERCROWDED', 'NO_BACKUP_CARE', 'NO_NIGHT_BACKUP',
+  'NO_ER_ONCALL', 'ER_OVERCROWDED', 'NO_BACKUP_CARE', 'NO_NIGHT_BACKUP', 'NO_FREE_SPECIALIST',
 ]
 
 describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
@@ -25,6 +25,10 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
     expect(CALLER_PLEA.STEMI.length).toBeGreaterThan(0)
     expect(CALLER_PLEA.COSMETIC_WALKIN.length).toBeGreaterThan(0)
     expect(CALLER_PLEA.GENERAL_EMERGENCY.length).toBeGreaterThan(0)
+  })
+
+  it('배후과 예약(SPECIALIST_ELECTIVE) 대사는 "심장" 같은 장기 특정 용어로 다른 과를 오표기하지 않는다', () => {
+    for (const line of CALLER_PLEA.SPECIALIST_ELECTIVE) expect(line).not.toContain('심장')
   })
 
   it('워크인 수용 → 명랑한 확인 대사(이모지 없음)', () => {
@@ -57,9 +61,9 @@ describe('receivingLine — 1막 받는 쪽 다크코미디 폴백', () => {
     expect(line.length).toBeGreaterThan(0)
   })
 
-  it('자리 없음(NO_BED) 하드락은 "자리는 있는데"라고 말하지 않는다 — 사유별 정합', () => {
-    // RECEIVE_HARDLOCK("자리는 있는데, 저희도 순환기 시술팀이 없습니다")을 자리 소진에 쓰면 정면으로 거짓말이 된다.
-    const line = receivingLine(stemi, 'HARDLOCK_REJECT', false, 0, 'NO_BED')
+  it('점유 벽(NO_FREE_SPECIALIST) 하드락은 "자리는 있는데"라고 말하지 않는다 — 사유별 정합', () => {
+    // RECEIVE_HARDLOCK("자리는 있는데, 저희도 순환기 시술팀이 없습니다")을 점유 벽에 쓰면 정면으로 거짓말이 된다.
+    const line = receivingLine(stemi, 'HARDLOCK_REJECT', false, 0, 'NO_FREE_SPECIALIST')
     expect(line).not.toBe(RECEIVE_HARDLOCK)
     expect(line).not.toContain('자리는 있는데')
     expect(line.length).toBeGreaterThan(0)

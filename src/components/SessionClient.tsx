@@ -58,8 +58,8 @@ export default function SessionClient() {
           day={session.day}
           news={session.morningNews}
           fatigue={session.fatigue}
-          onDecide={(accept, withWorkup) =>
-            setSession((s) => ({ ...s, receiving: decide(s.receiving!, accept, withWorkup) }))
+          onDecide={(accept) =>
+            setSession((s) => ({ ...s, receiving: decide(s.receiving!, accept) }))
           }
           onContinue={() => setSession(completeReceiving(session))}
         />

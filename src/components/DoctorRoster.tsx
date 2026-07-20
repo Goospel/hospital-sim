@@ -44,17 +44,27 @@ export default function DoctorRoster({
     <section className="rounded-lg border border-zinc-800 bg-black/30 px-4 py-3">
       <p className="mb-2.5 text-[10px] uppercase tracking-[0.3em] text-zinc-600">의료진</p>
       <ul className="flex flex-col gap-2.5">
-        {ordered.map((doc) => (
-          <li key={doc.id} className="flex flex-col gap-1">
-            <div className="flex items-baseline justify-between gap-3 text-xs">
-              <span className="text-zinc-300">
-                {doc.name} <span className="text-zinc-600">· {deptMeta(doc.dept).label}</span>
-              </span>
-              <span className="tabular-nums text-zinc-500">담당 {total.get(doc.id) ?? 0}명</span>
-            </div>
-            <FatigueBar value={fatigue[doc.id] ?? 0} />
-          </li>
-        ))}
+        {ordered.map((doc) => {
+          const busy = (receiving.busyUntil[doc.id] ?? 0) > receiving.clockMin;
+          return (
+            <li key={doc.id} className="flex flex-col gap-1">
+              <div className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="flex items-center gap-1.5 text-zinc-300">
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${busy ? "bg-amber-500" : "bg-emerald-500"}`}
+                    aria-hidden
+                  />
+                  {doc.name} <span className="text-zinc-600">· {deptMeta(doc.dept).label}</span>
+                  <span className={busy ? "text-amber-400" : "text-zinc-600"}>
+                    {busy ? "진료 중" : "자유"}
+                  </span>
+                </span>
+                <span className="tabular-nums text-zinc-500">담당 {total.get(doc.id) ?? 0}명</span>
+              </div>
+              <FatigueBar value={fatigue[doc.id] ?? 0} />
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

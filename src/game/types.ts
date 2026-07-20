@@ -69,11 +69,11 @@ export interface Patient {
  * '인력부족'(2023→2024 **2.3배**)이라 오히려 이쪽이 지배적이다(stemi-factsheet.md:19).
  */
 export type RejectionReason =
-  | 'NO_BED' // 가용 병상 없음
   | 'NO_ER_ONCALL' // 응급의학과 당직 부재 — 초기 수용 자체 불가
   | 'ER_OVERCROWDED' // 과밀·boarding 으로 실질 포화
   | 'NO_BACKUP_CARE' // 배후진료 불가 — 최종치료 역량 부재 (지배 병목)
   | 'NO_NIGHT_BACKUP' // 배후과는 있으나 야간 당직 공백 — 24시간이 안 돌아간다(인력부족)
+  | 'NO_FREE_SPECIALIST' // 배후과·당직은 있으나 그 과 의사가 다 진료 중 — 평일 배후 공백의 형상화(점유 판정은 Task 5)
 
 /** 전원 판정 결과 — 이 값만이 게임 상태 전이를 결정한다 */
 export interface TransferVerdict {
@@ -123,6 +123,7 @@ export type CallKind =
   | 'TRAUMA_EMERGENCY' // 중증외상 — 외과 배후 필요
   | 'GENERAL_EMERGENCY' // 일반 응급 — 병상만 있으면 받을 수 있음(저마진)
   | 'COSMETIC_WALKIN' // 미용·검진 워크인 — 늘 받을 수 있음(명랑)
+  | 'SPECIALIST_ELECTIVE' // 배후과 예약진료(시술·검사) — 흑자, 그 과 의사를 점유해 응급과 경쟁
 
 /** 걸려오는 콜 한 통. patient는 응급 판정(배후과 요구)에 쓰인다(워크인은 명목값). */
 export interface IncomingCall {
@@ -132,6 +133,8 @@ export interface IncomingCall {
   patient: Patient
   lawsuitRisk: boolean // 수용 시 소송 노출 누적 여부(고위험 필수 케이스)
   nightShift: boolean // 야간 콜 — 배후과 의사 1명뿐이면 당직이 비어 못 받는다(roundTheClockBackup)
+  arrivalMin?: number // 그날 도착 시각(분, 0..DAY_LENGTH_MIN) — 결정론 seed 파생(createCallQueue가 Task 4에서 채움)
+  durationMin?: number // 수용 시 담당 의사 점유 시간(분) — 결정론 seed 파생(createCallQueue가 Task 4에서 채움)
 }
 
 /**
