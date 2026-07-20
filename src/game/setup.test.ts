@@ -228,8 +228,9 @@ describe('backupCareOf — 필수 배후과 목록(tier 단일 출처)', () => {
     expect(backupCareOf(conscientious)).toContain('CARDIOLOGY') // 미용1·순환기2 → 순환기 배후
   })
 
-  it('buildHospital의 backupCare와 정확히 같다(드리프트 방지)', () => {
+  it('필수 배후과를 DEPARTMENTS 순서 리터럴로 반환하고 buildHospital과 일치(드리프트 방지)', () => {
     const choices: SetupChoices = { hospitalName: 't', doctors: { CARDIOLOGY: 1, OBSTETRICS: 2, AESTHETICS: 1 } }
-    expect(backupCareOf(choices)).toEqual(buildHospital(choices).hospital.backupCare)
+    expect(backupCareOf(choices)).toEqual(['CARDIOLOGY', 'OBSTETRICS'])
+    expect(buildHospital(choices).hospital.backupCare).toEqual(['CARDIOLOGY', 'OBSTETRICS'])
   })
 })
