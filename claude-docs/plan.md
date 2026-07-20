@@ -30,6 +30,7 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 - **E — 경영 확장(2막)**: 위저드→콜큐→막간→응급→결말 플레이어블 / 7일 루프+달력(분기 폐기) / 하루 진료 자리 제한(과부하) / 랜딩 타이틀 카드. PR #17~#35 ⚠️ **아래 「응급 재설계 A」가 2막(주말 응급·뺑뺑이 미니게임)을 은퇴시켜 supersede**
 - **응급 재설계 A — 2막 은퇴·받는 쪽 통합**: 주말 STEMI 클라이맥스·골든타임 뺑뺑이 미니게임 은퇴(12파일 삭제), 7일차 DAY_END→WEEK_SUMMARY 직행, 결산=돌려보낸 응급 수·에필로그=주간 신문+장부. 플레이어는 항상 받는 벽. 설계 [spec](superpowers/specs/2026-07-19-received-side-emergency-redesign-design.md)
 - **응급 재설계 B — 응급 CallKind 다양화**: 분만(산부)·뇌출혈(신경외과)·중증외상(외과)을 받는 콜로 신설 — 4종이 hardlockReason 한 case를 공유(adjudicate 제네릭 재사용, 판정 무변경). DAY_PLANS 4종 분산 재구성, 하드락 대사·신문 헤드라인이 과를 정확히 따라감, 결산에 받은/돌려보낸 응급 병치. 재정중립 산부 −16 상쇄가 장부에서 체감. 233 vitest green + tsc 0 + 브라우저 라이브 검증
+- **의사 개인 유닛 — 담당 수·피로도 표시 레이어**: 채용 인원수를 이름 붙은 개인 유닛으로(개원 시 결정론 명명), RECEIVING에 각 의사의 담당 환자 수(실시간)·피로 막대. 시스템 부하가 개인의 몸에 남기는 자국을 가시화(경영자 vantage). 순수 표시(판정·경제 0 침습), `doctor.ts`(런타임 임포트 0)+`Hospital.roster?`+`SessionState.fatigue`(주 간 누적). 268 vitest green + tsc 0 + 브라우저 검증. ⏸ 후속: **승격 문(피로→판정 먹이기)**·흉부외과는 라우팅 콜이 없어 항상 담당 0(현 콜 종류 구성상 정직) — 축 부여 시 함께
 
 ### 🔜 다음
 - ✅ **문서 부채(슬라이스 A/B 이월)**: README·docs/submission(ai-usage-doc·submission-plan)·docs/concept(ai-scenario-generation·game-concept) 5종의 '골든타임 뺑뺑이 간판'·삭제 모듈 거짓 현재서술을 받는 쪽 통합·응급 다양화로 정합(spec §8). 역사 문서는 전환 배너+단일 출처 포인터로 처리. (2026-07-20, 상세 changeLog)

@@ -454,3 +454,28 @@ describe('주 반복 루프 — WEEK_SUMMARY와 주 경계 전이', () => {
     expect(epi.ledger!.essentialHires).toBe(0) // collaborator
   })
 })
+
+describe('피로 누적 — 표시 레이어(판정 무관)', () => {
+  it('startSession/completeSetup은 피로 0에서 시작한다', () => {
+    expect(startSession().fatigue).toEqual({})
+    const s = completeSetup(conscientious)
+    expect(s.fatigue).toEqual({})
+  })
+
+  it('순환기가 STEMI를 받은 날 마감 후 그 유닛 피로가 오른다', () => {
+    let s = completeSetup(conscientious) // AESTHETICS:1, CARDIOLOGY:2
+    s = runDay(s, (call) => call.kind === 'STEMI') // 월: STEMI 수용
+    s = completeReceiving(s)
+    const cardioIds = s.hospital!.roster!.filter((d) => d.dept === 'CARDIOLOGY').map((d) => d.id)
+    expect(cardioIds.some((id) => (s.fatigue[id] ?? 0) > 0)).toBe(true)
+  })
+
+  it('주가 넘어가도 피로가 리셋되지 않는다(nextWeek 이월)', () => {
+    let s = completeSetup(conscientious)
+    s = runWeekFrom(s, (call) => call.kind === 'STEMI') // 7일차 DAY_END
+    s = completeWeek(s)
+    const before = { ...s.fatigue }
+    s = nextWeek(s)
+    expect(s.fatigue).toEqual(before) // 이월(변경 없음)
+  })
+})

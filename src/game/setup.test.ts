@@ -68,6 +68,12 @@ describe('buildHospital — 위저드 선택 → 플레이어 병원', () => {
   it('결정론 — 같은 선택은 같은 병원', () => {
     expect(buildHospital(collaborator)).toEqual(buildHospital(collaborator))
   })
+
+  it('roster를 과별 인원수만큼 materialize한다', () => {
+    const { hospital } = buildHospital(conscientious) // AESTHETICS:1, CARDIOLOGY:2
+    expect(hospital.roster).toHaveLength(3)
+    expect(hospital.roster!.filter((d) => d.dept === 'CARDIOLOGY')).toHaveLength(2)
+  })
 })
 
 describe('예산', () => {

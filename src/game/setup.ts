@@ -1,4 +1,5 @@
 import type { DepartmentSpec, DeptKey, Hospital, HospitalEconomics, SetupChoices, Specialty } from './types'
+import { materializeRoster } from './doctor'
 
 // 병원 설립(위저드) — 순수·결정론. 위저드 선택이 곧 플레이어의 Hospital + HospitalEconomics다.
 // 부호(적자↔흑자)만 근거를 지키고 금액은 각색: essential-care-economics.md / essential-care-litigation-risk.md.
@@ -119,6 +120,7 @@ export function buildHospital(
     backupCare,
     roundTheClockBackup,
     economics,
+    roster: materializeRoster(choices, departments), // 개인 유닛 명단(표시 전용)
   }
   return { hospital, economics }
 }
