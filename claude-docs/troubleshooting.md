@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-055](troubleshooting/T-055.md) · 게이트 함수(받을 수 있나)와 실행 함수(실제 배정)가 같은 특수케이스를 비대칭 처리하면 판정과 자원 점유가 어긋난다 — hardlockReason은 일반응급을 점유 벽에서 제외했는데 decide는 자유 전문의를 점유해, 같은 날 뒤 콜이 엉뚱하게 벽에 막혔다
 - [T-054](troubleshooting/T-054.md) · 워크트리에서 preview_start(및 next dev)는 여러 lockfile을 감지해 워크스페이스 루트를 메인 레포로 추론해 서빙 → 워크트리 변경이 프리뷰에 안 보인다. 워크트리 변경의 시각검증은 워크트리 cwd에서 직접 next dev를 다른 포트로 띄워라
 - [T-053](troubleshooting/T-053.md) · 브라우저 pane 탭이 hidden이면 크롬 throttle로 React 하이드레이션 commit·effect가 멈춰 클릭·상태변경·useEffect·스크린샷이 다 죽는다 — 코드부터 의심 말고 visibilityState 먼저 확인, 우회는 SSR 강제 렌더로 마크업만
 - [T-052](troubleshooting/T-052.md) · .git/info/exclude(로컬 전용)로 가린 폴더·파일은 clone에 안 실린다 — 기기 간 공유는 커밋되는 .gitignore로 옮기고 git add -f로 추적
