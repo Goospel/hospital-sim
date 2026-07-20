@@ -84,6 +84,7 @@ export default function SessionClient() {
           cumulativeNetBillions={cumulativeNetBillions(session)}
           received={weekReceivedEmergencyCount(session)}
           turnedAway={weekTurnedAwayCount(session)}
+          treasury={session.treasury}
           onNextWeek={() => setSession(nextWeek(session))}
           onEnd={() => setSession(endGame(session))}
         />

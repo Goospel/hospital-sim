@@ -15,6 +15,7 @@ export default function WeekSummary({
   cumulativeNetBillions,
   received,
   turnedAway,
+  treasury,
   onNextWeek,
   onEnd,
 }: {
@@ -23,6 +24,7 @@ export default function WeekSummary({
   cumulativeNetBillions: number;
   received: number;
   turnedAway: number;
+  treasury: number;
   onNextWeek: () => void;
   onEnd: () => void;
 }) {
@@ -56,6 +58,13 @@ export default function WeekSummary({
           }`}
         >
           {formatSignedBillions(cumulativeNetBillions)}
+        </span>
+      </div>
+
+      <div className="flex items-baseline justify-between font-mono text-sm">
+        <span className="font-sans text-zinc-400">금고 (다음 주 재투자 가능액)</span>
+        <span className={`tabular-nums font-semibold ${treasury < 0 ? "text-red-400" : "text-zinc-100"}`}>
+          {formatSignedBillions(treasury)}
         </span>
       </div>
 
