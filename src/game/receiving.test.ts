@@ -357,6 +357,37 @@ describe('decide (시간 점유) — 응급 자동 / 선택 점유', () => {
   })
 })
 
+/**
+ * 일반응급(GENERAL_EMERGENCY) 점유 대칭 — 리뷰 Important 지적 수정(설계 A).
+ *
+ * hardlockReason은 일반응급을 점유 벽에서 이미 제외한다(ER 게이트만, 배후·전문의 무관) — 그런데
+ * decide의 점유 배정은 그 비대칭을 안 지켰다: 자유 외과의(GENERAL_SURGERY)가 있으면 일반응급 수용이
+ * 그 의사를 busyUntil로 점유해버려, 나중 온 중증외상(TRAUMA_EMERGENCY=외과 필수응급)이 그 의사를
+ * 붙잡지 못하고 NO_FREE_SPECIALIST로 밀려나는 모순이 생겼다. 설계 A: 일반응급은 특정 배후과를
+ * 요구하지 않는 범주(ER 당직 수준)이므로 어떤 의사도 점유하지 않는다 — 수용 자체는 그대로.
+ */
+describe('GENERAL_EMERGENCY 점유 대칭 — 하드락 제외와 점유 제외가 함께 간다(설계 A)', () => {
+  it('자유 외과의가 있어도 일반응급 수용은 그 의사를 점유하지 않는다 — 수용·손익은 그대로', () => {
+    const h = hospitalWith('GENERAL_SURGERY', 1)
+    const roster = rosterOf(h)
+    const general = dayCall('GENERAL_EMERGENCY', false)
+    const after = decide(initReceiving(h, [general]), true)
+    expect(after.log[0].accepted).toBe(true)
+    expect(after.busyUntil[roster[0].id]).toBeUndefined() // 점유 안 함
+    expect(after.busyUntil).toEqual({}) // 아무도 안 잡힘
+    expect(after.netProfitDeltaBillions).toBe(callDelta('GENERAL_EMERGENCY'))
+  })
+
+  it('대조군 — 같은 자유 외과의 상태에서 중증외상(외과 필수응급)은 그 의사를 점유한다(필수응급 점유 보존)', () => {
+    const h = hospitalWith('GENERAL_SURGERY', 1)
+    const roster = rosterOf(h)
+    const trauma = dayCall('TRAUMA_EMERGENCY', false)
+    const after = decide(initReceiving(h, [trauma]), false) // 필수응급도 accept 무관 자동
+    expect(after.log[0].accepted).toBe(true)
+    expect(after.busyUntil[roster[0].id]).toBe((trauma.arrivalMin ?? 0) + (trauma.durationMin ?? 0))
+  })
+})
+
 describe('dayProgress — 시간 기반(clockMin / DAY_LENGTH_MIN)', () => {
   it('진행 중엔 clockMin / DAY_LENGTH_MIN', () => {
     const q = createCallQueue(1)

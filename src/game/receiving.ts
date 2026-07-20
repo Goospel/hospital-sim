@@ -363,9 +363,10 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   // 응급은 accept 무관 자동(하드락이 없으면 수용). 선택진료는 accept + 그 과 자유 의사가 있어야 수용.
   const effectiveAccept = disposition === 'CHOICE' && (isElective(call.kind) ? accept && free.length > 0 : true)
 
-  // 수용한 콜은 담당 의사를 점유한다 — 자유 의사가 없으면(일반 응급) 아무도 점유하지 않는다(가드).
+  // 수용한 콜은 담당 의사를 점유한다 — 자유 의사가 없거나(일반 응급 배후 미보유) 일반 응급 자체(설계 A:
+  // 특정 배후과를 요구하지 않는 ER 당직 범주라 어떤 의사도 잡지 않는다)면 아무도 점유하지 않는다(가드).
   let busyUntil = state.busyUntil
-  if (effectiveAccept && free.length > 0) {
+  if (effectiveAccept && free.length > 0 && call.kind !== 'GENERAL_EMERGENCY') {
     const assignee = pickAssignee(free, state.busyUntil)
     busyUntil = { ...state.busyUntil, [assignee.id]: arrivalMin + (call.durationMin ?? 0) }
   }
