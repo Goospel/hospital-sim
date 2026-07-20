@@ -34,6 +34,10 @@ export const CALLER_PLEA: Record<CallKind, string[]> = {
     '보톡스 상담 예약 가능할까요?',
     '검진 패키지 문의드려요. 오늘 접수되나요?',
   ],
+  SPECIALIST_ELECTIVE: [
+    '예약된 심장 시술 때문에 연락드렸습니다. 오늘 시간 괜찮으실까요?',
+    '정기 진료 예약 확인차 연락드려요.',
+  ],
 }
 
 /**
@@ -70,6 +74,7 @@ export const RECEIVE_ACCEPT: Record<CallKind, string> = {
   TRAUMA_EMERGENCY: '…받겠습니다. 외상팀 부르겠습니다.',
   GENERAL_EMERGENCY: '네, 병상 하나 내드리죠. 보내세요.',
   COSMETIC_WALKIN: '물론이죠! 바로 접수해 드릴게요',
+  SPECIALIST_ELECTIVE: '네, 예약대로 진행하겠습니다.',
 }
 
 /** 선택 거절 시. */
@@ -80,6 +85,7 @@ export const RECEIVE_REJECT: Record<CallKind, string> = {
   TRAUMA_EMERGENCY: '죄송합니다. 지금은 저희도 받기가 어렵습니다.',
   GENERAL_EMERGENCY: '지금은 병상을 비워두겠습니다. 다른 곳을 알아보세요.',
   COSMETIC_WALKIN: '오늘은 예약이 다 찼습니다. 다음에 오세요.',
+  SPECIALIST_ELECTIVE: '죄송하지만 예약을 다른 날로 옮겨야겠습니다.',
 }
 
 /** STEMI인데 내 병원도 순환기 배후가 없어 못 받는다 — 벽을 안쪽에서 배운다. (하위호환 export) */
@@ -127,11 +133,18 @@ const RECEIVE_NIGHT_BY_SPECIALTY: Record<Specialty, string> = {
 export const RECEIVE_NO_BED =
   '오늘 자리가 다 찼습니다. 더는 못 받아요.'
 
-/** 자리·응급실 축 하드락(콜 종류·배후과와 무관한 벽). */
-const RECEIVE_BY_STRUCTURAL_REASON: Record<'NO_BED' | 'NO_ER_ONCALL' | 'ER_OVERCROWDED', string> = {
+/**
+ * 자리·응급실 축 하드락(콜 종류·배후과와 무관한 벽).
+ *
+ * NO_FREE_SPECIALIST(배후과 의사 점유)도 여기 묶는다 — Task 3은 이 사유를 실제로 발생시키지
+ * 않는다(hardlockReason이 SPECIALIST_ELECTIVE엔 항상 null을 반환, 점유 판정은 Task 5).
+ * 지금은 RejectionReason 완전성(Record<RejectionReason,...>)만 지키는 자리표시 대사.
+ */
+const RECEIVE_BY_STRUCTURAL_REASON: Record<'NO_BED' | 'NO_ER_ONCALL' | 'ER_OVERCROWDED' | 'NO_FREE_SPECIALIST', string> = {
   NO_BED: RECEIVE_NO_BED,
   NO_ER_ONCALL: '지금 응급실 당직이 없습니다. 접수 자체가 안 됩니다.',
   ER_OVERCROWDED: '자리는 있어도 응급실이 꽉 차서 지금은 못 받습니다.',
+  NO_FREE_SPECIALIST: '그 과 의사가 지금 다른 진료 중입니다. 예약이 밀려 있어서요.',
 }
 
 /**

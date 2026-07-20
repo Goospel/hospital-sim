@@ -93,6 +93,7 @@ const REASON_CLAUSE: Record<RejectionReason, string> = {
   ER_OVERCROWDED: '응급실 과밀',
   NO_BACKUP_CARE: '배후진료 불가',
   NO_NIGHT_BACKUP: '야간 당직 공백',
+  NO_FREE_SPECIALIST: '배후과 의사 점유',
 }
 
 /**

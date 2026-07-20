@@ -20,7 +20,6 @@ export const DAY_LENGTH_MIN = 600 // 운영일 10시간(각색·튜닝값).
 export const NIGHT_START_MIN = 480 // 개장 후 8h = 17:00 이후 도착이 야간(각색·튜닝값).
 
 // 종목별 소요시간 [min,max] 분(각색 — 임상 주장 아님, 상대 길이만 의미). 시술이 워크인보다 길다.
-// ⚠️ SPECIALIST_ELECTIVE는 Task 3에서 CallKind union에 추가될 때 여기도 같이 추가된다(지금은 union에 없어 tsc가 거부).
 export const DURATION_MIN: Record<CallKind, readonly [number, number]> = {
   COSMETIC_WALKIN: [30, 60],
   GENERAL_EMERGENCY: [45, 90],
@@ -28,6 +27,7 @@ export const DURATION_MIN: Record<CallKind, readonly [number, number]> = {
   OBSTETRIC_EMERGENCY: [60, 120],
   NEURO_EMERGENCY: [90, 180],
   TRAUMA_EMERGENCY: [90, 180],
+  SPECIALIST_ELECTIVE: [90, 180], // 예약 시술 — 응급 수술급 소요(그 과 의사를 오래 점유)
 }
 
 export function procedureDurationMin(kind: CallKind, week: number, day: number, index: number): number {

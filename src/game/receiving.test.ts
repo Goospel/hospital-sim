@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   createCallQueue, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
-  WORKUP_ECONOMICS, workupDelta, canOrderWorkup,
+  WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective,
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK } from './setup'
@@ -96,6 +96,22 @@ describe('CALL_ECONOMICS — 가격을 누가 정하는가', () => {
     const after = decide(s, true)
     expect(after.log[0].accepted).toBe(true)
     expect(after.netProfitDeltaBillions).toBeLessThan(0)
+  })
+})
+
+describe('SPECIALIST_ELECTIVE (배후과 예약진료)', () => {
+  it('선택진료로 분류(미용과 함께)', () => {
+    expect(isElective('SPECIALIST_ELECTIVE')).toBe(true)
+    expect(isElective('COSMETIC_WALKIN')).toBe(true)
+    expect(isElective('STEMI')).toBe(false)
+    expect(isElective('GENERAL_EMERGENCY')).toBe(false)
+  })
+  it('흑자(delta > 0) — 배후과가 응급에 못 가는 이유는 돈 되는 예약이다', () => {
+    expect(callDelta('SPECIALIST_ELECTIVE')).toBeGreaterThan(0)
+  })
+  it('CALL_ECONOMICS에 항목이 있다(부호 흑자)', () => {
+    const e = CALL_ECONOMICS.SPECIALIST_ELECTIVE
+    expect(e.revenueBillions).toBeGreaterThan(e.costBillions)
   })
 })
 

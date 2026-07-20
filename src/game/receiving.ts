@@ -44,6 +44,9 @@ export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
   OBSTETRIC_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
   NEURO_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
   TRAUMA_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
+  // 배후과 예약진료 — 검사 흑자 밴드 계승(10/6 ≈ 167% — 검체 160% 밴드). 그 과 의사가 응급 대신
+  // 예약을 도는 이유가 곧 이 흑자다(점유 판정 자체는 Task 5).
+  SPECIALIST_ELECTIVE: { priceSetter: 'GOVERNMENT', revenueBillions: 10, costBillions: 6 },
 }
 
 /**
@@ -58,6 +61,11 @@ export const CRITICAL_EMERGENCY_KINDS: CallKind[] = [
 /** 배후과를 요구하는 필수 응급인가 — 하드락(배후/야간)·소송·신문 대상 판별의 단일 출처. */
 export function isCriticalEmergency(kind: CallKind): boolean {
   return CRITICAL_EMERGENCY_KINDS.includes(kind)
+}
+
+/** 선택진료(플레이어가 받을지 정하는 콜) — 미용·검진 워크인 + 배후과 예약. 응급이 아니다. */
+export function isElective(kind: CallKind): boolean {
+  return kind === 'COSMETIC_WALKIN' || kind === 'SPECIALIST_ELECTIVE'
 }
 
 /** 콜 한 통 수용으로 누적되는 손익 델타(억). */
@@ -176,7 +184,12 @@ const CALL_LABELS: Record<CallKind, string[]> = {
   OBSTETRIC_EMERGENCY: ['분만 응급 — 산부인과 전원 요청', '분만 중 출혈 — 재이송'],
   NEURO_EMERGENCY: ['뇌출혈 의심 — 신경외과 전원 요청', '뇌졸중 — 재이송'],
   TRAUMA_EMERGENCY: ['중증외상 — 외과 전원 요청', '다발성 외상 — 재이송'],
+  SPECIALIST_ELECTIVE: ['심장 예약 시술', '정기 배후과 진료'],
 }
+
+// 배후과 예약진료의 명목 환자 — requiredSpecialty가 doctorCaseloads·점유 판정에 그 과를 실어야 한다.
+// 예약의 실제 대상 과를 요일·순번으로 다양화하는 건 createCallQueue의 몫(Task 4) — 여기선 기본값(CARDIOLOGY)만.
+const electivePatient: Patient = { id: 'call-elective', requiredSpecialty: 'CARDIOLOGY', severity: 1 }
 
 const PATIENT_OF: Record<CallKind, Patient> = {
   COSMETIC_WALKIN: walkinPatient,
@@ -185,6 +198,7 @@ const PATIENT_OF: Record<CallKind, Patient> = {
   OBSTETRIC_EMERGENCY: obstetricPatient,
   NEURO_EMERGENCY: neuroPatient,
   TRAUMA_EMERGENCY: traumaPatient,
+  SPECIALIST_ELECTIVE: electivePatient,
 }
 
 /**
@@ -223,7 +237,8 @@ export function hardlockReason(hospital: Hospital, call: IncomingCall, bedsFree:
   if (bedsFree <= 0) return 'NO_BED'
   switch (call.kind) {
     case 'COSMETIC_WALKIN':
-      return null // 응급이 아니라 자리만 있으면 받는다(명랑)
+    case 'SPECIALIST_ELECTIVE':
+      return null // 선택진료 — 자리만 있으면 받는다(점유 벽 판정은 Task 5)
     case 'GENERAL_EMERGENCY':
       // 응급실 당직·과밀만 보면 된다(배후 무관, 저마진).
       if (!hospital.hasErOnCall) return 'NO_ER_ONCALL'
