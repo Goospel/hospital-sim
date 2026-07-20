@@ -2,12 +2,27 @@ import { describe, it, expect } from 'vitest'
 import {
   createCallQueue, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
-  WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective,
+  WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective, requiresBackupCare, carriesLawsuitRisk,
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS } from './setup'
 import type { CallKind, DeptKey, Doctor, Hospital, IncomingCall, SetupChoices } from './types'
 import { DAY_LENGTH_MIN, NIGHT_START_MIN } from './daysim'
+
+describe('무게 술어 분리 — requiresBackupCare / carriesLawsuitRisk', () => {
+  it('두 술어는 기존 필수 응급 4종에 대해 참이다(리팩터 기준선)', () => {
+    for (const k of ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY'] as const) {
+      expect(requiresBackupCare(k)).toBe(true)
+      expect(carriesLawsuitRisk(k)).toBe(true)
+    }
+  })
+  it('선택진료·미용은 두 술어 모두 거짓이다', () => {
+    for (const k of ['COSMETIC_WALKIN', 'SPECIALIST_ELECTIVE'] as const) {
+      expect(requiresBackupCare(k)).toBe(false)
+      expect(carriesLawsuitRisk(k)).toBe(false)
+    }
+  })
+})
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }

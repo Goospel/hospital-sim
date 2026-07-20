@@ -1,5 +1,5 @@
 import type { RejectionReason, CallKind, IncomingCall, Specialty } from './types'
-import { isCriticalEmergency, type CallDisposition } from './receiving'
+import { requiresBackupCare, type CallDisposition } from './receiving'
 
 // 확정된 판정(코드)을 받는 쪽(내 병원) 담당자의 "대사"로 옮기는 결정론적 폴백.
 // LLM이 붙기 전에도 게임이 돌아가고, 붙은 뒤에도 무키·실패 시 여기로 강등된다.
@@ -165,7 +165,7 @@ export function receivingLine(
       }
     }
     // 사유 없이 하드락(하위호환) — 필수 응급이면 배후 부재의 벽, 그 외엔 일반 거절.
-    return isCriticalEmergency(call.kind) ? RECEIVE_NO_BACKUP_BY_SPECIALTY[spec] : RECEIVE_REJECT[call.kind]
+    return requiresBackupCare(call.kind) ? RECEIVE_NO_BACKUP_BY_SPECIALTY[spec] : RECEIVE_REJECT[call.kind]
   }
   return accepted ? RECEIVE_ACCEPT[call.kind] : RECEIVE_REJECT[call.kind]
 }

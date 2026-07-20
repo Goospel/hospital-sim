@@ -2,7 +2,7 @@ import type { Hospital, SetupChoices, Specialty } from './types'
 import { buildHospital, DAYS_PER_WEEK } from './setup'
 import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent } from './world'
 import {
-  accruedSegments, createCallQueue, initReceiving, isCriticalEmergency, runningNetProfit, type ReceivingState,
+  accruedSegments, createCallQueue, initReceiving, requiresBackupCare, runningNetProfit, type ReceivingState,
 } from './receiving'
 import { DAY_LENGTH_MIN } from './daysim'
 import { buildSessionLedger, type Ledger } from './ledger'
@@ -152,10 +152,10 @@ function recordDay(day: number, receiving: ReceivingState): DayRecord {
     // kind를 실어 신문이 종류별 헤드라인(심근경색/뇌출혈/중증외상/분만)을 낼 수 있게 한다.
     turnedAway: receiving.log
       .map((e, i) => ({ entry: e, call: receiving.queue[i] }))
-      .filter((x) => isCriticalEmergency(x.call.kind) && !x.entry.accepted)
+      .filter((x) => requiresBackupCare(x.call.kind) && !x.entry.accepted)
       .map((x) => ({ callId: x.entry.callId, kind: x.call.kind, reason: x.entry.reason })),
     // 받은 필수 응급 — 돌려보낸 수의 짝. 일반 응급·워크인은 세지 않는다(응급의 '핵심'만).
-    receivedEmergency: receiving.log.filter((e, i) => e.accepted && isCriticalEmergency(receiving.queue[i].kind)).length,
+    receivedEmergency: receiving.log.filter((e, i) => e.accepted && requiresBackupCare(receiving.queue[i].kind)).length,
     netProfitBillions: runningNetProfit(receiving),
     accepted: receiving.log.filter((e) => e.accepted).length,
     blocked: receiving.log.filter((e) => e.reason === 'NO_FREE_SPECIALIST').length,

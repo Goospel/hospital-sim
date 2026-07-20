@@ -54,17 +54,33 @@ export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
 }
 
 /**
- * 배후진료(최종치료)가 필요한 필수 응급 4종 — 각자 requiredSpecialty로 그 과를 요구하고,
+ * 배후진료(최종치료)를 요구하는 응급 — 각자 requiredSpecialty로 그 과를 요구하고,
  * 없으면 adjudicateTransfer가 제네릭으로 NO_BACKUP_CARE를 건다(판정 로직 무변경).
- * 이 목록이 곧 "lawsuitRisk가 붙는 콜"이자 "못 받으면 신문이 되는 콜"이다 — 세 개념이 같은 집합.
+ * 배후 게이트(하드락)·아침 신문·받은/돌려보낸 응급 카운트의 단일 출처다.
+ *
+ * ⚠️ 과거엔 이 집합 하나(isCriticalEmergency)가 배후·소송·신문을 겸했으나, 복통 세분에서 소송 성격이
+ * 갈려(고열감염=방어 성공 전형) 두 술어로 분리했다: 배후·신문은 이 집합, 소송은 LAWSUIT_RISK_KINDS.
  */
-export const CRITICAL_EMERGENCY_KINDS: CallKind[] = [
+export const BACKUP_CARE_KINDS: CallKind[] = [
   'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY',
 ]
 
-/** 배후과를 요구하는 필수 응급인가 — 하드락(배후/야간)·소송·신문 대상 판별의 단일 출처. */
-export function isCriticalEmergency(kind: CallKind): boolean {
-  return CRITICAL_EMERGENCY_KINDS.includes(kind)
+/** 배후과(최종치료)를 요구하는 응급인가 — 배후 게이트·신문·응급 카운트 판별의 단일 출처. */
+export function requiresBackupCare(kind: CallKind): boolean {
+  return BACKUP_CARE_KINDS.includes(kind)
+}
+
+/**
+ * 수용 시 소송 노출을 쌓는 응급 — 인과가 선명해 배상이 확정적인 계열만. requiresBackupCare의 부분집합.
+ * (고열감염은 "초기 장염과 구별 불가"라 방어 성공이 전형이라 제외 — grounding §2.)
+ */
+export const LAWSUIT_RISK_KINDS: CallKind[] = [
+  'STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY',
+]
+
+/** 수용 시 소송 노출(lawsuitExposure)을 쌓는 응급인가. */
+export function carriesLawsuitRisk(kind: CallKind): boolean {
+  return LAWSUIT_RISK_KINDS.includes(kind)
 }
 
 /** 선택진료(플레이어가 받을지 정하는 콜) — 미용·검진 워크인 + 배후과 예약. 응급이 아니다. */
@@ -259,7 +275,7 @@ export function createCallQueue(day = 1): IncomingCall[] {
         ? electiveLabel(dept ?? 'CARDIOLOGY')
         : CALL_LABELS[kind][occurrence % CALL_LABELS[kind].length],
       patient: kind === 'SPECIALIST_ELECTIVE' ? electivePatientFor(dept ?? 'CARDIOLOGY') : PATIENT_OF[kind],
-      lawsuitRisk: isCriticalEmergency(kind), // 필수 응급 4종 = 고위험(소송 노출), 일반응급·워크인은 아님
+      lawsuitRisk: carriesLawsuitRisk(kind), // 소송 노출 계열(인과 선명)만 — 고열감염은 제외(방어 성공 전형)
       nightShift: arrivalMin >= NIGHT_START_MIN,
       arrivalMin,
       durationMin: procedureDurationMin(kind, 1, day, i),
