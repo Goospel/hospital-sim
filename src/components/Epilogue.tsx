@@ -80,7 +80,7 @@ export default function Epilogue({
                 <span className="font-mono tabular-nums">{p.initial} → {p.remaining}</span>
               </li>
             ))}
-            <li className="border-l-2 border-rule pl-3 text-[12px] text-ink-2">지방 산부인과 입원 40.3%가 수도권으로 · 수도권 분원 6,600병상 · 재이송 5,657건(2024)</li>
+            <li className="border-l-2 border-rule pl-3 text-[12px] text-ink-2">강원 산부인과 입원 40.3%가 수도권으로 · 수도권 분원 6,600병상 · 재이송 5,657건(2024)</li>
           </ul>
         </div>
       </div>
