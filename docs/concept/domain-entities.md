@@ -27,7 +27,7 @@ tags:
 
 | 엔티티 | 역할 | 근거 |
 |---|---|---|
-| **의사(의료진)** | 플레이어 1인칭. 과 선택·근무지·소진·방어진료의 결정 주체 | game-concept, change-events, litigation |
+| **의사(의료진)** | 플레이어가 차지하는 **세 자리 중 하나**(의사·경영자·환자) — 콜 수용/거절의 주체. 과 선택·근무지·소진·방어진료 결정. ⚠️ "플레이어 = 의사"가 아니다: 플레이어 시점은 이 셋을 다 도는 다중 시점이며 정의의 단일 출처는 [game-concept §2](game-concept.md) | game-concept, change-events, litigation |
 | **전문의(배후진료 인력)** | 각 과의 최종치료 담당. **부재가 재이송 사유 1위(41.9%)** | medical-grounding, stemi-factsheet |
 | **전공의** | 수련구조가 과의존 → 2024 집단사직으로 급성 공백 | starting-world §5, essential-care |
 | **순환기 중재시술팀(PCI 인증전문의)** | STEMI 재관류 주체 = 진짜 병목(고령·수도권 편중) | medical-grounding §37, essential-care |
@@ -36,7 +36,7 @@ tags:
 | **응급실 전담 간호사 / 1급 응급구조사** | 등급별 인력 하한 단위(권역 25명/5명) | starting-world §2 |
 | **PA 간호사(진료지원)** | 간호법으로 법제화 → 전공의 공백 일부 대체 | change-events §25 |
 | **당직의** | 1인 다중진료. 거절이 도덕 아닌 **구조적 제약** | medical-grounding §71 |
-| **환자(응급환자·STEMI)** | 골든타임 안에 수용처를 찾아야 하는 대상. 익명(나이+속성) | starting-world, er-rejection |
+| **환자(응급환자·STEMI)** | 골든타임 안에 수용처를 찾아야 하는 대상. 익명(나이+속성). **플레이어가 차지하는 세 자리 중 하나이기도 하다** — 현재는 신문 명부로 대상화돼 있고, 직접 겪게 하는 것이 강화 방향(game-concept §2) | starting-world, er-rejection |
 | **전원 담당자** | 콜 상대역. **대사만 AI, 수용/거절은 결정론 코드** | game-concept L152 |
 
 ### 🏥 조직·기관 (27) — 기관·부서 단위
