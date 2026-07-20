@@ -36,6 +36,7 @@ export interface Hospital {
    */
   roundTheClockBackup?: Specialty[]
   economics?: HospitalEconomics // '병원 장부' 에필로그용(있는 병원만)
+  roster?: Doctor[] // 개인 유닛 명단(표시 전용). 선택 필드 — 없는 병원(기존 테스트)은 표시 레이어만 스킵, 판정 무관.
 }
 
 /**

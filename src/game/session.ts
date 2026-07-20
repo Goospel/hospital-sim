@@ -6,6 +6,7 @@ import {
 } from './receiving'
 import { buildSessionLedger, type Ledger } from './ledger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
+import { doctorCaseloads, stepFatigue } from './doctor'
 
 // 세션 상태기계 — 순수·결정론.
 // LANDING → WORLD_EVENT → SETUP → (RECEIVING → DAY_END) ×7일 → WEEK_SUMMARY
@@ -61,10 +62,12 @@ export interface SessionState {
   morningNews: NewsItem[]
   world?: WorldState // 외생 이벤트가 재구성한 세계(채용 경제). 없으면 기본 세계.
   event?: WorldEvent // WORLD_EVENT 화면에 고지할 이벤트.
+  /** 유닛별 피로도(0~100). 표시 전용·판정 무관. 하루 마감(completeReceiving)에 스텝, 주 간 유지. */
+  fatigue: Record<string, number>
 }
 
 export function startSession(): SessionState {
-  return { phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [] }
+  return { phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {} }
 }
 
 /**
@@ -87,7 +90,7 @@ export function enterWorldEvent(state: SessionState): SessionState {
   }
   const event = OPENING_EVENT
   const world = applyEvent(initWorld(), event)
-  return { phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [] }
+  return { phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {} }
 }
 
 /** 랜딩/이벤트 고지 → 위저드. world를 SETUP으로 실어 나른다(없으면 기본 세계). */
@@ -97,7 +100,7 @@ export function beginSetup(state: SessionState): SessionState {
   }
   return {
     phase: 'SETUP', world: state.world, event: state.event,
-    week: 1, day: 1, ledgerDays: [], history: [], morningNews: [],
+    week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
   }
 }
 
@@ -113,6 +116,7 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
     ledgerDays: [],
     history: [],
     morningNews: [], // 개원 첫날 아침엔 어제가 없다
+    fatigue: {},
   }
 }
 
@@ -153,10 +157,13 @@ export function completeReceiving(state: SessionState): SessionState {
   if (!state.receiving?.done) {
     throw new Error('receiving not done')
   }
+  const roster = state.hospital?.roster ?? []
+  const caseloads = doctorCaseloads(roster, state.receiving)
   return {
     ...state,
     phase: 'DAY_END',
     ledgerDays: [...state.ledgerDays, recordDay(state.day, state.receiving)],
+    fatigue: stepFatigue(state.fatigue, caseloads),
   }
 }
 
