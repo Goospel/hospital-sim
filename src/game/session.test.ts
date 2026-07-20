@@ -6,8 +6,9 @@ import {
 } from './session'
 import { initWorld, applyEvent, OPENING_EVENT } from './world'
 import { decide, isElective } from './receiving'
-import { DAYS_PER_WEEK } from './setup'
+import { DAYS_PER_WEEK, SETUP_BUDGET_BILLIONS } from './setup'
 import { DAY_LENGTH_MIN } from './daysim'
+import { initSystem, POOL_INITIAL } from './system'
 import type { IncomingCall, SetupChoices } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
@@ -474,5 +475,28 @@ describe('피로 누적 — 표시 레이어(판정 무관)', () => {
     const before = { ...s.fatigue }
     s = nextWeek(s)
     expect(s.fatigue).toEqual(before) // 이월(변경 없음)
+  })
+})
+
+describe('성장 상태 — 개원 보존 + 금고', () => {
+  const choices = { hospitalName: '한바다', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } } // 채용비 10+60=70
+
+  it('completeSetup이 choices·beds·treasury·system을 보존한다', () => {
+    const s = completeSetup(choices)
+    expect(s.choices).toEqual(choices)
+    expect(s.beds).toBe(3)
+    expect(s.treasury).toBe(SETUP_BUDGET_BILLIONS - 70) // 개원 잔액
+    expect(s.system.pool).toEqual(POOL_INITIAL)
+  })
+
+  it('completeWeek이 이번 주 순이익을 금고에 더한다', () => {
+    let s = completeSetup(choices)
+    s = { ...s, phase: 'DAY_END', day: 7,
+      ledgerDays: [{ day: 7, netProfitBillions: 40, segmentShareBillions: 0, callDeltaBillions: 0,
+        workupRevenueBillions: 0, workupCount: 0, turnedAway: [], receivedEmergency: 0, accepted: 0,
+        blocked: 0, lawsuitExposure: 0 }] }
+    const before = s.treasury
+    const after = completeWeek(s)
+    expect(after.treasury).toBe(before + 40)
   })
 })

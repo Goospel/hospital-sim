@@ -1,5 +1,5 @@
 import type { Hospital, SetupChoices, Specialty } from './types'
-import { buildHospital, DAYS_PER_WEEK } from './setup'
+import { buildHospital, DAYS_PER_WEEK, FIXED_BEDS } from './setup'
 import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent } from './world'
 import {
   accruedSegments, createCallQueue, initReceiving, requiresBackupCare, runningNetProfit, type ReceivingState,
@@ -8,6 +8,8 @@ import { DAY_LENGTH_MIN } from './daysim'
 import { buildSessionLedger, type Ledger } from './ledger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
 import { doctorCaseloads, stepFatigue } from './doctor'
+import { initSystem, backgroundAttrition, type SystemState } from './system'
+import { initialTreasury } from './growth'
 
 // 세션 상태기계 — 순수·결정론.
 // LANDING → WORLD_EVENT → SETUP → (RECEIVING → DAY_END) ×7일 → WEEK_SUMMARY
@@ -65,10 +67,17 @@ export interface SessionState {
   event?: WorldEvent // WORLD_EVENT 화면에 고지할 이벤트.
   /** 유닛별 피로도(0~100). 표시 전용·판정 무관. 하루 마감(completeReceiving)에 스텝, 주 간 유지. */
   fatigue: Record<string, number>
+  choices: SetupChoices   // 현재 병원 명단(매주 성장). 1주차 이후 재투자의 시작점.
+  beds: number            // 병상 티어(초기 FIXED_BEDS).
+  treasury: number        // 금고 잔고(억).
+  system: SystemState     // 전국 의사 풀.
 }
 
 export function startSession(): SessionState {
-  return { phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {} }
+  return {
+    phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, system: initSystem(),
+  }
 }
 
 /**
@@ -91,7 +100,10 @@ export function enterWorldEvent(state: SessionState): SessionState {
   }
   const event = OPENING_EVENT
   const world = applyEvent(initWorld(), event)
-  return { phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {} }
+  return {
+    phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, system: initSystem(),
+  }
 }
 
 /** 랜딩/이벤트 고지 → 위저드. world를 SETUP으로 실어 나른다(없으면 기본 세계). */
@@ -102,6 +114,7 @@ export function beginSetup(state: SessionState): SessionState {
   return {
     phase: 'SETUP', world: state.world, event: state.event,
     week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, system: initSystem(),
   }
 }
 
@@ -118,6 +131,10 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
     history: [],
     morningNews: [], // 개원 첫날 아침엔 어제가 없다
     fatigue: {},
+    choices,
+    beds: FIXED_BEDS,
+    treasury: initialTreasury(choices, world.departments),
+    system: initSystem(),
   }
 }
 
@@ -257,7 +274,13 @@ export function completeWeek(state: SessionState): SessionState {
   if (!isLastDay(state)) {
     throw new Error('completeWeek requires the last day (day 7)')
   }
-  return { ...state, phase: 'WEEK_SUMMARY', history: [...state.history, ...state.ledgerDays] }
+  const weekNet = state.ledgerDays.reduce((n, d) => n + d.netProfitBillions, 0)
+  return {
+    ...state,
+    phase: 'WEEK_SUMMARY',
+    history: [...state.history, ...state.ledgerDays],
+    treasury: state.treasury + weekNet,
+  }
 }
 
 /**
