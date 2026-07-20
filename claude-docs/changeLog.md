@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 구현 — 개원 위저드 병원 등급 자격(파생 라벨)
+
+- **무엇을**: 등급 스펙/플랜을 구현. 필수 배후과 수에서 법적 등급(미지정→지역응급의료기관→지역응급의료센터→권역응급의료센터)을 파생해 위저드 DEPTS 스텝에 '자격' 라벨 + 4단 사다리로 실시간 표시. `src/game/tier.ts`(신규 `hospitalTier`·`TIER_LABELS`·`TIER_ORDER`) + `HospitalTier` 타입 + `backupCareOf()` 추출(위저드·`buildHospital` 배후과 단일 출처) + `SetupWizard.tsx` 배선.
+- **왜**: 개원 화면을 예산 계산기 → 경영자의 창립 결정으로. A안(판정·경제 불변식 0 침습) — 등급은 `backupCare` 읽는 파생값이라 `adjudicate`·`buildHospital` 산출 불변. 등급=획득 자격이 안티-퍼즐·show-don't-tell을 강화.
+- **결과**: TDD(hospitalTier 경계 0/1/2/≥3·backupCareOf 동치)로 vitest **247 green** + `tsc --noEmit` 0. 브라우저 실측(미지정→기관→센터→권역 상승·미용 무관·콘솔 0). subagent-driven 실행(태스크당 구현자+리뷰어) + 전체-브랜치 최종 리뷰 통과. 근거: [emergency-tier-designation-law.md](../docs/research/emergency-tier-designation-law.md).
+
 ## 2026-07-20 · 구현 계획 — 병원 등급 자격(개원 위저드 파생 라벨)
 
 - **무엇을**: 등급 스펙의 TDD 구현 계획 3태스크 확정([2026-07-20-hospital-tier-credential.md](../docs/superpowers/plans/2026-07-20-hospital-tier-credential.md)) — ① `hospitalTier`·`TIER_LABELS`·`TIER_ORDER` ② `backupCareOf` 추출(위저드·`buildHospital` 배후과 단일 출처) ③ 위저드 '자격' 라벨·사다리. 태스크마다 Red→Green + `tsc --noEmit` 게이트.
