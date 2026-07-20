@@ -7,6 +7,7 @@ import {
 import { initWorld, applyEvent, OPENING_EVENT } from './world'
 import { decide, isElective } from './receiving'
 import { DAYS_PER_WEEK } from './setup'
+import { DAY_LENGTH_MIN } from './daysim'
 import type { IncomingCall, SetupChoices } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
@@ -102,9 +103,30 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     expect(d2.receiving!.index).toBe(0)
     expect(d2.receiving!.done).toBe(false)
     expect(d2.receiving!.clockMin).toBe(0) // 새 하루는 시각 0에서 연다
-    expect(d2.receiving!.busyUntil).toEqual({}) // 전 유닛 자유(어제 점유 이월은 Task 6)
+    expect(d2.receiving!.busyUntil).toEqual({}) // 이 시나리오는 초과 점유가 없어 이월도 없다(전 유닛 자유)
     expect(d2.receiving!.netProfitDeltaBillions).toBe(0) // 그날 진료 수익은 0에서 시작
     expect(d2.receiving!.queue[0].id).toContain('d2') // 2일차 큐
+  })
+
+  describe('boarding — 검사/장시술이 의사를 내일로 이월', () => {
+    it('busyUntil > DAY_LENGTH_MIN인 의사는 다음날 그만큼 늦게 자유로워진다', () => {
+      const d1 = completeReceiving(runDay(completeSetup(conscientious), essentialFirst))
+      const docId = d1.hospital!.roster!.find((d) => d.dept === 'CARDIOLOGY')!.id
+      // 마감을 넘겨 진행 중이던 진료(장시술·검사)를 흉내낸다 — 실제 점유에 초과분(170분)을 얹는다.
+      const overrun: SessionState = {
+        ...d1,
+        receiving: { ...d1.receiving!, busyUntil: { ...d1.receiving!.busyUntil, [docId]: DAY_LENGTH_MIN + 170 } },
+      }
+      const d2 = advanceDay(overrun)
+      expect(d2.receiving!.busyUntil[docId]).toBe(170) // 초과분만 다음날 초기 점유로 넘어온다
+    })
+
+    it('점유 이월이 없으면 다음날 전원 자유(0)에서 시작', () => {
+      // essentialFirst는 선택진료를 거절해 진료 시간이 짧다 — 마감을 넘길 만큼 늘어지지 않는다.
+      const d1 = completeReceiving(runDay(completeSetup(conscientious), essentialFirst))
+      const d2 = advanceDay(d1)
+      expect(d2.receiving!.busyUntil).toEqual({})
+    })
   })
 
   /**

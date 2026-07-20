@@ -4,6 +4,7 @@ import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT, type 
 import {
   accruedSegments, createCallQueue, initReceiving, isCriticalEmergency, runningNetProfit, type ReceivingState,
 } from './receiving'
+import { DAY_LENGTH_MIN } from './daysim'
 import { buildSessionLedger, type Ledger } from './ledger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
 import { doctorCaseloads, stepFatigue } from './doctor'
@@ -125,6 +126,19 @@ export function isLastDay(state: SessionState): boolean {
   return state.day >= DAYS_PER_WEEK
 }
 
+/**
+ * 어제 receiving.busyUntil에서 마감(DAY_LENGTH_MIN) 초과분만 오늘 초기 점유로 이월한다(boarding의 시간 버전).
+ * 마감 전에 끝난 진료(대부분)는 초과가 없어 이월도 없다 — 장시술·검사처럼 마감을 넘겨 진행 중이던 것만 남는다.
+ */
+function boardedBusyUntilFrom(receiving: ReceivingState | undefined): Record<string, number> {
+  const boarded: Record<string, number> = {}
+  for (const [id, until] of Object.entries(receiving?.busyUntil ?? {})) {
+    const over = until - DAY_LENGTH_MIN
+    if (over > 0) boarded[id] = over
+  }
+  return boarded
+}
+
 /** 마감된 하루에서 달력 한 칸을 만든다(순수). */
 function recordDay(day: number, receiving: ReceivingState): DayRecord {
   const segmentShareBillions = accruedSegments(receiving).reduce((n, s) => n + s.profitBillions, 0)
@@ -179,15 +193,14 @@ export function advanceDay(state: SessionState): SessionState {
     throw new Error('advanceDay: last day ends the week — use completeWeek')
   }
   const day = state.day + 1
-  // 어제 넘어온 유닛 점유(boarding의 시간 버전)는 아직 계산하지 않는다 — 빈 맵으로 새 하루를 연다.
-  // 실제 이월(어제 늦게까지 바쁜 유닛이 오늘 아침에도 바쁨)은 후속(Task 6)이 boardedBusyUntil로 넘긴다.
+  // 어제 마감을 넘겨 진행 중이던 진료(장시술·검사)는 그 의사를 오늘 아침까지 붙잡는다(boarding의 시간 버전).
   // 어제 돌려보낸 사람들이 오늘 아침 신문으로 온다 — 이틀 뒤가 아니라 바로 다음 날이다.
   const yesterday = state.ledgerDays[state.ledgerDays.length - 1]
   return {
     ...state,
     phase: 'RECEIVING',
     day,
-    receiving: initReceiving(state.hospital!, weekDayQueue(state.week, day)),
+    receiving: initReceiving(state.hospital!, weekDayQueue(state.week, day), boardedBusyUntilFrom(state.receiving)),
     morningNews: morningNews(day, yesterday?.turnedAway ?? []),
   }
 }

@@ -125,7 +125,7 @@ export interface ReceivingState {
   /**
    * 유닛별 점유 종료 시각(분) — busyUntil[doctorId] ≤ 현재 시각이면 그 의사는 자유.
    * 이게 능력의 한계를 담는 동적 값이다: 병상 총량이 아니라 **누가 언제까지 바쁜가**.
-   * 초기값은 어제 넘어온 점유(boardedBusyUntil) — 지금은 빈 맵, 실제 이월 계산은 후속(Task 6).
+   * 초기값은 어제 넘어온 점유(boardedBusyUntil) — session.ts의 advanceDay가 어제 마감 초과분을 계산해 넘긴다.
    */
   busyUntil: Record<string, number>
   netProfitDeltaBillions: number
@@ -314,8 +314,8 @@ export function hardlockReason(
  * 하루 시작 — `boardedBusyUntil`은 **어제 넘어온 유닛별 점유 종료 시각**이다(기본 빈 맵).
  *
  * 병상 총량이 아니라 시각 기반 점유가 능력의 한계를 담는다: 어제 늦게까지 점유된 유닛은 오늘 아침에도
- * 아직 바쁠 수 있다(boarding의 시간 버전). 실제 이월 계산은 후속(Task 6) — 지금 호출부는 빈 맵을 넘긴다.
- * 기본값이 빈 맵인 선택적 인자라 이월을 안 쓰는 호출부(테스트 포함)는 하루를 전 유닛 자유로 연다.
+ * 아직 바쁠 수 있다(boarding의 시간 버전). 이월 계산은 session.ts의 advanceDay가 한다(마감 초과분만 이월).
+ * 기본값이 빈 맵인 선택적 인자라 이월을 안 쓰는 호출부(개원 첫날·새 주 1일차·테스트)는 하루를 전 유닛 자유로 연다.
  */
 export function initReceiving(
   hospital: Hospital,
