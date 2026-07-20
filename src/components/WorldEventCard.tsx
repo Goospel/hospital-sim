@@ -28,7 +28,17 @@ export default function WorldEventCard({
         <h1 className="text-xl font-semibold leading-snug">{event.headline}</h1>
       </header>
 
-      <TermGlossary text={event.headline} />
+      {event.briefing.length > 0 && (
+        <ul className="flex flex-col gap-2 border-l-2 border-zinc-800 pl-4">
+          {event.briefing.map((line, i) => (
+            <li key={i} className="text-sm leading-relaxed text-zinc-300">
+              {line}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <TermGlossary text={[event.headline, ...event.briefing].join(" ")} />
 
       <button
         type="button"

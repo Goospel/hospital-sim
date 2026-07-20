@@ -40,6 +40,14 @@ describe('termsInText — 헤드라인에서 아는 용어 감지', () => {
       '필수의료',
     ])
   })
+
+  it('브리핑 용어(가산·상대가치점수·과보상)를 감지한다', () => {
+    const text = '중증·응급 최종치료 가산 50% → 100%. 재원: 검체검사 과보상 조정(상대가치점수 190% → 150%)'
+    const terms = termsInText(text).map((e) => e.term)
+    expect(terms).toContain('가산')
+    expect(terms).toContain('상대가치점수')
+    expect(terms).toContain('과보상')
+  })
 })
 
 describe('GLOSSARY — 콘텐츠 무결성', () => {

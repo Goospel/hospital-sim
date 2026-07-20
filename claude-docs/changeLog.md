@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 구현 — 세계 이벤트 공문 브리핑 + 수가·재정 덱 E1–E4
+
+- **무엇을**: 각 세계 이벤트에 `briefing`(병원장이 읽는 공문 2~3줄)을 추가하고, 이벤트 덱을 E1(검사 재분배·재정중립)/E2(분만·소아 정책수가·순증)/E3(흉부·외과 가산·순증)/E4(의료분쟁 배상·채용비↑)로 재구성. 개원 이벤트 재정중립 상쇄를 산부→검진(검사 과보상 인하)으로 교체(2026 실제 개편 밀착). `WorldEventCard`가 브리핑을 고시 리스트로 렌더 + 용어집(가산·상대가치점수·과보상 신설)에 연동.
+- **왜**: 이벤트가 "수가 조정됨"만 고지하고 **어떻게** 바뀌었는지 안 보여 병원장(경영자 vantage)이 행동을 못 바꿈. 구체성을 게임 각색 억 손익이 아니라 **실제 정책 도구**(가산율·상대가치점수%)에서 뽑아 역할감 + fact-grounding을 동시 충족. 상쇄 방식(검사인하/순증/채용비)이 갈려 반복 해소. 근거: [fee-schedule-and-subsidies.md](../docs/research/fee-schedule-and-subsidies.md) §2·§4·§6.
+- **결과**: TDD(재정중립 합=0·briefing 억토큰 금지·흉부>외과 대소)로 vitest **251 green** + `tsc --noEmit` 0. 브라우저 실측(브리핑 렌더·용어집 3용어 감지·콘솔 0). subagent-driven 실행(태스크당 구현자+리뷰어) + 전체-브랜치 최종 리뷰(Ready to merge: Yes). 설계: [2026-07-20-world-event-briefing-design.md](../docs/superpowers/specs/2026-07-20-world-event-briefing-design.md).
+
 ## 2026-07-20 · 구현 — 개원 위저드 병원 등급 자격(파생 라벨)
 
 - **무엇을**: 등급 스펙/플랜을 구현. 필수 배후과 수에서 법적 등급(미지정→지역응급의료기관→지역응급의료센터→권역응급의료센터)을 파생해 위저드 DEPTS 스텝에 '자격' 라벨 + 4단 사다리로 실시간 표시. `src/game/tier.ts`(신규 `hospitalTier`·`TIER_LABELS`·`TIER_ORDER`) + `HospitalTier` 타입 + `backupCareOf()` 추출(위저드·`buildHospital` 배후과 단일 출처) + `SetupWizard.tsx` 배선.
