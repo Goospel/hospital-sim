@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-20 · 구현 — 의사 개인 유닛(담당 환자 수·피로도 표시 레이어)
+
+- **무엇을**: 채용 인원수(과별 숫자)를 이름 붙은 개인 의사 유닛으로 만들고(개원 시 `materializeRoster`로 결정론 명명), 플레이(RECEIVING) 화면에 각 의사의 오늘 담당 환자 수(실시간)와 피로도 막대를 보여주는 순수 표시 레이어. 새 모듈 `src/game/doctor.ts`(런타임 임포트 0 — 타입만) + `Hospital.roster?` + `SessionState.fatigue`(하루 마감 `stepFatigue`, 주 간 누적) + `DoctorRoster.tsx`. 담당 수는 받은 콜을 담당 과(비-워크인 = `requiredSpecialty` 권위 출처, 워크인 = 라벨)로 매핑해 라운드로빈 분배 — 실제 count(정직).
+- **왜**: 부하가 병원 총량(콜 5 vs 자리 3)으로만 추상화돼 미용 무풍지대 vs 순환기 붕괴 대조가 숫자 뒤에 숨음. 시스템의 부하가 **개인의 몸(담당·피로)에 남기는 자국**을 가시화해 "문제는 개인이 아니라 시스템" 논지를 강화(경영자 vantage). 판정·경제·생사 0 침습(roster/fatigue는 표시 계산에만) — 승격 문(피로→판정)은 열어 둠. 피로 상수는 예시값(부호·방향만 정직): 야간·과부하만 누적, 주간 정상근무는 회복 상쇄(사용자 확정).
+- **결과**: TDD(materializeRoster 결정론·doctorCaseloads 분배·stepFatigue 방향·일반응급 라우팅 핀)로 vitest **268 green** + `tsc --noEmit` 0. 브라우저 실측(스트립 렌더·실시간 담당수·검진 CHECKUP미채용→무배정·일일 리셋·야간STEMI 피로 +10·콘솔 0). subagent-driven 실행(3태스크 구현자+리뷰어) + 전체-브랜치 최종 리뷰(Ready to merge: Yes). 설계: [2026-07-20-doctor-roster-visualization-design.md](../docs/superpowers/specs/2026-07-20-doctor-roster-visualization-design.md).
+
 ## 2026-07-20 · 구현 — 세계 이벤트 공문 브리핑 + 수가·재정 덱 E1–E4
 
 - **무엇을**: 각 세계 이벤트에 `briefing`(병원장이 읽는 공문 2~3줄)을 추가하고, 이벤트 덱을 E1(검사 재분배·재정중립)/E2(분만·소아 정책수가·순증)/E3(흉부·외과 가산·순증)/E4(의료분쟁 배상·채용비↑)로 재구성. 개원 이벤트 재정중립 상쇄를 산부→검진(검사 과보상 인하)으로 교체(2026 실제 개편 밀착). `WorldEventCard`가 브리핑을 고시 리스트로 렌더 + 용어집(가산·상대가치점수·과보상 신설)에 연동.
