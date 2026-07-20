@@ -138,3 +138,13 @@ export interface IncomingCall {
  * 판정에 쓰이지 않는 표현 전용 파생값이다. 근거: docs/research/emergency-tier-designation-law.md.
  */
 export type HospitalTier = 'UNDESIGNATED' | 'LOCAL_INSTITUTION' | 'LOCAL_CENTER' | 'REGIONAL_CENTER'
+
+/**
+ * 의사 개인 유닛 — 표시 레이어 전용(판정 무관). 채용 인원수를 이름 붙은 개인으로 태운다.
+ * 배경·특성·결함은 없다(사용자 결정: 림월드를 그대로 빼다 박지 않음).
+ */
+export interface Doctor {
+  id: string // 'doc-<dept>-<i>' — 결정론 고유
+  name: string // 결정론 자동 생성 한글 이름
+  dept: DeptKey // 소속 과(수익과 + 필수과)
+}
