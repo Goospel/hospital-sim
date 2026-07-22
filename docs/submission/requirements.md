@@ -36,7 +36,7 @@ tags:
 >
 > **형식을 바꾸지 말 것**: 스크립트는 `- [ ]` / `- [x]` 로 시작하는 줄만 센다.
 
-- [x] **①** 플레이 가능한 빌드 + 전체 소스 — **GitHub Pages 라이브**(요강 비고와 동일) + Vercel 라이브 + GitHub 공개 저장소 *(저장소 URL 확정치 기입 필요)*
+- [x] **①** 플레이 가능한 빌드 + 전체 소스 — **GitHub Pages 라이브**(요강 비고와 동일) + Vercel 라이브 + GitHub 공개 저장소. URL 3종 모두 확정치 기입 완료
 - [ ] **②** 플레이 동영상 30~60초 — 미착수 (P6 · 8/1~8/3 예정)
 - [x] **③** 게임 소개 및 설명 PDF — [`final/03-게임소개-수화기너머의벽.pdf`](final/03-게임소개-수화기너머의벽.pdf) *(초안 · 스크린샷을 배포본 기준으로 재캡처 필요)*
 - [x] **④** AI 활용 기술 PDF — [`final/04-AI활용기술문서-수화기너머의벽.pdf`](final/04-AI활용기술문서-수화기너머의벽.pdf) *(초안 · §6-4 런타임 LLM 로그 미착수)*
@@ -48,7 +48,7 @@ tags:
 
 | 제출물 | 실물 | 원본(고칠 곳) |
 |---|---|---|
-| ① 빌드·소스 | **https://goospel.github.io/hospital-sim/** (제출용) · https://hospital-sim-ashy.vercel.app/ (개발·LLM용) · GitHub 공개 저장소 | 저장소 전체 |
+| ① 빌드·소스 | **https://goospel.github.io/hospital-sim/** (제출용) · https://hospital-sim-ashy.vercel.app/ (개발·LLM용) · https://github.com/Goospel/hospital-sim | 저장소 전체 |
 | ② 영상 | ⏳ YouTube 링크 | — |
 | ③ PDF | [`final/`](final/) | [`game-intro.md`](game-intro.md) |
 | ④ PDF | [`final/`](final/) | [`ai-usage-doc.md`](ai-usage-doc.md) |
