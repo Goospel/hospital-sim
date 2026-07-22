@@ -121,6 +121,38 @@ function buildOne({ src, out, title }) {
   return out
 }
 
+/**
+ * 제출물 체크리스트의 미완료 항목을 찍는다 — requirements.md 가 단일 출처.
+ *
+ * 왜 빌드 스크립트가 이걸 하나: 제출물 목록은 "적어두면 지켜지는" 종류가 아니라 **읽혀야**
+ * 지켜진다. 이 저장소가 이미 배운 것 — 규약은 불이행으로 죽지 않고 준수되면서 목적만
+ * 증발한다(CLAUDE.md). 그래서 제출 문서를 건드릴 때 **반드시 도는 경로**(`npm run pdf`)에
+ * 리마인더를 매달아 읽는 사람을 강제한다.
+ */
+function printChecklist() {
+  const path = join(SRC_DIR, 'requirements.md')
+  if (!existsSync(path)) return
+  const doc = readFileSync(path, 'utf8')
+  const section = (heading) => (doc.split(/^## /m).find((s) => s.startsWith(heading)) ?? '')
+  const open = (heading) =>
+    section(heading).split('\n').filter((l) => l.trim().startsWith('- [ ]')).map((l) => l.trim().replace(/^- \[ \]\s*/, ''))
+
+  const todo = open('진행 상태')
+  const unknown = open('❓')
+  if (!todo.length && !unknown.length) return
+
+  const plain = (s) => s.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*/g, '').replace(/\s+—.*$/, '')
+  console.log('\n──────── 제출물 체크리스트 (docs/submission/requirements.md) ────────')
+  if (todo.length) {
+    console.log(`  아직 없는 제출물 ${todo.length}건:`)
+    todo.forEach((t) => console.log(`    ☐ ${plain(t)}`))
+  }
+  if (unknown.length) {
+    console.log(`  요강에서 확인 못 한 것 ${unknown.length}건:`)
+    unknown.forEach((t) => console.log(`    ? ${plain(t)}`))
+  }
+}
+
 mkdirSync(OUT_DIR, { recursive: true })
 for (const doc of DOCS) {
   const out = buildOne(doc)
@@ -128,3 +160,4 @@ for (const doc of DOCS) {
   console.log(`PDF OK  ${out}  (${(bytes / 1024).toFixed(0)} KB)`)
 }
 console.log(`\n출력: ${OUT_DIR}`)
+printChecklist()
