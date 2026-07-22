@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-22 · 배포 — GitHub Pages 추가: 미확인 요구사항을 "양쪽 다 만족"으로 소거
+
+- **무엇을**: 정적 export를 GitHub Pages에 자동 배포한다(https://goospel.github.io/hospital-sim/). 스위치는 env 하나 — `PAGES_BASE_PATH`가 있을 때만 `output: "export"` + `basePath`가 함께 켜진다([next.config.ts](../next.config.ts)). 워크플로([.github/workflows/deploy-pages.yml](../.github/workflows/deploy-pages.yml))는 main 푸시마다 `npm ci` → `npm test` → export → Pages 배포. **Vercel 배포는 한 글자도 안 바뀐다**(env 없으면 설정이 빈 객체라 종전 그대로).
+- **왜**: 요강 1번 비고가 `GitHub Pages (링크)`인데 배포는 Vercel이었다. **예시인지 지정인지는 끝내 확인 못 했고, 답을 기다리는 대신 양쪽을 다 만족시켜 질문 자체를 없앴다** — 확인 비용(사용자만 할 수 있음·왕복 지연)이 구현 비용(1~2시간)보다 컸다. [requirements.md](../docs/submission/requirements.md)의 최우선 미확인 항목이 이걸로 내려갔다.
+- **결과**: **코드 0줄 수정.** 이 게임은 API 라우트·서버 액션·`cookies()`/`headers()`/`useSearchParams`·`next/image`가 **하나도 없는** 순수 클라이언트 앱이라 export가 그냥 됐다 — 서버가 필요 없게 만든 설계(판정=결정론 코드)가 배포 유연성으로 돌아온 셈. 검증: env 없이 빌드 → `out/` 안 생김(Vercel 경로 무해) · env 켜고 빌드 → `out/` 11MB·자산이 `/hospital-sim/_next/...`로 참조 · 로컬 서빙으로 랜딩→시작→세계이벤트 진행까지 실제 플레이(콘솔 에러 0). ⚠️ 승계: **런타임 LLM 프록시(API 라우트)는 정적 export에 못 담긴다** — 붙일 때 Pages는 Vercel API를 크로스오리진 호출로 간다(판정이 코드라 게임 동작은 동일, 대사 표현만 갈림). 트랩: [T-059](troubleshooting/T-059.md).
+
 ## 2026-07-22 · 문서 — 제출물 정의 단일 출처 신설(requirements.md) + 빌드 리마인더
 
 - **무엇을**: 요강의 **제출물 5종 표를 전사한** [docs/submission/requirements.md](../docs/submission/requirements.md)를 신설해 "무엇을 내야 하는가"의 단일 출처로 삼았다(5종 표 + 진행 체크리스트 + **아직 확인 못 한 것** 4건). 목록을 중복 기재하던 문서 넷(plan·submission-plan·final/README·README)에서 목록을 **지우고 링크만** 남겼다. [CLAUDE.md](../CLAUDE.md) 최상단에 필독 인덱스로 등재하고 **언제 읽는지**를 함께 못박았다. `npm run pdf`가 그 체크리스트를 파싱해 **미완료 제출물·미확인 항목을 매번 콘솔에 출력**한다.
