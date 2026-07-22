@@ -97,6 +97,31 @@ $isAscii = $true
 foreach ($ch in $markerLine.ToCharArray()) { if ([int]$ch -gt 127) { $isAscii = $false; break } }
 Assert-That $isAscii '마커 줄이 순수 ASCII다' "실제: $markerLine"
 
+# ── 케이스 5: 폴더를 가리키는 링크 → 거부 (T-062) ──────────────────────────
+# 옵시디언은 폴더 링크를 영원히 해석 못 해, 클릭할 때마다 빈 노트를 새로 만든다.
+# GitHub에서는 멀쩡히 동작해서 저장소만 봐서는 안 보인다 — 그래서 검사기로 잠근다.
+$bt = [char]96
+$folderLink = New-Md 'e.md' "---`ntags:`n  - type/meta`n---`n`n| [docs/research/](docs/research/) | 사실 근거 |`n"
+$fileLink   = New-Md 'f.md' "---`ntags:`n  - type/meta`n---`n`n[plan](claude-docs/plan.md) 과 [img](a/b/c.png)`n"
+$inCode     = New-Md 'g.md' "---`ntags:`n  - type/meta`n---`n`n전: $bt[docs/research/](docs/research/)$bt 를 백틱으로 내렸다`n"
+$inFence    = New-Md 'h.md' "---`ntags:`n  - type/meta`n---`n`n$bt$bt$bt`n[x](docs/research/)`n$bt$bt$bt`n"
+
+Write-Host '케이스 5: 폴더를 가리키는 마크다운 링크가 있으면 거부하고 그 파일을 알려준다'
+$r = Invoke-Check @($folderLink)
+Assert-That ($r.ExitCode -ne 0) '폴더 링크가 있으면 exit != 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
+Assert-That ($r.Output.Contains('e.md')) '어느 파일인지 알려준다' $r.Output
+Assert-That ($r.Output -match 'LINKS-CHECK:\s*FOLDER') '폴더 링크 전용 ASCII 마커' $r.Output
+
+Write-Host '케이스 6: 파일을 가리키는 링크는 통과한다(오탐 방지)'
+$r = Invoke-Check @($fileLink)
+Assert-That ($r.ExitCode -eq 0) '파일 링크만이면 exit 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
+
+Write-Host '케이스 7: 코드 스팬·코드블록 안의 폴더 링크는 링크가 아니다(T-062 자기 오탐 방지)'
+$r = Invoke-Check @($inCode)
+Assert-That ($r.ExitCode -eq 0) '백틱 코드 스팬 안이면 exit 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
+$r = Invoke-Check @($inFence)
+Assert-That ($r.ExitCode -eq 0) '펜스 코드블록 안이면 exit 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
+
 # ── 결과 ───────────────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host "결과: $($script:passCount) PASS / $($script:failCount) FAIL" -ForegroundColor Cyan

@@ -57,8 +57,9 @@ if git diff --cached --name-only | grep -q '\.md$' && [ -f "$TAGSCRIPT" ]; then
       echo "" >&2
       echo "$TAGOUT" | sed 's/^/  /' >&2
       echo "" >&2
-      echo "  ❌ 문서 type 태그 검사에 걸렸습니다 — 위 파일의 frontmatter 에" >&2
-      echo "     tags: 아래 '- type/<종류>' 를 추가하세요(예: type/research)." >&2
+      echo "  ❌ 문서 검사에 걸렸습니다 — 위 출력이 어느 규칙인지 알려줍니다." >&2
+      echo "     TAGS-CHECK: frontmatter 에 '- type/<종류>' 추가(예: type/research)" >&2
+      echo "     LINKS-CHECK: 폴더를 가리키는 링크 제거 → 백틱 경로 표기(T-062)" >&2
       echo "" >&2
       exit 1
     fi
