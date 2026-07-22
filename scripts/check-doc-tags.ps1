@@ -62,4 +62,29 @@ if ($missing.Count -gt 0) {
 }
 
 Write-Host "TAGS-CHECK: OK ($($Files.Count) files)"
+
+# ── 규칙 2: 폴더를 가리키는 마크다운 링크 금지 (T-062) ─────────────────────
+# 옵시디언은 해석 못 하는 링크를 클릭하면 그 이름으로 빈 노트를 만드는데, 폴더는
+# 노트가 아니라 **영원히** 해석되지 않는다 — 클릭할 때마다 'research 1.md'·'2'로
+# 증식한다. GitHub에서는 같은 링크가 정상 동작해 저장소만 봐서는 안 보인다.
+# 코드 스팬·코드블록 안은 링크가 아니라 **인용**이다 — 안 걸러내면 이 규칙을
+# 설명하는 문서(T-062)가 자기 자신에게 거부당한다.
+$folderLinks = @()
+foreach ($f in $Files) {
+    $text = [System.IO.File]::ReadAllText($f)
+    $text = [regex]::Replace($text, '(?s)```.*?```', '')   # 펜스 코드블록
+    $text = [regex]::Replace($text, '`[^`]*`', '')          # 인라인 코드 스팬
+    foreach ($m in [regex]::Matches($text, '\[[^\]]*\]\(([^)]*/)\)')) {
+        $folderLinks += [pscustomobject]@{ File = $f; Link = $m.Groups[1].Value }
+    }
+}
+
+if ($folderLinks.Count -gt 0) {
+    Write-Host "LINKS-CHECK: FOLDER($($folderLinks.Count))"
+    Write-Host '다음 링크가 폴더를 가리킨다 — 링크를 빼고 백틱 경로 표기로 내려라(T-062):' -ForegroundColor Red
+    foreach ($l in $folderLinks) { Write-Host "  ✗ $($l.File) → $($l.Link)" -ForegroundColor Red }
+    exit 1
+}
+
+Write-Host "LINKS-CHECK: OK ($($Files.Count) files)"
 exit 0

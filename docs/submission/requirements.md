@@ -50,8 +50,8 @@ tags:
 |---|---|---|
 | ① 빌드·소스 | **https://goospel.github.io/hospital-sim/** (제출용) · https://hospital-sim-ashy.vercel.app/ (개발·LLM용) · https://github.com/Goospel/hospital-sim | 저장소 전체 |
 | ② 영상 | ⏳ YouTube 링크 | — |
-| ③ PDF | [`final/`](final/) | [`game-intro.md`](game-intro.md) |
-| ④ PDF | [`final/`](final/) | [`ai-usage-doc.md`](ai-usage-doc.md) |
+| ③ PDF | `final/` | [`game-intro.md`](game-intro.md) |
+| ④ PDF | `final/` | [`ai-usage-doc.md`](ai-usage-doc.md) |
 
 PDF는 **손으로 만들지 않는다** — `npm run pdf`로 원본 md에서 재생성한다. 상세: [`final/README.md`](final/README.md).
 
