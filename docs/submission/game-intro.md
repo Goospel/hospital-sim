@@ -13,8 +13,8 @@ tags:
 | **장르** | 텍스트 기반 병원 경영·응급 수용 시뮬레이션 (싱글, 브라우저) |
 | **대회** | NAN 2026 — NHN Game × AI 해커톤 · 사전 과제 |
 | **제출자** | 개인 참여(솔로) |
-| **플레이** | https://hospital-sim-ashy.vercel.app/ — **설치·로그인·API 키 없이** 브라우저에서 바로 |
-| **소스** | GitHub 공개 저장소 (커밋·PR 이력 그대로) · ⏳ [최종 제출 URL 기입] |
+| **플레이** | https://goospel.github.io/hospital-sim/ — **설치·로그인·API 키 없이** 브라우저에서 바로 |
+| **소스** | https://github.com/Goospel/hospital-sim (커밋·PR 이력 그대로) |
 | **1회 플레이 시간** | 한 주(7일) 약 5~8분 · 원하는 만큼 주를 이어서 운영 |
 | **조작** | 마우스 클릭만 (키보드 불필요) |
 | **관련 문서** | [④ AI 활용 기술 문서](ai-usage-doc.md) |
@@ -163,8 +163,9 @@ tags:
 
 ## 5. 실행 방법
 
-**① 바로 플레이 (권장)** — https://hospital-sim-ashy.vercel.app/
+**① 바로 플레이 (권장)** — https://goospel.github.io/hospital-sim/
 설치·회원가입·API 키가 **필요 없다.** 브라우저에서 열면 바로 시작된다.
+(같은 빌드가 https://hospital-sim-ashy.vercel.app/ 에도 올라가 있다 — 개발용 배포이며 게임 내용은 동일하다.)
 
 **② 로컬 실행**
 

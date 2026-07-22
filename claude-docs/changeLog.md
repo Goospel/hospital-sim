@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-22 · 문서 — 제출 URL 확정: ③④의 플레이 링크를 Pages로, 소스 자리표시자 제거
+
+- **무엇을**: ③[game-intro.md](../docs/submission/game-intro.md)·④[ai-usage-doc.md](../docs/submission/ai-usage-doc.md)의 **플레이 링크를 https://goospel.github.io/hospital-sim/ 로 교체**하고(요강 1번 비고와 동일), 6일간 `⏳ [최종 제출 URL 기입]`로 비어 있던 **소스 URL 자리표시자 2곳을 확정치**(https://github.com/Goospel/hospital-sim)로 채웠다. Vercel 링크는 ③ 실행 방법에 "개발용 배포·내용 동일"로 병기만 남겼다. `npm run pdf`로 두 PDF 재생성(③ 12쪽 유지·Pages URL 반영 확인).
+- **왜**: **Pages가 실제로 살아있는 걸 확인한 뒤에** 링크를 바꿨다 — 순서를 뒤집으면 죽은 링크가 제출물 PDF에 박힌다. 저장소 URL은 애초에 확정값이었는데(공개 레포) 자리표시자로 남아 있었다.
+- **결과**: 제출물 ①의 URL 3종(Pages·Vercel·저장소)이 모두 확정치로 문서에 들어갔다. [plan.md](plan.md) ③④ 최종화의 ⓐ 항목 종료 — 남은 건 ⓑ스크린샷 배포본 재캡처 · ⓒ§6-4 런타임 LLM 로그 · ⓓ요강 재확인.
+
 ## 2026-07-22 · 배포 — GitHub Pages 추가: 미확인 요구사항을 "양쪽 다 만족"으로 소거
 
 - **무엇을**: 정적 export를 GitHub Pages에 자동 배포한다(https://goospel.github.io/hospital-sim/). 스위치는 env 하나 — `PAGES_BASE_PATH`가 있을 때만 `output: "export"` + `basePath`가 함께 켜진다([next.config.ts](../next.config.ts)). 워크플로([.github/workflows/deploy-pages.yml](../.github/workflows/deploy-pages.yml))는 main 푸시마다 `npm ci` → `npm test` → export → Pages 배포. **Vercel 배포는 한 글자도 안 바뀐다**(env 없으면 설정이 빈 객체라 종전 그대로).
