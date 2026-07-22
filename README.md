@@ -38,14 +38,16 @@ tags:
 |---|---|
 | [docs/concept/game-concept.md](docs/concept/game-concept.md) | 게임 컨셉 · AI 핵심 축 결정 · MVP 절단선 |
 | **[docs/submission/requirements.md](docs/submission/requirements.md)** | **제출물 정의 — 요강 5종 표·진행 상태·미확인 항목 (단일 출처)** |
-| **[docs/submission/final/](docs/submission/final/)** | **제출 패키지 — 그대로 내는 PDF** (`npm run pdf`로 재생성) |
+| **`docs/submission/final/`** (폴더) | **제출 패키지 — 그대로 내는 PDF** (`npm run pdf`로 재생성) |
 | [docs/submission/submission-plan.md](docs/submission/submission-plan.md) | 사전 과제 제출 로드맵 · 리스크 · 영상 샷 · PDF 목차 |
 | [docs/submission/game-intro.md](docs/submission/game-intro.md) | 게임 소개 및 설명 — 실플레이 기록·스크린샷(제출물 ③ 원본) |
 | [docs/submission/ai-usage-doc.md](docs/submission/ai-usage-doc.md) | AI 활용 기술 문서 — 'AI 디렉팅'으로 게임을 만든 과정(제출물 ④ 원본) |
 | [claude-docs/plan.md](claude-docs/plan.md) | 앞으로 할 일 (살아있는 계획) |
 | [claude-docs/changeLog.md](claude-docs/changeLog.md) | 완료 기록 (역순) |
 | [claude-docs/troubleshooting.md](claude-docs/troubleshooting.md) | 함정 + 승격 |
-| [docs/research/](docs/research/) | 사실 근거 — STEMI 팩트시트·필수의료 경제 (출처 + 각색 고지) |
+| **`docs/research/`** (폴더) | 사실 근거 — STEMI 팩트시트·필수의료 경제 (출처 + 각색 고지) |
+
+> 폴더는 링크가 아니라 경로 표기다 — 마크다운 링크가 폴더를 가리키면 옵시디언이 클릭할 때마다 빈 노트를 새로 만든다([T-062](claude-docs/troubleshooting/T-062.md)).
 
 ## 핵심 설계 원칙
 
