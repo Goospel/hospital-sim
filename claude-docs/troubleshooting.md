@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-061](troubleshooting/T-061.md) · 명령을 재작성하는 PreToolUse 훅(rtk)을 깔면 권한 심사는 원본이 아니라 재작성된 명령을 본다 — `git status`가 `rtk git status`로 바뀌어 허용 규칙에 없는 미지 명령이 되고, auto 모드에서 전부 하드 거부된다. 훅 설치와 허용 규칙은 한 세트다
 - [T-060](troubleshooting/T-060.md) · GitHub Pages 배포 워크플로는 Pages 사이트가 이미 존재해야 돌아간다 — `configure-pages`의 `enablement: true`로 자동 생성하려 해도 GITHUB_TOKEN 권한 밖이라 실패한다. 소유자가 1회 켜야 하는 부트스트랩 단계다
 - [T-059](troubleshooting/T-059.md) · Git Bash에서 슬래시로 시작하는 env 값(`PAGES_BASE_PATH=/hospital-sim`)이 MSYS 경로 변환에 걸려 Windows 절대경로로 바뀐다 — 값이 조용히 안 바뀌고 엉뚱한 에러 메시지로 나온다
 - [T-058](troubleshooting/T-058.md) · 외부 요구사항(대회 요강)을 저장소 안의 요약 문서로 대리하면, 그 요약이 언제 원문에서 갈라졌는지 아무도 모른 채 몇 주를 진행한다 — 원문 전사본을 단일 출처로 두고 미확인 항목을 문서에 남겨라
