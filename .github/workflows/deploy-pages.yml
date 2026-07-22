@@ -1,0 +1,63 @@
+# NAN 2026 제출물 ① — 플레이 가능한 빌드를 GitHub Pages 로 배포한다.
+# (요강 1번 비고가 "GitHub Pages (링크)" — docs/submission/requirements.md)
+#
+# Vercel 배포는 그대로 살아 있다. 이 워크플로는 PAGES_BASE_PATH 를 켜서
+# 정적 export(out/)를 따로 만들 뿐이라 Vercel 빌드 경로를 건드리지 않는다.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 한 번에 하나만. 진행 중인 배포는 끝까지 두고(cancel-in-progress: false)
+# 뒤에 밀린 것만 최신으로 접는다 — 심사 링크가 중간에 죽는 창을 만들지 않기 위함.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # 깨진 게임이 심사 링크로 자동 배포되는 걸 막는 유일한 관문.
+      - run: npm test
+
+      - name: Build static export
+        env:
+          # goospel.github.io/<repo>/ 로 서빙되므로 하위 경로가 필요하다.
+          # 레포명을 하드코딩하지 않아 이름이 바뀌어도 따라간다.
+          PAGES_BASE_PATH: /${{ github.event.repository.name }}
+        run: npm run build
+
+      # _next/ 는 언더스코어로 시작해 Jekyll 이 통째로 무시한다. 한 줄로 차단.
+      - run: touch out/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

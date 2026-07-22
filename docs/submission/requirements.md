@@ -25,7 +25,7 @@ tags:
 
 ## ❓ 아직 확인 못 한 것 (요강 원문을 봐야 답이 나온다)
 
-- [ ] **1번 비고 "GitHub Pages (링크)"가 예시인가 지정인가** — 현재 배포는 **Vercel**(https://hospital-sim-ashy.vercel.app/)이다. 제출 형태 열이 "웹(브라우저 실행)"이라 충족일 가능성이 높지만, GitHub Pages를 **요구**하는 것이라면 Next.js App Router를 정적 export로 빼는 별도 작업이 필요하다. → **가장 먼저 확인할 것.**
+- [x] ~~**1번 비고 "GitHub Pages (링크)"가 예시인가 지정인가**~~ — **답을 기다리지 않고 양쪽을 다 만족시켜 리스크를 없앴다**(2026-07-22). Vercel 라이브에 더해 **GitHub Pages 배포를 추가**했다. 여전히 예시인지 지정인지는 모르지만, **어느 쪽이든 충족**하므로 더는 확인이 선결 조건이 아니다. 가능했던 이유: 이 게임은 API 라우트·서버 액션·동적 서버 API가 하나도 없는 순수 클라이언트 앱이라 **코드 0줄 수정**으로 정적 export가 됐다. → [`.github/workflows/deploy-pages.yml`](../../.github/workflows/deploy-pages.yml) · [`next.config.ts`](../../next.config.ts)
 - [ ] **마감 정확 시각·타임존** (8/10 00:00인지 23:59 KST인지)
 - [ ] **빌드 제출이 라이브 URL만 허용인지**, 다운로드 가능한 웹빌드 아티팩트(zip 등)도 별도로 요구하는지
 - [ ] **유료 API 비용 부담 주체** (문의: info@nhn-nan.com) — 미설정이면 런타임 LLM은 스킵 전제
@@ -36,7 +36,7 @@ tags:
 >
 > **형식을 바꾸지 말 것**: 스크립트는 `- [ ]` / `- [x]` 로 시작하는 줄만 센다.
 
-- [x] **①** 플레이 가능한 빌드 + 전체 소스 — Vercel 라이브 + GitHub 공개 저장소 *(단, 위 ❓ 첫 항목 미해결 · 저장소 URL 확정치 기입 필요)*
+- [x] **①** 플레이 가능한 빌드 + 전체 소스 — **GitHub Pages 라이브**(요강 비고와 동일) + Vercel 라이브 + GitHub 공개 저장소 *(저장소 URL 확정치 기입 필요)*
 - [ ] **②** 플레이 동영상 30~60초 — 미착수 (P6 · 8/1~8/3 예정)
 - [x] **③** 게임 소개 및 설명 PDF — [`final/03-게임소개-수화기너머의벽.pdf`](final/03-게임소개-수화기너머의벽.pdf) *(초안 · 스크린샷을 배포본 기준으로 재캡처 필요)*
 - [x] **④** AI 활용 기술 PDF — [`final/04-AI활용기술문서-수화기너머의벽.pdf`](final/04-AI활용기술문서-수화기너머의벽.pdf) *(초안 · §6-4 런타임 LLM 로그 미착수)*
@@ -48,7 +48,7 @@ tags:
 
 | 제출물 | 실물 | 원본(고칠 곳) |
 |---|---|---|
-| ① 빌드·소스 | https://hospital-sim-ashy.vercel.app/ · GitHub 공개 저장소 | 저장소 전체 |
+| ① 빌드·소스 | **https://goospel.github.io/hospital-sim/** (제출용) · https://hospital-sim-ashy.vercel.app/ (개발·LLM용) · GitHub 공개 저장소 | 저장소 전체 |
 | ② 영상 | ⏳ YouTube 링크 | — |
 | ③ PDF | [`final/`](final/) | [`game-intro.md`](game-intro.md) |
 | ④ PDF | [`final/`](final/) | [`ai-usage-doc.md`](ai-usage-doc.md) |
