@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-22 · 문서 — 제출물 정의 단일 출처 신설(requirements.md) + 빌드 리마인더
+
+- **무엇을**: 요강의 **제출물 5종 표를 전사한** [docs/submission/requirements.md](../docs/submission/requirements.md)를 신설해 "무엇을 내야 하는가"의 단일 출처로 삼았다(5종 표 + 진행 체크리스트 + **아직 확인 못 한 것** 4건). 목록을 중복 기재하던 문서 넷(plan·submission-plan·final/README·README)에서 목록을 **지우고 링크만** 남겼다. [CLAUDE.md](../CLAUDE.md) 최상단에 필독 인덱스로 등재하고 **언제 읽는지**를 함께 못박았다. `npm run pdf`가 그 체크리스트를 파싱해 **미완료 제출물·미확인 항목을 매번 콘솔에 출력**한다.
+- **왜**: 사용자가 요강 5종 표를 보여주며 "이 5개인 걸 알고 진행했냐"고 물었고, **아니었다** — 요강 원문 대신 저장소 요약을 대리물로 삼아 6일을 진행했다. 개수·범위는 우연히 맞았지만 5번 명칭("팀 소개 문서" ← 실제 「팀원 롤 기술서」)·존재하지 않는 "포트폴리오(선택)"·1번 비고 `GitHub Pages`가 전부 어긋나 있었다. plan의 「요강 전문 정독」은 ⬜인 채 남아 있었는데도 **그 미확인 상태가 다운스트림 작업을 멈추지 않았다.**
+- **결과**: 요약은 원문과 갈라져도 신호를 못 내므로 **전사 + 전사본임을 명시**로 바꿨고, 미확인은 `❓` 체크박스로 **문서 안에 산출물화**했다. 핵심 장치는 리마인더의 **배치**다 — "확인 안 함"이 어딘가 적혀 있는 것과 그것이 **작업 경로 위에서 읽히는 것**은 다르다(빌드 출력에 올림). 실측: `npm run pdf` → 미완료 1건·미확인 4건 출력. ⚠️ **미해결 승계**: 요강 1번 비고가 `GitHub Pages (링크)`인데 배포는 Vercel — 지정이라면 정적 export 작업이 생긴다. 트랩: [T-058](troubleshooting/T-058.md).
+
 ## 2026-07-22 · 문서 — 제출 패키지 신설: ③게임 소개 문서 + PDF 빌드 파이프라인
 
 - **무엇을**: `docs/submission/final/`을 **제출 그 자체인 폴더**로 신설 — ③④ PDF + 4종 체크리스트 README. 없던 **③ 게임 소개 문서**([game-intro.md](../docs/submission/game-intro.md))를 신규 집필하고, `npm run pdf`([scripts/build-submission-pdfs.mjs](../scripts/build-submission-pdfs.mjs), md → marked → Chrome headless `--print-to-pdf`)로 두 PDF를 생성했다(각 12·11쪽). ③은 **실제 2주 플레이를 돌며 캡처한 스크린샷 6컷**과 그 판의 실측을 근거로 썼다 — 개원 82억(미용2·검진1·순환기1·내과1) → 1주차 +171억·응급 6수용/18돌려보냄 → 재투자(순환기+1·병상3→5, 90억) → 2주차 13수용/**20돌려보냄** → 결말 순이익 +108억 ↔ 명부 20명 ↔ 전국 흉부외과 2→1.

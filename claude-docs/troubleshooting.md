@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-058](troubleshooting/T-058.md) · 외부 요구사항(대회 요강)을 저장소 안의 요약 문서로 대리하면, 그 요약이 언제 원문에서 갈라졌는지 아무도 모른 채 몇 주를 진행한다 — 원문 전사본을 단일 출처로 두고 미확인 항목을 문서에 남겨라
 - [T-057](troubleshooting/T-057.md) · dev 서버를 켜둔 채 npm install을 하면 Turbopack이 그 순간의 네이티브 모듈 해석 실패를 .next에 캐시해, 설치가 끝나고 서버를 재시작해도 빌드 에러가 남는다 — node_modules 손상으로 오진하지 말고 .next를 지워라
 - [T-056](troubleshooting/T-056.md) · discriminated union에 값을 추가하는 태스크와 그 union을 never로 소진 검사하는 switch의 새 case를 배선하는 태스크를 나누면, 그 사이 모든 중간 커밋에서 프로젝트 tsc가 red가 돼 태스크당 tsc-clean 게이트가 무력화된다 — union 확장 태스크에서 최소 스텁 case를 같이 넣어라
 - [T-055](troubleshooting/T-055.md) · 게이트 함수(받을 수 있나)와 실행 함수(실제 배정)가 같은 특수케이스를 비대칭 처리하면 판정과 자원 점유가 어긋난다 — hardlockReason은 일반응급을 점유 벽에서 제외했는데 decide는 자유 전문의를 점유해, 같은 날 뒤 콜이 엉뚱하게 벽에 막혔다
