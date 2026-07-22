@@ -47,7 +47,12 @@ jobs:
       # _next/ 는 언더스코어로 시작해 Jekyll 이 통째로 무시한다. 한 줄로 차단.
       - run: touch out/.nojekyll
 
+      # enablement 기본값은 false — 레포에 Pages 가 아직 켜져 있지 않으면
+      # "Get Pages site failed ... Not Found" 로 죽는다(첫 배포에서 실제로 났다).
+      # 웹 UI 클릭으로 켜면 그 사실이 저장소 어디에도 안 남는다 → 액션이 켜게 둔다.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./out
