@@ -47,12 +47,14 @@ jobs:
       # _next/ 는 언더스코어로 시작해 Jekyll 이 통째로 무시한다. 한 줄로 차단.
       - run: touch out/.nojekyll
 
-      # enablement 기본값은 false — 레포에 Pages 가 아직 켜져 있지 않으면
-      # "Get Pages site failed ... Not Found" 로 죽는다(첫 배포에서 실제로 났다).
-      # 웹 UI 클릭으로 켜면 그 사실이 저장소 어디에도 안 남는다 → 액션이 켜게 둔다.
+      # ⚠️ 레포에 Pages 사이트가 **먼저 존재해야** 이 스텝이 통과한다. 없으면
+      #    "Get Pages site failed ... Not Found" 로 죽는다(첫 배포에서 실제로 났다).
+      #    `enablement: true` 로 액션이 대신 켜게 해봤지만 그것도 죽는다 —
+      #    "Resource not accessible by integration": 사이트 **생성**은 GITHUB_TOKEN
+      #    권한 밖이라 워크플로가 자기 자신의 전제를 만들 수 없다. 소유자가 1회 켠다:
+      #      gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow
+      #    (웹 UI Settings → Pages → Source: GitHub Actions 와 동일. 자세히는 T-060)
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./out
