@@ -5,3 +5,7 @@
 # 훅은 조용히 안 도는 게 가장 나쁘다 — 검사기가 없는 것보다 "있는 줄 아는데 없는" 게 더 나쁘다.
 *.sh text eol=lf
 .githooks/** text eol=lf
+
+# 제출물 바이너리 — core.autocrlf 가 손대지 못하게 못박는다(PDF 한 바이트만 바뀌어도 파일이 깨진다).
+*.pdf binary
+*.png binary
