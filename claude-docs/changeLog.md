@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-22 · 도구 — rtk(토큰 절감 프록시) 도입: 쓰기 명령은 빼고 읽기 명령만 통과
+
+- **무엇을**: [rtk](https://github.com/rtk-ai/rtk) 0.43.0을 설치하고 `PreToolUse` 훅(`rtk hook claude`)을 프로젝트 로컬 `.claude/settings.local.json`에만 걸었다(글로벌 `rtk init -g`는 안 씀 — 모든 프로젝트·글로벌 CLAUDE.md를 건드린다). 훅이 명령을 재작성하자 **모든 Bash가 거부**돼 [T-061](troubleshooting/T-061.md)로 등재했고, 세 겹으로 잡았다: ⓐ rtk `config.toml`의 `exclude_commands`로 `git add`/`commit`/`push`/`worktree`·`gh pr create`/`merge`를 **재작성에서 제외** ⓑ `allow`에 `Bash(rtk:*)` ⓒ `deny`로 rtk의 임의 실행 서브커맨드(`run`/`proxy`/`err`/`summary`/`test`) 차단.
+- **왜**: rtk는 출력 필터가 아니라 **명령을 대신 실행하는 프록시**라, 기본값이면 커밋·푸시·PR 머지까지 서드파티 바이너리를 거친다. 절감 대상은 시끄러운 읽기 명령(`git show` 실측 -40%)이지 변경 작업이 아니다 — 이득이 없는 쪽에서 위험만 지지 않도록 경계를 그었다. `Bash(rtk:*)` 한 줄이 곧 "전 명령 자동승인"이 되는 것도 deny로 닫았다(훅은 그 다섯으로 재작성하지 않아 기능 손실 0).
+- **결과**: 실측 검증 통과 — 한글 커밋(T-026 `-F` 경로) **바이트 HEX 일치** · 종료 코드 보존(128=128) · `--format=%B` 통과로 `Skills-used` 트레일러 집계 **86건 동일**. 남은 한계: `git show`에서 커밋 본문·바이너리 파일명, `git commit`에서 해시가 안 보인다(요약 명령 한정). 미확인: `npx vitest run` → `rtk vitest` 로 `run` 인자가 사라지는 매핑.
+
 ## 2026-07-22 · 문서 — 제출 URL 확정: ③④의 플레이 링크를 Pages로, 소스 자리표시자 제거
 
 - **무엇을**: ③[game-intro.md](../docs/submission/game-intro.md)·④[ai-usage-doc.md](../docs/submission/ai-usage-doc.md)의 **플레이 링크를 https://goospel.github.io/hospital-sim/ 로 교체**하고(요강 1번 비고와 동일), 6일간 `⏳ [최종 제출 URL 기입]`로 비어 있던 **소스 URL 자리표시자 2곳을 확정치**(https://github.com/Goospel/hospital-sim)로 채웠다. Vercel 링크는 ③ 실행 방법에 "개발용 배포·내용 동일"로 병기만 남겼다. `npm run pdf`로 두 PDF 재생성(③ 12쪽 유지·Pages URL 반영 확인).
