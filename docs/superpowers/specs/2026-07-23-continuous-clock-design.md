@@ -99,7 +99,7 @@ export function dayEndMin(busyUntil: Record<string, number>): number {
 `atMin`이 `DAY_LENGTH_MIN`을 넘어도 아무것도 안 깨진다:
 - `lightingAt(atMin)`은 `≥ NIGHT_START_MIN`이면 NIGHT — 초과 구간은 전부 밤(맞다).
 - `formatClock`은 `DAY_OPEN_MIN + atMin`을 `% 24`로 접는다 — 750 → 21:30, 정상.
-- 상한: `arrivalMin ≤ 599` + `durationMin ≤ 180` = **779**(22:59). 자정을 안 넘는다.
+- 상한: `arrivalMin ≤ 599` + `durationMin ≤ 180` = **779**(21:59). 자정을 안 넘는다.
 
 ## 3. 움직임 — 두 층으로 나누고 시계와 분리한다
 

@@ -271,7 +271,7 @@ describe('flowStepCount — 프레임 수', () => {
   it('중복 프레임 불변식 — 어떤 구간에서도 같은 분이 두 번 나오지 않는다', () => {
     // steps > 구간분이면 sweepMinutes의 반올림이 같은 분을 반복해 무변화 프레임이 생긴다.
     // MS_PER_GAME_MIN(50) < CLOCK_TICK_MS(100)이라 steps ≈ 구간분/2 로 구조적으로 상한 아래다.
-    for (let span = 1; span <= 300; span++) {
+    for (let span = 1; span <= 800; span++) {
       const seq = sweepMinutes(0, span, flowStepCount(0, span))
       expect(new Set(seq).size, `구간 ${span}분에서 중복 프레임`).toBe(seq.length)
     }

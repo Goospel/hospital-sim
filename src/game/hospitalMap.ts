@@ -174,7 +174,7 @@ export function flowStepCount(from: number, to: number): number {
  * 내일 아침 점유로 넘기고 있다. 구현돼 있고 돌아가고 있는데 화면이 한 번도 안
  * 보여줬을 뿐이다 — 여기선 그걸 **보이게만** 한다.
  *
- * 상한: arrivalMin ≤ 599 + durationMin ≤ 180 = 779(22:59)라 자정을 안 넘는다.
+ * 상한: arrivalMin ≤ 599 + durationMin ≤ 180 = 779(21:59)라 자정을 안 넘는다.
  */
 export function dayEndMin(busyUntil: Record<string, number>): number {
   return Math.max(DAY_LENGTH_MIN, ...Object.values(busyUntil))
