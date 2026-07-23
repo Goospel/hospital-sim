@@ -147,8 +147,9 @@ export default function SetupWizard({
         <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
           {TIER_ORDER.map((t, i) => (
             <span key={t} className="flex items-center gap-1.5">
+              {/* 사다리 구분자 — aria-hidden 순수 장식이지만 frame(1.19:1)은 사실상 안 보였다. */}
               {i > 0 && (
-                <span aria-hidden className="text-frame">
+                <span aria-hidden className="text-on-desk/40">
                   ›
                 </span>
               )}

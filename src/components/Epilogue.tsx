@@ -13,7 +13,11 @@ function WeekPaper({ news }: { news: NewsItem[] }) {
   if (news.length === 0) return null;
   return (
     <div className="w-full max-w-sm">
-      <p className="mb-3 text-center text-xs uppercase tracking-[0.3em] text-ink-2">
+      {/*
+        이 라벨은 종이 **밖**(책상 위)이라 종이 잉크를 쓰면 안 된다 — ink-2로 두면 2.37:1의
+        dark-on-dark다. 바로 아래 「전국 · 같은 기간」 라벨과 같은 규칙으로 맞춘다.
+      */}
+      <p className="mb-3 text-center text-xs font-medium uppercase tracking-[0.3em] text-on-desk/60">
         이번 주 신문 · {news.length}명
       </p>
       <ul className="flex flex-col gap-2 paper-card px-5 py-4">

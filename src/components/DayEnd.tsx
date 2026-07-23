@@ -56,11 +56,17 @@ export default function DayEnd({
             const day = i + 1;
             const rec = days.find((d) => d.day === day);
             const isToday = day === currentDay;
+            /*
+              흑자 칸에 배경 틴트를 깔지 않는다 — paper-edge를 얹으면 종이가 어두워져
+              초록 잉크(go) 대비가 4.10:1까지 떨어졌다(실측). 맨 종이 위에서는 4.56이라
+              AA를 넘는다. 적자만 stamp-field(종이보다 **밝은** 도장밭)라 7.84로 더 잘 읽힌다.
+              칸을 가르는 건 틴트가 아니라 괘선과 숫자다.
+            */
             const tone = !rec
-              ? "border-rule/50 bg-paper-edge/30 text-ink-3"
+              ? "border-rule/50 text-ink-2"
               : rec.netProfitBillions < 0
                 ? "border-stamp/40 bg-stamp-field text-stamp-ink"
-                : "border-rule bg-paper-edge/60 text-go";
+                : "border-rule text-go";
             return (
               <div
                 key={day}

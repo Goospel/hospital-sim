@@ -66,15 +66,12 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
             }`}
           >
             {/*
-              9px는 스펙의 12px 하한 아래라 대비를 깎을 여유가 없다 — 켜진 방은 잉크를 최대로 준다.
-              (토큰화하며 /70으로 낮췄더니 2.37까지 떨어져 되돌렸다. 꺼진 방이 흐린 건 의도다 —
-              불이 꺼졌다는 사실 자체가 "안 뽑은 과"를 보여주는 정보다.)
+              방 이름은 **조명과 무관하게 같은 잉크**다 — 라벨은 방에 붙은 명패이지 방 안의
+              불빛이 아니다. 밝기로 상태를 말하는 건 방의 채움색과 전역 조명 워시가 맡는다.
+              (조명 따라 라벨까지 어둡게 했더니 야간에 1.87:1까지 떨어졌다. 9px는 스펙의
+              12px 하한 아래라 대비를 깎을 여유가 애초에 없다.)
             */}
-            <span
-              className={`truncate px-1 pb-0.5 text-center text-[9px] leading-tight ${
-                room.lit ? "text-on-desk" : "text-on-desk/25"
-              }`}
-            >
+            <span className="truncate px-1 pb-0.5 text-center text-[9px] leading-tight text-on-desk/70">
               {room.label}
             </span>
           </div>
