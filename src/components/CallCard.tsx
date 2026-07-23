@@ -28,19 +28,26 @@ function CallEconomicsBreakdown({ call }: { call: IncomingCall }) {
   const revenueLabel = e.priceSetter === "HOSPITAL" ? "진료비 (병원 책정)" : "수가 (정부 고시)";
 
   return (
-    <dl className="flex flex-col gap-1 rounded-md border border-zinc-800 bg-black/30 px-3 py-2.5 font-mono text-xs">
+    <dl className="flex flex-col gap-1 rounded-xs border border-frame bg-desk px-3 py-2.5 font-mono text-xs">
       <div className="flex items-baseline justify-between gap-3">
-        <dt className="text-zinc-400">{revenueLabel}</dt>
-        <dd className="tabular-nums text-zinc-300">{formatSignedBillions(e.revenueBillions)}</dd>
+        <dt className="font-sans text-on-desk/70">{revenueLabel}</dt>
+        <dd className="tabular-nums text-on-desk">{formatSignedBillions(e.revenueBillions)}</dd>
       </div>
       <div className="flex items-baseline justify-between gap-3">
-        <dt className="text-zinc-400">원가</dt>
-        <dd className="tabular-nums text-zinc-300">{formatSignedBillions(-e.costBillions)}</dd>
+        <dt className="font-sans text-on-desk/70">원가</dt>
+        <dd className="tabular-nums text-on-desk">{formatSignedBillions(-e.costBillions)}</dd>
       </div>
-      <div className="my-0.5 border-t border-zinc-800" />
+      <div className="my-0.5 border-t border-frame" />
       <div className="flex items-baseline justify-between gap-3">
         <dt className="sr-only">수용 시 손익</dt>
-        <dd className="ml-auto tabular-nums font-semibold text-zinc-100">
+        {/*
+          부호는 색이 아니라 숫자가 이미 말한다(formatSignedBillions의 +/−).
+          손실만 alarm으로 물들여 어두운 책상 위에서 유일한 붉은색이 되게 한다 —
+          종이 위 적자(stamp-ink)와 섞지 않는다(스펙 §2-C: 밝기 맥락으로 분리).
+        */}
+        <dd
+          className={`ml-auto text-sm tabular-nums font-semibold ${delta < 0 ? "text-alarm" : "text-on-desk"}`}
+        >
           {formatSignedBillions(delta)}
         </dd>
       </div>
@@ -104,34 +111,37 @@ export default function CallCard({
     <section
       ref={cardRef}
       tabIndex={-1}
-      className="flex min-h-[19rem] flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4"
+      className="flex min-h-[19rem] flex-1 flex-col gap-3 rounded-xs border border-frame bg-desk-2 px-4 py-4"
     >
       {/*
         야간 표시 — 왜 밤에만 막히는지 플레이어가 스스로 잇게 하려면 시간대가 보여야 한다.
         해석은 없다. '야간' 두 글자와, 순환기를 뽑고도 밤에 거절당하는 경험만 놓는다.
+
+        진단명은 명조(font-serif) — "사람이 쓴 판정"이 명조의 역할이다(스펙 §3-A).
+        명조는 소형에서 한글 획이 무너져 18px(text-lg) 이상에서만 쓴다(§3-C).
       */}
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-zinc-100">{call.label}</p>
+      <div className="flex items-baseline gap-2">
+        <p className="font-serif text-lg leading-snug text-on-desk">{call.label}</p>
         {call.nightShift && (
-          <span className="rounded-full border border-indigo-800/70 bg-indigo-950/50 px-2 py-0.5 text-[10px] font-medium tracking-wider text-indigo-300">
+          <span className="shrink-0 rounded-xs border border-frame px-1.5 py-0.5 font-mono text-[11px] tracking-wider text-on-desk/70">
             야간
           </span>
         )}
       </div>
-      <p className="text-sm italic text-zinc-400">&ldquo;{plea}&rdquo;</p>
+      <p className="text-sm text-on-desk/70">&ldquo;{plea}&rdquo;</p>
 
       <CallEconomicsBreakdown call={call} />
 
       {elective ? (
         // 선택진료 — 플레이어가 받기/보내기를 정한다. 하드락은 없다(reason은 항상 null) —
         // 그 과 자유 의사가 없으면 '받기'만 비활성(구조가 막은 게 아니라 자원이 없는 것).
-        <div className="mt-1 flex flex-wrap gap-3">
+        <div className="mt-auto flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => onDecide(true)}
             disabled={free.length === 0}
             aria-label={`${call.label} 받기`}
-            className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            className="flex-1 rounded-xs bg-go py-3 text-sm font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >
             받기
           </button>
@@ -139,7 +149,7 @@ export default function CallCard({
             type="button"
             onClick={() => onDecide(false)}
             aria-label={`${call.label} 보내기`}
-            className="flex-1 rounded-lg border border-zinc-700 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            className="flex-1 rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >
             보내기
           </button>
@@ -147,20 +157,31 @@ export default function CallCard({
       ) : (
         // 응급 — decide가 accept를 무시하고 자동 판정한다. 여기선 그 결과만 먼저 보여주고
         // '계속'이 실제 decide(true)를 부른다(전개는 그대로, accept 값은 무의미).
-        <div className="mt-1 flex flex-col gap-3">
-          <div
-            className={`rounded-lg border px-4 py-3 text-sm font-medium ${
-              reason === null
-                ? "border-emerald-800/60 bg-emerald-950/30 text-emerald-300"
-                : "border-amber-800/60 bg-amber-950/30 text-amber-300"
-            }`}
-          >
-            {reason === null ? `수용${assignee ? ` · ${assignee.name}` : ""}` : `전원 불가 · ${REASON_CLAUSE[reason]}`}
-          </div>
+        <div className="mt-auto flex flex-col gap-3">
+          {/*
+            판정 표시 — 색 단독 신호를 금지한다(스펙 §7). 수용은 체크 사인 + "수용" 글자로,
+            거절은 **고무도장**(사유 텍스트 필수)으로 읽힌다. 흑백으로 찍어도 판정이 남는다.
+
+            도장은 이 화면의 유일한 도장이다(§5 "화면당 0~1종, 불가역 판정에만") — 밝은
+            도장밭(stamp-field) 위 어두운 잉크라 어두운 책상에서 종잇조각처럼 뜬다.
+            회전은 -1.5°(상한 ±3°) — 서류는 반듯하고, 도장만 손으로 찍혀 살짝 기운다.
+          */}
+          {reason === null ? (
+            <p className="flex items-center gap-2 rounded-xs border border-frame bg-desk px-4 py-3 text-sm text-on-desk">
+              <span aria-hidden className="font-mono text-base leading-none">
+                ✓
+              </span>
+              수용{assignee ? ` · ${assignee.name}` : ""}
+            </p>
+          ) : (
+            <p className="-rotate-[1.5deg] self-start rounded-stamp border-2 border-stamp bg-stamp-field px-3 py-1.5 font-serif text-lg leading-tight text-stamp-ink">
+              전원 불가 · {REASON_CLAUSE[reason]}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => onDecide(true)}
-            className="rounded-lg bg-zinc-100 py-3 text-sm font-semibold text-zinc-900 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            className="rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >
             계속
           </button>

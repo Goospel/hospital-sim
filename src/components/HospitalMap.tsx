@@ -48,7 +48,7 @@ function positionOf(a: MapAvatar, scene: MapScene): { left: string; top: string 
 
 export default function HospitalMap({ scene }: { scene: MapScene }) {
   return (
-    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xs border border-frame bg-desk-2">
       {/* 진료실 줄 */}
       <div
         className="absolute inset-x-0 top-0 grid gap-1 p-1.5"
@@ -57,19 +57,21 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
         {scene.rooms.map((room) => (
           <div
             key={room.dept}
-            className={`flex flex-col justify-end rounded-sm border transition-colors duration-500 ${
+            className={`flex flex-col justify-end rounded-xs border transition-colors duration-500 ${
               room.lit
                 ? room.staffed
-                  ? "border-zinc-700 bg-zinc-800"
-                  : "border-zinc-800 bg-zinc-800/40" // 빈 방 — 안 뽑은 과가 여기 보인다
-                : "border-zinc-900 bg-black/60"
+                  ? "border-frame bg-frame/70"
+                  : "border-frame/60 bg-frame/25" // 빈 방 — 안 뽑은 과가 여기 보인다
+                : "border-desk bg-black/60"
             }`}
           >
-            <span
-              className={`truncate px-1 pb-0.5 text-center text-[9px] leading-tight ${
-                room.lit ? "text-zinc-400" : "text-zinc-700"
-              }`}
-            >
+            {/*
+              방 이름은 **조명과 무관하게 같은 잉크**다 — 라벨은 방에 붙은 명패이지 방 안의
+              불빛이 아니다. 밝기로 상태를 말하는 건 방의 채움색과 전역 조명 워시가 맡는다.
+              (조명 따라 라벨까지 어둡게 했더니 야간에 1.87:1까지 떨어졌다. 9px는 스펙의
+              12px 하한 아래라 대비를 깎을 여유가 애초에 없다.)
+            */}
+            <span className="truncate px-1 pb-0.5 text-center text-[9px] leading-tight text-on-desk/70">
               {room.label}
             </span>
           </div>
@@ -78,7 +80,7 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
 
       {/* 복도 */}
       <div
-        className="absolute inset-x-0 border-y border-zinc-800 bg-zinc-950"
+        className="absolute inset-x-0 border-y border-frame bg-desk"
         style={{ top: `${ROOMS_H}%`, height: `${CORRIDOR_H}%` }}
       />
 

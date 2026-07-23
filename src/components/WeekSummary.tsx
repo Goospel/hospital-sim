@@ -29,57 +29,70 @@ export default function WeekSummary({
   onEnd: () => void;
 }) {
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-8 px-5 py-10 text-zinc-100 bg-zinc-950">
-      <header className="flex flex-col items-center gap-1 text-center">
-        <span className="text-xs uppercase tracking-[0.3em] text-zinc-600">{week}주차 마감</span>
-        <p className="text-3xl font-semibold">
+    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-6 bg-desk px-5 py-10 text-on-desk">
+      <span className="text-center text-xs font-medium uppercase tracking-[0.3em] text-on-desk/60">
+        {week}주차 마감
+      </span>
+
+      {/*
+        주간 마감 전표 — 하루 마감(DayEnd)과 같은 종이다. 하루가 모여 한 주가 되는 걸
+        같은 물성으로 잇는다. 금액은 종이 잉크(흑자 go · 적자 stamp-ink).
+      */}
+      <section className="paper-card flex flex-col gap-5 px-6 py-6">
+        <div className="flex flex-col items-center gap-2 text-center">
           <span
-            className={`font-mono tabular-nums ${
-              weekNetBillions < 0 ? "text-red-400" : "text-emerald-400"
+            className={`font-mono text-4xl font-semibold tabular-nums ${
+              weekNetBillions < 0 ? "text-stamp-ink" : "text-go"
             }`}
           >
             {formatSignedBillions(weekNetBillions)}
           </span>
-        </p>
-        {/* 받은/돌려보낸 응급을 나란히 — 해석 없이 두 숫자만(show-don't-tell). 돌려보낸 사람이 있으면 붉게. */}
-        <span className={`text-xs uppercase tracking-[0.2em] ${turnedAway > 0 ? "text-red-400" : "text-zinc-500"}`}>
-          {turnedAway > 0
-            ? `응급 · ${received}명 수용 · ${turnedAway}명 돌려보냄`
-            : `응급 · ${received}명 전부 수용`}
-        </span>
-      </header>
+          {/* 받은/돌려보낸 응급을 나란히 — 해석 없이 두 숫자만(show-don't-tell). 돌려보낸 사람이 있으면 붉은 잉크로. */}
+          <span
+            className={`text-xs font-medium uppercase tracking-[0.2em] ${turnedAway > 0 ? "text-stamp-ink" : "text-ink-2"}`}
+          >
+            {turnedAway > 0
+              ? `응급 · ${received}명 수용 · ${turnedAway}명 돌려보냄`
+              : `응급 · ${received}명 전부 수용`}
+          </span>
+        </div>
 
-      {/* 누적 — 매주 커지는 '지금까지'. 주가 쌓일수록 세계 변화의 결과가 여기 모인다. */}
-      <div className="flex items-baseline justify-between border-t border-zinc-800 pt-3 font-mono text-sm">
-        <span className="font-sans text-zinc-400">{week}주 누적 손익</span>
-        <span
-          className={`tabular-nums font-semibold ${
-            cumulativeNetBillions < 0 ? "text-red-400" : "text-emerald-400"
-          }`}
-        >
-          {formatSignedBillions(cumulativeNetBillions)}
-        </span>
-      </div>
+        <div className="flex flex-col gap-2 border-t border-rule pt-3 font-mono text-sm">
+          {/* 누적 — 매주 커지는 '지금까지'. 주가 쌓일수록 세계 변화의 결과가 여기 모인다. */}
+          <div className="flex items-baseline justify-between">
+            <span className="font-sans text-xs text-ink-2">{week}주 누적 손익</span>
+            <span
+              className={`tabular-nums font-semibold ${
+                cumulativeNetBillions < 0 ? "text-stamp-ink" : "text-go"
+              }`}
+            >
+              {formatSignedBillions(cumulativeNetBillions)}
+            </span>
+          </div>
 
-      <div className="flex items-baseline justify-between font-mono text-sm">
-        <span className="font-sans text-zinc-400">금고 (다음 주 재투자 가능액)</span>
-        <span className={`tabular-nums font-semibold ${treasury < 0 ? "text-red-400" : "text-zinc-100"}`}>
-          {formatSignedBillions(treasury)}
-        </span>
-      </div>
+          <div className="flex items-baseline justify-between">
+            <span className="font-sans text-xs text-ink-2">금고 (다음 주 재투자 가능액)</span>
+            <span
+              className={`tabular-nums font-semibold ${treasury < 0 ? "text-stamp-ink" : "text-ink"}`}
+            >
+              {formatSignedBillions(treasury)}
+            </span>
+          </div>
+        </div>
+      </section>
 
       <div className="flex flex-col gap-2.5">
         <button
           type="button"
           onClick={onNextWeek}
-          className="rounded-lg bg-zinc-100 py-3 text-base font-semibold text-zinc-900 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          className="rounded-xs bg-go py-3 text-base font-semibold text-paper transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
         >
           다음 주
         </button>
         <button
           type="button"
           onClick={onEnd}
-          className="rounded-lg border border-zinc-700 py-3 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-600"
+          className="rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
         >
           종료
         </button>

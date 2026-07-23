@@ -21,10 +21,10 @@ function DepartmentCard({
   onAdjust: (delta: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-3">
+    <div className="flex items-center justify-between rounded-xs border border-frame bg-desk-2 px-4 py-3">
       <div className="flex flex-col gap-0.5">
-        <span className="text-sm font-medium text-zinc-100">{dept.label}</span>
-        <span className="font-mono text-xs tabular-nums text-zinc-600">
+        <span className="text-sm font-medium text-on-desk">{dept.label}</span>
+        <span className="font-mono text-xs tabular-nums text-on-desk/70">
           채용 {dept.hireCostBillions}억/명
         </span>
       </div>
@@ -34,16 +34,16 @@ function DepartmentCard({
           onClick={() => onAdjust(-1)}
           disabled={count === 0}
           aria-label={`${dept.label} 채용 한 명 줄이기`}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          className="flex h-7 w-7 items-center justify-center rounded-xs border border-frame text-on-desk transition-colors hover:bg-frame disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
         >
           −
         </button>
-        <span className="w-4 text-center font-mono text-sm tabular-nums text-zinc-100">{count}</span>
+        <span className="w-4 text-center font-mono text-sm tabular-nums text-on-desk">{count}</span>
         <button
           type="button"
           onClick={() => onAdjust(1)}
           aria-label={`${dept.label} 채용 한 명 늘리기`}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          className="flex h-7 w-7 items-center justify-center rounded-xs border border-frame text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
         >
           +
         </button>
@@ -72,12 +72,15 @@ export default function SetupWizard({
 
   if (step === "NAME") {
     return (
-      <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-6 px-5 py-12 text-zinc-100 bg-zinc-950">
-        <header className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">병원 설립</span>
-          <h1 className="text-2xl font-semibold">어떤 병원을 세우시겠습니까</h1>
+      <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-6 bg-desk px-5 py-12 text-on-desk">
+        <header className="flex flex-col gap-2">
+          <span className="text-xs font-medium uppercase tracking-[0.25em] text-on-desk/60">
+            병원 설립
+          </span>
+          <h1 className="font-serif text-2xl">어떤 병원을 세우시겠습니까</h1>
         </header>
 
+        {/* 입력칸은 조작 UI(desk)지만, **입력된 병원명은 즉시 명조로 선다**(스펙 §5) — 내가 쓴 판정. */}
         <input
           type="text"
           value={choices.hospitalName}
@@ -88,14 +91,14 @@ export default function SetupWizard({
           placeholder="병원 이름"
           aria-label="병원 이름"
           autoFocus
-          className="rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          className="rounded-xs border border-frame bg-desk-2 px-4 py-3 font-serif text-lg text-on-desk placeholder:font-sans placeholder:text-base placeholder:text-on-desk-muted focus:border-on-desk-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
         />
 
         <button
           type="button"
           onClick={() => setStep("DEPTS")}
           disabled={!nameEntered}
-          className="rounded-lg bg-zinc-100 py-3 text-base font-semibold text-zinc-900 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          className="rounded-xs bg-go py-3 text-base font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk-2 disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
         >
           다음
         </button>
@@ -110,18 +113,21 @@ export default function SetupWizard({
   const tier = hospitalTier(backupCareOf(choices, departments).length);
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
-      <header className="flex flex-col gap-1">
+    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 bg-desk px-5 py-8 text-on-desk">
+      <header className="flex flex-col gap-1 border-b border-frame pb-4">
         <button
           type="button"
           onClick={() => setStep("NAME")}
-          className="mb-1 self-start rounded text-xs text-zinc-500 transition-colors hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          className="mb-1 self-start rounded-xs text-xs text-on-desk/70 transition-colors hover:text-on-desk focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
         >
           ← 이름 수정
         </button>
-        <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">{choices.hospitalName}</span>
-        <h1 className="text-lg font-semibold">과별 의사를 채용하세요</h1>
-        <p className="text-sm text-zinc-400">예산 {SETUP_BUDGET_BILLIONS}억 안에서 진료과를 꾸립니다.</p>
+        {/* 병원명은 명조 — 방금 내가 쓴 이름이 판정으로 선다. */}
+        <span className="font-serif text-xl text-on-desk">{choices.hospitalName}</span>
+        <h1 className="mt-1 text-base font-semibold text-on-desk">과별 의사를 채용하세요</h1>
+        <p className="text-sm text-on-desk/70">
+          예산 {SETUP_BUDGET_BILLIONS}억 안에서 진료과를 꾸립니다.
+        </p>
       </header>
 
       <div className="flex flex-col gap-2">
@@ -135,16 +141,19 @@ export default function SetupWizard({
         ))}
       </div>
 
-      <div className="rounded-lg border border-zinc-800 bg-black/40 px-4 py-3">
-        <div className="flex items-baseline justify-between text-xs uppercase tracking-widest text-zinc-600">
-          <span>자격</span>
-        </div>
-        <div className="mt-1 font-mono text-lg tabular-nums text-zinc-100">{TIER_LABELS[tier]}</div>
+      <div className="rounded-xs border border-frame bg-desk-2 px-4 py-3">
+        <div className="text-xs font-medium uppercase tracking-widest text-on-desk/60">자격</div>
+        <div className="mt-1 font-mono text-lg tabular-nums text-on-desk">{TIER_LABELS[tier]}</div>
         <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
           {TIER_ORDER.map((t, i) => (
             <span key={t} className="flex items-center gap-1.5">
-              {i > 0 && <span aria-hidden className="text-zinc-700">›</span>}
-              <span className={t === tier ? "font-semibold text-emerald-400" : "text-zinc-600"}>
+              {/* 사다리 구분자 — aria-hidden 순수 장식이지만 frame(1.19:1)은 사실상 안 보였다. */}
+              {i > 0 && (
+                <span aria-hidden className="text-on-desk/40">
+                  ›
+                </span>
+              )}
+              <span className={t === tier ? "font-semibold text-on-desk" : "text-on-desk/70"}>
                 {t === "UNDESIGNATED" ? "미지정" : TIER_LABELS[t]}
               </span>
             </span>
@@ -152,17 +161,25 @@ export default function SetupWizard({
         </div>
       </div>
 
-      <div className="rounded-lg border border-zinc-800 bg-black/40 px-4 py-3">
-        <div className="flex items-baseline justify-between text-xs uppercase tracking-widest text-zinc-600">
-          <span>채용 예산</span>
+      {/*
+        채용 예산 장부 — 이 화면의 유일한 종이다(스펙 §6: 위저드는 예산 장부 1장).
+        초과는 **도장**으로 찍힌다(화면당 1종) — 색만이 아니라 글자와 형태로도 읽힌다(§7).
+      */}
+      <div className="paper-card px-4 py-3">
+        <div className="font-sans text-xs font-medium uppercase tracking-widest text-ink-2">
+          채용 예산
         </div>
-        <div className="mt-1 flex items-baseline justify-between">
+        <div className="mt-1 flex items-baseline justify-between gap-3">
           <span
-            className={`font-mono text-lg tabular-nums ${overBudget ? "text-red-500" : "text-zinc-100"}`}
+            className={`font-mono text-lg tabular-nums ${overBudget ? "text-stamp-ink" : "text-ink"}`}
           >
             {cost} / {SETUP_BUDGET_BILLIONS}억
           </span>
-          {overBudget && <span className="text-xs text-red-500">예산 초과</span>}
+          {overBudget && (
+            <span className="-rotate-[1.5deg] rounded-stamp border-2 border-stamp bg-stamp-field px-2 py-0.5 font-serif text-base leading-tight text-stamp-ink">
+              예산 초과
+            </span>
+          )}
         </div>
       </div>
 
@@ -170,7 +187,7 @@ export default function SetupWizard({
         type="button"
         onClick={() => onComplete(choices)}
         disabled={!ready}
-        className="rounded-lg bg-emerald-600 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        className="rounded-xs bg-go py-3 text-base font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk-2 disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
       >
         병원 개원
       </button>
