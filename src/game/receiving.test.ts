@@ -3,7 +3,7 @@ import {
   createCallQueue, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
   WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective, isAutoAccept, requiresBackupCare, carriesLawsuitRisk,
-  BACKUP_CARE_KINDS, outpatientForBeds, needsDecision,
+  BACKUP_CARE_KINDS, outpatientForBeds, needsDecision, unacceptedGroups,
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
@@ -994,5 +994,66 @@ describe('경제 축소 — 금액은 각색, 비율이 근거(외래 4배에도
     expect(callDelta('COSMETIC_WALKIN')).toBeGreaterThan(0)
     expect(callDelta('SPECIALIST_ELECTIVE')).toBeGreaterThan(0)
     for (const k of BACKUP_CARE_KINDS) expect(callDelta(k)).toBeLessThan(0)
+  })
+})
+
+describe('unacceptedGroups — 못 받은 콜을 라벨·사유로 접어 횟수만 센다', () => {
+  const entry = (
+    callId: string,
+    accepted: boolean,
+    disposition: 'CHOICE' | 'HARDLOCK_REJECT' | 'RECEIVE_REJECT',
+    reason: 'LEFT_WAITING' | null = null,
+  ) => ({ callId, accepted, disposition, reason } as ReceivingState['log'][number])
+  const call = (id: string, label: string) => ({ id, label } as IncomingCall)
+
+  it('같은 라벨·같은 사유는 한 줄로 접히고 count가 쌓인다', () => {
+    const state = {
+      queue: [call('c1', '보톡스 상담 워크인'), call('c2', '보톡스 상담 워크인'), call('c3', '보톡스 상담 워크인')],
+      log: [entry('c1', false, 'RECEIVE_REJECT'), entry('c2', false, 'RECEIVE_REJECT'), entry('c3', false, 'RECEIVE_REJECT')],
+    }
+    expect(unacceptedGroups(state)).toEqual([{ label: '보톡스 상담 워크인', outcome: '거절', count: 3 }])
+  })
+
+  it('라벨이 같아도 사유가 다르면 안 합친다', () => {
+    const state = {
+      queue: [call('c1', '순환기내과 예약 진료'), call('c2', '순환기내과 예약 진료')],
+      log: [entry('c1', false, 'RECEIVE_REJECT'), entry('c2', false, 'CHOICE', 'LEFT_WAITING')],
+    }
+    expect(unacceptedGroups(state)).toEqual([
+      { label: '순환기내과 예약 진료', outcome: '거절', count: 1 },
+      { label: '순환기내과 예약 진료', outcome: '기다리다 감', count: 1 },
+    ])
+  })
+
+  it('수용된 콜은 아예 안 들어간다 — 이 목록은 남은 사람만 센다', () => {
+    const state = {
+      queue: [call('c1', '검진 패키지 문의'), call('c2', '검진 패키지 문의')],
+      log: [entry('c1', true, 'CHOICE'), entry('c2', false, 'RECEIVE_REJECT')],
+    }
+    expect(unacceptedGroups(state)).toEqual([{ label: '검진 패키지 문의', outcome: '거절', count: 1 }])
+  })
+
+  it('순서는 첫 등장 순서다 — 하루의 흐름이 뒤집히지 않는다', () => {
+    const state = {
+      queue: [call('c1', '보톡스 상담 워크인'), call('c2', '검진 패키지 문의'), call('c3', '보톡스 상담 워크인')],
+      log: [entry('c1', false, 'RECEIVE_REJECT'), entry('c2', false, 'RECEIVE_REJECT'), entry('c3', false, 'RECEIVE_REJECT')],
+    }
+    expect(unacceptedGroups(state).map((g) => g.label)).toEqual(['보톡스 상담 워크인', '검진 패키지 문의'])
+    expect(unacceptedGroups(state)[0].count).toBe(2)
+  })
+
+  it('하드락은 거절과 다른 줄이다 — 내가 보낸 것과 구조가 막은 것은 같은 사건이 아니다', () => {
+    const state = {
+      queue: [call('c1', 'STEMI'), call('c2', 'STEMI')],
+      log: [entry('c1', false, 'HARDLOCK_REJECT'), entry('c2', false, 'RECEIVE_REJECT')],
+    }
+    expect(unacceptedGroups(state)).toEqual([
+      { label: 'STEMI', outcome: '하드락', count: 1 },
+      { label: 'STEMI', outcome: '거절', count: 1 },
+    ])
+  })
+
+  it('빈 로그는 빈 목록이다', () => {
+    expect(unacceptedGroups({ queue: [], log: [] })).toEqual([])
   })
 })

@@ -7,6 +7,7 @@ import {
   accruedSegments,
   needsDecision,
   runningNetProfit,
+  unacceptedGroups,
   DAY_LABELS,
   type ReceivingState,
 } from "@/game/receiving";
@@ -194,31 +195,26 @@ export default function ReceivingPhase({
         </header>
 
         {/*
-          받은 사람은 세기만 하고 **못 받은 사람만 나열한다**.
-          하루가 5통일 땐 전부 나열해도 다섯 줄이었지만 20~40통이면 화면이 목록으로 덮이고,
-          그 안에서 정작 봐야 할 줄(못 받은 사람)이 묻힌다. 무엇이 남는지가 이 화면의 전부다.
+          받은 사람은 세기만 하고 **못 받은 사람만 나열한다** — 그것도 라벨·사유가 같으면
+          한 줄로 접어 횟수만 센다(unacceptedGroups). 콜 제한 폐지로 하루가 60통을 넘기면서
+          한 통 한 줄은 같은 문장 스무 줄이 됐고, 그 반복이 정작 드문 줄을 묻었다.
+          접는 판정은 화면이 아니라 게임 모듈에 있다 — 사유 라벨을 두 곳에 적으면 어긋난다.
         */}
-        <div className="flex flex-col gap-1.5">
-          {receiving.log
-            .map((entry, i) => ({ entry, call: receiving.queue[i] }))
-            .filter((x) => !x.entry.accepted)
-            .map(({ entry, call }) => (
-              <div
-                key={entry.callId}
-                className="flex items-center justify-between gap-3 rounded-xs border border-frame bg-desk-2 px-3 py-2 text-xs"
-              >
-                <span className="text-on-desk">{call.label}</span>
-                <span className="shrink-0 font-mono text-alarm">
-                  ×{" "}
-                  {entry.reason === "LEFT_WAITING"
-                    ? "기다리다 감"
-                    : entry.disposition === "HARDLOCK_REJECT"
-                      ? "하드락"
-                      : "거절"}
-                </span>
-              </div>
-            ))}
-        </div>
+        <ul className="flex flex-col gap-1.5">
+          {unacceptedGroups(receiving).map(({ label, outcome, count }) => (
+            <li
+              key={`${label} ${outcome}`}
+              className="flex items-center justify-between gap-3 rounded-xs border border-frame bg-desk-2 px-3 py-2 text-xs"
+            >
+              <span className="text-on-desk">{label}</span>
+              {/* 색 단독 신호 금지(스펙 §7) — 사유 글자가 판정을 지고, ×N은 그 빈도만 더한다. */}
+              <span className="shrink-0 font-mono tabular-nums text-alarm">
+                {outcome}
+                {count > 1 && <span className="ml-1.5 text-on-desk/70">×{count}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
 
         <CheerfulLedger receiving={receiving} />
 
