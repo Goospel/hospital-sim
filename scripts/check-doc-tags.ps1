@@ -71,6 +71,7 @@ Write-Host "TAGS-CHECK: OK ($($Files.Count) files)"
 # 설명하는 문서(T-062)가 자기 자신에게 거부당한다.
 $folderLinks = @()
 $brokenLinks = @()
+$dotLinks    = @()
 foreach ($f in $Files) {
     $text = [System.IO.File]::ReadAllText($f)
     # 코드는 **공백**으로 치환한다 — 빈 문자열로 지우면 `[계속]`code`(x)` 처럼
@@ -90,6 +91,18 @@ foreach ($f in $Files) {
         if ($target -like 'node_modules/*') { continue }
         $path = ($target -split '#')[0]
         if ([string]::IsNullOrWhiteSpace($path)) { continue }
+
+        # 규칙 4: 점(.)으로 시작하는 경로 조각은 옵시디언이 볼트에서 **제외**한다
+        # (.github/ · .env.example). 디스크에 있어도 영원히 해석 안 돼 그래프에
+        # 유령으로 남고, 상대경로 형태가 다르면 같은 파일이 여러 노드로 갈린다.
+        # './' · '../' 는 점 경로가 아니다 — 조각이 '.'/'..' 면 건너뛴다.
+        $isDot = $false
+        foreach ($seg in ($path -split '[\\/]')) {
+            if ($seg -eq '.' -or $seg -eq '..' -or $seg -eq '') { continue }
+            if ($seg.StartsWith('.')) { $isDot = $true; break }
+        }
+        if ($isDot) { $dotLinks += [pscustomobject]@{ File = $f; Link = $target }; continue }
+
         if (-not (Test-Path -LiteralPath (Join-Path $dir $path))) {
             $brokenLinks += [pscustomobject]@{ File = $f; Link = $target }
         }
@@ -107,6 +120,13 @@ if ($brokenLinks.Count -gt 0) {
     Write-Host "LINKS-CHECK: MISSING($($brokenLinks.Count))"
     Write-Host '다음 링크의 대상이 없다 — 경로를 고치거나 링크를 걷어내라(T-062):' -ForegroundColor Red
     foreach ($l in $brokenLinks) { Write-Host "  ✗ $($l.File) → $($l.Link)" -ForegroundColor Red }
+    exit 1
+}
+
+if ($dotLinks.Count -gt 0) {
+    Write-Host "LINKS-CHECK: DOTPATH($($dotLinks.Count))"
+    Write-Host '다음 링크가 점(.) 경로를 가리킨다 — 옵시디언 볼트 밖이라 영원히 유령 노드다. 백틱 경로 표기로 내려라(T-063):' -ForegroundColor Red
+    foreach ($l in $dotLinks) { Write-Host "  ✗ $($l.File) → $($l.Link)" -ForegroundColor Red }
     exit 1
 }
 
