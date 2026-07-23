@@ -2,6 +2,7 @@
 
 import { doctorCaseloads } from "@/game/doctor";
 import { DEPARTMENTS } from "@/game/setup";
+import { compareDeptKeys } from "@/game/hospitalMap";
 import type { ReceivingState } from "@/game/receiving";
 import type { Doctor, DeptKey } from "@/game/types";
 
@@ -26,26 +27,26 @@ export default function DoctorRoster({
   roster,
   receiving,
   fatigue,
+  atMin,
 }: {
   roster: Doctor[];
   receiving: ReceivingState;
   fatigue: Record<string, number>;
+  // 진료 중 점 계산용 현재 시각 — receiving.clockMin(직전 콜 시각)이 아니라 맵과 같은
+  // atMin을 써야 한다. clockMin을 쓰면 직전 콜 담당의는 다음 콜 내내 진료 중으로 굳는다.
+  atMin: number;
 }) {
   if (roster.length === 0) return null;
   const { total } = doctorCaseloads(roster, receiving);
-  // 필수과 먼저(붕괴가 보이는 쪽) → 수익과, 같은 과는 DEPARTMENTS 순.
-  const ordered = [...roster].sort((a, b) => {
-    const ma = deptMeta(a.dept), mb = deptMeta(b.dept);
-    if (ma.essential !== mb.essential) return ma.essential ? -1 : 1;
-    return DEPARTMENTS.indexOf(ma) - DEPARTMENTS.indexOf(mb);
-  });
+  // 필수과 먼저(붕괴가 보이는 쪽) → 수익과. 맵의 방 순서와 같은 비교자를 공유한다(단일 출처).
+  const ordered = [...roster].sort((a, b) => compareDeptKeys(a.dept, b.dept));
 
   return (
     <section className="rounded-lg border border-zinc-800 bg-black/30 px-4 py-3">
       <p className="mb-2.5 text-[10px] uppercase tracking-[0.3em] text-zinc-600">의료진</p>
       <ul className="flex flex-col gap-2.5">
         {ordered.map((doc) => {
-          const busy = (receiving.busyUntil[doc.id] ?? 0) > receiving.clockMin;
+          const busy = (receiving.busyUntil[doc.id] ?? 0) > atMin;
           return (
             <li key={doc.id} className="flex flex-col gap-1">
               <div className="flex items-baseline justify-between gap-3 text-xs">

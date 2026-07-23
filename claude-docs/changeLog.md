@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-23 · 병원 맵 — 의사를 숫자에서 아바타로
+
+- **무엇을**: RECEIVING(전원 콜 접수) 화면에 탑다운 픽셀 병원 맵을 얹었다. `deriveMapScene(receiving, atMin)` 순수 함수 하나가 방 8칸(안 뽑은 과 포함)·의사 아바타 위치·`busyUntil` 파생 병상 환자·조명(주간/석양/야간)을 전부 계산하고, `compareDeptKeys`가 맵의 방 순서와 우측 `DoctorRoster` 명단 순서를 단일 출처로 묶는다. 아바타는 절대 좌표 한 레이어에 둬 CSS transition으로 이동이 미끄러지고, 콜 사이 빨리감기(캡 1500ms·클릭 스킵·`prefers-reduced-motion` 즉시 점프)가 맵 위에서 재생된다. 새 게임 상태 0개, `src/game/*.ts`의 기존 로직은 무변경.
+- **왜**: 전원 콜 접수를 숫자·텍스트로만 보여주던 화면에 "지금 병원 안에서 실제로 무슨 일이 일어나는가"를 공간으로 보여준다. 야간 소등 규칙은 `roundTheClockBackup`(2명부터 24시간 배후 성립)을 그대로 읽어 "의사 1명은 24시간을 못 버틴다"는 기존 판정을 화면으로 재확인시킨다 — 새 판정을 만들지 않고 이미 있는 판정을 보이게만 한다.
+- **결과**: SDD 5태스크로 구현(순수 파생 30 tests → SVG 스프라이트 → 맵 컴포넌트 → 빨리감기+레이아웃 → 브라우저 실측), **vitest 367 green**(+30) · tsc 0 · next build 성공. 브라우저 7일 완주(순환기 2명+외과 1명+미용 1명 채용)로 실측: 8칸 중 안 뽑은 5과가 빈 방으로 표시·순서가 명단과 일치·콜 수용 시 담당 의사가 그 과 방으로 들어가고 침대 1칸이 참·진료 시간이 지나면 복도로 복귀하고 침대가 빔·17:00 이후 화면이 어두워지고 HUD가 🌙로 전환·외과(1명)는 야간에 꺼지고 순환기내과(2명)는 켜진 채 유지·빨리감기 중 시계가 단계적으로 흐르다 맵 클릭 시 즉시 목표 시각으로 점프·모바일 375px에서 가로 스크롤 없이 맵만 축소. 콘솔 에러 0(1주 전체). 설계 [spec](../docs/superpowers/specs/2026-07-23-hospital-map-design.md)·[플랜](../docs/superpowers/plans/2026-07-23-hospital-map.md).
+
 ## 2026-07-22 · 도구 — rtk(토큰 절감 프록시) 도입: 쓰기 명령은 빼고 읽기 명령만 통과
 
 - **무엇을**: [rtk](https://github.com/rtk-ai/rtk) 0.43.0을 설치하고 `PreToolUse` 훅(`rtk hook claude`)을 프로젝트 로컬 `.claude/settings.local.json`에만 걸었다(글로벌 `rtk init -g`는 안 씀 — 모든 프로젝트·글로벌 CLAUDE.md를 건드린다). 훅이 명령을 재작성하자 **모든 Bash가 거부**돼 [T-061](troubleshooting/T-061.md)로 등재했고, 세 겹으로 잡았다: ⓐ rtk `config.toml`의 `exclude_commands`로 `git add`/`commit`/`push`/`worktree`·`gh pr create`/`merge`를 **재작성에서 제외** ⓑ `allow`에 `Bash(rtk:*)` ⓒ `deny`로 rtk의 임의 실행 서브커맨드(`run`/`proxy`/`err`/`summary`/`test`) 차단.
