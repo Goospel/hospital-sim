@@ -26,15 +26,23 @@ function positionOf(a: MapAvatar, scene: MapScene): { left: string; top: string 
   if (a.zone === "ROOM") {
     const col = scene.rooms.find((r) => r.dept === a.dept)?.col ?? 0;
     const cell = 100 / scene.rooms.length;
-    // 한 방에 최대 3명(deptCap 상한)이라 칸 안에서 30%·50%·70% 지점에 세운다.
-    return { left: `${col * cell + cell * (0.3 + a.slot * 0.2)}%`, top: `${ROOMS_H * 0.62}%` };
+    // 그 방 점유 인원 n명을 칸 안에 균등 분배: slot이 0..n-1이어도 (slot+1)/(n+1)은 항상
+    // (0,1) 내부라 상한을 가정하지 않아도 구조적으로 칸을 못 벗어난다(혼자면 정중앙).
+    const occupants = scene.avatars.filter((other) => other.zone === "ROOM" && other.dept === a.dept).length;
+    return { left: `${col * cell + (cell * (a.slot + 1)) / (occupants + 1)}%`, top: `${ROOMS_H * 0.62}%` };
   }
   if (a.zone === "BED") {
     const cell = 100 / Math.max(1, scene.beds.length);
+    // 16 = 병동 밴드(ROOMS_H+CORRIDOR_H부터 시작) 안에서 침대 스프라이트 줄까지 내리는 손튜닝
+    // 오프셋 — 스프라이트가 밴드 상단 쪽에 그려져 있어 그 줄 높이에 맞춘 값이다.
     return { left: `${a.slot * cell + cell / 2}%`, top: `${ROOMS_H + CORRIDOR_H + 16}%` };
   }
-  // 복도 — 의사·환자가 한 카운터를 공유해 자리가 겹치지 않는다.
-  return { left: `${6 + a.slot * 7}%`, top: `${ROOMS_H + CORRIDOR_H / 2}%` };
+  // 복도 — 의사·환자가 한 카운터를 공유해 자리가 겹치지 않는다. 사용 가능 폭은 6%~94%(88%)뿐이라
+  // slot당 7% 고정이면 인원이 늘 때 화면 밖으로 밀려난다 — 인원수에 맞춰 간격을 줄여 마지막
+  // 인원도 항상 94% 안에 들어오게 한다.
+  const corridorCount = scene.avatars.filter((other) => other.zone === "CORRIDOR").length;
+  const step = corridorCount > 1 ? Math.min(7, 88 / (corridorCount - 1)) : 7;
+  return { left: `${6 + a.slot * step}%`, top: `${ROOMS_H + CORRIDOR_H / 2}%` };
 }
 
 export default function HospitalMap({ scene }: { scene: MapScene }) {
