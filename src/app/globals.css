@@ -59,3 +59,27 @@ body { font-family: var(--font-sans); }
   border-radius: var(--radius-paper);
   box-shadow: var(--paper-highlight), var(--shadow-paper);
 }
+
+/* ── 병원 맵 연출 레이어 ────────────────────────────────────────────────
+   게임 시계(atMin)와 분리된 층이다. 결정 대기로 시계가 멈춰도 병원은 계속 돈다.
+   아바타 바깥 div가 배치 이동에 left/top + transition-all을 쓰므로, 배회는
+   반드시 **안쪽 div의 transform**이어야 한다 — 같은 속성을 둘이 잡으면 이동
+   중에 배회가 위치를 덮어써 아바타가 튄다. */
+@keyframes hm-wander {
+  0%,
+  100% { transform: translate(0, 0); }
+  25%  { transform: translate(1.5px, -1px); }
+  50%  { transform: translate(0, 1.5px); }
+  75%  { transform: translate(-1.5px, -0.5px); }
+}
+
+.hm-wander {
+  animation-name: hm-wander;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  /* duration·delay는 wanderTiming이 인라인 style로 준다 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hm-wander { animation: none; }
+}

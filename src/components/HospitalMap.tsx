@@ -1,6 +1,6 @@
 "use client";
 
-import type { Lighting, MapAvatar, MapScene } from "@/game/hospitalMap";
+import { wanderTiming, type Lighting, type MapAvatar, type MapScene } from "@/game/hospitalMap";
 import { BedSprite, DoctorSprite, PatientSprite } from "./PixelSprite";
 
 /**
@@ -98,13 +98,24 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
       <div className="absolute inset-0">
         {scene.avatars.map((a) => {
           const { left, top } = positionOf(a, scene);
+          const wander = wanderTiming(a.id);
           return (
             <div
               key={a.id}
               className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 transition-all duration-300 ease-linear sm:h-6 sm:w-6"
               style={{ left, top }}
             >
-              {a.kind === "DOCTOR" && a.dept ? <DoctorSprite dept={a.dept} busy={a.busy} /> : <PatientSprite />}
+              {/*
+                안쪽은 transform 전용이다 — 바깥이 left/top(배치 이동)을 쓰므로 속성이
+                갈려야 이동과 배회가 서로 안 덮어쓴다. 바깥의 -translate-*도 transform이지만
+                별개 요소라 충돌하지 않는다.
+              */}
+              <div
+                className="hm-wander h-full w-full"
+                style={{ animationDelay: `${wander.delayMs}ms`, animationDuration: `${wander.durationMs}ms` }}
+              >
+                {a.kind === "DOCTOR" && a.dept ? <DoctorSprite dept={a.dept} busy={a.busy} /> : <PatientSprite />}
+              </div>
             </div>
           );
         })}

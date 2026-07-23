@@ -297,3 +297,30 @@ describe('lightingAt — 마감을 넘긴 시각', () => {
     expect(lightingAt(DAY_LENGTH_MIN + 150)).toBe('NIGHT')
   })
 })
+
+import { wanderTiming } from './hospitalMap'
+
+describe('wanderTiming — 유휴 배회 박자', () => {
+  it('같은 id는 항상 같은 박자(RNG 0 — Math.random 금지)', () => {
+    expect(wanderTiming('doc-CARDIOLOGY-1')).toEqual(wanderTiming('doc-CARDIOLOGY-1'))
+  })
+
+  it('다른 id는 박자가 갈린다 — 전원이 같은 박자면 기계로 보인다', () => {
+    const ids = ['doc-CARDIOLOGY-1', 'doc-CARDIOLOGY-2', 'doc-AESTHETICS-1', 'pat-doc-CARDIOLOGY-1']
+    const beats = ids.map((id) => {
+      const t = wanderTiming(id)
+      return `${t.delayMs}/${t.durationMs}`
+    })
+    expect(new Set(beats).size).toBe(ids.length)
+  })
+
+  it('지연 0~2초, 주기 2.6~4.2초 안에 있다', () => {
+    for (const id of ['', 'a', 'doc-CARDIOLOGY-1', 'pat-doc-AESTHETICS-3']) {
+      const { delayMs, durationMs } = wanderTiming(id)
+      expect(delayMs).toBeGreaterThanOrEqual(0)
+      expect(delayMs).toBeLessThan(2000)
+      expect(durationMs).toBeGreaterThanOrEqual(2600)
+      expect(durationMs).toBeLessThan(4200)
+    }
+  })
+})

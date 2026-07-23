@@ -1,7 +1,7 @@
 import type { DeptKey, Doctor } from './types'
 import type { ReceivingState } from './receiving' // type-only — 런타임 순환 없음
 import { DEPARTMENTS } from './setup'
-import { DAY_LENGTH_MIN, NIGHT_START_MIN } from './daysim'
+import { DAY_LENGTH_MIN, NIGHT_START_MIN, seededUnit } from './daysim'
 
 // 병원 맵 표시 레이어 — 순수·결정론. 판정·경제에 절대 닿지 않는다(0 침습).
 // 새 게임 상태 0개: ReceivingState 하나에서 그 순간의 장면을 파생만 한다.
@@ -191,4 +191,28 @@ export function sweepMinutes(from: number, to: number, steps: number): number[] 
   if (to <= from || steps <= 1) return [to]
   const span = to - from
   return Array.from({ length: steps }, (_, i) => from + Math.round((span * (i + 1)) / steps))
+}
+
+// ── 배회·배경(연출 전용) ────────────────────────────────────────────────
+// CSS 애니메이션 파라미터만 만든다. 이 층은 게임 시계(atMin)와 분리돼 있어,
+// 플레이어가 콜 카드를 노려보는 동안 시계가 멈춰도 병원은 계속 돈다.
+
+/** 문자열 id → 안정 정수. seededUnit에 먹여 아바타마다 다른 박자를 만든다. */
+function hashId(id: string): number {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (Math.imul(h, 31) + id.charCodeAt(i)) | 0
+  return h
+}
+
+/**
+ * 아바타별 유휴 배회 박자 — 전원이 같은 박자로 흔들리면 사람이 아니라 기계로 보인다.
+ * seededUnit 파생이라 같은 id는 항상 같은 박자다(RNG 0 원칙은 표시 레이어에도 적용된다).
+ */
+export function wanderTiming(id: string): { delayMs: number; durationMs: number } {
+  const h = hashId(id)
+  return {
+    delayMs: Math.floor(seededUnit(h) * 2000),
+    // salt를 xor 해 지연과 주기를 서로 다른 스트림에서 뽑는다(같은 seed면 둘이 같이 움직인다).
+    durationMs: 2600 + Math.floor(seededUnit(h ^ 0x5bf03635) * 1600),
+  }
 }
