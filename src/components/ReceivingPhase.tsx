@@ -18,6 +18,9 @@ import { REASON_CLAUSE, type NewsItem } from "@/game/news";
 import type { IncomingCall } from "@/game/types";
 import SegmentTree from "./SegmentTree";
 import DoctorRoster from "./DoctorRoster";
+import HospitalMap from "./HospitalMap";
+import { deriveMapScene } from "@/game/hospitalMap";
+import { useFastForwardClock } from "./useFastForwardClock";
 
 /** 09:00(DAY_OPEN_MIN) 기준 하루 시각(분)을 HH:MM으로. */
 function formatClock(clockMin: number): string {
@@ -149,6 +152,8 @@ export default function ReceivingPhase({
   onContinue: () => void;
 }) {
   const dayLabel = `${DAY_LABELS[day - 1]}요일`;
+  const { atMin, sweeping, skip } = useFastForwardClock(receiving);
+  const scene = deriveMapScene(receiving, atMin);
   if (receiving.done) {
     return (
       <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
@@ -222,10 +227,10 @@ export default function ReceivingPhase({
   const assignee = free.length > 0 ? pickAssignee(free, receiving.busyUntil) : undefined;
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
+    <main className="mx-auto flex min-h-full w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6 text-zinc-100 bg-zinc-950">
       {/*
-        시각 — 벽이 병상에서 전문의 점유(시간)로 바뀌면서 하루의 축이 '남은 자리'가 아니라 '시각'이 됐다.
-        DAY_OPEN_MIN(09:00) 기준 clockMin을 HH:MM으로 표시 — bedsFree(남은 자리) 표시는 없다.
+        HUD — 요일·콜 진행·시각. 시각은 맵과 같은 atMin을 쓴다(빨리감기 중에는 시계도 함께 흐른다).
+        해석 카피 0: 조명 이모지와 숫자만 놓는다.
       */}
       <header className="flex items-baseline justify-between gap-3">
         <div className="flex flex-col gap-1">
@@ -234,10 +239,21 @@ export default function ReceivingPhase({
             콜 {receiving.index + 1} / {receiving.queue.length}
           </h1>
         </div>
-        <span className="font-mono text-sm tabular-nums text-zinc-400">{formatClock(receiving.clockMin)}</span>
+        <span className="flex items-center gap-2 font-mono text-sm tabular-nums text-zinc-400">
+          {formatClock(atMin)}
+          <span aria-hidden>{scene.lighting === "NIGHT" ? "🌙" : scene.lighting === "DUSK" ? "🌆" : "☀"}</span>
+        </span>
       </header>
 
-      {/* 신문이 먼저다 — 어제의 결과를 보고 오늘의 콜을 받는다. */}
+      {/* 맵이 주인공. 재생 중 아무 데나 누르면 즉시 건너뛴다(반복 플레이 필수). */}
+      <div
+        onClick={sweeping ? skip : undefined}
+        className={sweeping ? "cursor-pointer" : undefined}
+        role="presentation"
+      >
+        <HospitalMap scene={scene} />
+      </div>
+
       <MorningPaper news={news} />
 
       {prevLine && (
@@ -246,7 +262,7 @@ export default function ReceivingPhase({
         </p>
       )}
 
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <section className="flex flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4">
           {/*
             야간 표시 — 왜 밤에만 막히는지 플레이어가 스스로 잇게 하려면 시간대가 보여야 한다.
@@ -310,6 +326,10 @@ export default function ReceivingPhase({
           )}
         </section>
 
+        {/*
+          명단을 남기는 이유: 아바타는 진료 중/자유만 보이고 피로도 막대는 못 보인다.
+          맵이 순간 상태를, 명단이 누적을 담당한다.
+        */}
         <div className="flex w-full flex-col gap-4 sm:w-72 sm:shrink-0">
           <DoctorRoster roster={receiving.hospital.roster ?? []} receiving={receiving} fatigue={fatigue} />
           <CheerfulLedger receiving={receiving} />
