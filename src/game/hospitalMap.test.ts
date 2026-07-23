@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { lightingAt, DUSK_LEAD_MIN } from './hospitalMap'
-import { NIGHT_START_MIN } from './daysim'
+import { NIGHT_START_MIN, DAY_LENGTH_MIN } from './daysim'
 
 describe('lightingAt — 시각 → 조명 3단', () => {
   it('개장~석양 전은 DAY', () => {
@@ -219,12 +219,12 @@ describe('deriveMapScene — 견고성 · 결정론', () => {
   })
 })
 
-import { sweepMinutes, sweepDurationMs, FAST_FORWARD_STEPS, FAST_FORWARD_MS_CAP } from './hospitalMap'
+import { sweepMinutes, flowDurationMs, flowStepCount, dayEndMin, MS_PER_GAME_MIN, CLOCK_TICK_MS } from './hospitalMap'
 
 describe('sweepMinutes — 콜 사이 시각열', () => {
   it('마지막은 항상 목표 시각이고 개수는 steps다', () => {
-    const seq = sweepMinutes(100, 220, FAST_FORWARD_STEPS)
-    expect(seq).toHaveLength(FAST_FORWARD_STEPS)
+    const seq = sweepMinutes(100, 220, 12)
+    expect(seq).toHaveLength(12)
     expect(seq[seq.length - 1]).toBe(220)
   })
 
@@ -241,17 +241,116 @@ describe('sweepMinutes — 콜 사이 시각열', () => {
   })
 })
 
-describe('sweepDurationMs — 게임 시간에 비례하되 캡', () => {
-  it('짧은 구간은 짧게 재생한다', () => {
-    expect(sweepDurationMs(100, 110)).toBeLessThan(FAST_FORWARD_MS_CAP)
+describe('flowDurationMs — 게임 시간에 정비례(캡 없음)', () => {
+  it('콜 사이 120분은 6초다', () => {
+    expect(flowDurationMs(0, 120)).toBe(6000)
   })
 
-  it('아침 첫 콜의 몇 시간을 그대로 기다리지 않는다(캡)', () => {
-    expect(sweepDurationMs(0, 600)).toBe(FAST_FORWARD_MS_CAP)
+  it('하루 600분을 그대로 재생하면 30초 — 긴 구간이 캡에 잘리지 않는다', () => {
+    expect(flowDurationMs(0, DAY_LENGTH_MIN)).toBe(DAY_LENGTH_MIN * MS_PER_GAME_MIN)
   })
 
   it('되감기·0구간은 0ms', () => {
-    expect(sweepDurationMs(200, 200)).toBe(0)
-    expect(sweepDurationMs(300, 200)).toBe(0)
+    expect(flowDurationMs(200, 200)).toBe(0)
+    expect(flowDurationMs(300, 200)).toBe(0)
+  })
+})
+
+describe('flowStepCount — 프레임 수', () => {
+  it('100ms 틱마다 2게임분', () => {
+    expect(CLOCK_TICK_MS / MS_PER_GAME_MIN).toBe(2)
+    expect(flowStepCount(0, 120)).toBe(60)
+  })
+
+  it('아무리 짧아도 1프레임(0으로 나뉘지 않는다)', () => {
+    expect(flowStepCount(0, 1)).toBe(1)
+    expect(flowStepCount(200, 200)).toBe(1)
+    expect(flowStepCount(300, 200)).toBe(1)
+  })
+
+  it('중복 프레임 불변식 — 어떤 구간에서도 같은 분이 두 번 나오지 않는다', () => {
+    // steps > 구간분이면 sweepMinutes의 반올림이 같은 분을 반복해 무변화 프레임이 생긴다.
+    // MS_PER_GAME_MIN(50) < CLOCK_TICK_MS(100)이라 steps ≈ 구간분/2 로 구조적으로 상한 아래다.
+    for (let span = 1; span <= 800; span++) {
+      const seq = sweepMinutes(0, span, flowStepCount(0, span))
+      expect(new Set(seq).size, `구간 ${span}분에서 중복 프레임`).toBe(seq.length)
+    }
+  })
+})
+
+describe('dayEndMin — 하루가 실제로 끝나는 시각', () => {
+  it('아무도 안 바쁘면 마감 시각', () => {
+    expect(dayEndMin({})).toBe(DAY_LENGTH_MIN)
+  })
+
+  it('마감 전에 다 끝났으면 마감 시각 — 앞당기지 않는다', () => {
+    expect(dayEndMin({ a: 300, b: 599 })).toBe(DAY_LENGTH_MIN)
+  })
+
+  it('마감을 넘겨 진료 중이면 그 종료 시각까지 — 19시가 하루의 끝이 아니다', () => {
+    expect(dayEndMin({ a: 750, b: 300 })).toBe(750)
+  })
+})
+
+describe('lightingAt — 마감을 넘긴 시각', () => {
+  it('19시를 넘긴 시각도 밤이다(진료가 남아 있어도)', () => {
+    expect(lightingAt(DAY_LENGTH_MIN + 150)).toBe('NIGHT')
+  })
+})
+
+import { wanderTiming } from './hospitalMap'
+
+describe('wanderTiming — 유휴 배회 박자', () => {
+  it('같은 id는 항상 같은 박자(RNG 0 — Math.random 금지)', () => {
+    expect(wanderTiming('doc-CARDIOLOGY-1')).toEqual(wanderTiming('doc-CARDIOLOGY-1'))
+  })
+
+  it('다른 id는 박자가 갈린다 — 전원이 같은 박자면 기계로 보인다', () => {
+    const ids = ['doc-CARDIOLOGY-1', 'doc-CARDIOLOGY-2', 'doc-AESTHETICS-1', 'pat-doc-CARDIOLOGY-1']
+    const beats = ids.map((id) => {
+      const t = wanderTiming(id)
+      return `${t.delayMs}/${t.durationMs}`
+    })
+    expect(new Set(beats).size).toBe(ids.length)
+  })
+
+  it('지연 0~2초, 주기 2.6~4.2초 안에 있다', () => {
+    for (const id of ['', 'a', 'doc-CARDIOLOGY-1', 'pat-doc-AESTHETICS-3']) {
+      const { delayMs, durationMs } = wanderTiming(id)
+      expect(delayMs).toBeGreaterThanOrEqual(0)
+      expect(delayMs).toBeLessThan(2000)
+      expect(durationMs).toBeGreaterThanOrEqual(2600)
+      expect(durationMs).toBeLessThan(4200)
+    }
+  })
+})
+
+import { ambientWalkers } from './hospitalMap'
+
+describe('ambientWalkers — 배경 보행자(순수 장식)', () => {
+  it('주간 5 · 석양 2 · 야간 0 — 밤에 텅 비는 것과 소등이 같은 출처다', () => {
+    expect(ambientWalkers('DAY')).toHaveLength(5)
+    expect(ambientWalkers('DUSK')).toHaveLength(2)
+    expect(ambientWalkers('NIGHT')).toHaveLength(0)
+  })
+
+  it('같은 조명은 항상 같은 목록(RNG 0)', () => {
+    expect(ambientWalkers('DAY')).toEqual(ambientWalkers('DAY'))
+  })
+
+  it('id가 고유하고, 인원이 줄어도 남는 사람은 key를 유지한다(리마운트로 걸음이 끊기지 않게)', () => {
+    const day = ambientWalkers('DAY')
+    expect(new Set(day.map((w) => w.id)).size).toBe(day.length)
+    expect(ambientWalkers('DUSK').map((w) => w.id)).toEqual(day.slice(0, 2).map((w) => w.id))
+  })
+
+  it('lane은 복도 3줄 안(0|1|2)이고 지연·주기가 범위 안', () => {
+    for (const w of ambientWalkers('DAY')) {
+      expect([0, 1, 2]).toContain(w.lane)
+      expect(w.delayMs).toBeGreaterThanOrEqual(0)
+      expect(w.delayMs).toBeLessThan(8000)
+      expect(w.durationMs).toBeGreaterThanOrEqual(9000)
+      expect(w.durationMs).toBeLessThan(16000)
+    }
   })
 })

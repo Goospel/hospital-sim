@@ -1,6 +1,6 @@
 "use client";
 
-import type { Lighting, MapAvatar, MapScene } from "@/game/hospitalMap";
+import { ambientWalkers, wanderTiming, type Lighting, type MapAvatar, type MapScene } from "@/game/hospitalMap";
 import { BedSprite, DoctorSprite, PatientSprite } from "./PixelSprite";
 
 /**
@@ -94,17 +94,50 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
         ))}
       </div>
 
+      {/*
+        배경 보행자 — 콜과 무관한 익명 통행. MapScene에 없다(게임 상태가 아니라 장식).
+        CSS 애니메이션이라 게임 시계가 멈춰도 계속 걷는다 — 결정 대기 중에도 병원이 돈다.
+        불투명도를 낮춰 침대 위의 '진짜' 환자와 구별한다.
+      */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+        {ambientWalkers(scene.lighting).map((w) => (
+          <div
+            key={w.id}
+            className="hm-walker absolute h-4 w-4 -translate-y-1/2 opacity-40 sm:h-5 sm:w-5"
+            style={{
+              // 복도 밴드(ROOMS_H% ~ ROOMS_H+CORRIDOR_H%) 안의 세 줄: 56% / 60% / 64%
+              top: `${ROOMS_H + 4 + w.lane * 4}%`,
+              animationDelay: `${w.delayMs}ms`,
+              animationDuration: `${w.durationMs}ms`,
+            }}
+          >
+            <PatientSprite />
+          </div>
+        ))}
+      </div>
+
       {/* 아바타 레이어 — 이동이 곧 transition이다 */}
       <div className="absolute inset-0">
         {scene.avatars.map((a) => {
           const { left, top } = positionOf(a, scene);
+          const wander = wanderTiming(a.id);
           return (
             <div
               key={a.id}
               className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 transition-all duration-300 ease-linear sm:h-6 sm:w-6"
               style={{ left, top }}
             >
-              {a.kind === "DOCTOR" && a.dept ? <DoctorSprite dept={a.dept} busy={a.busy} /> : <PatientSprite />}
+              {/*
+                안쪽은 transform 전용이다 — 바깥이 left/top(배치 이동)을 쓰므로 속성이
+                갈려야 이동과 배회가 서로 안 덮어쓴다. 바깥의 -translate-*도 transform이지만
+                별개 요소라 충돌하지 않는다.
+              */}
+              <div
+                className="hm-wander h-full w-full"
+                style={{ animationDelay: `${wander.delayMs}ms`, animationDuration: `${wander.durationMs}ms` }}
+              >
+                {a.kind === "DOCTOR" && a.dept ? <DoctorSprite dept={a.dept} busy={a.busy} /> : <PatientSprite />}
+              </div>
             </div>
           );
         })}
