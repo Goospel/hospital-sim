@@ -91,6 +91,23 @@ export function isElective(kind: CallKind): boolean {
   return kind === 'COSMETIC_WALKIN' || kind === 'SPECIALIST_ELECTIVE'
 }
 
+/**
+ * 묻지 않고 자동으로 받는 콜 — 보톡스 상담·검진 패키지 같은 워크인.
+ *
+ * 이 콜들엔 애초에 결정이 없었다: 자유 의사가 있으면 병원은 언제나 받는다(원가의 200%다).
+ * 매번 「받기/보내기」를 물어 그 자명한 답을 플레이어 손에 얹으면, 정작 선택인 것
+ * (같은 의사를 두고 응급과 다투는 배후과 예약)과 구별이 안 된다.
+ *
+ * 그래서 **자동은 선택진료의 진부분집합**이다 — `SPECIALIST_ELECTIVE`는 남긴다.
+ * 응급은 여기 들어올 일이 없다: decide가 accept를 무시하고 하드락만 보고 판정한다.
+ *
+ * 자원이 없으면 자동이라도 못 받는다 — decide의 `free.length > 0` 가드가 그대로 걸려
+ * 미용 의사가 전부 진료 중이면 자동 접수도 거절로 기록된다(자동 ≠ 무한 수용).
+ */
+export function isAutoAccept(kind: CallKind): boolean {
+  return kind === 'COSMETIC_WALKIN'
+}
+
 /** 콜 한 통 수용으로 누적되는 손익 델타(억). */
 export function callDelta(kind: CallKind): number {
   const e = CALL_ECONOMICS[kind]

@@ -48,7 +48,7 @@ function positionOf(a: MapAvatar, scene: MapScene): { left: string; top: string 
 
 export default function HospitalMap({ scene }: { scene: MapScene }) {
   return (
-    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xs border border-frame bg-desk-2">
       {/* 진료실 줄 */}
       <div
         className="absolute inset-x-0 top-0 grid gap-1 p-1.5"
@@ -57,17 +57,22 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
         {scene.rooms.map((room) => (
           <div
             key={room.dept}
-            className={`flex flex-col justify-end rounded-sm border transition-colors duration-500 ${
+            className={`flex flex-col justify-end rounded-xs border transition-colors duration-500 ${
               room.lit
                 ? room.staffed
-                  ? "border-zinc-700 bg-zinc-800"
-                  : "border-zinc-800 bg-zinc-800/40" // 빈 방 — 안 뽑은 과가 여기 보인다
-                : "border-zinc-900 bg-black/60"
+                  ? "border-frame bg-frame/70"
+                  : "border-frame/60 bg-frame/25" // 빈 방 — 안 뽑은 과가 여기 보인다
+                : "border-desk bg-black/60"
             }`}
           >
+            {/*
+              9px는 스펙의 12px 하한 아래라 대비를 깎을 여유가 없다 — 켜진 방은 잉크를 최대로 준다.
+              (토큰화하며 /70으로 낮췄더니 2.37까지 떨어져 되돌렸다. 꺼진 방이 흐린 건 의도다 —
+              불이 꺼졌다는 사실 자체가 "안 뽑은 과"를 보여주는 정보다.)
+            */}
             <span
               className={`truncate px-1 pb-0.5 text-center text-[9px] leading-tight ${
-                room.lit ? "text-zinc-400" : "text-zinc-700"
+                room.lit ? "text-on-desk" : "text-on-desk/25"
               }`}
             >
               {room.label}
@@ -78,7 +83,7 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
 
       {/* 복도 */}
       <div
-        className="absolute inset-x-0 border-y border-zinc-800 bg-zinc-950"
+        className="absolute inset-x-0 border-y border-frame bg-desk"
         style={{ top: `${ROOMS_H}%`, height: `${CORRIDOR_H}%` }}
       />
 

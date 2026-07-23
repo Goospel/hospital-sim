@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   createCallQueue, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
-  WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective, requiresBackupCare, carriesLawsuitRisk,
-  callsForBeds,
+  WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective, isAutoAccept, requiresBackupCare, carriesLawsuitRisk,
+  BACKUP_CARE_KINDS, callsForBeds,
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
@@ -183,6 +183,25 @@ describe('SPECIALIST_ELECTIVE (배후과 예약진료)', () => {
   it('CALL_ECONOMICS에 항목이 있다(부호 흑자)', () => {
     const e = CALL_ECONOMICS.SPECIALIST_ELECTIVE
     expect(e.revenueBillions).toBeGreaterThan(e.costBillions)
+  })
+})
+
+describe('isAutoAccept (묻지 않고 받는 콜)', () => {
+  it('워크인(보톡스·검진)만 자동 접수', () => {
+    expect(isAutoAccept('COSMETIC_WALKIN')).toBe(true)
+  })
+  it('배후과 예약은 자동이 아니다 — 같은 의사를 응급과 두고 다투는 유일한 선택이라 플레이어가 정한다', () => {
+    expect(isAutoAccept('SPECIALIST_ELECTIVE')).toBe(false)
+  })
+  it('응급은 자동 접수 대상이 아니다 — decide가 이미 accept를 무시하고 판정한다', () => {
+    for (const kind of BACKUP_CARE_KINDS) {
+      expect(isAutoAccept(kind)).toBe(false)
+    }
+  })
+  it('자동 접수는 선택진료의 부분집합 — 응급 판정 경로를 건드리지 않는다', () => {
+    for (const kind of Object.keys(CALL_ECONOMICS) as CallKind[]) {
+      if (isAutoAccept(kind)) expect(isElective(kind)).toBe(true)
+    }
   })
 })
 

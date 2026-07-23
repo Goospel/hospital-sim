@@ -29,19 +29,19 @@ export default function GrowthPhase({
   const nextBedTier = BED_TIERS.find((t) => t > beds);
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 px-5 py-8 text-zinc-100 bg-zinc-950">
+    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col gap-5 bg-desk px-5 py-8 text-on-desk">
       <header className="flex flex-col gap-1">
-        <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">{state.week}주차 · 재투자</span>
-        <h1 className="text-lg font-semibold">병원을 키우시겠습니까</h1>
-        <p className="text-sm text-zinc-400">금고 {formatSignedBillions(state.treasury)} 안에서 증축합니다. 그대로 두고 넘어가도 됩니다.</p>
+        <span className="text-xs font-medium uppercase tracking-[0.25em] text-on-desk/60">{state.week}주차 · 재투자</span>
+        <h1 className="font-serif text-xl">병원을 키우시겠습니까</h1>
+        <p className="text-sm text-on-desk/70">금고 {formatSignedBillions(state.treasury)} 안에서 증축합니다. 그대로 두고 넘어가도 됩니다.</p>
       </header>
 
       {/* 병상 티어 */}
-      <div className="rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-3">
+      <div className="rounded-xs border border-frame bg-desk-2 px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-medium text-zinc-100">병상 {beds}</span>
-            <span className="font-mono text-xs tabular-nums text-zinc-600">
+            <span className="text-sm font-medium text-on-desk">병상 {beds}</span>
+            <span className="font-mono text-xs tabular-nums text-on-desk/70">
               {nextBedTier ? `→ ${nextBedTier}병상 증설 ${bedExpansionCost(beds, nextBedTier)}억 · 환자·필수과 상한↑` : "최대 병상"}
             </span>
           </div>
@@ -49,7 +49,7 @@ export default function GrowthPhase({
             type="button"
             disabled={!nextBedTier}
             onClick={() => nextBedTier && setBeds(nextBedTier)}
-            className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 transition-colors hover:bg-zinc-800 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            className="rounded-xs border border-frame px-3 py-1.5 text-sm text-on-desk transition-colors hover:bg-frame disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >
             증설
           </button>
@@ -65,21 +65,21 @@ export default function GrowthPhase({
           const floor = state.choices.doctors[dept.key] ?? 0; // 해고 방지 하한
           const atPool = remain !== null && count - floor >= remain; // 이번 성장에서 뽑을 수 있는 한계
           return (
-            <div key={dept.key} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-3">
+            <div key={dept.key} className="flex items-center justify-between rounded-xs border border-frame bg-desk-2 px-4 py-3">
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-zinc-100">{dept.label}</span>
-                <span className="font-mono text-xs tabular-nums text-zinc-600">
+                <span className="text-sm font-medium text-on-desk">{dept.label}</span>
+                <span className="font-mono text-xs tabular-nums text-on-desk/70">
                   채용 {dept.hireCostBillions}억/명{remain !== null ? ` · 전국 잔여 ${remain}` : ""}
                 </span>
               </div>
               <div className="flex items-center gap-3">
                 <button type="button" aria-label={`${dept.label} 줄이기`} disabled={count <= floor}
                   onClick={() => setChoices((c) => adjustDoctors(c, dept.key, -1, cap))}
-                  className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400">−</button>
-                <span className="w-4 text-center font-mono text-sm tabular-nums text-zinc-100">{count}</span>
+                  className="flex h-7 w-7 items-center justify-center rounded-xs border border-frame text-on-desk transition-colors hover:bg-frame disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted">−</button>
+                <span className="w-4 text-center font-mono text-sm tabular-nums text-on-desk">{count}</span>
                 <button type="button" aria-label={`${dept.label} 늘리기`} disabled={count >= cap || atPool}
                   onClick={() => setChoices((c) => adjustDoctors(c, dept.key, 1, cap))}
-                  className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-700 text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400">+</button>
+                  className="flex h-7 w-7 items-center justify-center rounded-xs border border-frame text-on-desk transition-colors hover:bg-frame disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted">+</button>
               </div>
             </div>
           );
@@ -87,10 +87,10 @@ export default function GrowthPhase({
       </div>
 
       {/* 비용 / 금고 */}
-      <div className="rounded-lg border border-zinc-800 bg-black/40 px-4 py-3">
+      <div className="rounded-xs border border-frame bg-desk-2 px-4 py-3">
         <div className="flex items-baseline justify-between">
-          <span className="text-xs uppercase tracking-widest text-zinc-600">이번 성장 비용 / 금고</span>
-          <span className={`font-mono text-lg tabular-nums ${ok ? "text-zinc-100" : "text-red-500"}`}>
+          <span className="text-xs font-medium uppercase tracking-widest text-on-desk/60">이번 성장 비용 / 금고</span>
+          <span className={`font-mono text-lg tabular-nums ${ok ? "text-on-desk" : "text-alarm"}`}>
             {cost}억 / {state.treasury}억
           </span>
         </div>
@@ -100,7 +100,7 @@ export default function GrowthPhase({
         type="button"
         onClick={() => onComplete(choices, beds)}
         disabled={!ok}
-        className="rounded-lg bg-emerald-600 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        className="rounded-xs bg-go py-3 text-base font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk-2 disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
       >
         이번 주 진료 시작
       </button>

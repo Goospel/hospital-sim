@@ -22,16 +22,19 @@ export default function WorldEventCard({
 }) {
   const badge = week && week > 1 ? `${week}주차 · 속보 · 의료계` : "속보 · 의료계";
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-6 px-5 py-12 text-zinc-100 bg-zinc-950">
-      <header className="flex flex-col gap-2">
-        <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">{badge}</span>
-        <h1 className="text-xl font-semibold leading-snug">{event.headline}</h1>
+    <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-6 bg-desk px-5 py-12 text-on-desk">
+      {/* 헤드라인은 명조 — 아침 신문(ReceivingPhase)과 같은 활자 규칙이라 "기사"가 한 목소리로 읽힌다. */}
+      <header className="flex flex-col gap-2 border-b border-frame pb-4">
+        <span className="font-mono text-xs uppercase tracking-[0.25em] text-on-desk/60">
+          {badge}
+        </span>
+        <h1 className="font-serif text-2xl leading-snug">{event.headline}</h1>
       </header>
 
       {event.briefing.length > 0 && (
-        <ul className="flex flex-col gap-2 border-l-2 border-zinc-800 pl-4">
+        <ul className="flex flex-col gap-2 border-l-2 border-frame pl-4">
           {event.briefing.map((line, i) => (
-            <li key={i} className="text-sm leading-relaxed text-zinc-300">
+            <li key={i} className="text-sm leading-relaxed text-on-desk/70">
               {line}
             </li>
           ))}
@@ -43,7 +46,7 @@ export default function WorldEventCard({
       <button
         type="button"
         onClick={onContinue}
-        className="rounded-lg bg-zinc-100 py-3 text-base font-semibold text-zinc-900 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        className="rounded-xs border border-frame py-3 text-base font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
       >
         {ctaLabel}
       </button>

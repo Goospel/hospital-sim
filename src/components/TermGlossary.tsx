@@ -21,7 +21,7 @@ export default function TermGlossary({ text }: { text: string }) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="self-start rounded text-xs text-zinc-500 transition-colors hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        className="self-start rounded-xs text-xs text-on-desk/70 transition-colors hover:text-on-desk focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
       >
         용어 풀이 {open ? "▴" : "▾"}
       </button>
@@ -29,12 +29,12 @@ export default function TermGlossary({ text }: { text: string }) {
       {open && (
         <dl
           id={panelId}
-          className="flex flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.02] px-4 py-3"
+          className="flex flex-col gap-3 rounded-xs border border-frame bg-desk-2 px-4 py-3"
         >
           {entries.map((e) => (
             <div key={e.term} className="flex flex-col gap-0.5">
-              <dt className="text-sm font-semibold text-zinc-200">{e.term}</dt>
-              <dd className="text-xs leading-5 text-zinc-400">{e.def}</dd>
+              <dt className="text-sm font-semibold text-on-desk">{e.term}</dt>
+              <dd className="text-xs leading-5 text-on-desk/70">{e.def}</dd>
             </div>
           ))}
         </dl>

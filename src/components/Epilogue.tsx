@@ -54,7 +54,7 @@ export default function Epilogue({
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-5 py-8 text-on-desk bg-desk">
       <span
         className={`text-xs uppercase tracking-[0.25em] ${
-          turnedAway > 0 ? "text-alarm" : "text-on-desk-muted"
+          turnedAway > 0 ? "text-alarm" : "text-on-desk/70"
         }`}
       >
         결말
@@ -64,7 +64,7 @@ export default function Epilogue({
         <p className={`font-serif text-2xl font-bold ${turnedAway > 0 ? "text-alarm" : "text-on-desk"}`}>
           {title}
         </p>
-        <p className="text-sm text-on-desk-muted">{subtitle}</p>
+        <p className="text-sm text-on-desk/70">{subtitle}</p>
       </section>
 
       {/* 배치 = 논지: 제목 → 이번 주 신문(사람) → 장부(돈). 사람 바로 옆에 돈. */}
@@ -72,7 +72,7 @@ export default function Epilogue({
         <WeekPaper news={weekNews} />
         {ledger && <LedgerPanel ledger={ledger} />}
         <div className="w-full max-w-sm">
-          <p className="mb-3 text-center text-xs uppercase tracking-[0.3em] text-on-desk-muted">전국 · 같은 기간</p>
+          <p className="mb-3 text-center text-xs uppercase tracking-[0.3em] text-on-desk/60">전국 · 같은 기간</p>
           <ul className="flex flex-col gap-2 paper-card px-5 py-4 text-sm text-ink">
             {poolDepletion.map((p) => (
               <li key={p.label} className="flex items-baseline justify-between border-l-2 border-rule pl-3">
@@ -93,7 +93,7 @@ export default function Epilogue({
         다시 한 판
       </button>
 
-      <p className="mt-4 max-w-md text-center text-xs leading-5 text-on-desk-muted">
+      <p className="mt-4 max-w-md text-center text-xs leading-5 text-on-desk/70">
         등장하는 병원·인물·사건은 모두 허구이며, 특정 개인·집단을 비난하지 않습니다.
       </p>
     </main>
