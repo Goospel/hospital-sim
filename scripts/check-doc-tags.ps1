@@ -70,12 +70,29 @@ Write-Host "TAGS-CHECK: OK ($($Files.Count) files)"
 # 코드 스팬·코드블록 안은 링크가 아니라 **인용**이다 — 안 걸러내면 이 규칙을
 # 설명하는 문서(T-062)가 자기 자신에게 거부당한다.
 $folderLinks = @()
+$brokenLinks = @()
 foreach ($f in $Files) {
     $text = [System.IO.File]::ReadAllText($f)
-    $text = [regex]::Replace($text, '(?s)```.*?```', '')   # 펜스 코드블록
-    $text = [regex]::Replace($text, '`[^`]*`', '')          # 인라인 코드 스팬
-    foreach ($m in [regex]::Matches($text, '\[[^\]]*\]\(([^)]*/)\)')) {
-        $folderLinks += [pscustomobject]@{ File = $f; Link = $m.Groups[1].Value }
+    # 코드는 **공백**으로 치환한다 — 빈 문자열로 지우면 `[계속]`code`(x)` 처럼
+    # 원래 떨어져 있던 ']' 와 '(' 가 붙어 **없던 링크가 만들어진다**(실측 오탐 1건).
+    # 링크 텍스트 안의 코드 스팬(`[`final/`](final/)`)은 공백이 돼도 링크로 남는다.
+    $text = [regex]::Replace($text, '(?s)```.*?```', ' ')   # 펜스 코드블록
+    $text = [regex]::Replace($text, '`[^`]*`', ' ')          # 인라인 코드 스팬
+    $dir = Split-Path (Resolve-Path -LiteralPath $f).Path -Parent
+
+    foreach ($m in [regex]::Matches($text, '\[[^\]]*\]\(([^)]+)\)')) {
+        $target = $m.Groups[1].Value.Trim()
+        if ($target -like '*/') { $folderLinks += [pscustomobject]@{ File = $f; Link = $target }; continue }
+
+        # 규칙 3: 대상 존재 검사. 외부·본문앵커는 대상이 아니고, node_modules는
+        # 설치 여부에 따라 결과가 갈려(환경 의존) 검사하면 오탐이 된다.
+        if ($target -match '^(https?:|mailto:|#)') { continue }
+        if ($target -like 'node_modules/*') { continue }
+        $path = ($target -split '#')[0]
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        if (-not (Test-Path -LiteralPath (Join-Path $dir $path))) {
+            $brokenLinks += [pscustomobject]@{ File = $f; Link = $target }
+        }
     }
 }
 
@@ -83,6 +100,13 @@ if ($folderLinks.Count -gt 0) {
     Write-Host "LINKS-CHECK: FOLDER($($folderLinks.Count))"
     Write-Host '다음 링크가 폴더를 가리킨다 — 링크를 빼고 백틱 경로 표기로 내려라(T-062):' -ForegroundColor Red
     foreach ($l in $folderLinks) { Write-Host "  ✗ $($l.File) → $($l.Link)" -ForegroundColor Red }
+    exit 1
+}
+
+if ($brokenLinks.Count -gt 0) {
+    Write-Host "LINKS-CHECK: MISSING($($brokenLinks.Count))"
+    Write-Host '다음 링크의 대상이 없다 — 경로를 고치거나 링크를 걷어내라(T-062):' -ForegroundColor Red
+    foreach ($l in $brokenLinks) { Write-Host "  ✗ $($l.File) → $($l.Link)" -ForegroundColor Red }
     exit 1
 }
 

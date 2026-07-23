@@ -102,7 +102,8 @@ Assert-That $isAscii '마커 줄이 순수 ASCII다' "실제: $markerLine"
 # GitHub에서는 멀쩡히 동작해서 저장소만 봐서는 안 보인다 — 그래서 검사기로 잠근다.
 $bt = [char]96
 $folderLink = New-Md 'e.md' "---`ntags:`n  - type/meta`n---`n`n| [docs/research/](docs/research/) | 사실 근거 |`n"
-$fileLink   = New-Md 'f.md' "---`ntags:`n  - type/meta`n---`n`n[plan](claude-docs/plan.md) 과 [img](a/b/c.png)`n"
+# 규칙 3(대상 존재)이 생겼으므로 오탐 방지 픽스처도 **실재하는** 대상을 가리켜야 한다.
+$fileLink   = New-Md 'f.md' "---`ntags:`n  - type/meta`n---`n`n[A](a.md) 과 [B](b.md)`n"
 $inCode     = New-Md 'g.md' "---`ntags:`n  - type/meta`n---`n`n전: $bt[docs/research/](docs/research/)$bt 를 백틱으로 내렸다`n"
 $inFence    = New-Md 'h.md' "---`ntags:`n  - type/meta`n---`n`n$bt$bt$bt`n[x](docs/research/)`n$bt$bt$bt`n"
 
@@ -121,6 +122,38 @@ $r = Invoke-Check @($inCode)
 Assert-That ($r.ExitCode -eq 0) '백틱 코드 스팬 안이면 exit 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
 $r = Invoke-Check @($inFence)
 Assert-That ($r.ExitCode -eq 0) '펜스 코드블록 안이면 exit 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
+
+# ── 케이스 8: 대상이 없는 상대경로 링크 → 거부 (T-062 계열) ────────────────
+# 폴더 이전(claude-docs/ → docs/) 때 링크가 안 따라가 7건이 조용히 깨져 있었다.
+# 규칙 2(폴더 링크)로는 안 잡힌다 — 형태가 아니라 **대상 존재**의 문제다.
+$brokenLink = New-Md 'i.md' "---`ntags:`n  - type/meta`n---`n`n[없는 문서](nope/gone.md)`n"
+$anchorLink = New-Md 'j.md' "---`ntags:`n  - type/meta`n---`n`n[앵커](a.md#어떤-절)`n"
+$extLink    = New-Md 'k.md' "---`ntags:`n  - type/meta`n---`n`n[웹](https://example.com) · [메일](mailto:x@y.z) · [본문](#절)`n"
+$nmLink     = New-Md 'l.md' "---`ntags:`n  - type/meta`n---`n`n[넥스트 문서](node_modules/next/dist/docs/x.md)`n"
+
+Write-Host '케이스 8: 대상이 없는 상대경로 링크는 거부한다'
+$r = Invoke-Check @($brokenLink)
+Assert-That ($r.ExitCode -ne 0) '대상 없는 링크면 exit != 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
+Assert-That ($r.Output.Contains('nope/gone.md')) '어느 링크가 깨졌는지 알려준다' $r.Output
+Assert-That ($r.Output -match 'LINKS-CHECK:\s*MISSING') '대상 누락 전용 ASCII 마커' $r.Output
+
+Write-Host '케이스 9: 앵커·외부·node_modules 는 대상 검사에서 제외한다(오탐 방지)'
+$r = Invoke-Check @($anchorLink)
+Assert-That ($r.ExitCode -eq 0) '#앵커가 붙어도 본체가 있으면 exit 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
+$r = Invoke-Check @($extLink)
+Assert-That ($r.ExitCode -eq 0) 'http·mailto·본문앵커는 exit 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
+$r = Invoke-Check @($nmLink)
+Assert-That ($r.ExitCode -eq 0) 'node_modules 대상은 검사 제외라 exit 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
+
+# ── 케이스 10: 코드 스팬 제거가 **없던 링크를 만들면 안 된다** ─────────────
+# `[계속]`onContinue()`(→ toEpilogue)` 는 ']' 뒤가 '(' 가 아니라 백틱이라 링크가
+# 아니다. 코드 스팬을 빈 문자열로 지우면 둘이 붙어 가짜 링크가 만들어진다 —
+# 실제 저장소 전수 검사에서 이 오탐 1건이 나왔다.
+$spanGap = New-Md 'm.md' ("---`ntags:`n  - type/meta`n---`n`n- [계속]" + $bt + "onContinue()" + $bt + "(nope/gone.md) 설명`n")
+
+Write-Host '케이스 10: 코드 스팬을 걷어내며 없던 링크를 만들어내지 않는다(오탐 방지)'
+$r = Invoke-Check @($spanGap)
+Assert-That ($r.ExitCode -eq 0) '] 뒤가 백틱이면 링크가 아니라 exit 0' "실제 exit=$($r.ExitCode)`n$($r.Output)"
 
 # ── 결과 ───────────────────────────────────────────────────────────────────
 Write-Host ''
