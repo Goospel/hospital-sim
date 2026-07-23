@@ -66,7 +66,13 @@ function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
         {receiving.hospital.name} · 오늘 장부
       </p>
       <div className="flex flex-col gap-2 font-mono text-sm">
-        <SegmentTree segments={segments} />
+        {/*
+          「손익」이 아니라 「고정비」다 — 이 층엔 흑자가 없다(types.ts `fixedCostPerDoctorManwon`).
+          미용·검진이 번 돈은 아래 「오늘 진료 수익」 줄에 있고, 여기 −80만원은 그 과를 **열어두는**
+          값이다. 라벨이 「부문 손익」이던 동안 플레이어가 "미용이 왜 손해나지?"로 읽었다 —
+          미용은 고정비가 전 과 중 가장 가볍고(560/주) 실제로 흑자인데 화면이 정반대를 말했다.
+        */}
+        <SegmentTree segments={segments} title="부문 고정비" />
         <div className="my-1 border-t border-rule" />
         <div className="flex items-baseline justify-between">
           <span className="font-sans text-xs text-ink-2">오늘 진료 수익</span>
