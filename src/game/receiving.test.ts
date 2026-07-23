@@ -222,6 +222,18 @@ describe('isAutoAccept (묻지 않고 받는 콜)', () => {
   })
 })
 
+describe('needsDecision — 응급도 흐름을 멈추고 묻는다 (스펙 2026-07-24 §2)', () => {
+  it('응급 6종 전부 true', () => {
+    for (const kind of BACKUP_CARE_KINDS) {
+      expect(needsDecision(dayCall(kind))).toBe(true)
+    }
+  })
+  it('워크인은 여전히 자동(false), 배후과 예약은 여전히 결정(true)', () => {
+    expect(needsDecision(dayCall('COSMETIC_WALKIN'))).toBe(false)
+    expect(needsDecision(dayCall('SPECIALIST_ELECTIVE'))).toBe(true)
+  })
+})
+
 describe('createCallQueue (시간 큐)', () => {
   it('각 콜에 arrivalMin·durationMin이 붙고 도착순 정렬', () => {
     const q = createCallQueue(1)
@@ -957,10 +969,13 @@ describe('콜 제한 폐지 — 외래가 밀려들고 응급은 그대로', () 
     expect(q.filter((c) => c.kind === 'COSMETIC_WALKIN')).toHaveLength(55)
   })
 
-  it('하루 결정 횟수는 손에 잡히는 수준 — 예약이 10통을 넘지 않는다', () => {
+  // needsDecision이 응급 6종까지 넓어진 뒤(스펙 2026-07-24 §2) 이 총량은 예약(≤11) + 응급(≤4) =
+  // 최대 15다. 옛 기준(≤12)은 예약만 세던 시절 값이라 응급이 늘어나며 조용히 깨졌다(실측 최대
+  // beds=7: 15). 사람이 하루 흐름 중 실제로 누르는 결정 카드 수의 상한을 잡는 게 이 테스트의 목적.
+  it('하루 결정 횟수는 손에 잡히는 수준 — 예약+응급이 15통을 넘지 않는다', () => {
     for (const beds of [3, 5, 7]) {
       for (let d = 1; d <= DAYS_PER_WEEK; d++) {
-        expect(createCallQueue(d, beds).filter(needsDecision).length).toBeLessThanOrEqual(12)
+        expect(createCallQueue(d, beds).filter(needsDecision).length).toBeLessThanOrEqual(15)
       }
     }
   })

@@ -165,8 +165,8 @@ export default function ReceivingPhase({
   const leftCount = receiving.log.filter((e) => e.reason === "LEFT_WAITING").length;
 
   /*
-    자동 처리 — 결정이 없는 콜(응급의 구조 판정 · 워크인 접수)은 시계가 그 도착 시각을
-    지나는 순간 카드 없이 처리된다. 흐름이 멈추는 건 예약진료뿐이다(needsDecision).
+    자동 처리 — 결정이 없는 콜(워크인 접수)은 시계가 그 도착 시각을 지나는 순간 카드 없이
+    처리된다. 흐름이 멈추는 건 배후과 예약 + 응급 6종이다(needsDecision, 스펙 2026-07-24 §2).
 
     **한 렌더에 한 통씩**만 처리한다. onDecide는 setState라 index가 즉시 안 바뀌어,
     한 effect 안에서 여러 번 부르면 같은 콜을 두 번 넘기거나 큐를 건너뛴다. 대신 처리하면
@@ -239,10 +239,9 @@ export default function ReceivingPhase({
   /*
     처리 스트림 — 최근 처리된 콜 몇 건. 「직전」 한 줄을 대체한다.
 
-    카드가 사라지면서 **응급 판정이 화면에서 사라질 뻔했다**: 예전엔 응급마다 카드가 서서
-    「전원 불가 · 사유」 도장을 보여줬는데, 이제 응급은 흐르는 동안 자동 처리된다. 그 판정이
-    여기 남지 않으면 플레이어는 자기 병원이 누구를 못 받았는지 영영 모른다 — 이 게임의 논지가
-    통째로 증발한다. 그래서 스트림은 장식이 아니라 **카드가 지던 역할의 이전처**다.
+    응급이 다시 카드로 결정되는 지금도(needsDecision), 자동 처리되는 워크인은 카드 없이 흐른다 —
+    그 결과가 여기 남지 않으면 플레이어는 오늘 온 워크인 중 몇 명을 놓쳤는지(자원 부족으로
+    자동 접수도 거절될 수 있다) 영영 모른다. 카드가 지나간 응급도 여기 다시 쌓여 누적 흐름을 보여준다.
 
     맵 스프라이트가 전부 aria-hidden이라 이 목록이 스크린리더의 유일한 서술 경로이기도 하다.
   */
@@ -369,8 +368,8 @@ export default function ReceivingPhase({
       </div>
 
       {/*
-        결정이 필요한 콜만 화면 중앙에 세운다. 나머지(응급 구조 판정·워크인 접수)는 위
-        effect가 자동 처리하고 그 결과는 맵과 처리 스트림이 낸다 — 카드가 상시로 지면을
+        결정이 필요한 콜(배후과 예약 + 응급 6종)만 화면 중앙에 세운다. 나머지(워크인 접수)는
+        위 effect가 자동 처리하고 그 결과는 맵과 처리 스트림이 낸다 — 카드가 상시로 지면을
         차지할 이유가 없다. `arrived`가 undefined면 아예 안 띄운다(빈 큐·마감 흐름에서
         CallCard가 null을 반환해 검은 막만 남는 걸 막는다).
       */}
@@ -381,7 +380,7 @@ export default function ReceivingPhase({
           aria-label="진료 결정"
           className="fixed inset-0 z-50 flex items-center justify-center bg-desk/85 p-4"
         >
-          <CallCard receiving={receiving} onDecide={onDecide} />
+          <CallCard key={arrived.id} receiving={receiving} onDecide={onDecide} />
         </div>
       )}
     </main>

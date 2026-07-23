@@ -139,18 +139,17 @@ export function isAutoAccept(kind: CallKind): boolean {
 }
 
 /**
- * 흐름을 멈추고 플레이어에게 물어야 하는 콜인가 — **배후과 예약진료 하나뿐**이다.
+ * 흐름을 멈추고 플레이어에게 물어야 하는 콜인가 — **배후과 예약 + 응급 6종**.
  *
- * ⚠️ 응급은 **아직** 여기 없다 — 코어(`decide`)는 이미 응급의 `action`을 따르지만, 화면이 응급을
- * `'ACCEPT'`로 자동 디스패치해 그 결정권이 플레이어에게 닿지 않는다(카드·버튼은 다음 슬라이스).
- * 워크인은 자동 접수라 물어볼 게 없다. 하루 5통 시절엔 그래도 콜마다 「계속」을 눌러 전개를 봤지만, 20~40통이 되면
- * 그 클릭이 곧 노동이 된다 — 결정이 있는 자리에서만 멈추고 나머지는 흐르게 한다.
+ * 응급이 여기 들어온 건 방향 전환(스펙 2026-07-24)이다: 응급 판정을 자동으로 흘리면 이 게임의
+ * 감정적 핵심("당신이 그 벽이다")에서 플레이어가 구경꾼이 된다. 이제 하드락이어도 카드는 서고,
+ * 돌려보내는 버튼은 플레이어가 누른다 — 판정은 여전히 decide(코드)가 확정한다.
  *
  * 화면(`useHospitalClock`의 흐름 목표 · `ReceivingPhase`의 자동 처리)이 이 술어 하나를 공유한다.
- * 두 곳에 각자 조건을 적으면 흐름이 멈추는 지점과 카드가 뜨는 지점이 어긋난다.
+ * 두 곳에 각자 조건을 적으면 흐르는 지점과 카드가 뜨는 지점이 어긋난다.
  */
 export function needsDecision(call: IncomingCall): boolean {
-  return isElective(call.kind) && !isAutoAccept(call.kind)
+  return requiresBackupCare(call.kind) || (isElective(call.kind) && !isAutoAccept(call.kind))
 }
 
 /** 콜 한 통 수용으로 누적되는 손익 델타(만원). */

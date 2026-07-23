@@ -177,36 +177,33 @@ export default function CallCard({
           </button>
         </div>
       ) : (
-        // 응급 — decide가 action을 무시하고 자동 판정한다. 여기선 그 결과만 먼저 보여주고
-        // '계속'이 실제 decide(state, 'ACCEPT')를 부른다(전개는 그대로, action 값은 무의미).
+        // 응급 — 이제 결과 통보가 아니라 결정이다. 하드락이면 그 사유가 도장으로 서고
+        // 「받기」가 잠긴다 — 결과는 코드가 정했지만, 돌려보내는 버튼은 플레이어가 누른다.
         <div className="mt-auto flex flex-col gap-3">
-          {/*
-            판정 표시 — 색 단독 신호를 금지한다(스펙 §7). 수용은 체크 사인 + "수용" 글자로,
-            거절은 **고무도장**(사유 텍스트 필수)으로 읽힌다. 흑백으로 찍어도 판정이 남는다.
-
-            도장은 이 화면의 유일한 도장이다(§5 "화면당 0~1종, 불가역 판정에만") — 밝은
-            도장밭(stamp-field) 위 어두운 잉크라 어두운 책상에서 종잇조각처럼 뜬다.
-            회전은 -1.5°(상한 ±3°) — 서류는 반듯하고, 도장만 손으로 찍혀 살짝 기운다.
-          */}
-          {reason === null ? (
-            <p className="flex items-center gap-2 rounded-xs border border-frame bg-desk px-4 py-3 text-sm text-on-desk">
-              <span aria-hidden className="font-mono text-base leading-none">
-                ✓
-              </span>
-              수용{assignee ? ` · ${assignee.name}` : ""}
-            </p>
-          ) : (
+          {reason !== null && (
             <p className="-rotate-[1.5deg] self-start rounded-stamp border-2 border-stamp bg-stamp-field px-3 py-1.5 font-serif text-lg leading-tight text-stamp-ink">
               전원 불가 · {REASON_CLAUSE[reason]}
             </p>
           )}
-          <button
-            type="button"
-            onClick={() => onDecide("ACCEPT")}
-            className="rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
-          >
-            계속
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => onDecide("ACCEPT")}
+              disabled={reason !== null}
+              aria-label={`${call.label} 받기`}
+              className="flex-1 rounded-xs bg-go py-3 text-sm font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+            >
+              받기{reason === null && assignee ? ` · ${assignee.name}` : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => onDecide("DECLINE")}
+              aria-label={`${call.label} 돌려보내기`}
+              className="flex-1 rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+            >
+              돌려보내기
+            </button>
+          </div>
         </div>
       )}
     </section>
