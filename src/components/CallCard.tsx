@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { callerPleaAt } from "@/game/dialogue";
 import { formatSignedManwon } from "@/game/labels";
 import {
@@ -54,6 +54,44 @@ function CallEconomicsBreakdown({ call }: { call: IncomingCall }) {
         </dd>
       </div>
     </dl>
+  );
+}
+
+/**
+ * 응급 결정 카운트다운(실초) — 구급대의 인내다. 만료면 환자는 다른 병원으로 넘어간다(TIMEOUT).
+ *
+ * 실시간은 여기 UI에만 있다 — 코어(decide)는 'TIMEOUT'이라는 명시 액션을 받을 뿐 시계를 모른다
+ * (결정론 테스트에 실초가 새지 않는 경계, 스펙 §4). 값 조정은 이 상수 하나다.
+ * 콜별 리셋은 ReceivingPhase의 key={call.id} 리마운트가 담당한다.
+ */
+const EMERGENCY_DECISION_SECONDS = 15;
+
+function EmergencyCountdown({ onExpire }: { onExpire: () => void }) {
+  const [secondsLeft, setSecondsLeft] = useState(EMERGENCY_DECISION_SECONDS);
+  const firedRef = useRef(false); // StrictMode 이중 마운트·재렌더에서 TIMEOUT 1회 보장
+  useEffect(() => {
+    const t = setInterval(() => setSecondsLeft((s) => s - 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (secondsLeft <= 0 && !firedRef.current) {
+      firedRef.current = true;
+      onExpire();
+    }
+  }, [secondsLeft, onExpire]);
+  return (
+    <div className="flex items-center gap-2">
+      <div aria-hidden className="h-1.5 flex-1 overflow-hidden rounded-xs bg-desk">
+        <div
+          className="h-full bg-alarm transition-[width] duration-1000 ease-linear"
+          style={{ width: `${Math.max(0, (secondsLeft / EMERGENCY_DECISION_SECONDS) * 100)}%` }}
+        />
+      </div>
+      {/* 해석 0 — 숫자만. 색(alarm) 단독 신호 금지라 초 숫자가 판정을 진다(스펙 §7). */}
+      <span aria-live="polite" className="shrink-0 font-mono text-xs tabular-nums text-on-desk/70">
+        {Math.max(0, secondsLeft)}초
+      </span>
+    </div>
   );
 }
 
@@ -190,6 +228,7 @@ export default function CallCard({
               전원 불가 · {REASON_CLAUSE[reason]}
             </p>
           )}
+          <EmergencyCountdown onExpire={() => onDecide("TIMEOUT")} />
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
