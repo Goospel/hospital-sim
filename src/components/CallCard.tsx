@@ -116,13 +116,12 @@ export default function CallCard({
   const waitMin = canStart ? start - arrivalMin : 0;
 
   return (
-    // min-h는 FlowPanel(ReceivingPhase.tsx)과 공유하는 값이다 — 19rem = 304px,
-    // 실측한 두 카드 높이(선택진료 247px·응급 304px) 중 큰 쪽. 손으로 찍은 값이
-    // 아니라 실측값이므로 둘 중 하나만 고치면 행 높이가 다시 흔들린다 — 함께 바꾼다.
+    // 카드는 이제 화면 중앙 오버레이 안에 뜬다(ReceivingPhase) — 페이지 흐름의 한 칸이
+    // 아니므로 자리를 잡아두는 min-h가 필요 없다. 폭만 잡고 높이는 내용에 맡긴다.
     <section
       ref={cardRef}
       tabIndex={-1}
-      className="flex min-h-[19rem] flex-1 flex-col gap-3 rounded-xs border border-frame bg-desk-2 px-4 py-4"
+      className="flex w-full max-w-md flex-col gap-3 rounded-xs border border-frame bg-desk-2 px-4 py-4 shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
     >
       {/*
         야간 표시 — 왜 밤에만 막히는지 플레이어가 스스로 잇게 하려면 시간대가 보여야 한다.

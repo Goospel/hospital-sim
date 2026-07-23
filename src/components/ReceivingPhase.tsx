@@ -134,50 +134,6 @@ function MorningPaper({ news }: { news: NewsItem[] }) {
   );
 }
 
-/**
- * 흐름 중 패널 — 결정할 게 없는 동안 콜 카드 자리를 채운다.
- *
- * 직전 콜 결과는 여기 없다 — 패널 밖 독립된 줄로 옮겨 흐름 중이 아닐 때도(플레이어가
- * 결정을 고민하는 동안도) 계속 보이게 한다.
- *
- * 상태 문구는 **항상** 뜬다. 처음엔 마감 대기 문구만 뒀는데 그건 `receiving.done`일
- * 때만 참이라, 정작 대부분의 시간인 콜과 콜 사이에는 패널에 버튼만 남아 아래 min-h가
- * 그 공백을 304px로 키웠다(T-066). 두 문구 다 지금 무슨 일이 일어나는지만 말한다.
- *
- * min-h는 브라우저 실측값이다(T-065) — 이 패널은 76px, CallCard는 종류별로
- * 247px(선택진료: 가격표+버튼 2개)~304px(응급: 사유 배너+버튼 1개)로 렌더된다.
- * 카드 자리가 roster 열보다 커 그 차이(최대 228px)가 그대로 행 높이 변화 → 페이지
- * 점프로 이어지는 걸 같은 세션에서 직접 rect로 확인했다. 손으로 찍은 값이 아니라
- * 실측한 두 값(247·304) 중 큰 쪽을 그대로 썼다 — 19rem = 304px.
- */
-function FlowPanel({
-  waitingForDayEnd,
-  onSkip,
-}: {
-  waitingForDayEnd: boolean;
-  onSkip: () => void;
-}) {
-  return (
-    <section className="flex min-h-[19rem] flex-1 flex-col gap-3 rounded-xs border border-frame bg-desk-2 px-4 py-4">
-      <p
-        aria-live="polite"
-        className="flex flex-1 items-center justify-center text-center text-xs text-on-desk/70"
-      >
-        {waitingForDayEnd
-          ? "오늘 콜은 모두 처리했습니다 · 마지막 진료가 끝나기를 기다립니다"
-          : "다음 콜을 기다립니다"}
-      </p>
-      <button
-        type="button"
-        onClick={onSkip}
-        className="rounded-xs border border-frame py-2.5 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
-      >
-        건너뛰기
-      </button>
-    </section>
-  );
-}
-
 export default function ReceivingPhase({
   receiving,
   day,
@@ -328,7 +284,7 @@ export default function ReceivingPhase({
 
       {/*
         맵이 주인공. 재생 중 아무 데나 눌러도 건너뛴다 — 편의용 중복 진입점이고,
-        키보드 경로는 FlowPanel의 「건너뛰기」 버튼이 담당한다.
+        키보드 경로는 바로 아래 「건너뛰기」 버튼이 담당한다.
       */}
       <div
         onClick={flowing ? skip : undefined}
@@ -337,6 +293,29 @@ export default function ReceivingPhase({
       >
         <HospitalMap scene={scene} />
       </div>
+
+      {/*
+        흐름 상태 + 건너뛰기 — 예전엔 카드 자리를 채우던 304px 패널(FlowPanel)이었다.
+        결정이 없는 콜은 자동 처리되므로 하루의 대부분이 이 상태고, 그 대부분을 빈 상자로
+        잡아두면 화면이 세로로 늘어나 정작 맵이 밀려난다(T-066의 재발판). 한 줄로 줄인다.
+        버튼은 남긴다 — 맵 클릭 래퍼(role=presentation)에 없는 키보드 경로가 여기다.
+      */}
+      {flowing && (
+        <div className="flex items-center justify-between gap-3">
+          <p aria-live="polite" className="text-xs text-on-desk/70">
+            {receiving.done
+              ? "오늘 콜은 모두 처리했습니다 · 마지막 진료가 끝나기를 기다립니다"
+              : "다음 콜을 기다립니다"}
+          </p>
+          <button
+            type="button"
+            onClick={skip}
+            className="shrink-0 rounded-xs border border-frame px-4 py-2 text-xs font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+          >
+            건너뛰기
+          </button>
+        </div>
+      )}
 
       <MorningPaper news={news} />
 
@@ -371,32 +350,37 @@ export default function ReceivingPhase({
         </ul>
       )}
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-        {/*
-          흐르는 동안엔 결정할 게 없어 카드가 없다. 도착해야 뜬다.
-          (마감 흐름에서는 queue[index]가 undefined라 CallCard가 렌더되면 터진다.)
-          자동 접수 콜도 카드를 안 세운다 — 위 effect가 같은 프레임에 결정을 끝낸다.
-        */}
-        {flowing || autoCallId !== undefined ? (
-          <FlowPanel waitingForDayEnd={receiving.done} onSkip={skip} />
-        ) : (
-          <CallCard receiving={receiving} onDecide={onDecide} />
-        )}
-
-        {/*
-          명단을 남기는 이유: 아바타는 진료 중/자유만 보이고 피로도 막대는 못 보인다.
-          맵이 순간 상태를, 명단이 누적을 담당한다.
-        */}
-        <div className="flex w-full flex-col gap-4 sm:w-72 sm:shrink-0">
-          <DoctorRoster
-            roster={receiving.hospital.roster ?? []}
-            receiving={receiving}
-            fatigue={fatigue}
-            atMin={atMin}
-          />
-          <CheerfulLedger receiving={receiving} />
-        </div>
+      {/*
+        명단을 남기는 이유: 아바타는 진료 중/자유만 보이고 피로도 막대는 못 보인다.
+        맵이 순간 상태를, 명단이 누적을 담당한다. 카드가 오버레이로 빠지면서 이 둘이
+        세로로 쌓일 이유가 없어졌다 — 나란히 놓아 접힌 화면 안에 들어오게 한다.
+      */}
+      <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+        <DoctorRoster
+          roster={receiving.hospital.roster ?? []}
+          receiving={receiving}
+          fatigue={fatigue}
+          atMin={atMin}
+        />
+        <CheerfulLedger receiving={receiving} />
       </div>
+
+      {/*
+        결정이 필요한 콜만 화면 중앙에 세운다. 나머지(응급 구조 판정·워크인 접수)는 위
+        effect가 자동 처리하고 그 결과는 맵과 처리 스트림이 낸다 — 카드가 상시로 지면을
+        차지할 이유가 없다. `arrived`가 undefined면 아예 안 띄운다(빈 큐·마감 흐름에서
+        CallCard가 null을 반환해 검은 막만 남는 걸 막는다).
+      */}
+      {!flowing && autoCallId === undefined && arrived !== undefined && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="진료 결정"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-desk/85 p-4"
+        >
+          <CallCard receiving={receiving} onDecide={onDecide} />
+        </div>
+      )}
     </main>
   );
 }
