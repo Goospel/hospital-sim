@@ -104,6 +104,12 @@ function MorningPaper({ news }: { news: NewsItem[] }) {
  * 직전 콜 결과는 여기 없다 — 패널 밖 독립된 줄로 옮겨 흐름 중이 아닐 때도(플레이어가
  * 결정을 고민하는 동안도) 계속 보이게 한다. 이 패널이 하는 일은 마감 대기 문구와
  * 건너뛰기 버튼뿐이다.
+ *
+ * min-h는 브라우저 실측값이다(T-065) — 이 패널은 76px, CallCard는 종류별로
+ * 247px(선택진료: 가격표+버튼 2개)~304px(응급: 사유 배너+버튼 1개)로 렌더된다.
+ * 카드 자리가 roster 열보다 커 그 차이(최대 228px)가 그대로 행 높이 변화 → 페이지
+ * 점프로 이어지는 걸 같은 세션에서 직접 rect로 확인했다. 손으로 찍은 값이 아니라
+ * 실측한 두 값(247·304) 중 큰 쪽을 그대로 썼다 — 19rem = 304px.
  */
 function FlowPanel({
   waitingForDayEnd,
@@ -113,7 +119,7 @@ function FlowPanel({
   onSkip: () => void;
 }) {
   return (
-    <section className="flex flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4">
+    <section className="flex min-h-[19rem] flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4">
       {waitingForDayEnd && (
         <p aria-live="polite" className="text-xs text-zinc-400">
           오늘 콜은 모두 처리했습니다 · 마지막 진료가 끝나기를 기다립니다
