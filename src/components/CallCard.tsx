@@ -63,6 +63,11 @@ function CallEconomicsBreakdown({ call }: { call: IncomingCall }) {
  * 실시간은 여기 UI에만 있다 — 코어(decide)는 'TIMEOUT'이라는 명시 액션을 받을 뿐 시계를 모른다
  * (결정론 테스트에 실초가 새지 않는 경계, 스펙 §4). 값 조정은 이 상수 하나다.
  * 콜별 리셋은 ReceivingPhase의 key={call.id} 리마운트가 담당한다.
+ *
+ * 하드락(거부 도장이 이미 찍힌) 카드에서도 이 카운트다운은 그대로 돌고 만료 시 TIMEOUT이
+ * 나간다 — 의도된 동작이다. 구급대의 인내는 우리 병원 사정과 무관하게 흐른다. 로그는
+ * 오염되지 않는다: core의 decide가 `logReason = reason ?? (...)` 순서로 하드락 사유를
+ * UNANSWERED보다 먼저 채택한다(src/game/receiving.ts). 결함으로 보고 되돌리지 말 것.
  */
 const EMERGENCY_DECISION_SECONDS = 15;
 
@@ -70,7 +75,15 @@ function EmergencyCountdown({ onExpire }: { onExpire: () => void }) {
   const [secondsLeft, setSecondsLeft] = useState(EMERGENCY_DECISION_SECONDS);
   const firedRef = useRef(false); // StrictMode 이중 마운트·재렌더에서 TIMEOUT 1회 보장
   useEffect(() => {
-    const t = setInterval(() => setSecondsLeft((s) => s - 1), 1000);
+    // 0 이하로는 더 셀 필요가 없다 — tick 안에서 스스로 clearInterval해 언마운트 전까지
+    // 매초 불필요한 리렌더가 쌓이는 걸 막는다. TIMEOUT 1회 보장은 아래 firedRef가 별도로 맡는다.
+    const t = setInterval(() => {
+      setSecondsLeft((s) => {
+        const next = s - 1;
+        if (next <= 0) clearInterval(t);
+        return next;
+      });
+    }, 1000);
     return () => clearInterval(t);
   }, []);
   useEffect(() => {
@@ -80,7 +93,11 @@ function EmergencyCountdown({ onExpire }: { onExpire: () => void }) {
     }
   }, [secondsLeft, onExpire]);
   return (
-    <div className="flex items-center gap-2">
+    // role="timer"는 정확히 이 용도의 ARIA 역할이고 기본이 비발화(암묵 aria-live="off")다.
+    // 매초 바뀌는 값에 aria-live="polite"를 걸면 스크린리더가 15초 내내 초를 읽어 카드의
+    // 다른 정보(대사·수가·버튼)를 덮는다 — 빈번히 바뀌는 콘텐츠에 aria-live는 안티패턴.
+    // 숫자 텍스트 자체는 그대로 둔다(색 단독 신호 금지 규칙, 스펙 §7) — 접근 가능하되 조용할 뿐이다.
+    <div role="timer" aria-label="결정 제한 시간" className="flex items-center gap-2">
       <div aria-hidden className="h-1.5 flex-1 overflow-hidden rounded-xs bg-desk">
         <div
           className="h-full bg-alarm transition-[width] duration-1000 ease-linear"
@@ -88,7 +105,7 @@ function EmergencyCountdown({ onExpire }: { onExpire: () => void }) {
         />
       </div>
       {/* 해석 0 — 숫자만. 색(alarm) 단독 신호 금지라 초 숫자가 판정을 진다(스펙 §7). */}
-      <span aria-live="polite" className="shrink-0 font-mono text-xs tabular-nums text-on-desk/70">
+      <span className="shrink-0 font-mono text-xs tabular-nums text-on-desk/70">
         {Math.max(0, secondsLeft)}초
       </span>
     </div>
