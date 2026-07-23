@@ -2,6 +2,7 @@
 
 import { doctorCaseloads } from "@/game/doctor";
 import { DEPARTMENTS } from "@/game/setup";
+import { compareDeptKeys } from "@/game/hospitalMap";
 import type { ReceivingState } from "@/game/receiving";
 import type { Doctor, DeptKey } from "@/game/types";
 
@@ -33,12 +34,8 @@ export default function DoctorRoster({
 }) {
   if (roster.length === 0) return null;
   const { total } = doctorCaseloads(roster, receiving);
-  // 필수과 먼저(붕괴가 보이는 쪽) → 수익과, 같은 과는 DEPARTMENTS 순.
-  const ordered = [...roster].sort((a, b) => {
-    const ma = deptMeta(a.dept), mb = deptMeta(b.dept);
-    if (ma.essential !== mb.essential) return ma.essential ? -1 : 1;
-    return DEPARTMENTS.indexOf(ma) - DEPARTMENTS.indexOf(mb);
-  });
+  // 필수과 먼저(붕괴가 보이는 쪽) → 수익과. 맵의 방 순서와 같은 비교자를 공유한다(단일 출처).
+  const ordered = [...roster].sort((a, b) => compareDeptKeys(a.dept, b.dept));
 
   return (
     <section className="rounded-lg border border-zinc-800 bg-black/30 px-4 py-3">
