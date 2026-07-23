@@ -181,6 +181,11 @@ export default function CallCard({
         // 「받기」가 잠긴다 — 결과는 코드가 정했지만, 돌려보내는 버튼은 플레이어가 누른다.
         <div className="mt-auto flex flex-col gap-3">
           {reason !== null && (
+            /*
+              판정 도장 — 색 단독 신호 금지(스펙 §7)라 사유 텍스트를 반드시 싣는다(흑백으로
+              찍어도 판정이 남는다). 이 화면의 유일한 도장(§5 "화면당 0~1종, 불가역 판정에만").
+              회전 -1.5°는 상한 ±3° 안 — 서류는 반듯하고, 도장만 손으로 찍혀 살짝 기운다.
+            */
             <p className="-rotate-[1.5deg] self-start rounded-stamp border-2 border-stamp bg-stamp-field px-3 py-1.5 font-serif text-lg leading-tight text-stamp-ink">
               전원 불가 · {REASON_CLAUSE[reason]}
             </p>

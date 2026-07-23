@@ -171,8 +171,9 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
   })
 
   it('[신문] 배후과가 없어 못 받은 필수 응급이 전부 기사가 된다 — 능동 거절이 아니라 구조가 막는다', () => {
-    // 응급은 자동 판정이라 플레이어가 거절할 수 없다. 배후과가 하나도 없는 공범 병원에선 그날 온 필수
-    // 응급이 전부 NO_BACKUP_CARE로 막히고, 그 전원이 기사가 된다.
+    // runDay가 응급에 'ACCEPT'를 강제해도(위 policy 주석) 배후과가 하나도 없는 공범 병원에선
+    // 하드락(NO_BACKUP_CARE)이 action보다 먼저 이겨 그날 온 필수 응급이 전부 막힌다 —
+    // 플레이어의 선택이 아니라 구조가 막은 것이라 전부 기사가 된다.
     const CRITICAL: string[] = ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'ABDOMINAL_EMERGENCY', 'MEDICAL_EMERGENCY'] // 배후과 요구 응급 전체(신문 대상)
     const d1 = completeReceiving(runDay(completeSetup(collaborator), false)) // 배후과 0
     const criticalPerDay = d1.receiving!.queue.filter((c) => CRITICAL.includes(c.kind)).length

@@ -210,7 +210,7 @@ describe('isAutoAccept (묻지 않고 받는 콜)', () => {
   it('배후과 예약은 자동이 아니다 — 같은 의사를 응급과 두고 다투는 유일한 선택이라 플레이어가 정한다', () => {
     expect(isAutoAccept('SPECIALIST_ELECTIVE')).toBe(false)
   })
-  it('응급은 자동 접수 대상이 아니다 — decide가 이미 action을 무시하고 판정한다', () => {
+  it('응급은 자동 접수 대상이 아니다 — 하드락이 없으면 decide가 action을 그대로 따른다(스펙 2026-07-24 §2)', () => {
     for (const kind of BACKUP_CARE_KINDS) {
       expect(isAutoAccept(kind)).toBe(false)
     }
@@ -963,7 +963,7 @@ describe('콜 제한 폐지 — 외래가 밀려들고 응급은 그대로', () 
     expect(DAY_LENGTH_MIN / q.length).toBeLessThan(30) // 워크인 최단 진료(30분)보다 촘촘
   })
 
-  it('외래는 워크인 위주 + 예약진료 소수(12통당 1) — 예약이 결정 지점이다', () => {
+  it('외래는 워크인 위주 + 예약진료 소수(12통당 1) — 예약도 결정 지점이다(응급과 함께)', () => {
     const q = createCallQueue(1, 3)
     expect(q.filter((c) => c.kind === 'SPECIALIST_ELECTIVE')).toHaveLength(5)
     expect(q.filter((c) => c.kind === 'COSMETIC_WALKIN')).toHaveLength(55)
