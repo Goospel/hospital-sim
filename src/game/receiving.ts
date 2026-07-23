@@ -129,7 +129,7 @@ export function isElective(kind: CallKind): boolean {
  * (같은 의사를 두고 응급과 다투는 배후과 예약)과 구별이 안 된다.
  *
  * 그래서 **자동은 선택진료의 진부분집합**이다 — `SPECIALIST_ELECTIVE`는 남긴다.
- * 응급은 여기 들어올 일이 없다: decide가 action을 무시하고 하드락만 보고 판정한다.
+ * 응급은 여기 들어올 일이 없다: 응급은 자명한 답이 없어 물어야 하는 콜이다(decide는 이제 그 답을 따른다).
  *
  * 자원이 없으면 자동이라도 못 받는다 — decide의 `free.length > 0` 가드가 그대로 걸려
  * 미용 의사가 전부 진료 중이면 자동 접수도 거절로 기록된다(자동 ≠ 무한 수용).
@@ -141,8 +141,9 @@ export function isAutoAccept(kind: CallKind): boolean {
 /**
  * 흐름을 멈추고 플레이어에게 물어야 하는 콜인가 — **배후과 예약진료 하나뿐**이다.
  *
- * 응급은 `decide`가 action을 무시하고 구조로 판정하고(거절 버튼이 없다), 워크인은 자동 접수라
- * 물어볼 게 없다. 하루 5통 시절엔 그래도 콜마다 「계속」을 눌러 전개를 봤지만, 20~40통이 되면
+ * ⚠️ 응급은 **아직** 여기 없다 — 코어(`decide`)는 이미 응급의 `action`을 따르지만, 화면이 응급을
+ * `'ACCEPT'`로 자동 디스패치해 그 결정권이 플레이어에게 닿지 않는다(카드·버튼은 다음 슬라이스).
+ * 워크인은 자동 접수라 물어볼 게 없다. 하루 5통 시절엔 그래도 콜마다 「계속」을 눌러 전개를 봤지만, 20~40통이 되면
  * 그 클릭이 곧 노동이 된다 — 결정이 있는 자리에서만 멈추고 나머지는 흐르게 한다.
  *
  * 화면(`useHospitalClock`의 흐름 목표 · `ReceivingPhase`의 자동 처리)이 이 술어 하나를 공유한다.
@@ -532,13 +533,18 @@ export function initReceiving(
 export type DecisionAction = 'ACCEPT' | 'DECLINE' | 'TIMEOUT'
 
 /**
- * 현재 콜을 처리한다 — **응급은 자동 판정, 선택진료만 플레이어가 결정**한다.
+ * 현재 콜을 처리한다 — **구조가 먼저 판정하고, 그 안에서만 플레이어의 선택이 산다**(응급 포함).
  *
- * - 응급(급성복증·고열감염·필수 4종): `action`을 무시하고 자동으로 판정한다. 구조적 하드락(hardlockReason)이 없으면
- *   수용, 있으면 turnedAway. "아무리 애원해도, 아무리 거절하려 해도" 결과는 병원의 제약이 정한다.
- * - 선택진료(미용·배후과 예약): `action === 'ACCEPT'`이고 그 과 자유 의사가 있을 때만 수용. `action`이
- *   `'DECLINE'`이거나 담당 의사가 다 바쁘면 미수용(하드락이 아니라 '못 받음' — 사유 없음). `'TIMEOUT'`은
- *   `'ACCEPT'`가 아니므로 실질적으로 `'DECLINE'`과 똑같이 처리된다 — 카운트다운이 끝나면 안 받은 것으로 굳는다.
+ * - 구조적 하드락(hardlockReason ≠ null): `action`을 **무시하고** 미수용이다. 배후과 없음·야간 당직 공백·
+ *   점유는 버튼으로 못 뚫는다. 로그 사유도 그 하드락 사유가 이긴다 — 구조가 막은 게 먼저 있었던 사실이다.
+ *   "아무리 애원해도, 아무리 받으려 해도" 결과는 병원의 제약이 정한다(이 게임의 논지 = 벽은 코드가 세운다).
+ * - 하드락이 없으면(disposition `'CHOICE'`) **응급도 선택진료도 똑같이 `action`을 따른다**:
+ *   - `'ACCEPT'` → 수용(그 과 자유 의사가 있을 때만 — 응급은 하드락이 없다는 게 곧 시작 가능이라 항상 성립).
+ *   - `'DECLINE'` → 내가 보냈다. 사유 없음(`reason: null`) — 자리가 있는데 안 받은 걸 벽 이름으로 적으면 로그가 거짓말한다.
+ *   - `'TIMEOUT'` → 회신이 없었다. `'UNANSWERED'`로 남는다 — 거절과 다른 사실이라 태그가 다르다.
+ *
+ * ⚠️ 응급이 `action`을 무시하던 옛 계약은 이 슬라이스에서 폐기됐다(스펙 2026-07-24 §2).
+ * 화면이 응급을 자동 디스패치하는지(`needsDecision`)는 이 리듀서와 별개 층이다.
  *
  * 수용하면 담당 과(handlingDept)의 자유 의사를 `arrivalMin + durationMin`까지 점유한다.
  * 그 과에 자유 의사가 없으면(미채용) 아무도 점유하지 않는다(pickAssignee는 자유 의사가 있을 때만).
@@ -558,8 +564,9 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
   const canStart = typeof start === 'number'
 
   const accept = action === 'ACCEPT'
-  // ⚠️ 과도기(동작 보존): 응급은 아직 액션 무관 자동 판정이다 — 플레이어 의사로 바꾸는 건 다음 슬라이스.
-  const effectiveAccept = disposition === 'CHOICE' && (isElective(call.kind) ? accept && canStart : true)
+  // 응급도 이제 플레이어 의사를 따른다 — 하드락(disposition)이 먼저 이기고, 그 안에서만 선택이 산다.
+  // (`canStart`는 응급에 대해 항등이다: hardlockReason이 startMinFor로 끝나 CHOICE면 반드시 시작 가능하다.)
+  const effectiveAccept = disposition === 'CHOICE' && accept && canStart
 
   // 수용한 콜은 담당 과 의사를 **시작 시각부터** 점유한다 — 기다린 콜은 도착이 아니라 시작이 기준이다.
   let busyUntil = state.busyUntil
@@ -580,7 +587,14 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
   // "오늘 몇 명이 못 기다리고 갔나"가 북적임의 대가라 로그에 남아야 화면이 보여줄 수 있다.
   // 🔴 NO_FREE_SPECIALIST는 여기 넣지 않는다: 선택진료에서 그건 "구조가 막았다"가 아니라
   // "그 과를 애초에 안 뽑았다"라, 사유를 달면 로그가 거짓말을 한다(기존 계약 — log 필드 주석).
-  const logReason = reason ?? (!effectiveAccept && start === 'LEFT_WAITING' ? 'LEFT_WAITING' : null)
+  // TIMEOUT이 LEFT_WAITING보다 먼저다 — 전화를 안 받은 게 시간상 먼저 일어난 사실이다.
+  const logReason =
+    reason ??
+    (!effectiveAccept && action === 'TIMEOUT'
+      ? 'UNANSWERED'
+      : !effectiveAccept && start === 'LEFT_WAITING'
+        ? 'LEFT_WAITING'
+        : null)
 
   const log = [...state.log, { callId: call.id, accepted: effectiveAccept, disposition, reason: logReason, startMin }]
   const index = state.index + 1
@@ -658,9 +672,11 @@ export function unacceptedGroups(
     const outcome =
       entry.reason === 'LEFT_WAITING'
         ? '기다리다 감'
-        : entry.disposition === 'HARDLOCK_REJECT'
-          ? '하드락'
-          : '거절'
+        : entry.reason === 'UNANSWERED'
+          ? '응답 없음'
+          : entry.disposition === 'HARDLOCK_REJECT'
+            ? '하드락'
+            : '거절'
     const key = `${label} ${outcome}`
     const hit = groups.get(key)
     if (hit) hit.count += 1

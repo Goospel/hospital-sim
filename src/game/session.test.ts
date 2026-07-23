@@ -20,14 +20,19 @@ type Policy = boolean | ((call: IncomingCall) => boolean)
 /**
  * 그날의 RECEIVING을 끝까지 흘린다(하루 마감은 하지 않는다). 방침은 불리언(전부) 또는 콜별 함수.
  *
- * 응급(일반·필수)은 decide가 자동 판정하므로 accept를 무시한다 — 방침은 **선택진료**(미용·배후과 예약)에만
- * 먹는다. 그래서 '양심'은 선택진료를 거절해 그 과 의사를 응급에 비워두는 선택으로 표현된다(essentialFirst).
+ * 방침은 **선택진료**(미용·배후과 예약)에만 먹고, 응급은 언제나 받는다 — 그래서 '양심'은 선택진료를
+ * 거절해 그 과 의사를 응급에 비워두는 선택으로 표현된다(essentialFirst).
+ *
+ * ⚠️ 응급 강제 'ACCEPT'가 이 드레인의 핵심이다. 응급이 플레이어 결정이 된 뒤(스펙 2026-07-24 §2)
+ * 방침을 응급에도 그대로 먹이면 `accept=false` 루트가 "응급까지 전부 보낸다"로 뒤집혀, 이 스위트가
+ * 재는 게 하루의 경제가 아니라 새 의미론이 된다. 여기 고정된 건 **옛 자동 판정과 동등한 드레인**이다
+ * (receiving.test.ts의 drainAuto와 같은 매핑 — 응급은 받고 선택진료만 방침을 탄다).
  */
 function runDay(state: SessionState, accept: Policy) {
   let s = state
   while (!s.receiving!.done) {
     const call = s.receiving!.queue[s.receiving!.index]
-    const yes = typeof accept === 'function' ? accept(call) : accept
+    const yes = isElective(call.kind) ? (typeof accept === 'function' ? accept(call) : accept) : true
     s = { ...s, receiving: decide(s.receiving!, yes ? 'ACCEPT' : 'DECLINE') }
   }
   return s

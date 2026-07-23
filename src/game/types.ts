@@ -84,6 +84,12 @@ export type RejectionReason =
    * 거짓말이 된다 — 있었다, 늦었을 뿐이다).
    */
   | 'LEFT_WAITING'
+  /**
+   * 수용 회신이 없었다 — 결정 카운트다운(UI 15초)이 끝나 환자가 다른 병원으로 넘어갔다.
+   * 구조가 막은 것도(하드락 아님), 내가 보낸 것도(reason null 아님) 아니다 — 전화를 든 채 시간이 갔다.
+   * 하드락과 겹치면 하드락 사유가 이긴다(구조가 막은 게 먼저 있었던 사실이다) — decide의 logReason 순서.
+   */
+  | 'UNANSWERED'
 
 /** 전원 판정 결과 — 이 값만이 게임 상태 전이를 결정한다 */
 export interface TransferVerdict {
