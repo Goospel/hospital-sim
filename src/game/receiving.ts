@@ -129,7 +129,7 @@ export function isElective(kind: CallKind): boolean {
  * (같은 의사를 두고 응급과 다투는 배후과 예약)과 구별이 안 된다.
  *
  * 그래서 **자동은 선택진료의 진부분집합**이다 — `SPECIALIST_ELECTIVE`는 남긴다.
- * 응급은 여기 들어올 일이 없다: decide가 accept를 무시하고 하드락만 보고 판정한다.
+ * 응급은 여기 들어올 일이 없다: decide가 action을 무시하고 하드락만 보고 판정한다.
  *
  * 자원이 없으면 자동이라도 못 받는다 — decide의 `free.length > 0` 가드가 그대로 걸려
  * 미용 의사가 전부 진료 중이면 자동 접수도 거절로 기록된다(자동 ≠ 무한 수용).
@@ -141,7 +141,7 @@ export function isAutoAccept(kind: CallKind): boolean {
 /**
  * 흐름을 멈추고 플레이어에게 물어야 하는 콜인가 — **배후과 예약진료 하나뿐**이다.
  *
- * 응급은 `decide`가 accept를 무시하고 구조로 판정하고(거절 버튼이 없다), 워크인은 자동 접수라
+ * 응급은 `decide`가 action을 무시하고 구조로 판정하고(거절 버튼이 없다), 워크인은 자동 접수라
  * 물어볼 게 없다. 하루 5통 시절엔 그래도 콜마다 「계속」을 눌러 전개를 봤지만, 20~40통이 되면
  * 그 클릭이 곧 노동이 된다 — 결정이 있는 자리에서만 멈추고 나머지는 흐르게 한다.
  *
@@ -528,20 +528,21 @@ export function initReceiving(
   }
 }
 
+/** 플레이어(또는 UI 타임아웃)가 콜 하나에 내리는 액션. TIMEOUT은 카운트다운 만료 — UI만 만들고 코어는 받기만 한다. */
+export type DecisionAction = 'ACCEPT' | 'DECLINE' | 'TIMEOUT'
+
 /**
  * 현재 콜을 처리한다 — **응급은 자동 판정, 선택진료만 플레이어가 결정**한다.
  *
- * - 응급(급성복증·고열감염·필수 4종): `accept`를 무시하고 자동으로 판정한다. 구조적 하드락(hardlockReason)이 없으면
+ * - 응급(급성복증·고열감염·필수 4종): `action`을 무시하고 자동으로 판정한다. 구조적 하드락(hardlockReason)이 없으면
  *   수용, 있으면 turnedAway. "아무리 애원해도, 아무리 거절하려 해도" 결과는 병원의 제약이 정한다.
- * - 선택진료(미용·배후과 예약): `accept && 그 과 자유 의사 있음`일 때만 수용. accept=false거나 담당
- *   의사가 다 바쁘면 미수용(하드락이 아니라 '못 받음' — 사유 없음).
+ * - 선택진료(미용·배후과 예약): `action === 'ACCEPT'`이고 그 과 자유 의사가 있을 때만 수용. `action`이
+ *   `'DECLINE'`이거나 담당 의사가 다 바쁘면 미수용(하드락이 아니라 '못 받음' — 사유 없음). `'TIMEOUT'`은
+ *   `'ACCEPT'`가 아니므로 실질적으로 `'DECLINE'`과 똑같이 처리된다 — 카운트다운이 끝나면 안 받은 것으로 굳는다.
  *
  * 수용하면 담당 과(handlingDept)의 자유 의사를 `arrivalMin + durationMin`까지 점유한다.
  * 그 과에 자유 의사가 없으면(미채용) 아무도 점유하지 않는다(pickAssignee는 자유 의사가 있을 때만).
  */
-/** 플레이어(또는 UI 타임아웃)가 콜 하나에 내리는 액션. TIMEOUT은 카운트다운 만료 — UI만 만들고 코어는 받기만 한다. */
-export type DecisionAction = 'ACCEPT' | 'DECLINE' | 'TIMEOUT'
-
 export function decide(state: ReceivingState, action: DecisionAction): ReceivingState {
   if (state.done) {
     throw new Error('receiving already done')

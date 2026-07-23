@@ -184,7 +184,7 @@ export default function ReceivingPhase({
   useEffect(() => {
     if (autoCallId === undefined || autoDecidedRef.current === autoCallId) return;
     autoDecidedRef.current = autoCallId;
-    onDecide('ACCEPT');
+    onDecide("ACCEPT");
   }, [autoCallId, onDecide]);
 
   // 마감이어도 **흐르는 동안에는** 맵을 계속 보여준다 — 19시를 넘겨 마지막 진료가

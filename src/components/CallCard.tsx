@@ -160,7 +160,7 @@ export default function CallCard({
         <div className="mt-auto flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={() => onDecide('ACCEPT')}
+            onClick={() => onDecide("ACCEPT")}
             disabled={!canStart}
             aria-label={`${call.label} 받기`}
             className="flex-1 rounded-xs bg-go py-3 text-sm font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
@@ -169,7 +169,7 @@ export default function CallCard({
           </button>
           <button
             type="button"
-            onClick={() => onDecide('DECLINE')}
+            onClick={() => onDecide("DECLINE")}
             aria-label={`${call.label} 보내기`}
             className="flex-1 rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >
@@ -202,7 +202,7 @@ export default function CallCard({
           )}
           <button
             type="button"
-            onClick={() => onDecide('ACCEPT')}
+            onClick={() => onDecide("ACCEPT")}
             className="rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >
             계속
