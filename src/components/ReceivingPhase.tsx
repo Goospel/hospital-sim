@@ -102,8 +102,11 @@ function MorningPaper({ news }: { news: NewsItem[] }) {
  * 흐름 중 패널 — 결정할 게 없는 동안 콜 카드 자리를 채운다.
  *
  * 직전 콜 결과는 여기 없다 — 패널 밖 독립된 줄로 옮겨 흐름 중이 아닐 때도(플레이어가
- * 결정을 고민하는 동안도) 계속 보이게 한다. 이 패널이 하는 일은 마감 대기 문구와
- * 건너뛰기 버튼뿐이다.
+ * 결정을 고민하는 동안도) 계속 보이게 한다.
+ *
+ * 상태 문구는 **항상** 뜬다. 처음엔 마감 대기 문구만 뒀는데 그건 `receiving.done`일
+ * 때만 참이라, 정작 대부분의 시간인 콜과 콜 사이에는 패널에 버튼만 남아 아래 min-h가
+ * 그 공백을 304px로 키웠다. 두 문구 다 지금 무슨 일이 일어나는지만 말한다 — 해석 없음.
  *
  * min-h는 브라우저 실측값이다(T-065) — 이 패널은 76px, CallCard는 종류별로
  * 247px(선택진료: 가격표+버튼 2개)~304px(응급: 사유 배너+버튼 1개)로 렌더된다.
@@ -120,15 +123,18 @@ function FlowPanel({
 }) {
   return (
     <section className="flex min-h-[19rem] flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4">
-      {waitingForDayEnd && (
-        <p aria-live="polite" className="text-xs text-zinc-400">
-          오늘 콜은 모두 처리했습니다 · 마지막 진료가 끝나기를 기다립니다
-        </p>
-      )}
+      <p
+        aria-live="polite"
+        className="flex flex-1 items-center justify-center text-center text-xs text-zinc-400"
+      >
+        {waitingForDayEnd
+          ? "오늘 콜은 모두 처리했습니다 · 마지막 진료가 끝나기를 기다립니다"
+          : "다음 콜을 기다립니다"}
+      </p>
       <button
         type="button"
         onClick={onSkip}
-        className="mt-auto rounded-lg border border-zinc-700 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        className="rounded-lg border border-zinc-700 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
       >
         건너뛰기
       </button>
