@@ -10,12 +10,12 @@ describe('buildSessionLedger — 플레이어 병원 결말 장부(콜 델타 + 
   const collaboratorHospital: Hospital = {
     id: 'player', name: '흑자메디컬', beds: 2, hasErOnCall: true, overcrowded: false,
     backupCare: [],
-    economics: { segments: [{ label: '미용·피부', profitBillions: 210 }], hires: [{ label: '미용·피부', count: 3 }], essentialHires: 0 },
+    economics: { segments: [{ label: '미용·피부', profitManwon: 210 }], hires: [{ label: '미용·피부', count: 3 }], essentialHires: 0 },
   }
   const conscientiousHospital: Hospital = {
     id: 'player', name: '양심병원', beds: 2, hasErOnCall: true, overcrowded: false,
     backupCare: ['CARDIOLOGY'],
-    economics: { segments: [{ label: '순환기내과', profitBillions: -24 }], hires: [], essentialHires: 2 },
+    economics: { segments: [{ label: '순환기내과', profitManwon: -24 }], hires: [], essentialHires: 2 },
   }
 
   /**
@@ -25,49 +25,49 @@ describe('buildSessionLedger — 플레이어 병원 결말 장부(콜 델타 + 
    */
   it('[I7] 검사 수익이 별도 줄로 서고, 진료 수익(−)을 덮어 순이익을 뒤집는다', () => {
     const led = buildSessionLedger(conscientiousHospital, 'CARDIOLOGY', {
-      netProfitDeltaBillions: -20,
-      workupRevenueBillions: 56,
+      netProfitDeltaManwon: -20,
+      workupRevenueManwon: 56,
       lawsuitExposure: 0,
     })!
-    expect(led.segments).toContainEqual({ label: '이번 주 진료 수익', profitBillions: -20 })
-    expect(led.segments).toContainEqual({ label: '이번 주 검사 수익', profitBillions: 56 })
+    expect(led.segments).toContainEqual({ label: '이번 주 진료 수익', profitManwon: -20 })
+    expect(led.segments).toContainEqual({ label: '이번 주 검사 수익', profitManwon: 56 })
     // I7: 검사 수익 > |진료 수익|
     expect(56).toBeGreaterThan(Math.abs(-20))
-    expect(led.netProfitBillions).toBe(-24 - 20 + 56)
+    expect(led.netProfitManwon).toBe(-24 - 20 + 56)
   })
 
   it('검사를 안 붙였으면 검사 줄 자체가 없다 — 0을 찍지 않는다', () => {
     const led = buildSessionLedger(conscientiousHospital, 'CARDIOLOGY', {
-      netProfitDeltaBillions: -20,
-      workupRevenueBillions: 0,
+      netProfitDeltaManwon: -20,
+      workupRevenueManwon: 0,
       lawsuitExposure: 0,
     })!
     expect(led.segments.some((s) => s.label === '이번 주 검사 수익')).toBe(false)
   })
 
   it('공범: 순환기 없음 → essentialHires 0, 콜 수익 델타가 순이익에 반영, 소송 비용 없음', () => {
-    const led = buildSessionLedger(collaboratorHospital, 'CARDIOLOGY', { netProfitDeltaBillions: 16, lawsuitExposure: 0 })!
+    const led = buildSessionLedger(collaboratorHospital, 'CARDIOLOGY', { netProfitDeltaManwon: 16, lawsuitExposure: 0 })!
     expect(led.essentialHires).toBe(0)
-    expect(led.segments).toContainEqual({ label: '이번 주 진료 수익', profitBillions: 16 })
+    expect(led.segments).toContainEqual({ label: '이번 주 진료 수익', profitManwon: 16 })
     expect(led.segments.some((s) => s.label === '소송 비용')).toBe(false)
-    expect(led.netProfitBillions).toBe(210 + 16)
+    expect(led.netProfitManwon).toBe(210 + 16)
   })
 
   it('양심: 순환기 있음 → essentialHires 2, 소송 노출 → 소송 비용 한 줄(음수)이 순이익을 깎음', () => {
-    const led = buildSessionLedger(conscientiousHospital, 'CARDIOLOGY', { netProfitDeltaBillions: -20, lawsuitExposure: 1 })!
+    const led = buildSessionLedger(conscientiousHospital, 'CARDIOLOGY', { netProfitDeltaManwon: -20, lawsuitExposure: 1 })!
     expect(led.essentialHires).toBe(2)
-    expect(led.segments).toContainEqual({ label: '소송 비용', profitBillions: -LAWSUIT_COST_PER_EXPOSURE })
-    expect(led.netProfitBillions).toBe(-24 + -20 + -LAWSUIT_COST_PER_EXPOSURE)
-    expect(led.netProfitBillions).toBeLessThan(0)
+    expect(led.segments).toContainEqual({ label: '소송 비용', profitManwon: -LAWSUIT_COST_PER_EXPOSURE })
+    expect(led.netProfitManwon).toBe(-24 + -20 + -LAWSUIT_COST_PER_EXPOSURE)
+    expect(led.netProfitManwon).toBeLessThan(0)
   })
 
   it('델타 0·노출 0이면 추가 세그먼트 없음(기저만)', () => {
-    const led = buildSessionLedger(collaboratorHospital, 'CARDIOLOGY', { netProfitDeltaBillions: 0, lawsuitExposure: 0 })!
+    const led = buildSessionLedger(collaboratorHospital, 'CARDIOLOGY', { netProfitDeltaManwon: 0, lawsuitExposure: 0 })!
     expect(led.segments).toEqual(collaboratorHospital.economics!.segments)
   })
 
   it('경제 데이터 없으면 null', () => {
     const bare: Hospital = { id: 'x', name: '무장부', beds: 2, hasErOnCall: true, overcrowded: false, backupCare: [] }
-    expect(buildSessionLedger(bare, 'CARDIOLOGY', { netProfitDeltaBillions: 5, lawsuitExposure: 0 })).toBeNull()
+    expect(buildSessionLedger(bare, 'CARDIOLOGY', { netProfitDeltaManwon: 5, lawsuitExposure: 0 })).toBeNull()
   })
 })

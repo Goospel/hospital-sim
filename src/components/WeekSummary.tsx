@@ -1,6 +1,6 @@
 "use client";
 
-import { formatSignedBillions } from "@/game/labels";
+import { formatSignedManwon } from "@/game/labels";
 
 /**
  * 주간 결산 — 한 주(7일)를 닫고 사용자가 계속할지 끝낼지 고르는 갈림길.
@@ -11,8 +11,8 @@ import { formatSignedBillions } from "@/game/labels";
  */
 export default function WeekSummary({
   week,
-  weekNetBillions,
-  cumulativeNetBillions,
+  weekNetManwon,
+  cumulativeNetManwon,
   received,
   turnedAway,
   treasury,
@@ -20,8 +20,8 @@ export default function WeekSummary({
   onEnd,
 }: {
   week: number;
-  weekNetBillions: number;
-  cumulativeNetBillions: number;
+  weekNetManwon: number;
+  cumulativeNetManwon: number;
   received: number;
   turnedAway: number;
   treasury: number;
@@ -42,10 +42,10 @@ export default function WeekSummary({
         <div className="flex flex-col items-center gap-2 text-center">
           <span
             className={`font-mono text-4xl font-semibold tabular-nums ${
-              weekNetBillions < 0 ? "text-stamp-ink" : "text-go"
+              weekNetManwon < 0 ? "text-stamp-ink" : "text-go"
             }`}
           >
-            {formatSignedBillions(weekNetBillions)}
+            {formatSignedManwon(weekNetManwon)}
           </span>
           {/* 받은/돌려보낸 응급을 나란히 — 해석 없이 두 숫자만(show-don't-tell). 돌려보낸 사람이 있으면 붉은 잉크로. */}
           <span
@@ -63,10 +63,10 @@ export default function WeekSummary({
             <span className="font-sans text-xs text-ink-2">{week}주 누적 손익</span>
             <span
               className={`tabular-nums font-semibold ${
-                cumulativeNetBillions < 0 ? "text-stamp-ink" : "text-go"
+                cumulativeNetManwon < 0 ? "text-stamp-ink" : "text-go"
               }`}
             >
-              {formatSignedBillions(cumulativeNetBillions)}
+              {formatSignedManwon(cumulativeNetManwon)}
             </span>
           </div>
 
@@ -75,7 +75,7 @@ export default function WeekSummary({
             <span
               className={`tabular-nums font-semibold ${treasury < 0 ? "text-stamp-ink" : "text-ink"}`}
             >
-              {formatSignedBillions(treasury)}
+              {formatSignedManwon(treasury)}
             </span>
           </div>
         </div>

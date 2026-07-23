@@ -1,7 +1,7 @@
 "use client";
 
 import { DAY_LABELS } from "@/game/receiving";
-import { formatSignedBillions } from "@/game/labels";
+import { formatSignedManwon } from "@/game/labels";
 import { DAYS_PER_WEEK } from "@/game/setup";
 import type { DayRecord } from "@/game/session";
 
@@ -25,7 +25,7 @@ export default function DayEnd({
   onContinue: () => void;
 }) {
   const today = days.find((d) => d.day === currentDay);
-  const weekTotal = days.reduce((n, d) => n + d.netProfitBillions, 0);
+  const weekTotal = days.reduce((n, d) => n + d.netProfitManwon, 0);
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-6 bg-desk px-5 py-8 text-on-desk">
@@ -43,10 +43,10 @@ export default function DayEnd({
         <p className="text-center">
           <span
             className={`font-mono text-4xl font-semibold tabular-nums ${
-              (today?.netProfitBillions ?? 0) < 0 ? "text-stamp-ink" : "text-go"
+              (today?.netProfitManwon ?? 0) < 0 ? "text-stamp-ink" : "text-go"
             }`}
           >
-            {formatSignedBillions(today?.netProfitBillions ?? 0)}
+            {formatSignedManwon(today?.netProfitManwon ?? 0)}
           </span>
         </p>
 
@@ -64,7 +64,7 @@ export default function DayEnd({
             */
             const tone = !rec
               ? "border-rule/50 text-ink-2"
-              : rec.netProfitBillions < 0
+              : rec.netProfitManwon < 0
                 ? "border-stamp/40 bg-stamp-field text-stamp-ink"
                 : "border-rule text-go";
             return (
@@ -78,7 +78,7 @@ export default function DayEnd({
                   {DAY_LABELS[i]}
                 </span>
                 <span className="font-mono text-xs font-semibold tabular-nums">
-                  {rec ? formatSignedBillions(rec.netProfitBillions).replace("억", "") : "·"}
+                  {rec ? formatSignedManwon(rec.netProfitManwon).replace(/[만억]원?$/, "") : "·"}
                 </span>
               </div>
             );
@@ -90,7 +90,7 @@ export default function DayEnd({
           <span
             className={`text-base tabular-nums font-semibold ${weekTotal < 0 ? "text-stamp-ink" : "text-go"}`}
           >
-            {formatSignedBillions(weekTotal)}
+            {formatSignedManwon(weekTotal)}
           </span>
         </div>
       </section>

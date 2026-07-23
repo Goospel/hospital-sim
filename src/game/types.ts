@@ -46,7 +46,7 @@ export interface Hospital {
  * 필수 배후과 채용은 여기서 하드코딩하지 않는다 — backupCare 유무로 장부에서 파생한다(0 = 그 과 배후진료 없음).
  */
 export interface HospitalEconomics {
-  segments: { label: string; profitBillions: number }[] // 부문 손익(억) — **이번 주(7일)** 기준. 미용·검진 흑자, 필수·응급 적자
+  segments: { label: string; profitManwon: number }[] // 부문 손익(만원) — **이번 주(7일)** 기준. 고정비라 전부 음수(수익은 콜에서만)
   hires: { label: string; count: number }[] // 수익과 신규 채용
   essentialHires: number // 필수 배후과 채용 수(그 과 배후진료가 있을 때만 장부에 반영)
 }
@@ -98,7 +98,7 @@ export type RevenueDept = 'AESTHETICS' | 'CHECKUP'
 export type DeptKey = RevenueDept | Specialty
 
 /**
- * 과 카탈로그 한 줄. 금액(억)은 각색이되 부호(적자↔흑자)만 근거를 지킨다.
+ * 과 카탈로그 한 줄. 금액(만원)은 각색이되 부호·대소만 근거를 지킨다.
  * lawsuitRisk = "소송 리스크 ⚠"(필수·고위험과). 근거: essential-care-litigation-risk.md
  * — 부호는 '분쟁 빈도'가 아니라 결과의 중대성(사망·중증장애·형사기소).
  */
@@ -106,10 +106,17 @@ export interface DepartmentSpec {
   key: DeptKey
   label: string
   essential: boolean
-  // 의사 1명당 **이번 주(7일 = 한 판) 전체** 손익(부호만 근거). 하루치는 이 값의 1/7.
-  // ⚠️ 기간 단위가 이 주석에만 있다 — 타입은 그냥 number라 의미를 바꿔도 tsc가 0건 잡는다(무성 실패).
-  profitPerDoctorBillions: number
-  hireCostBillions: number // 채용 예산 표기(필수·고위험과는 인력 희소 → 비쌈)
+  /**
+   * 의사 1명당 **이번 주(7일 = 한 판) 고정비**(만원, 항상 양수). 하루치는 이 값의 1/7.
+   *
+   * 🔴 이 값은 **수익이 아니다.** 콜을 한 통도 안 받아도 나간다(인건비·시설·당직) — 그래서
+   * 이 층에는 흑자가 없고, 흑자는 CALL_ECONOMICS(진료 한 건)에서만 나온다. 과별 흑자·적자는
+   * 입력이 아니라 그 둘의 합에서 **창발**한다. 옛 필드는 `profitPerDoctorBillions`(미용 +70)라
+   * 진료를 한 건도 안 봐도 흑자가 났고, 같은 진료를 콜 델타와 이중 계상했다(T-069).
+   * ⚠️ 기간·부호 규약이 이 주석에만 있다 — 타입은 그냥 number라 뒤집어도 tsc가 0건 잡는다(무성 실패).
+   */
+  fixedCostPerDoctorManwon: number
+  hireCostManwon: number // 채용 일시금(만원) — 계약금·세팅비. 주간 인건비는 위 고정비가 담는다
   lawsuitRisk: boolean
   providesBackup?: Specialty // 이 과가 제공하는 배후진료(필수과만)
 }

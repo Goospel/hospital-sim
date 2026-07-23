@@ -1,5 +1,5 @@
 import type { Ledger } from "@/game/ledger";
-import { formatSignedBillions, SPECIALTY_LABEL } from "@/game/labels";
+import { formatSignedManwon, SPECIALTY_LABEL } from "@/game/labels";
 import SegmentTree from "./SegmentTree";
 
 /**
@@ -20,9 +20,9 @@ export default function LedgerPanel({ ledger }: { ledger: Ledger }) {
         <div className="flex items-baseline justify-between border-t border-rule pt-2">
           <span className="font-sans text-xs font-semibold text-ink">순이익</span>
           <span
-            className={`text-base tabular-nums font-semibold ${ledger.netProfitBillions < 0 ? "text-stamp-ink" : "text-go"}`}
+            className={`text-base tabular-nums font-semibold ${ledger.netProfitManwon < 0 ? "text-stamp-ink" : "text-go"}`}
           >
-            {formatSignedBillions(ledger.netProfitBillions)}
+            {formatSignedManwon(ledger.netProfitManwon)}
           </span>
         </div>
         <div className="my-1 border-t border-rule" />

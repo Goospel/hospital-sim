@@ -14,71 +14,76 @@ import {
 /** 이 콜의 가격을 누가 정하는가. 급여(GOVERNMENT)는 정부 고시가를 받고, 비급여(HOSPITAL)는 병원이 자율 결정한다. */
 export type PriceSetter = 'HOSPITAL' | 'GOVERNMENT'
 
-/** 콜 한 통의 수가/원가 내역(억). 델타 = 수익 − 원가. */
+/** 콜 한 통의 수가/원가 내역(만원). 델타 = 수익 − 원가. */
 export interface CallEconomics {
   priceSetter: PriceSetter
-  revenueBillions: number
-  costBillions: number
+  revenueManwon: number
+  costManwon: number
 }
 
 /**
- * 콜당 수가/원가 — **가격을 누가 정하는가**가 부호를 가른다.
+ * 콜당 수가/원가(만원) — **가격을 누가 정하는가**가 부호를 가른다. **이 게임의 유일한 수익원이다.**
  *
  * 비급여(미용)는 상대가치점수·환산지수가 적용되지 않아 병원이 가격을 자율 결정한다 → 원가를 넘겨 받는다.
  * 급여는 정부 고시가라 원가보전율이 곧 부호다. 그래서 **수익/원가 비율이 근거이고 금액은 각색**이다:
- *   - 일반 응급 3/6  ≈ 50%  — 기본진료 50.5% / 응급의료수가 45.0%
- *   - STEMI    11/13 ≈ 85%  — 수술·처치 84.9% (원가 미만이되 기본진료보다 덜 밑진다)
- *   - 미용      6/3  = 200% — 가격 규제 없음
+ *   - 미용 워크인    30/15    = 200%  — 가격 규제 없음(비급여)
+ *   - 배후과 예약    26/16    ≈ 163%  — 검체검사 160.5%
+ *   - 응급 수술 5종  850/1000 = 85%   — 수술·처치 84.9% (원가 미만이되 기본진료보다 덜 밑진다)
+ *   - 고열·감염     190/380  = 50%   — 기본진료 50.5% / 응급의료수가 45.0%
  * 근거: fee-schedule-and-subsidies.md §2 (**행위 단위**).
  *
  * 🔴 **부호는 행위 단위 표 하나에서만 뽑는다.** 과 단위 수치(심장내과 117%·응급의학과 103%)를
  * 여기 섞으면 정반대 부호가 나온다 — 콜 델타는 "행위 1건"이라 단위가 다르다(T-039).
- * 과 단위 흑자는 입력이 아니라 플레이어가 검사를 붙였을 때 **장부에서 창발**해야 한다(F2, 검체 160.5%).
+ * 과 단위 흑자는 입력이 아니라 **장부에서 창발**해야 한다(F2, 검체 160.5%).
  *
- * ⚠️ 스케일 주의 — 이 값들은 콜마다 누적된다. 콜 델타 합이 부문 손익(주간 전액)을 압도하면
- * 구조 손익이 무의미해진다(PR #35 양심 루트 −525억). 불변식 I8(|순이익| ≤ 4 × 예산).
+ * ## 만원 단위 — 수익 구조 재설계(2026-07-23)
  *
- * 🔻 **콜 제한 폐지(2026-07-23)로 외래 두 종목만 절반 스케일로 내렸다.** 하루 5통이 20~40통이
- * 되면서 옛 값(6/3·10/6)으로는 외래 흑자만 주 +245억을 찍어 구조 손익을 덮었다. 내릴 수 있는
- * 근거는 이 표의 주석 그 자체다 — **비율이 근거이고 금액은 각색**이라, 비율을 지키면 논지가 안 상한다.
+ * 옛 값은 억이었다: 보톡스 워크인 한 건 **1억**, 미용 의사 1명이 연 3,600억. 비율은 맞았지만
+ * 절대액이 두세 자릿수 틀려 "각색"의 범위를 넘어 있었다(사용자 지적). 이제 진료 한 건의 값이
+ * 진료비 영수증에서 볼 법한 숫자다 — 보톡스 30만원, 외래+검사 26만원, 응급 PCI 850만원,
+ * 패혈증 의심 입원 190만원.
  *
- * 🔴 **응급은 건드리지 않는다.** 통수가 안 늘었으니(하루 2~4통 고정) 축소할 이유가 없고, 줄이면
- * 응급 적자가 구조 흑자를 못 이겨 **"양심적으로 하면 적자"라는 이 게임의 논지가 죽는다**.
- * 실측(2026-07-23): 응급을 5/6·2/4로 절반화했더니 양심 경로 결말이 −3에서 **+4로 뒤집혔다**
- * — 비율(83%·50%)은 멀쩡했는데 논지가 증발했다. 스케일 조정은 **통수가 는 종목에만** 건다.
+ * 같은 작업에서 **부문 손익이 고정비로 뒤집히면서(setup.ts DEPARTMENTS) 이 표가 유일한 수익원이 됐다.**
+ * 그래서 ⏸으로 0에 묶여 있던 워크인 델타가 +15로 되살아났다 — [T-069](../../claude-docs/troubleshooting/T-069.md)의
+ * 이중 계상은 콜을 0으로 눌러서가 아니라 **부문 손익 쪽 수익을 없애서** 풀린다.
+ *
+ * ⚠️ 스케일 주의 — 이 값들은 콜마다 누적된다(하루 워크인 55건). 불변식 I8(|주간 순이익| ≤ 4 × 예산)을
+ * `session.test.ts`의 `[I8]` 블록이 잡는다.
+ *
+ * 🔴 **응급 델타를 임의로 줄이지 않는다.** 실측(2026-07-23): 응급을 절반화했더니 양심 경로 결말이
+ * −3에서 **+4로 뒤집혔다** — 비율(83%·50%)은 멀쩡했는데 *"양심적으로 하면 적자"*라는 이 게임의
+ * 논지가 증발했다. `session.test.ts`의 '양심 경로' 테스트가 그 가드다.
  */
 export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
   /**
-   * ⏸ **임시로 델타 0**(2026-07-23) — 미용 흑자는 지금 **부문 손익이 이미 세고 있다**.
+   * 미용·검진 워크인 — 비급여라 병원이 가격을 정한다(보톡스 30만원 / 재료·인건 원가 15만원).
    *
-   * 워크인이 하루 2통일 땐 콜 델타(주 14억)가 부문 손익(주 300억) 옆에서 오차라 아무도 몰랐는데,
-   * 하루 55통이 되면서 **같은 진료를 두 층에서 세는 이중 계상**이 표면화됐다(실측: 콜 델타가
-   * 주 404억을 더해 순이익 707억 → 불변식 I8의 400억 위반). 둘 중 한 곳에서만 세야 한다.
-   *
-   * 근본 처방은 **부문 손익을 '그 과가 버는 돈'에서 '그 과의 고정비'로 뒤집고 콜을 유일한 수익원으로**
-   * 두는 것이다 — 그러면 과별 흑자·적자가 입력이 아니라 계산에서 창발한다(아래 WORKUP_ECONOMICS
-   * 주석이 이미 요구하는 그것). 그 재설계는 setup·world·ledger·growth까지 파급해 별도 작업으로
-   * 분리했다(사용자 결정 2026-07-23). 그때 이 값은 만원 단위 현실 수치로 되살아난다
-   * — 보톡스 한 건이 1억이라는 것부터가 각색을 넘어 틀렸다.
-   *
-   * 그때까지 부문 손익 쪽이 미용 흑자를 담당한다. 워크인은 자동 접수라 카드가 안 떠서
-   * 화면에 보이는 변화는 없다(플레이어에게 0원이라고 말하지 않는다).
+   * **미용과의 주간 흑자가 여기서 창발한다.** 부문 손익에 "미용 의사 1명 = 주 +70억"으로 박혀 있던
+   * 그 흑자가 이제 없어서, 미용이 흑자인지 적자인지는 *하루에 몇 명을 실제로 봤는가*가 정한다.
+   * 하루 55건이 오지만 받는 건 그 과 의사가 600분 안에 소화하는 만큼뿐이라 —
+   * **채용이 곧 처리량이고, 처리량이 곧 흑자다.**
    */
-  COSMETIC_WALKIN: { priceSetter: 'HOSPITAL', revenueBillions: 1, costBillions: 1 },
-  // 네 필수 응급은 모두 **수술·처치 84.9% 밴드**(행위 단위)라 동형이다(11/13 ≈ 85%).
+  COSMETIC_WALKIN: { priceSetter: 'HOSPITAL', revenueManwon: 30, costManwon: 15 },
+  // 응급 수술 5종은 모두 **수술·처치 84.9% 밴드**(행위 단위)라 동형이다(850/1000 = 85%).
   // 🔴 과별 차등(산부 61%·소청 79% 등 과 단위)은 여기 섞지 않는다(T-039) — "산부가 더 밑진다"는
-  // 재정중립 패키지가 만든 DEPARTMENTS 층(산부 −16)이 담당하지, 콜 델타(행위 단위)가 아니다.
-  STEMI: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
-  OBSTETRIC_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
-  NEURO_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
-  TRAUMA_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
-  // 급성복증도 응급수술이라 같은 수술·처치 84.9% 밴드(11/13, STEMI 동형).
-  ABDOMINAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
-  // 고열·감염(내과 급여)은 기본진료 50.5%·응급 45% 밴드라 원가 미달(3/6 ≈ 50%).
-  MEDICAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 3, costBillions: 6 },
-  // 배후과 예약진료 — 검사 흑자 밴드 계승(5/3 ≈ 167% — 검체 160% 밴드). 그 과 의사가 응급 대신
-  // 예약을 도는 이유가 곧 이 흑자다. 통수가 3배가 돼 10/6에서 절반 축소했다(비율 보존).
-  SPECIALIST_ELECTIVE: { priceSetter: 'GOVERNMENT', revenueBillions: 5, costBillions: 3 },
+  // 과별 고정비(DEPARTMENTS 층)가 담당하지, 콜 델타(행위 단위)가 아니다.
+  STEMI: { priceSetter: 'GOVERNMENT', revenueManwon: 850, costManwon: 1000 },
+  OBSTETRIC_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueManwon: 850, costManwon: 1000 },
+  NEURO_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueManwon: 850, costManwon: 1000 },
+  TRAUMA_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueManwon: 850, costManwon: 1000 },
+  // 급성복증도 응급수술이라 같은 수술·처치 84.9% 밴드(STEMI 동형).
+  ABDOMINAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueManwon: 850, costManwon: 1000 },
+  /**
+   * 고열·감염(내과 급여) — 기본진료 50.5%·응급 45% 밴드라 원가의 절반만 받는다(190/380).
+   *
+   * 🔴 **불변식 I3**: |STEMI −150| < |고열감염 −190|. "수술(84.9%)이 기본진료(50.5%)보다 원가보전율이
+   * 높다"는 근거가 절대 손실의 대소로도 보여야 한다. 그런데 원가 기반이 반대로 기울어 있어서
+   * (수술 1000 vs 입원 380) **비율만 맞추면 이 부등호가 조용히 뒤집힌다** — 두 축을 함께 보고 만져라.
+   */
+  MEDICAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueManwon: 190, costManwon: 380 },
+  // 배후과 예약진료(외래 진찰 + 검사) — 검체 160.5% 밴드(26/16 ≈ 163%). 급여 항목 중 유일하게
+  // 원가를 넘는다. 그 과 의사가 응급 대신 예약을 도는 이유가 곧 이 흑자다.
+  SPECIALIST_ELECTIVE: { priceSetter: 'GOVERNMENT', revenueManwon: 26, costManwon: 16 },
 }
 
 /**
@@ -147,10 +152,10 @@ export function needsDecision(call: IncomingCall): boolean {
   return isElective(call.kind) && !isAutoAccept(call.kind)
 }
 
-/** 콜 한 통 수용으로 누적되는 손익 델타(억). */
+/** 콜 한 통 수용으로 누적되는 손익 델타(만원). */
 export function callDelta(kind: CallKind): number {
   const e = CALL_ECONOMICS[kind]
-  return e.revenueBillions - e.costBillions
+  return e.revenueManwon - e.costManwon
 }
 
 /**
@@ -165,13 +170,13 @@ export function callDelta(kind: CallKind): number {
  */
 export const WORKUP_ECONOMICS: CallEconomics = {
   priceSetter: 'GOVERNMENT',
-  revenueBillions: 10,
-  costBillions: 6, // 10/6 ≈ 166.7% — 검체 160.5% 밴드
+  revenueManwon: 500,
+  costManwon: 300, // 500/300 ≈ 166.7% — 검체 160.5% 밴드
 }
 
-/** 검사 한 건의 손익 델타(억). 급여 환자의 부호를 −에서 +로 뒤집는다(I2). */
+/** 검사 한 건의 손익 델타(만원). 급여 환자의 부호를 −에서 +로 뒤집는다(I2). */
 export function workupDelta(): number {
-  return WORKUP_ECONOMICS.revenueBillions - WORKUP_ECONOMICS.costBillions
+  return WORKUP_ECONOMICS.revenueManwon - WORKUP_ECONOMICS.costManwon
 }
 
 /**
@@ -231,13 +236,13 @@ export interface ReceivingState {
    * 초기값은 어제 넘어온 점유(boardedBusyUntil) — session.ts의 advanceDay가 어제 마감 초과분을 계산해 넘긴다.
    */
   busyUntil: Record<string, number>
-  netProfitDeltaBillions: number
+  netProfitDeltaManwon: number
   /**
    * 오늘 검사 수익 — 진료 수익과 **별도로** 쌓는 장부 라인.
    * ⚠️ Task 5에서 플레이어의 검사 액션(withWorkup)이 제거돼 **항상 0**이다(검사 흑자는 SPECIALIST_ELECTIVE가 계승).
    * 필드를 남기는 건 DayRecord·UI 장부 파급을 막기 위함 — 완전 제거는 후속.
    */
-  workupRevenueBillions: number
+  workupRevenueManwon: number
   /** 오늘 검사를 붙인 환자 수 — Task 5에서 검사 액션 제거로 **항상 0**(boarding 이월은 Task 6). */
   workupCount: number
   lawsuitExposure: number
@@ -514,8 +519,8 @@ export function initReceiving(
     index: 0,
     clockMin: 0,
     busyUntil: { ...boardedBusyUntil }, // 어제 넘어온 점유에서 출발(지금은 빈 맵)
-    netProfitDeltaBillions: 0,
-    workupRevenueBillions: 0,
+    netProfitDeltaManwon: 0,
+    workupRevenueManwon: 0,
     workupCount: 0,
     lawsuitExposure: 0,
     log: [],
@@ -561,9 +566,9 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
     startMin = start
   }
 
-  const netProfitDeltaBillions = effectiveAccept
-    ? state.netProfitDeltaBillions + callDelta(call.kind)
-    : state.netProfitDeltaBillions
+  const netProfitDeltaManwon = effectiveAccept
+    ? state.netProfitDeltaManwon + callDelta(call.kind)
+    : state.netProfitDeltaManwon
   const lawsuitExposure = effectiveAccept && call.lawsuitRisk ? state.lawsuitExposure + 1 : state.lawsuitExposure
 
   // 선택진료는 하드락이 없어 reason이 null이지만, **기다리다 떠난 것만은** 기록한다 —
@@ -578,7 +583,7 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
     ...state,
     clockMin: arrivalMin, // 현재 콜 도착 시각으로 하루를 전진시킨다
     busyUntil,
-    netProfitDeltaBillions,
+    netProfitDeltaManwon,
     lawsuitExposure,
     log,
     index,
@@ -599,21 +604,21 @@ export function dayProgress(state: ReceivingState): number {
 }
 
 /**
- * 부문 손익 — 구조 손익의 **오늘치(주간 손익 ÷ 7)**를 하루 진행률만큼 누적한 값.
+ * 부문 손익 — 구조 **고정비**의 오늘치(주간 고정비 ÷ 7)를 하루 진행률만큼 누적한 값(항상 ≤ 0).
  *
- * economics.segments는 이번 주 7일 전체 손익이라(types.ts), 하루엔 그 1/7만 벌고 잃는다.
- * 콜 시작(index 0)엔 전 부문 0에서 출발해, 콜을 처리할수록 오늘 몫을 향해 자라고 하루 끝에 도달한다
- * — "진료를 볼수록 흑자/적자" 직관과 일치(정적 선반영이 진료 0인 t=0부터 전액을 찍던 걸 PR #33에서 교정).
+ * economics.segments는 이번 주 7일 전체 고정비라(types.ts), 하루엔 그 1/7만 나간다.
+ * 콜 시작(index 0)엔 전 부문 0에서 출발해, 시각이 흐를수록 오늘 몫을 향해 자라고 하루 끝에 도달한다
+ * — 문을 열어두는 값이 시간에 비례해 쌓인다(정적 선반영이 t=0부터 전액을 찍던 걸 PR #33에서 교정).
  *
- * 7일을 다 채우면 (주간/7) × 7 = 주간 전액이라 결말 장부(composeLedger, 전액)와 어긋나지 않는다 —
+ * 7일을 다 채우면 (주간/7) × 7 = 주간 고정비 전액이라 결말 장부(composeLedger, 전액)와 어긋나지 않는다 —
  * 이 등식이 '달력 숫자 ≠ 결말 장부' 이원화를 막는 유일한 이음매다(설계 §4-1).
  */
-export function accruedSegments(state: ReceivingState): { label: string; profitBillions: number }[] {
+export function accruedSegments(state: ReceivingState): { label: string; profitManwon: number }[] {
   const p = dayProgress(state)
   const segments = state.hospital.economics?.segments ?? []
   return segments.map((s) => ({
     label: s.label,
-    profitBillions: Math.round((s.profitBillions / DAYS_PER_WEEK) * p),
+    profitManwon: Math.round((s.profitManwon / DAYS_PER_WEEK) * p),
   }))
 }
 
@@ -622,6 +627,6 @@ export function accruedSegments(state: ReceivingState): { label: string; profitB
  * 소송 비용은 결말 buildSessionLedger에서만 차감된다(해석 0 원칙: 1막은 명랑한 숫자만).
  */
 export function runningNetProfit(state: ReceivingState): number {
-  const segmentTotal = accruedSegments(state).reduce((sum, s) => sum + s.profitBillions, 0)
-  return segmentTotal + state.netProfitDeltaBillions + state.workupRevenueBillions
+  const segmentTotal = accruedSegments(state).reduce((sum, s) => sum + s.profitManwon, 0)
+  return segmentTotal + state.netProfitDeltaManwon + state.workupRevenueManwon
 }

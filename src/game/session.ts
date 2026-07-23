@@ -31,9 +31,9 @@ export type SessionPhase =
 /** 마감된 하루 한 칸 — 달력의 데이터 소스. 숫자만 담는다(해석은 어디에도 없다). */
 export interface DayRecord {
   day: number // 1..7
-  segmentShareBillions: number // 그날 부문 손익 몫(주간 손익 ÷ 7)
-  callDeltaBillions: number // 그날 진료 수익
-  workupRevenueBillions: number // 그날 검사 수익 — 진료 수익과 별도로 센다(장부에서 덮는 게 보여야 한다)
+  segmentShareManwon: number // 그날 부문 손익 몫(주간 손익 ÷ 7)
+  callDeltaManwon: number // 그날 진료 수익
+  workupRevenueManwon: number // 그날 검사 수익 — 진료 수익과 별도로 센다(장부에서 덮는 게 보여야 한다)
   workupCount: number // 그날 검사를 붙인 환자 수 — 내일 자리를 먹는다(boarding)
   /**
    * 그날 못 받은 필수 응급들(STEMI·분만·뇌출혈·중증외상) — 내일 아침 신문의 씨앗.
@@ -41,7 +41,7 @@ export interface DayRecord {
    */
   turnedAway: TurnedAway[]
   receivedEmergency: number // 그날 받은 필수 응급 수 — 돌려보낸 수(turnedAway)의 짝(결산 화면)
-  netProfitBillions: number // 그날 순이익 = 위 셋의 합 (소송 비용은 결말에서만)
+  netProfitManwon: number // 그날 순이익 = 위 셋의 합 (소송 비용은 결말에서만)
   accepted: number // 받은 콜 수
   blocked: number // 그 과 의사가 다 진료 중이라 구조가 막은 콜 수(NO_FREE_SPECIALIST) — 달력엔 안 찍히는 사람들
   lawsuitExposure: number // 그날 쌓인 소송 노출
@@ -160,12 +160,12 @@ function boardedBusyUntilFrom(receiving: ReceivingState | undefined): Record<str
 
 /** 마감된 하루에서 달력 한 칸을 만든다(순수). */
 function recordDay(day: number, receiving: ReceivingState): DayRecord {
-  const segmentShareBillions = accruedSegments(receiving).reduce((n, s) => n + s.profitBillions, 0)
+  const segmentShareManwon = accruedSegments(receiving).reduce((n, s) => n + s.profitManwon, 0)
   return {
     day,
-    segmentShareBillions,
-    callDeltaBillions: receiving.netProfitDeltaBillions,
-    workupRevenueBillions: receiving.workupRevenueBillions,
+    segmentShareManwon,
+    callDeltaManwon: receiving.netProfitDeltaManwon,
+    workupRevenueManwon: receiving.workupRevenueManwon,
     workupCount: receiving.workupCount,
     // 못 받은 **필수 응급 4종**이 기사가 된다 — 일반 응급·미용 워크인을 돌려보낸 건 뉴스가 아니다.
     // kind를 실어 신문이 종류별 헤드라인(심근경색/뇌출혈/중증외상/분만)을 낼 수 있게 한다.
@@ -175,7 +175,7 @@ function recordDay(day: number, receiving: ReceivingState): DayRecord {
       .map((x) => ({ callId: x.entry.callId, kind: x.call.kind, reason: x.entry.reason })),
     // 받은 필수 응급 — 돌려보낸 수의 짝. 일반 응급·워크인은 세지 않는다(응급의 '핵심'만).
     receivedEmergency: receiving.log.filter((e, i) => e.accepted && requiresBackupCare(receiving.queue[i].kind)).length,
-    netProfitBillions: runningNetProfit(receiving),
+    netProfitManwon: runningNetProfit(receiving),
     accepted: receiving.log.filter((e) => e.accepted).length,
     blocked: receiving.log.filter((e) => e.reason === 'NO_FREE_SPECIALIST').length,
     lawsuitExposure: receiving.lawsuitExposure,
@@ -227,16 +227,16 @@ export function advanceDay(state: SessionState): SessionState {
 }
 
 interface DayTotals {
-  netProfitDeltaBillions: number
-  workupRevenueBillions: number
+  netProfitDeltaManwon: number
+  workupRevenueManwon: number
   lawsuitExposure: number
 }
 
 /** 날 기록 배열을 합산한다 — 이번 주(weekTotals)와 전 주 누적(buildEpilogue)이 공유하는 코어. */
 function sumTotals(days: DayRecord[]): DayTotals {
   return {
-    netProfitDeltaBillions: days.reduce((n, r) => n + r.callDeltaBillions, 0),
-    workupRevenueBillions: days.reduce((n, r) => n + r.workupRevenueBillions, 0),
+    netProfitDeltaManwon: days.reduce((n, r) => n + r.callDeltaManwon, 0),
+    workupRevenueManwon: days.reduce((n, r) => n + r.workupRevenueManwon, 0),
     lawsuitExposure: days.reduce((n, r) => n + r.lawsuitExposure, 0),
   }
 }
@@ -261,10 +261,10 @@ export function weekReceivedEmergencyCount(state: SessionState): number {
 
 /**
  * 완주한 모든 주의 누적 순손익(억) — 주가 쌓일수록 커진다(주간 결산 화면의 '지금까지' 숫자).
- * netProfitBillions는 일당 구조 손익 1/7을 이미 포함하므로 N주를 그냥 더하면 N주치가 맞는다(스케일 문제 없음).
+ * netProfitManwon는 일당 구조 손익 1/7을 이미 포함하므로 N주를 그냥 더하면 N주치가 맞는다(스케일 문제 없음).
  */
-export function cumulativeNetBillions(state: SessionState): number {
-  return state.history.reduce((n, d) => n + d.netProfitBillions, 0)
+export function cumulativeNetManwon(state: SessionState): number {
+  return state.history.reduce((n, d) => n + d.netProfitManwon, 0)
 }
 
 /**
@@ -278,7 +278,7 @@ export function completeWeek(state: SessionState): SessionState {
   if (!isLastDay(state)) {
     throw new Error('completeWeek requires the last day (day 7)')
   }
-  const weekNet = state.ledgerDays.reduce((n, d) => n + d.netProfitBillions, 0)
+  const weekNet = state.ledgerDays.reduce((n, d) => n + d.netProfitManwon, 0)
   return {
     ...state,
     phase: 'WEEK_SUMMARY',
@@ -414,7 +414,7 @@ export function buildEpilogue(state: SessionState): SessionEpilogue {
   const hospital = state.hospital!
   // 에필로그는 **최종 주** 결산을 보고한다(구조 손익은 econ.segments의 1주치라 ledgerDays 기준으로 정합).
   // 여러 주를 누적하려면 구조 손익을 ×주수로 스케일하고 일회성 채용을 분리해야 해 이 슬라이스 밖이다 —
-  // 주 간 누적은 매 WEEK_SUMMARY의 cumulativeNetBillions로 보여 준다(스케일 문제 없는 경로).
+  // 주 간 누적은 매 WEEK_SUMMARY의 cumulativeNetManwon로 보여 준다(스케일 문제 없는 경로).
   const ledger = buildSessionLedger(hospital, STEMI_SPECIALTY, weekTotals(state))
   // 최종 주 신문: 그 주 7일 내내 돌려보낸 응급을 한 자리에 모은다(turnedAway를 flatten).
   const weekNews = renderNews(state.ledgerDays.flatMap((d) => d.turnedAway))

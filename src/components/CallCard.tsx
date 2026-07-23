@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { callerPleaAt } from "@/game/dialogue";
-import { formatSignedBillions } from "@/game/labels";
+import { formatSignedManwon } from "@/game/labels";
 import {
   callDelta,
   hardlockReason,
@@ -32,24 +32,24 @@ function CallEconomicsBreakdown({ call }: { call: IncomingCall }) {
     <dl className="flex flex-col gap-1 rounded-xs border border-frame bg-desk px-3 py-2.5 font-mono text-xs">
       <div className="flex items-baseline justify-between gap-3">
         <dt className="font-sans text-on-desk/70">{revenueLabel}</dt>
-        <dd className="tabular-nums text-on-desk">{formatSignedBillions(e.revenueBillions)}</dd>
+        <dd className="tabular-nums text-on-desk">{formatSignedManwon(e.revenueManwon)}</dd>
       </div>
       <div className="flex items-baseline justify-between gap-3">
         <dt className="font-sans text-on-desk/70">원가</dt>
-        <dd className="tabular-nums text-on-desk">{formatSignedBillions(-e.costBillions)}</dd>
+        <dd className="tabular-nums text-on-desk">{formatSignedManwon(-e.costManwon)}</dd>
       </div>
       <div className="my-0.5 border-t border-frame" />
       <div className="flex items-baseline justify-between gap-3">
         <dt className="sr-only">수용 시 손익</dt>
         {/*
-          부호는 색이 아니라 숫자가 이미 말한다(formatSignedBillions의 +/−).
+          부호는 색이 아니라 숫자가 이미 말한다(formatSignedManwon의 +/−).
           손실만 alarm으로 물들여 어두운 책상 위에서 유일한 붉은색이 되게 한다 —
           종이 위 적자(stamp-ink)와 섞지 않는다(스펙 §2-C: 밝기 맥락으로 분리).
         */}
         <dd
           className={`ml-auto text-sm tabular-nums font-semibold ${delta < 0 ? "text-alarm" : "text-on-desk"}`}
         >
-          {formatSignedBillions(delta)}
+          {formatSignedManwon(delta)}
         </dd>
       </div>
     </dl>

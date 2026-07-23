@@ -17,7 +17,7 @@ import {
   endGame,
   weekTurnedAwayCount,
   weekReceivedEmergencyCount,
-  cumulativeNetBillions,
+  cumulativeNetManwon,
   buildEpilogue,
   type SessionState,
 } from "@/game/session";
@@ -83,8 +83,8 @@ export default function SessionClient() {
       return (
         <WeekSummary
           week={session.week}
-          weekNetBillions={session.ledgerDays.reduce((n, d) => n + d.netProfitBillions, 0)}
-          cumulativeNetBillions={cumulativeNetBillions(session)}
+          weekNetManwon={session.ledgerDays.reduce((n, d) => n + d.netProfitManwon, 0)}
+          cumulativeNetManwon={cumulativeNetManwon(session)}
           received={weekReceivedEmergencyCount(session)}
           turnedAway={weekTurnedAwayCount(session)}
           treasury={session.treasury}

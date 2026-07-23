@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { DEPARTMENTS, SETUP_BUDGET_BILLIONS, adjustDoctors, backupCareOf, hiringCost, isSetupReady } from "@/game/setup";
+import { DEPARTMENTS, SETUP_BUDGET_MANWON, adjustDoctors, backupCareOf, hiringCost, isSetupReady } from "@/game/setup";
+import { formatManwon } from "@/game/labels";
 import { hospitalTier, TIER_LABELS, TIER_ORDER } from "@/game/tier";
 import type { DepartmentSpec, SetupChoices } from "@/game/types";
 
@@ -25,7 +26,7 @@ function DepartmentCard({
       <div className="flex flex-col gap-0.5">
         <span className="text-sm font-medium text-on-desk">{dept.label}</span>
         <span className="font-mono text-xs tabular-nums text-on-desk/70">
-          채용 {dept.hireCostBillions}억/명
+          채용 {formatManwon(dept.hireCostManwon)}/명
         </span>
       </div>
       <div className="flex items-center gap-3">
@@ -108,7 +109,7 @@ export default function SetupWizard({
 
   // step === "DEPTS"
   const cost = hiringCost(choices, departments);
-  const overBudget = cost > SETUP_BUDGET_BILLIONS;
+  const overBudget = cost > SETUP_BUDGET_MANWON;
   const ready = isSetupReady(choices, departments);
   const tier = hospitalTier(backupCareOf(choices, departments).length);
 
@@ -126,7 +127,7 @@ export default function SetupWizard({
         <span className="font-serif text-xl text-on-desk">{choices.hospitalName}</span>
         <h1 className="mt-1 text-base font-semibold text-on-desk">과별 의사를 채용하세요</h1>
         <p className="text-sm text-on-desk/70">
-          예산 {SETUP_BUDGET_BILLIONS}억 안에서 진료과를 꾸립니다.
+          예산 {formatManwon(SETUP_BUDGET_MANWON)} 안에서 진료과를 꾸립니다.
         </p>
       </header>
 
@@ -173,7 +174,7 @@ export default function SetupWizard({
           <span
             className={`font-mono text-lg tabular-nums ${overBudget ? "text-stamp-ink" : "text-ink"}`}
           >
-            {cost} / {SETUP_BUDGET_BILLIONS}억
+            {formatManwon(cost)} / {formatManwon(SETUP_BUDGET_MANWON)}
           </span>
           {overBudget && (
             <span className="-rotate-[1.5deg] rounded-stamp border-2 border-stamp bg-stamp-field px-2 py-0.5 font-serif text-base leading-tight text-stamp-ink">
