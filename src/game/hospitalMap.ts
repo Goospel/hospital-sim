@@ -1,7 +1,7 @@
-import type { DeptKey, Doctor } from './types'
+import type { DeptKey, Doctor, IncomingCall } from './types'
 import type { ReceivingState } from './receiving' // type-only — 런타임 순환 없음
 import { DEPARTMENTS } from './setup'
-import { DAY_LENGTH_MIN, NIGHT_START_MIN, seededUnit } from './daysim'
+import { DAY_LENGTH_MIN, NIGHT_START_MIN, patienceMin, seededUnit } from './daysim'
 
 // 병원 맵 표시 레이어 — 순수·결정론. 판정·경제에 절대 닿지 않는다(0 침습).
 // 새 게임 상태 0개: ReceivingState 하나에서 그 순간의 장면을 파생만 한다.
@@ -68,7 +68,18 @@ export interface MapAvatar {
   dept?: DeptKey
   slot: number // 그 zone 안에서의 자리 인덱스 — 픽셀 좌표는 컴포넌트가 계산한다
   busy: boolean // 의사 전용
+  /** 환자 전용 — 도착했으나 아직 진료를 못 받고 서 있다(진료 중인 환자와 구별). */
+  waiting?: boolean
 }
+
+/**
+ * 복도에 세울 대기 환자 아바타의 표시 상한.
+ *
+ * 게임은 대기 인원에 상한이 없다 — 이건 **순전히 폭의 문제**다. 복도 가용 폭이 88%뿐이라
+ * 그 이상은 스프라이트가 서로 겹쳐 세는 게 불가능해진다. 넘친 인원은 사라지지 않고
+ * `waitingOverflow`로 세어 화면이 「+N」으로 말한다.
+ */
+export const MAX_WAITING_AVATARS = 8
 
 export interface MapScene {
   rooms: MapRoom[]
@@ -76,6 +87,10 @@ export interface MapScene {
   avatars: MapAvatar[]
   lighting: Lighting
   clockMin: number
+  /** 지금 대기 중인 총원(상한과 무관한 진짜 수) — 화면 카운터가 이걸 쓴다. */
+  waitingCount: number
+  /** 그중 아바타로 못 그린 인원(= waitingCount − 표시분). 0이면 전원이 보인다. */
+  waitingOverflow: number
 }
 
 /**
@@ -134,7 +149,45 @@ export function deriveMapScene(receiving: ReceivingState, atMin: number): MapSce
     }
   }
 
-  return { rooms, beds, avatars, lighting, clockMin: atMin }
+  // 대기 환자 — 도착했는데 아직 진료를 시작 못 한 사람들. 이들이 복도를 채운다.
+  const waiting = waitingCalls(receiving, atMin)
+  for (const call of waiting.slice(0, MAX_WAITING_AVATARS)) {
+    avatars.push({ id: `wait-${call.id}`, kind: 'PATIENT', zone: 'CORRIDOR', slot: corridorSlot++, busy: false, waiting: true })
+  }
+
+  return {
+    rooms,
+    beds,
+    avatars,
+    lighting,
+    clockMin: atMin,
+    waitingCount: waiting.length,
+    waitingOverflow: Math.max(0, waiting.length - MAX_WAITING_AVATARS),
+  }
+}
+
+/**
+ * 시각 `atMin`에 **아직 진료를 못 받고 서 있는** 콜들. 순수 파생 — 새 게임 상태 0개.
+ *
+ * 세 부류가 같은 자리에 선다. 셋 다 플레이어 눈엔 '기다리는 사람'이라 구분 없이 그린다:
+ *   1. 도착했는데 아직 처리 전   — log에 항목이 없다(흐름이 멈춰 카드가 떠 있는 동안)
+ *   2. 받았지만 시작 전         — startMin이 아직 안 왔다(앞사람이 그 과 의사를 점유 중)
+ *   3. 기다리다 떠날 사람       — 한계 시각까지는 서 있다가 사라진다
+ *
+ * 3번의 퇴장 시각을 상태에 안 남기고 `arrivalMin + patienceMin`으로 다시 계산하는 이유:
+ * 그게 `startMinFor`가 이탈을 판정한 바로 그 식이라 두 곳이 어긋날 수 없다. 필드를 하나 더
+ * 늘리면 그때부터 둘을 맞춰야 한다.
+ */
+function waitingCalls(receiving: ReceivingState, atMin: number): IncomingCall[] {
+  return receiving.queue.filter((call, i) => {
+    const arrival = call.arrivalMin ?? 0
+    if (arrival > atMin) return false // 아직 안 왔다
+    const entry = receiving.log[i]
+    if (entry === undefined) return true // ① 처리 전
+    if (entry.startMin !== undefined) return atMin < entry.startMin // ② 시작 전까지만
+    // ③ 못 받은 사람 — 기다리다 떠난 경우만 그 한계까지 서 있다(구조가 즉시 막은 콜은 안 선다)
+    return entry.reason === 'LEFT_WAITING' && atMin < arrival + patienceMin(call.kind)
+  })
 }
 
 // ── 시계 흐름(연출 전용) ────────────────────────────────────────────────

@@ -145,6 +145,20 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
         })}
       </div>
 
+      {/*
+        복도에 다 못 세운 대기 인원. 복도 가용 폭이 88%뿐이라 8명을 넘기면 스프라이트가 겹쳐
+        세는 게 불가능해진다 — 넘친 사람을 지우는 대신 숫자로 남긴다(게임은 상한을 모른다).
+        조명 워시 **아래**에 둔다: 밤이면 이 배지도 함께 어두워져야 같은 공간으로 읽힌다.
+      */}
+      {scene.waitingOverflow > 0 && (
+        <div
+          className="absolute rounded-xs border border-frame bg-desk px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-on-desk"
+          style={{ left: "95%", top: `${ROOMS_H + CORRIDOR_H / 2}%`, transform: "translate(-100%, -50%)" }}
+        >
+          +{scene.waitingOverflow}
+        </div>
+      )}
+
       {/* 조명 — 해석 카피 없이 밝기만 바뀐다 */}
       <div
         className={`pointer-events-none absolute inset-0 transition-colors duration-700 ${LIGHT_WASH[scene.lighting]}`}

@@ -3,7 +3,8 @@ import { adjudicateTransfer } from './adjudicate'
 import { handlingDept } from './doctor'
 import { DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
 import {
-  arrivalMinFor, DAY_LENGTH_MIN, freeDoctorsOfDept, NIGHT_START_MIN, pickAssignee, procedureDurationMin,
+  arrivalMinFor, DAY_LENGTH_MIN, earliestFreeMin, freeDoctorsOfDept, NIGHT_START_MIN, patienceMin,
+  pickAssignee, procedureDurationMin,
 } from './daysim'
 
 // 1막 콜 큐 — 받는 병원. 기존 adjudicateTransfer를 플레이어 손으로 돌린다(벽의 양쪽).
@@ -34,12 +35,36 @@ export interface CallEconomics {
  * 여기 섞으면 정반대 부호가 나온다 — 콜 델타는 "행위 1건"이라 단위가 다르다(T-039).
  * 과 단위 흑자는 입력이 아니라 플레이어가 검사를 붙였을 때 **장부에서 창발**해야 한다(F2, 검체 160.5%).
  *
- * ⚠️ 스케일 주의 — 한 판이 콜 35통(7일 × 5)이라 이 값들이 누적된다. 콜 델타 합이 부문 손익(주간 전액)을
- * 압도하면 구조 손익이 무의미해진다(PR #35 양심 루트 −525억). 불변식 I8(|순이익| ≤ 4 × 예산)은
- * 테스트로 안 잡히고 **브라우저 7일 완주로만** 잡힌다.
+ * ⚠️ 스케일 주의 — 이 값들은 콜마다 누적된다. 콜 델타 합이 부문 손익(주간 전액)을 압도하면
+ * 구조 손익이 무의미해진다(PR #35 양심 루트 −525억). 불변식 I8(|순이익| ≤ 4 × 예산).
+ *
+ * 🔻 **콜 제한 폐지(2026-07-23)로 외래 두 종목만 절반 스케일로 내렸다.** 하루 5통이 20~40통이
+ * 되면서 옛 값(6/3·10/6)으로는 외래 흑자만 주 +245억을 찍어 구조 손익을 덮었다. 내릴 수 있는
+ * 근거는 이 표의 주석 그 자체다 — **비율이 근거이고 금액은 각색**이라, 비율을 지키면 논지가 안 상한다.
+ *
+ * 🔴 **응급은 건드리지 않는다.** 통수가 안 늘었으니(하루 2~4통 고정) 축소할 이유가 없고, 줄이면
+ * 응급 적자가 구조 흑자를 못 이겨 **"양심적으로 하면 적자"라는 이 게임의 논지가 죽는다**.
+ * 실측(2026-07-23): 응급을 5/6·2/4로 절반화했더니 양심 경로 결말이 −3에서 **+4로 뒤집혔다**
+ * — 비율(83%·50%)은 멀쩡했는데 논지가 증발했다. 스케일 조정은 **통수가 는 종목에만** 건다.
  */
 export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
-  COSMETIC_WALKIN: { priceSetter: 'HOSPITAL', revenueBillions: 6, costBillions: 3 },
+  /**
+   * ⏸ **임시로 델타 0**(2026-07-23) — 미용 흑자는 지금 **부문 손익이 이미 세고 있다**.
+   *
+   * 워크인이 하루 2통일 땐 콜 델타(주 14억)가 부문 손익(주 300억) 옆에서 오차라 아무도 몰랐는데,
+   * 하루 55통이 되면서 **같은 진료를 두 층에서 세는 이중 계상**이 표면화됐다(실측: 콜 델타가
+   * 주 404억을 더해 순이익 707억 → 불변식 I8의 400억 위반). 둘 중 한 곳에서만 세야 한다.
+   *
+   * 근본 처방은 **부문 손익을 '그 과가 버는 돈'에서 '그 과의 고정비'로 뒤집고 콜을 유일한 수익원으로**
+   * 두는 것이다 — 그러면 과별 흑자·적자가 입력이 아니라 계산에서 창발한다(아래 WORKUP_ECONOMICS
+   * 주석이 이미 요구하는 그것). 그 재설계는 setup·world·ledger·growth까지 파급해 별도 작업으로
+   * 분리했다(사용자 결정 2026-07-23). 그때 이 값은 만원 단위 현실 수치로 되살아난다
+   * — 보톡스 한 건이 1억이라는 것부터가 각색을 넘어 틀렸다.
+   *
+   * 그때까지 부문 손익 쪽이 미용 흑자를 담당한다. 워크인은 자동 접수라 카드가 안 떠서
+   * 화면에 보이는 변화는 없다(플레이어에게 0원이라고 말하지 않는다).
+   */
+  COSMETIC_WALKIN: { priceSetter: 'HOSPITAL', revenueBillions: 1, costBillions: 1 },
   // 네 필수 응급은 모두 **수술·처치 84.9% 밴드**(행위 단위)라 동형이다(11/13 ≈ 85%).
   // 🔴 과별 차등(산부 61%·소청 79% 등 과 단위)은 여기 섞지 않는다(T-039) — "산부가 더 밑진다"는
   // 재정중립 패키지가 만든 DEPARTMENTS 층(산부 −16)이 담당하지, 콜 델타(행위 단위)가 아니다.
@@ -51,9 +76,9 @@ export const CALL_ECONOMICS: Record<CallKind, CallEconomics> = {
   ABDOMINAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 11, costBillions: 13 },
   // 고열·감염(내과 급여)은 기본진료 50.5%·응급 45% 밴드라 원가 미달(3/6 ≈ 50%).
   MEDICAL_EMERGENCY: { priceSetter: 'GOVERNMENT', revenueBillions: 3, costBillions: 6 },
-  // 배후과 예약진료 — 검사 흑자 밴드 계승(10/6 ≈ 167% — 검체 160% 밴드). 그 과 의사가 응급 대신
-  // 예약을 도는 이유가 곧 이 흑자다(점유 판정 자체는 Task 5).
-  SPECIALIST_ELECTIVE: { priceSetter: 'GOVERNMENT', revenueBillions: 10, costBillions: 6 },
+  // 배후과 예약진료 — 검사 흑자 밴드 계승(5/3 ≈ 167% — 검체 160% 밴드). 그 과 의사가 응급 대신
+  // 예약을 도는 이유가 곧 이 흑자다. 통수가 3배가 돼 10/6에서 절반 축소했다(비율 보존).
+  SPECIALIST_ELECTIVE: { priceSetter: 'GOVERNMENT', revenueBillions: 5, costBillions: 3 },
 }
 
 /**
@@ -108,6 +133,20 @@ export function isAutoAccept(kind: CallKind): boolean {
   return kind === 'COSMETIC_WALKIN'
 }
 
+/**
+ * 흐름을 멈추고 플레이어에게 물어야 하는 콜인가 — **배후과 예약진료 하나뿐**이다.
+ *
+ * 응급은 `decide`가 accept를 무시하고 구조로 판정하고(거절 버튼이 없다), 워크인은 자동 접수라
+ * 물어볼 게 없다. 하루 5통 시절엔 그래도 콜마다 「계속」을 눌러 전개를 봤지만, 20~40통이 되면
+ * 그 클릭이 곧 노동이 된다 — 결정이 있는 자리에서만 멈추고 나머지는 흐르게 한다.
+ *
+ * 화면(`useHospitalClock`의 흐름 목표 · `ReceivingPhase`의 자동 처리)이 이 술어 하나를 공유한다.
+ * 두 곳에 각자 조건을 적으면 흐름이 멈추는 지점과 카드가 뜨는 지점이 어긋난다.
+ */
+export function needsDecision(call: IncomingCall): boolean {
+  return isElective(call.kind) && !isAutoAccept(call.kind)
+}
+
 /** 콜 한 통 수용으로 누적되는 손익 델타(억). */
 export function callDelta(kind: CallKind): number {
   const e = CALL_ECONOMICS[kind]
@@ -148,6 +187,34 @@ export function canOrderWorkup(kind: CallKind): boolean {
 
 export type CallDisposition = 'HARDLOCK_REJECT' | 'CHOICE'
 
+/**
+ * 이 콜이 **언제** 진료를 시작할 수 있는가 — 대기까지 감안한 시작 시각, 혹은 못 받는 사유.
+ *
+ * 과거엔 도착 시각에 자유 의사가 없으면 그 자리에서 끝이었다(즉시 거절). 그래서 환자가 몰려도
+ * 대기실에 아무도 남지 않았고 — 못 받은 사람은 그 프레임에 사라졌다 — 병원이 북적일 수가 없었다.
+ * 이제 기다린다. 그 대기가 곧 복도에 선 사람들이다.
+ *
+ * 세 갈래를 가르는 건 `earliestFreeMin`의 `undefined`/숫자 구분이다:
+ *   - 숫자 + 한계 이내 → 그 시각에 시작 (기다렸다 받는다)
+ *   - 숫자 + 한계 초과 → `LEFT_WAITING` (자리는 결국 났지만 늦었다)
+ *   - undefined       → `NO_FREE_SPECIALIST` (그 과 의사가 0명 — 기다려도 안 생긴다)
+ *
+ * `hardlockReason`과 `decide`가 이 함수 하나를 공유한다. 두 곳에 같은 판정을 적으면
+ * 카드에 뜬 결과와 실제 처리가 어긋난다.
+ */
+export function startMinFor(
+  call: IncomingCall,
+  busyUntil: Record<string, number>,
+  roster: Doctor[],
+): number | 'LEFT_WAITING' | 'NO_FREE_SPECIALIST' {
+  const dept = handlingDept(call)
+  const arrivalMin = call.arrivalMin ?? 0
+  if (freeDoctorsOfDept(roster, busyUntil, dept, arrivalMin).length > 0) return arrivalMin
+  const earliest = earliestFreeMin(roster, busyUntil, dept)
+  if (earliest === undefined) return 'NO_FREE_SPECIALIST'
+  return earliest - arrivalMin <= patienceMin(call.kind) ? earliest : 'LEFT_WAITING'
+}
+
 export interface ReceivingState {
   hospital: Hospital
   queue: IncomingCall[]
@@ -174,8 +241,18 @@ export interface ReceivingState {
   /** 오늘 검사를 붙인 환자 수 — Task 5에서 검사 액션 제거로 **항상 0**(boarding 이월은 Task 6). */
   workupCount: number
   lawsuitExposure: number
-  /** reason = 하드락 사유(못 받은 이유). 받았거나 내가 거절한 콜은 null — 구조가 막은 것만 사유가 남는다. */
-  log: { callId: string; accepted: boolean; disposition: CallDisposition; reason: RejectionReason | null }[]
+  /**
+   * reason = 못 받은 이유(구조가 막았거나, 기다리다 떠났거나). 받았거나 내가 보낸 콜은 null.
+   * startMin = 진료를 **시작한** 시각. 도착과 다를 수 있다(기다렸으면 늦다). 못 받았으면 undefined —
+   * 그래서 `arrivalMin ≤ 지금 < startMin`이 "지금 대기 중"이 되고, 맵이 그걸로 복도를 채운다.
+   */
+  log: {
+    callId: string
+    accepted: boolean
+    disposition: CallDisposition
+    reason: RejectionReason | null
+    startMin?: number
+  }[]
   done: boolean
 }
 
@@ -195,7 +272,12 @@ interface CallPlanEntry {
 }
 
 /**
- * 요일별 콜 구성 — 하루 5통 고정(응급·워크인 자리 하나를 배후과 예약으로 바꿔친다), 콜 종류만 날마다 다르다.
+ * 요일별 **응급** 구성 — 이 배열에서 응급 엔트리만 그날의 응급 스트림이 된다(하루 2~4통).
+ *
+ * ⚠️ 이 배열의 워크인·예약 엔트리는 더 이상 큐에 그대로 실리지 않는다. 콜 제한 폐지 뒤
+ * 외래는 `outpatientForBeds(beds)`가 따로 만들고(워크인 위주 + 5통당 예약 1), 여기서는
+ * **예약의 대상 과**만 읽어 간다(electiveDepts의 첫 항목). 아래 원칙 1~5 중 응급 배치에
+ * 관한 1·2·4는 그대로 살아 있고, "자리 3 < 5통"(원칙 3)은 총량이 티어 파생이 되면서 폐기됐다.
  *
  * 결정론 유지가 이 게임의 원칙이라 RNG를 쓰지 않는다. 그렇다고 7일을 같은 큐로 채우면 3일째부터
  * 지루해지므로(game-concept.md:113이 '하루/교대' 장르를 기각한 사유가 바로 콘텐츠 양 부담),
@@ -203,7 +285,8 @@ interface CallPlanEntry {
  *
  * 배치 원칙: (1) 모든 날에 필수 응급이 있다 — 외면할 기회가 매일 온다(STEMI 전용 아님, 4종 분산).
  * (2) 뒤로 갈수록 필수 응급이 는다 — 자리를 미용으로 채우던 습관의 대가가 커진다.
- * (3) 자리 3 < 5통이라 어느 날이든 못 받는다. 한 병원이 4개 배후과를 다 못 갖춰 어느 과든 하드락이 난다.
+ * (3) 🔴 폐기 — "자리 3 < 5통이라 어느 날이든 못 받는다"였다. 총량이 병상 티어 파생이 되면서 그 부등호는
+ * 사라졌다. 대신 한 병원이 4개 배후과를 다 못 갖춘다는 사실은 그대로라, 어느 과든 하드락은 여전히 난다.
  * (4) 월요일은 기존 리듬(필수=STEMI 위주)을 대체로 보존한다 — 첫날은 익숙하게, 다양성은 화요일부터 번진다.
  * (5) SPECIALIST_ELECTIVE를 날마다 한 통, **그날 이미 오는 필수 응급과 같은 dept**로 배치한다 —
  * 그 과 의사가 예약을 도는 동안 같은 날 같은 과 응급이 오면 실제로 점유가 경쟁한다(판정 자체는 Task 5).
@@ -212,7 +295,8 @@ interface CallPlanEntry {
  *
  * 시간대(야간)는 더 이상 이 배열의 위치가 아니라 arrivalMin(도착순 정렬 후 시각)에서 파생된다 —
  * createCallQueue가 각 콜에 daysim seed로 도착시각·소요시간을 매기고 도착순으로 재정렬한다.
- * count=5 슬롯에선 산수가 정직하다: 슬롯 폭 120분에 NIGHT_START_MIN=480이 걸쳐, 항상 **마지막 1통만** 야간이다.
+ * ⚠️ 옛 주석은 "슬롯 폭 120분이라 항상 마지막 1통만 야간"이라 적었다. 균등 슬롯을 버린 뒤(도착 뭉침)
+ * 야간 통수는 날마다 다르다 — 경계(NIGHT_START_MIN)만 공유하지, 몇 통인지는 아무도 보장하지 않는다.
  */
 const DAY_PLANS: CallPlanEntry[][] = [
   [{ kind: 'COSMETIC_WALKIN' }, { kind: 'SPECIALIST_ELECTIVE', dept: 'CARDIOLOGY' }, { kind: 'COSMETIC_WALKIN' },
@@ -273,35 +357,83 @@ const PATIENT_OF: Record<CallKind, Patient> = {
   SPECIALIST_ELECTIVE: electivePatient,
 }
 
-/** 병상 연동 하루 콜 수 — 큰 병원 = 더 많은 환자(사용자 결정). 3→5·5→7·7→9. */
-export function callsForBeds(beds: number): number {
-  return beds + 2
+/**
+ * 병상 연동 하루 **외래** 통수 — 미용·검진 워크인 + 배후과 예약진료. 3→60·5→100·7→140.
+ *
+ * **능력이 아니라 규모에 비례시킨다.** 의사 수에 맞추면 항상 감당 가능해져 압박이 구조적으로
+ * 증발한다 — 환자는 병원 사정을 모르고 온다. 병상 티어는 "얼마나 큰 병원으로 알려졌나"다.
+ *
+ * 응급은 여기 없다: 응급 통수는 DAY_PLANS 고정이라 티어와 무관하다(사용자 결정 2026-07-23).
+ * 북적임은 외래가 만들고, 그 사이로 응급이 밀리는 게 이 게임의 논지다 — 응급까지 배수로 늘리면
+ * 신문 헤드라인·소송 노출이 함께 배수가 돼 결말이 마비된다.
+ *
+ * ## 왜 20배인가 — 화면의 동시 인원은 도착률 × 체류시간이다
+ *
+ * 첫 구현은 `beds × 5`(하루 15~35통)였는데 **브라우저에서 여전히 한산했다**(2026-07-23 실측:
+ * 대기 1명·의사 4명 중 3명 자유). 산수가 정직하다 — 하루 17명이면 35분에 한 명이고, 진료가
+ * 45분이라 리틀의 법칙으로 동시 인원이 **1.3명**이다. 통수를 3배로 올려도 4명이라, 도착이
+ * 뭉치는 것만으로는 그 상한을 못 넘는다. 북적임은 뭉침이 아니라 **도착률**이 만든다.
+ *
+ * `beds × 20`이면 하루 60~140명이라 동시 5~12명이 된다. 수익과를 꽉 채웠을 때(미용 3 + 검진 3
+ * = 3600분 ÷ 45분 ≈ 80통) 겨우 감당하는 수준이라, **채용 선택이 처음으로 처리량을 가른다** —
+ * 미용 1명이면 워크인 절반이 기다리다 떠나고, 3명이면 대부분 받는다.
+ */
+export function outpatientForBeds(beds: number): number {
+  return beds * 20
 }
+
+/**
+ * 외래 몇 통마다 예약진료 한 통인가 — 나머지는 워크인.
+ *
+ * 예약은 플레이어가 멈춰서 고르는 **유일한** 콜이라, 이 값이 곧 하루의 결정 횟수를 정한다
+ * (외래 60통 ÷ 12 = 5번). 5보다 촘촘하게 두면 하루 12번을 물어 「계속」 연타를 없앤 의미가
+ * 사라지고, 더 성기게 두면 예약↔응급의 같은 과 점유 경쟁이 거의 안 일어난다.
+ */
+const ELECTIVE_EVERY = 12
 
 /**
  * 그날의 콜 큐 — 결정론(같은 day·beds는 항상 같은 큐), 도착순 정렬.
  *
- * DAY_PLANS 순서대로 id·라벨·patient를 부여한 뒤(원래 인덱스 기반이라 결정론·고유성이 유지된다),
- * daysim의 seed 원시함수로 arrivalMin·durationMin을 매기고 **마지막에** 도착시각 오름차순으로 정렬한다.
+ * **두 스트림을 합쳐 만든다**(콜 제한 폐지, 2026-07-23):
+ *   ① 응급 — DAY_PLANS의 응급 엔트리 그대로(하루 2~4통). 병상 티어와 무관하게 고정이다.
+ *   ② 외래 — `outpatientForBeds(beds)`통(15/25/35). 워크인 위주 + ELECTIVE_EVERY통마다 예약 1.
+ * 하루 총 17~39명. 이 총량이 상한인 게 아니라 **하루 600분이 상한**이고, 총량은 그 결과다.
+ *
+ * 인덱스 기반으로 id·라벨·patient를 부여한 뒤 daysim seed로 arrivalMin·durationMin을 매기고
+ * **마지막에** 도착시각 오름차순으로 정렬한다(결정론·id 고유성은 정렬 전 인덱스가 지킨다).
  * nightShift는 위치가 아니라 arrivalMin(≥ NIGHT_START_MIN)에서 파생 — 정렬해도 시간대는 안 흔들린다.
  *
- * beds는 병상 티어별 콜 수(callsForBeds)를 결정한다 — 기본값 FIXED_BEDS면 기존과 동일한 5통(하위호환).
- * count가 base plan(5통)보다 크면 인덱스를 순환(`i % basePlan.length`)해 늘린다 — 새 콘텐츠 0,
- * kind 믹스 비율 보존, 결정론 유지(Task 6).
  * week는 1로 고정한다(createCallQueue는 (day, beds) 두 인자 유지 — session.ts weekDayQueue가 이미
  * 전역일을 day로 넘기므로 이 함수 시그니처를 더 바꾸면 그쪽이 깨진다).
  * 라벨은 kind 내 등장 순번으로 고른다 — callerPleaAt(dialogue.ts)의 seed 규칙과 같아야 라벨↔대사가 맞는다(PR #29).
  */
 export function createCallQueue(day = 1, beds = FIXED_BEDS): IncomingCall[] {
   const basePlan = DAY_PLANS[(day - 1) % DAY_PLANS.length]
-  const count = callsForBeds(beds)
-  // 티어별로 기본 플랜(5통)을 순환 연장해 count통을 채운다 — 새 콘텐츠 0, 믹스 비율 보존, 결정론.
-  const plan = Array.from({ length: count }, (_, i) => basePlan[i % basePlan.length])
+
+  // ① 응급 스트림 — DAY_PLANS 그대로. 티어와 무관하게 고정이다.
+  const emergencies = basePlan.filter((e) => requiresBackupCare(e.kind))
+
+  // ② 외래 스트림 — 워크인 위주 + ELECTIVE_EVERY통마다 예약진료 하나.
+  //    예약의 대상 과는 **DAY_PLANS가 그날 정한 과를 먼저** 쓰고, 늘어난 몫만 그날 오는 응급의 과를
+  //    순환한다. 순서가 중요하다 — 응급 과부터 돌리면 월요일 예약이 순환기에서 내과로 바뀌어
+  //    DAY_PLANS 원칙 4(월요일은 기존 리듬 보존)가 조용히 깨진다. 어느 쪽이든 같은 과 의사를 두고
+  //    예약과 응급이 다투게 하는 게 이 배치의 목적이다.
+  const electiveDepts = [
+    ...basePlan.filter((e) => e.kind === 'SPECIALIST_ELECTIVE').map((e) => e.dept ?? 'CARDIOLOGY'),
+    ...emergencies.map((e) => PATIENT_OF[e.kind].requiredSpecialty),
+  ]
+  const outpatient: CallPlanEntry[] = Array.from({ length: outpatientForBeds(beds) }, (_, i) =>
+    i % ELECTIVE_EVERY === ELECTIVE_EVERY - 1
+      ? { kind: 'SPECIALIST_ELECTIVE', dept: electiveDepts[Math.floor(i / ELECTIVE_EVERY) % electiveDepts.length] }
+      : { kind: 'COSMETIC_WALKIN' },
+  )
+
+  const plan = [...emergencies, ...outpatient]
   const seen: Partial<Record<CallKind, number>> = {}
   const timed = plan.map(({ kind, dept }, i) => {
     const occurrence = seen[kind] ?? 0
     seen[kind] = occurrence + 1
-    const arrivalMin = arrivalMinFor(1, day, i, plan.length)
+    const arrivalMin = arrivalMinFor(1, day, i)
     return {
       id: `d${day}c${i + 1}`, // 순환 후 인덱스 기반 — 날짜별 고유, 정렬 위치와 무관(로그·React key 충돌 방지)
       kind,
@@ -356,11 +488,10 @@ export function hardlockReason(
       if (call.nightShift && !onCallNow.includes(call.patient.requiredSpecialty)) {
         return 'NO_NIGHT_BACKUP' // 과는 있는데 당직이 비었다 — NO_BACKUP_CARE와 다른 사유다
       }
-      // 과·당직이 있어도 그 과 의사가 지금(도착 시각) 다 진료 중이면 못 받는다 — 점유 벽.
-      if (freeDoctorsOfDept(roster, busyUntil, handlingDept(call), call.arrivalMin ?? 0).length === 0) {
-        return 'NO_FREE_SPECIALIST'
-      }
-      return null
+      // 과·당직이 있어도 그 과 의사가 다 진료 중이면 기다린다 — 버티면 받고(null), 못 버티면 떠난다.
+      // 그 과 의사가 아예 없으면 대기가 무의미하므로 NO_FREE_SPECIALIST가 그대로 나온다.
+      const start = startMinFor(call, busyUntil, roster)
+      return typeof start === 'string' ? start : null
     }
   }
 }
@@ -413,16 +544,21 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   const disposition: CallDisposition = reason === null ? 'CHOICE' : 'HARDLOCK_REJECT'
 
   const arrivalMin = call.arrivalMin ?? 0
-  const free = freeDoctorsOfDept(roster, state.busyUntil, handlingDept(call), arrivalMin)
+  // 대기까지 감안한 시작 시각 — 숫자면 (기다려서라도) 받을 수 있고, 문자열이면 못 받는다.
+  const start = startMinFor(call, state.busyUntil, roster)
+  const canStart = typeof start === 'number'
 
-  // 응급은 accept 무관 자동(하드락이 없으면 수용). 선택진료는 accept + 그 과 자유 의사가 있어야 수용.
-  const effectiveAccept = disposition === 'CHOICE' && (isElective(call.kind) ? accept && free.length > 0 : true)
+  // 응급은 accept 무관 자동(하드락이 없으면 수용). 선택진료는 accept + 시작 가능해야 수용.
+  const effectiveAccept = disposition === 'CHOICE' && (isElective(call.kind) ? accept && canStart : true)
 
-  // 수용한 콜은 담당 과(handlingDept)의 자유 의사를 점유한다. 그 과에 자유 의사가 없으면(미채용) 아무도 안 잡는다.
+  // 수용한 콜은 담당 과 의사를 **시작 시각부터** 점유한다 — 기다린 콜은 도착이 아니라 시작이 기준이다.
   let busyUntil = state.busyUntil
-  if (effectiveAccept && free.length > 0) {
+  let startMin: number | undefined
+  if (effectiveAccept && canStart) {
+    const free = freeDoctorsOfDept(roster, state.busyUntil, handlingDept(call), start)
     const assignee = pickAssignee(free, state.busyUntil)
-    busyUntil = { ...state.busyUntil, [assignee.id]: arrivalMin + (call.durationMin ?? 0) }
+    busyUntil = { ...state.busyUntil, [assignee.id]: start + (call.durationMin ?? 0) }
+    startMin = start
   }
 
   const netProfitDeltaBillions = effectiveAccept
@@ -430,7 +566,13 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
     : state.netProfitDeltaBillions
   const lawsuitExposure = effectiveAccept && call.lawsuitRisk ? state.lawsuitExposure + 1 : state.lawsuitExposure
 
-  const log = [...state.log, { callId: call.id, accepted: effectiveAccept, disposition, reason }]
+  // 선택진료는 하드락이 없어 reason이 null이지만, **기다리다 떠난 것만은** 기록한다 —
+  // "오늘 몇 명이 못 기다리고 갔나"가 북적임의 대가라 로그에 남아야 화면이 보여줄 수 있다.
+  // 🔴 NO_FREE_SPECIALIST는 여기 넣지 않는다: 선택진료에서 그건 "구조가 막았다"가 아니라
+  // "그 과를 애초에 안 뽑았다"라, 사유를 달면 로그가 거짓말을 한다(기존 계약 — log 필드 주석).
+  const logReason = reason ?? (!effectiveAccept && start === 'LEFT_WAITING' ? 'LEFT_WAITING' : null)
+
+  const log = [...state.log, { callId: call.id, accepted: effectiveAccept, disposition, reason: logReason, startMin }]
   const index = state.index + 1
   return {
     ...state,

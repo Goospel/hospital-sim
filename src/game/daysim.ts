@@ -36,11 +36,57 @@ export function procedureDurationMin(kind: CallKind, week: number, day: number, 
   return min + Math.floor(seededUnit(callSeed(week, day, index, 1)) * (max - min + 1))
 }
 
-/** 도착시각 — 하루를 count개 슬롯으로 나눠 슬롯 안에서 seed 지터. 인덱스순 ≈ 도착순. */
-export function arrivalMinFor(week: number, day: number, index: number, count: number): number {
-  const slot = DAY_LENGTH_MIN / count
-  const jitter = seededUnit(callSeed(week, day, index, 2)) * slot
-  return Math.min(DAY_LENGTH_MIN - 1, Math.floor(index * slot + jitter))
+/**
+ * 도착시각 — 하루 전체에 seed로 뿌린다. 정렬은 호출부(createCallQueue)가 한다.
+ *
+ * 과거엔 하루를 count개 슬롯으로 균등 분할해 슬롯 안에서만 지터를 줬다. 그 모델은
+ * **최소 간격이 항상 (DAY_LENGTH_MIN / count) 이상**이라 도착이 구조적으로 절대 겹치지
+ * 않았고, 그래서 대기열이 생길 수 없었다 — 새 환자가 올 때마다 앞사람은 이미 끝나 있다.
+ * 병원이 북적이려면 몰릴 때 몰리고 빌 때 비어야 한다.
+ *
+ * 균등 난수를 하루에 뿌리면 간격이 지수분포에 가까워져 그 뭉침이 공짜로 나온다 —
+ * 아침·점심 러시 같은 별도 피크 모델을 만들지 않는다(YAGNI). RNG는 여전히 0이다.
+ */
+export function arrivalMinFor(week: number, day: number, index: number): number {
+  return Math.floor(seededUnit(callSeed(week, day, index, 2)) * DAY_LENGTH_MIN)
+}
+
+/**
+ * 대기 한계(분) — 이 시간을 넘겨 기다리면 환자가 떠난다.
+ *
+ * 각색값이고 **상대 길이만** 의미가 있다(임상 주장 아님). STEMI가 가장 짧은 건 재관류
+ * 골든타임이고(medical-system-grounding.md), 워크인이 짧은 건 위중해서가 아니라
+ * 그냥 기다리기 싫어서다 — 같은 '떠남'이어도 뜻이 정반대라, 신문이 되는 건 응급뿐이다.
+ */
+export const PATIENCE_MIN: Record<CallKind, number> = {
+  STEMI: 90, // 재관류 골든타임
+  OBSTETRIC_EMERGENCY: 120,
+  NEURO_EMERGENCY: 120,
+  TRAUMA_EMERGENCY: 120,
+  ABDOMINAL_EMERGENCY: 120,
+  MEDICAL_EMERGENCY: 180, // 고열·감염 — 덜 급하다
+  COSMETIC_WALKIN: 60, // 기다리다 그냥 간다
+  SPECIALIST_ELECTIVE: 120, // 예약이라 어느 정도는 기다린다
+}
+
+export function patienceMin(kind: CallKind): number {
+  return PATIENCE_MIN[kind]
+}
+
+/**
+ * 그 과 유닛 중 **가장 빨리 비는 시각**. 그 과 유닛이 하나도 없으면 undefined.
+ *
+ * undefined와 0의 구분이 이 함수의 전부다: 0은 "지금 당장 자유"고, undefined는
+ * "기다려도 영원히 안 생긴다"(미채용). 전자는 대기, 후자는 하드락으로 갈린다.
+ */
+export function earliestFreeMin(
+  roster: Doctor[],
+  busyUntil: Record<string, number>,
+  dept: DeptKey,
+): number | undefined {
+  const docs = roster.filter((d) => d.dept === dept)
+  if (docs.length === 0) return undefined
+  return Math.min(...docs.map((d) => busyUntil[d.id] ?? 0))
 }
 
 /** 시각 atMin에 자유로운(busyUntil ≤ atMin) 그 과 유닛들. busyUntil 미기록=0(자유). */

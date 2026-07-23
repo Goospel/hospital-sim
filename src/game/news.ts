@@ -95,6 +95,9 @@ export const REASON_CLAUSE: Record<RejectionReason, string> = {
   NO_BACKUP_CARE: '배후진료 불가',
   NO_NIGHT_BACKUP: '야간 당직 공백',
   NO_FREE_SPECIALIST: '배후과 의사 점유',
+  // 앞의 다섯이 "못 받았다"라면 이건 "늦게 받았다" — 자리는 결국 났다. 그 사실이 부제에 남아야
+  // 신문이 정확해진다("의사가 없었다"고 쓰면 거짓말이다 — 있었고, 다른 환자를 보고 있었다).
+  LEFT_WAITING: '대기 중 이송 지연',
 }
 
 /**
