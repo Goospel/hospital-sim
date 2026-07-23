@@ -331,7 +331,12 @@ export default function ReceivingPhase({
           맵이 순간 상태를, 명단이 누적을 담당한다.
         */}
         <div className="flex w-full flex-col gap-4 sm:w-72 sm:shrink-0">
-          <DoctorRoster roster={receiving.hospital.roster ?? []} receiving={receiving} fatigue={fatigue} />
+          <DoctorRoster
+            roster={receiving.hospital.roster ?? []}
+            receiving={receiving}
+            fatigue={fatigue}
+            atMin={atMin}
+          />
           <CheerfulLedger receiving={receiving} />
         </div>
       </div>

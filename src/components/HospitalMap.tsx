@@ -33,9 +33,10 @@ function positionOf(a: MapAvatar, scene: MapScene): { left: string; top: string 
   }
   if (a.zone === "BED") {
     const cell = 100 / Math.max(1, scene.beds.length);
-    // 16 = 병동 밴드(ROOMS_H+CORRIDOR_H부터 시작) 안에서 침대 스프라이트 줄까지 내리는 손튜닝
-    // 오프셋 — 스프라이트가 밴드 상단 쪽에 그려져 있어 그 줄 높이에 맞춘 값이다.
-    return { left: `${a.slot * cell + cell / 2}%`, top: `${ROOMS_H + CORRIDOR_H + 16}%` };
+    // 병동 밴드 상단(ROOMS_H+CORRIDOR_H%)에서 침대 스프라이트 중심까지: pt-1.5(6px) +
+    // sm:h-9 침대의 절반(18px) = 1.5rem(24px). %와 px를 더해야 해서 calc()가 필수다 —
+    // 침대 스프라이트 크기(h-7/sm:h-9)가 바뀌면 이 1.5rem도 같이 바꿔야 한다.
+    return { left: `${a.slot * cell + cell / 2}%`, top: `calc(${ROOMS_H + CORRIDOR_H}% + 1.5rem)` };
   }
   // 복도 — 의사·환자가 한 카운터를 공유해 자리가 겹치지 않는다. 사용 가능 폭은 6%~94%(88%)뿐이라
   // slot당 7% 고정이면 인원이 늘 때 화면 밖으로 밀려난다 — 인원수에 맞춰 간격을 줄여 마지막
