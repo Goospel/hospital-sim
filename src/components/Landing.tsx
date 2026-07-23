@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 /**
  * 랜딩 타이틀 카드 — 게임의 첫 화면(원본 97a012c "수화기 너머의 벽" 랜딩을 되살림).
  * 카피는 현재 게임(병원 경영 전체 아크)에 맞춰 재프레이밍: 세우고=채용 / 받고=콜큐·응급 / 대가를 치른다=결말.
@@ -10,18 +8,11 @@ import { useEffect, useState } from "react";
  * 서술 카피는 손대지 않는다(스펙 §8-B: 카피 재작성은 별도 세션으로 보존).
  */
 export default function Landing({ onStart }: { onStart: () => void }) {
-  // 마운트 후 1회 fade-in. prefers-reduced-motion이면 아래 motion-reduce:transition-none이 전환을 없애
-  // 콘텐츠가 즉시 표시된다(품질 바닥에서도 내용은 그대로).
-  const [shown, setShown] = useState(false);
-  useEffect(() => setShown(true), []);
-
   return (
     <main className="flex min-h-full flex-1 flex-col items-center justify-center bg-desk px-6 py-12 text-center text-on-desk">
-      <div
-        className={`flex flex-col items-center transition-opacity duration-700 ease-out motion-reduce:transition-none ${
-          shown ? "opacity-100" : "opacity-0"
-        }`}
-      >
+      {/* 마운트 후 1회 fade-in — 상태가 아니라 CSS(.fade-in, globals.css)가 낸다.
+          prefers-reduced-motion이면 애니메이션이 꺼져 콘텐츠가 즉시 표시된다. */}
+      <div className="fade-in flex flex-col items-center">
         <p className="mb-6 text-xs font-medium uppercase tracking-[0.3em] text-on-desk/60">
           대한민국 의료 시스템 시뮬레이션
         </p>

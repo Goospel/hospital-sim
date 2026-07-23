@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CLOCK_TICK_MS, dayEndMin, flowStepCount, sweepMinutes } from "@/game/hospitalMap";
 import { needsDecision, type ReceivingState } from "@/game/receiving";
 
@@ -38,17 +38,46 @@ export function useHospitalClock(receiving: ReceivingState): {
   skip: () => void;
 } {
   const to = flowTargetMin(receiving);
+  const from = receiving.clockMin;
+
+  /*
+    접근성 설정은 **한 번만** 읽는다(지연 초기화). 렌더마다 matchMedia를 부르지 않으려는
+    것이고, 서버에선 false다 — 이 값은 첫 렌더 출력에 안 쓰이므로(아래 조정은 구간이
+    *바뀔 때*만 발동한다) 하이드레이션 불일치가 생기지 않는다.
+  */
+  const [reduced] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  const seq = useMemo(
+    () => sweepMinutes(from, to, reduced ? 1 : flowStepCount(from, to)),
+    [from, to, reduced],
+  );
+
   // 초기값은 목표가 아니라 **출발 시각**이다 — to로 시작하면 첫 페인트에서 뒤로 튀었다가 다시 감긴다.
-  const [atMin, setAtMin] = useState(receiving.clockMin);
+  const [atMin, setAtMin] = useState(from);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    const from = receiving.clockMin;
-    const reduced =
-      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const seq = sweepMinutes(from, to, reduced ? 1 : flowStepCount(from, to));
+  /*
+    구간이 바뀌면 시각을 새 구간의 **첫 프레임**으로 즉시 되돌린다.
 
+    이걸 effect에 두면 안 된다: effect는 페인트 **후에** 돌아, 새 구간의 첫 프레임이
+    한 번은 이전 구간의 끝 시각으로 그려진다. 구간 길이가 0인 경우(to === from)엔 그
+    한 프레임 동안 `flowing`이 참으로 잘못 계산돼 결정 카드가 깜빡인다.
+
+    렌더 중 setState는 리액트가 바로 이 목적으로 문서화한 경로다(입력이 바뀔 때 상태
+    조정) — 커밋 전에 즉시 재렌더되므로 화면에 중간 상태가 안 나가고, 그래서
+    `react-hooks/set-state-in-effect`가 경고하는 연쇄 렌더도 아니다.
+  */
+  const [segment, setSegment] = useState({ from, to });
+  if (segment.from !== from || segment.to !== to) {
+    setSegment({ from, to });
     setAtMin(seq[0]);
+  }
+
+  useEffect(() => {
+    // seq[0]은 위 조정(구간 전환) 또는 초기값이 이미 냈다 — 타이머는 그다음부터 이어 간다.
     let i = 1;
     const tick = () => {
       if (i >= seq.length) return;
@@ -61,7 +90,7 @@ export function useHospitalClock(receiving: ReceivingState): {
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
     };
-  }, [receiving.clockMin, to]);
+  }, [seq]);
 
   const skip = () => {
     if (timer.current) clearTimeout(timer.current);

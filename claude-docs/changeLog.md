@@ -9,6 +9,33 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-23 · lint 에러 2건 정리 — 상태로 표현하던 것을 CSS와 렌더 조정으로
+
+**왜** — `eslint src`가 `react-hooks/set-state-in-effect` 2건을 내고 있었다. 규칙이 경고하는 건
+"effect 안 동기 setState = 연쇄 렌더"인데, 둘 다 **effect가 애초에 필요 없던 자리**였다.
+
+**무엇을** — 규칙을 끄지 않고 각각 다른 방식으로 없앴다.
+
+- **[Landing.tsx](../src/components/Landing.tsx)** — 마운트 페이드인을 `useState` + `useEffect`로
+  하고 있었다. "마운트됐다"는 사실은 **이미 DOM에 붙었다는 뜻**이라 리액트 상태로 다시 표현할
+  이유가 없다 → `.fade-in`(globals.css) CSS 애니메이션으로 내리고 훅 두 개를 통째로 지웠다.
+  `both` fill이 첫 프레임부터 `opacity: 0`을 잡아 깜빡임이 없고, reduced-motion이면 애니메이션이
+  꺼져 콘텐츠가 즉시 뜬다(종전 `motion-reduce:transition-none`과 같은 결과).
+- **[useHospitalClock.ts](../src/components/useHospitalClock.ts)** — 구간이 바뀔 때 시각을 새 구간
+  첫 프레임으로 되돌리는 `setAtMin(seq[0])`을 effect 밖 **렌더 중 조정**으로 옮겼다(리액트가 이
+  목적으로 문서화한 경로). 이건 lint 회피가 아니라 **버그 수정이기도 하다**: effect는 페인트
+  *후에* 돌아 새 구간 첫 프레임이 이전 구간의 끝 시각으로 한 번 그려지고, 구간 길이가 0이면
+  그 한 프레임 동안 `flowing`이 참으로 잘못 계산돼 결정 카드가 깜빡인다. `seq`는 `useMemo`로
+  안정화해 effect 의존성을 `[seq]` 하나로 줄였다.
+
+검증(실제 크롬 한 판 완주): 시계 09:09→09:34 단조 증가, **역행 0회**, 결정 오버레이 5회 정상,
+마감 목록 5줄. 페이드인은 `playState: finished` / `currentTime: 700`으로 확인.
+`eslint src` **에러 0**(경고 2건은 무관한 기존 항목: `_seed` 시그니처 유지용 · 테스트의 미사용
+import). `tsc` 0 · vitest 432/432.
+
+작업 중 [T-072](troubleshooting/T-072.md) 신설 — dev 서버가 옛 CSS를 계속 내주는데 청크 파일명이
+그대로라 stale임이 안 드러났다(`.next` 삭제로 해결).
+
 ## 2026-07-23 · 하루 마감 목록을 라벨·사유로 접는다 — 61줄이 5줄로
 
 **왜** — 사용자 지적: *"하루가 끝나면 진료 결과가 이렇게 보이는데 너무 길다."* 콜 제한 폐지로

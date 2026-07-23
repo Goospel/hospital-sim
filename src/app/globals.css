@@ -60,6 +60,21 @@ body { font-family: var(--font-sans); }
   box-shadow: var(--paper-highlight), var(--shadow-paper);
 }
 
+/* 랜딩 표지 1회 페이드인. 상태 토글(useState+useEffect)로 하던 걸 CSS로 내렸다 —
+   "마운트됐다"는 사실은 이미 DOM에 붙었다는 뜻이라 리액트 상태로 다시 표현할 필요가 없다.
+   both = 첫 프레임부터 from(opacity 0)이 적용돼 깜빡임이 없다. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.fade-in { animation: fade-in 700ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* 전환만 없앤다 — 콘텐츠는 즉시 보인다(품질 바닥에서도 내용은 그대로). */
+  .fade-in { animation: none; }
+}
+
 /* ── 병원 맵 연출 레이어 ────────────────────────────────────────────────
    게임 시계(atMin)와 분리된 층이다. 결정 대기로 시계가 멈춰도 병원은 계속 돈다.
    아바타 바깥 div가 배치 이동에 left/top + transition-all을 쓰므로, 배회는
