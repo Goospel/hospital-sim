@@ -5,7 +5,7 @@ import { useState } from "react";
 import { adjustDoctors, bedExpansionCost, BED_TIERS, deptCap } from "@/game/setup";
 import { canApplyGrowth, growthCostOf, type SessionState } from "@/game/session";
 import { poolRemaining } from "@/game/system";
-import { formatSignedBillions } from "@/game/labels";
+import { formatManwon, formatSignedManwon } from "@/game/labels";
 import type { DepartmentSpec, SetupChoices } from "@/game/types";
 
 /**
@@ -33,7 +33,7 @@ export default function GrowthPhase({
       <header className="flex flex-col gap-1">
         <span className="text-xs font-medium uppercase tracking-[0.25em] text-on-desk/60">{state.week}주차 · 재투자</span>
         <h1 className="font-serif text-xl">병원을 키우시겠습니까</h1>
-        <p className="text-sm text-on-desk/70">금고 {formatSignedBillions(state.treasury)} 안에서 증축합니다. 그대로 두고 넘어가도 됩니다.</p>
+        <p className="text-sm text-on-desk/70">금고 {formatSignedManwon(state.treasury)} 안에서 증축합니다. 그대로 두고 넘어가도 됩니다.</p>
       </header>
 
       {/* 병상 티어 */}
@@ -42,7 +42,7 @@ export default function GrowthPhase({
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium text-on-desk">병상 {beds}</span>
             <span className="font-mono text-xs tabular-nums text-on-desk/70">
-              {nextBedTier ? `→ ${nextBedTier}병상 증설 ${bedExpansionCost(beds, nextBedTier)}억 · 환자·필수과 상한↑` : "최대 병상"}
+              {nextBedTier ? `→ ${nextBedTier}병상 증설 ${formatManwon(bedExpansionCost(beds, nextBedTier))} · 환자·필수과 상한↑` : "최대 병상"}
             </span>
           </div>
           <button
@@ -69,7 +69,7 @@ export default function GrowthPhase({
               <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium text-on-desk">{dept.label}</span>
                 <span className="font-mono text-xs tabular-nums text-on-desk/70">
-                  채용 {dept.hireCostBillions}억/명{remain !== null ? ` · 전국 잔여 ${remain}` : ""}
+                  채용 {formatManwon(dept.hireCostManwon)}/명{remain !== null ? ` · 전국 잔여 ${remain}` : ""}
                 </span>
               </div>
               <div className="flex items-center gap-3">
@@ -91,7 +91,7 @@ export default function GrowthPhase({
         <div className="flex items-baseline justify-between">
           <span className="text-xs font-medium uppercase tracking-widest text-on-desk/60">이번 성장 비용 / 금고</span>
           <span className={`font-mono text-lg tabular-nums ${ok ? "text-on-desk" : "text-alarm"}`}>
-            {cost}억 / {state.treasury}억
+            {formatManwon(cost)} / {formatManwon(state.treasury)}
           </span>
         </div>
       </div>

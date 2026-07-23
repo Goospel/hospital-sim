@@ -9,7 +9,7 @@ import type { Hospital, Specialty } from './types'
 
 export interface LedgerSegment {
   label: string
-  profitBillions: number
+  profitManwon: number
 }
 export interface LedgerHire {
   label: string
@@ -18,20 +18,21 @@ export interface LedgerHire {
 export interface Ledger {
   hospitalName: string
   segments: LedgerSegment[]
-  netProfitBillions: number
+  netProfitManwon: number
   hires: LedgerHire[] // 수익과 신규 채용
   essentialSpecialty: Specialty // 환자가 필요했던 과
   essentialHires: number // 그 과 배후진료 채용 — backupCare에서 파생(없으면 0)
   totalHires: number
 }
 
-/** 소송 비용 실현 단가(억) — 필수·고위험 케이스 수용의 꼬리위험 한 방. 각색(부호만 근거: 축 C). */
 /**
- * 소송 노출 1건당 비용(억). 부호·존재만 근거, 금액 각색.
- * ⚠️ 스케일 주의 — 한 판이 7일(콜 35통)이라 노출이 10건 넘게 쌓인다. 하루 각색값 25를 그대로 두면
- * 소송 한 줄(−325억)이 장부 전체를 압도해 다른 항목이 안 보인다.
+ * 소송 노출 1건당 비용(만원) — 필수·고위험 케이스 수용의 꼬리위험 한 방. 부호·존재만 근거, 금액 각색.
+ *
+ * ⚠️ 스케일 주의 — 한 판이 7일이라 노출이 10건 넘게 쌓인다. 단가를 키우면 소송 한 줄이 장부 전체를
+ * 압도해 다른 항목이 안 보인다. 이 값은 **양심 루트 주간 운영손실과 같은 자릿수**를 유지한다:
+ * 소송이 적자의 유일한 원인처럼 보이면 *"안 받아도 적자, 받아도 원가 미달"*이라는 본론이 가려진다.
  */
-export const LAWSUIT_COST_PER_EXPOSURE = 5
+export const LAWSUIT_COST_PER_EXPOSURE = 400
 
 /** 병원+경제에서 장부를 조립하는 순수 코어. extraSegments로 세션 델타(진료 수익·소송 비용)를 얹는다. */
 function composeLedger(
@@ -44,12 +45,12 @@ function composeLedger(
   const segments = [...econ.segments, ...extraSegments]
   // 파생: 그 과 배후진료가 있을 때만 채용 수가 잡히고, 없으면(=NO_BACKUP_CARE의 뿌리) 0.
   const essentialHires = hospital.backupCare.includes(patientSpecialty) ? econ.essentialHires : 0
-  const netProfitBillions = segments.reduce((n, s) => n + s.profitBillions, 0)
+  const netProfitManwon = segments.reduce((n, s) => n + s.profitManwon, 0)
   const totalHires = econ.hires.reduce((n, h) => n + h.count, 0) + essentialHires
   return {
     hospitalName: hospital.name,
     segments,
-    netProfitBillions,
+    netProfitManwon,
     hires: econ.hires,
     essentialSpecialty: patientSpecialty,
     essentialHires,
@@ -64,20 +65,20 @@ function composeLedger(
 export function buildSessionLedger(
   hospital: Hospital,
   patientSpecialty: Specialty,
-  receiving: { netProfitDeltaBillions: number; workupRevenueBillions?: number; lawsuitExposure: number },
+  receiving: { netProfitDeltaManwon: number; workupRevenueManwon?: number; lawsuitExposure: number },
 ): Ledger | null {
   const extra: LedgerSegment[] = []
-  if (receiving.netProfitDeltaBillions !== 0) {
-    extra.push({ label: '이번 주 진료 수익', profitBillions: receiving.netProfitDeltaBillions })
+  if (receiving.netProfitDeltaManwon !== 0) {
+    extra.push({ label: '이번 주 진료 수익', profitManwon: receiving.netProfitDeltaManwon })
   }
   // 검사 수익은 진료 수익 **바로 아래 별도 줄**이다. 합치면 이 게임이 하려는 말이 사라진다 —
   // 진료 수익은 음수인데 검사가 덮어서 순이익이 양수인 장부. 해석은 없다, 두 줄이 나란히 있을 뿐이다.
-  if (receiving.workupRevenueBillions) {
-    extra.push({ label: '이번 주 검사 수익', profitBillions: receiving.workupRevenueBillions })
+  if (receiving.workupRevenueManwon) {
+    extra.push({ label: '이번 주 검사 수익', profitManwon: receiving.workupRevenueManwon })
   }
   const lawsuitCost = receiving.lawsuitExposure > 0 ? receiving.lawsuitExposure * LAWSUIT_COST_PER_EXPOSURE : 0
   if (lawsuitCost > 0) {
-    extra.push({ label: '소송 비용', profitBillions: -lawsuitCost })
+    extra.push({ label: '소송 비용', profitManwon: -lawsuitCost })
   }
   return composeLedger(hospital, patientSpecialty, extra)
 }

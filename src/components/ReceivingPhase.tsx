@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { receivingLine } from "@/game/dialogue";
-import { formatSignedBillions } from "@/game/labels";
+import { formatSignedManwon } from "@/game/labels";
 import {
   accruedSegments,
   needsDecision,
@@ -70,15 +70,15 @@ function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
         <div className="flex items-baseline justify-between">
           <span className="font-sans text-xs text-ink-2">오늘 진료 수익</span>
           <span className="tabular-nums text-go">
-            {formatSignedBillions(receiving.netProfitDeltaBillions)}
+            {formatSignedManwon(receiving.netProfitDeltaManwon)}
           </span>
         </div>
         {/* 검사 수익은 진료 수익 바로 아래 별도 줄 — 덮는 게 뭔지 보여야 한다. 해석은 없다. */}
-        {receiving.workupRevenueBillions !== 0 && (
+        {receiving.workupRevenueManwon !== 0 && (
           <div className="flex items-baseline justify-between">
             <span className="font-sans text-xs text-ink-2">오늘 검사 수익</span>
             <span className="tabular-nums text-go">
-              {formatSignedBillions(receiving.workupRevenueBillions)}
+              {formatSignedManwon(receiving.workupRevenueManwon)}
             </span>
           </div>
         )}
@@ -87,7 +87,7 @@ function CheerfulLedger({ receiving }: { receiving: ReceivingState }) {
           <span
             className={`text-base tabular-nums font-semibold ${netProfit < 0 ? "text-stamp-ink" : "text-go"}`}
           >
-            {formatSignedBillions(netProfit)}
+            {formatSignedManwon(netProfit)}
           </span>
         </div>
       </div>

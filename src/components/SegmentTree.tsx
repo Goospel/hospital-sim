@@ -1,5 +1,5 @@
 import type { LedgerSegment } from "@/game/ledger";
-import { formatSignedBillions } from "@/game/labels";
+import { formatSignedManwon } from "@/game/labels";
 
 /**
  * "부문 손익" 트리(├/└) — LedgerPanel(결말 장부)과 ReceivingPhase의 CheerfulLedger(명랑 장부)가
@@ -21,9 +21,9 @@ export default function SegmentTree({ segments }: { segments: LedgerSegment[] })
             {i === segments.length - 1 ? "└" : "├"} {s.label}
           </span>
           <span
-            className={`tabular-nums ${s.profitBillions < 0 ? "text-stamp-ink" : "text-go"}`}
+            className={`tabular-nums ${s.profitManwon < 0 ? "text-stamp-ink" : "text-go"}`}
           >
-            {formatSignedBillions(s.profitBillions)}
+            {formatSignedManwon(s.profitManwon)}
           </span>
         </div>
       ))}
