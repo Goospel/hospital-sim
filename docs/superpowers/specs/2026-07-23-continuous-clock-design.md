@@ -166,15 +166,26 @@ export function ambientWalkers(lighting: Lighting): AmbientWalker[]
 ### 3.3 `prefers-reduced-motion`
 
 시계는 지금처럼 즉시 점프한다(기존 동작 유지). 배회·배경 환자 애니메이션은
-CSS에서 차단한다:
+CSS에서 차단하되, 실제로는 둘의 차단 방식이 다르다:
 
 ```css
 @media (prefers-reduced-motion: reduce) {
-  .hm-wander, .hm-walker { animation: none; }
+  .hm-wander { animation: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hm-walker { display: none; }
 }
 ```
 
-JS 분기가 필요 없다 — 미디어 쿼리 한 줄이 두 층을 동시에 끈다.
+`.hm-wander`(유휴 배회)는 배치를 바깥 div의 `left`/`top`이 따로 맡고 안쪽
+transform은 그 위에 얹힌 흔들림일 뿐이라, 애니메이션만 죽여도 아바타가 배치된
+자리에 가만히 남는다. `.hm-walker`(배경 보행자)는 배치 자체가
+`@keyframes hm-walk`(`left: -8% → 108%`)뿐이라 애니메이션만 죽이면 `left`가
+기본값 `auto`로 남아 다섯 명이 화면 왼쪽 끝에 겹쳐 선다 — 이 레이어의 존재
+이유가 움직임 그 자체이므로, 절반만 끄느니 `display: none`으로 통째로 숨긴다.
+
+JS 분기는 여전히 필요 없다 — 미디어 쿼리 두 줄이 각 층에 맞는 방식으로 끈다.
 
 ## 4. 콜 카드 — 도착해야 뜬다
 

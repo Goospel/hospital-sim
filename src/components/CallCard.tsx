@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { callerPleaAt } from "@/game/dialogue";
 import { formatSignedBillions } from "@/game/labels";
 import {
@@ -61,6 +62,24 @@ export default function CallCard({
   receiving: ReceivingState;
   onDecide: (accept: boolean) => void;
 }) {
+  const cardRef = useRef<HTMLElement>(null);
+
+  /**
+   * 카드가 도착하는 순간(마운트)에 포커스를 이 섹션으로 옮긴다.
+   *
+   * 이유 둘: (1) 카드는 흐름 6~12초 동안 DOM에서 사라졌다 돌아오는데 그 복귀가
+   * 스크린리더·키보드 사용자에게 아무 신호도 없었다. (2) 건너뛰기 버튼에서 Enter로
+   * 도착한 경우 그 버튼 자체가 언마운트되며 포커스가 body로 떨어져, 다음 Tab이
+   * 문서 맨 위부터 다시 시작했다. 버튼이 아니라 섹션을 잡는 이유: 선택진료의
+   * 「받기」는 자유 의사가 없으면 disabled인데 disabled 요소는 포커스를 못 받는다 —
+   * 섹션을 타깃으로 하면 그 분기를 아예 피한다. tabIndex={-1}이라 마우스 사용자에게는
+   * 포커스 링이 안 보이면서도 스크린리더 커서는 옮겨가고 Tab 순서는 액션 버튼 직전으로
+   * 재설정된다. 훗날 이 effect를 불필요하다고 지우지 말 것 — 위 두 문제가 되돌아온다.
+   */
+  useEffect(() => {
+    cardRef.current?.focus();
+  }, []);
+
   const call = receiving.queue[receiving.index];
   if (call === undefined) {
     // 산문 전제(!receiving.done)를 코드로 강제한다 — 다른 호출부나 이후 수정이 이 전제를
@@ -79,7 +98,14 @@ export default function CallCard({
   const assignee = free.length > 0 ? pickAssignee(free, receiving.busyUntil) : undefined;
 
   return (
-    <section className="flex flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4">
+    // min-h는 FlowPanel(ReceivingPhase.tsx)과 공유하는 값이다 — 19rem = 304px,
+    // 실측한 두 카드 높이(선택진료 247px·응급 304px) 중 큰 쪽. 손으로 찍은 값이
+    // 아니라 실측값이므로 둘 중 하나만 고치면 행 높이가 다시 흔들린다 — 함께 바꾼다.
+    <section
+      ref={cardRef}
+      tabIndex={-1}
+      className="flex min-h-[19rem] flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4"
+    >
       {/*
         야간 표시 — 왜 밤에만 막히는지 플레이어가 스스로 잇게 하려면 시간대가 보여야 한다.
         해석은 없다. '야간' 두 글자와, 순환기를 뽑고도 밤에 거절당하는 경험만 놓는다.

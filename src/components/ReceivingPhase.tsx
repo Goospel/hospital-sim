@@ -253,7 +253,7 @@ export default function ReceivingPhase({
         맵 스프라이트가 전부 aria-hidden이라 이 줄이 스크린리더의 유일한 서술 경로다.
       */}
       {prevCall && prevLine && (
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-zinc-500">
           직전 · {prevCall.label} → {prevLine}
         </p>
       )}
