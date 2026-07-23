@@ -101,33 +101,21 @@ function MorningPaper({ news }: { news: NewsItem[] }) {
 /**
  * 흐름 중 패널 — 결정할 게 없는 동안 콜 카드 자리를 채운다.
  *
- * 직전 콜 결과를 여기 놓는 이유: 방금 내린 결정의 결과를 읽을 시간이 이 6초다.
- * 새 콜이 도착하면 관심은 새 콜로 옮겨가므로 그때는 사라져도 된다.
+ * 직전 콜 결과는 여기 없다 — 패널 밖 독립된 줄로 옮겨 흐름 중이 아닐 때도(플레이어가
+ * 결정을 고민하는 동안도) 계속 보이게 한다. 이 패널이 하는 일은 마감 대기 문구와
+ * 건너뛰기 버튼뿐이다.
  */
 function FlowPanel({
-  prevLabel,
-  prevLine,
   waitingForDayEnd,
   onSkip,
 }: {
-  prevLabel?: string;
-  prevLine?: string;
   waitingForDayEnd: boolean;
   onSkip: () => void;
 }) {
   return (
     <section className="flex flex-1 flex-col gap-3 rounded-lg border border-zinc-800 bg-white/[0.03] px-4 py-4">
-      {/*
-        그날 첫 콜이라 직전이 없으면 아무 문구도 넣지 않는다 — 버튼만 남는다.
-        「진료 중」 같은 채움말을 넣으면 개원 직후 아무도 진료 안 하는 시각에 거짓말이 된다.
-      */}
-      {prevLabel && prevLine && (
-        <p className="text-sm text-zinc-400">
-          직전 · <span className="text-zinc-300">{prevLabel}</span> → {prevLine}
-        </p>
-      )}
       {waitingForDayEnd && (
-        <p className="text-xs text-zinc-600">
+        <p aria-live="polite" className="text-xs text-zinc-400">
           오늘 콜은 모두 처리했습니다 · 마지막 진료가 끝나기를 기다립니다
         </p>
       )}
@@ -253,18 +241,24 @@ export default function ReceivingPhase({
 
       <MorningPaper news={news} />
 
+      {/*
+        그날 첫 콜이라 직전이 없으면 아무 문구도 넣지 않는다.
+        패널 밖 독립된 줄이라 흐름 중이든 플레이어가 고민 중이든 계속 보인다 —
+        맵 스프라이트가 전부 aria-hidden이라 이 줄이 스크린리더의 유일한 서술 경로다.
+      */}
+      {prevCall && prevLine && (
+        <p className="text-xs text-zinc-600">
+          직전 · {prevCall.label} → {prevLine}
+        </p>
+      )}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         {/*
           흐르는 동안엔 결정할 게 없어 카드가 없다. 도착해야 뜬다.
           (마감 흐름에서는 queue[index]가 undefined라 CallCard가 렌더되면 터진다.)
         */}
         {flowing ? (
-          <FlowPanel
-            prevLabel={prevCall?.label}
-            prevLine={prevLine}
-            waitingForDayEnd={receiving.done}
-            onSkip={skip}
-          />
+          <FlowPanel waitingForDayEnd={receiving.done} onSkip={skip} />
         ) : (
           <CallCard receiving={receiving} onDecide={onDecide} />
         )}

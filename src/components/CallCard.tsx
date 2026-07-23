@@ -50,8 +50,9 @@ function CallEconomicsBreakdown({ call }: { call: IncomingCall }) {
 /**
  * 도착한 콜 한 통 — 라벨·대사·수가·행동.
  *
- * **흐름 중에는 렌더되지 않는다.** 마감 흐름(done)에서는 queue[index]가 undefined라
- * 아래 계산이 전부 터지므로, 호출부가 `flowing === false`일 때만 이걸 고른다.
+ * **전제: `!receiving.done`.** done이면 index === queue.length라 queue[index] 읽기가
+ * undefined를 낸다 — `flowing === false`는 이 전제와 다르다(done && !flowing에서도
+ * flowing은 false지만 call은 여전히 undefined이므로 그 조건으론 안전을 보장 못 한다).
  */
 export default function CallCard({
   receiving,
@@ -61,6 +62,11 @@ export default function CallCard({
   onDecide: (accept: boolean) => void;
 }) {
   const call = receiving.queue[receiving.index];
+  if (call === undefined) {
+    // 산문 전제(!receiving.done)를 코드로 강제한다 — 다른 호출부나 이후 수정이 이 전제를
+    // 깨도 throw 대신 빈 패널로 눈에 띄게 실패한다.
+    return null;
+  }
   const roster = receiving.hospital.roster ?? [];
   const reason = hardlockReason(receiving.hospital, call, receiving.busyUntil, roster);
   const plea = callerPleaAt(receiving.queue, receiving.index);
