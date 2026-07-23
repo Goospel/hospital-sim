@@ -205,8 +205,14 @@ flowing === false  →  콜 카드 (지금과 동일)
 `free`·`assignee`를 전부 파생한다 — 그대로 두면 마감 흐름에서 터진다.
 
 → 콜 패널을 `CallCard.tsx`로 **추출**한다. `call`에서 파생되는 모든 계산이 그 안으로
-들어가고, `ReceivingPhase`는 `flowing ? <FlowPanel/> : <CallCard call={call}/>`만 고른다.
-345줄짜리 파일에서 별개 책임 하나가 빠지는 거라 구조도 나아진다.
+들어가고, `ReceivingPhase`는 `flowing ? <FlowPanel/> : <CallCard receiving={receiving} onDecide={onDecide}/>`만
+고른다(`CallCard`가 `receiving.queue[receiving.index]`를 스스로 읽는다 — 그래야 그 역참조가
+`ReceivingPhase`에서 완전히 사라진다). 345줄짜리 파일에서 별개 책임 하나가 빠지는 거라 구조도 나아진다.
+
+`CallCard`의 실제 전제는 `flowing === false`가 아니라 **`!receiving.done`**이다. 둘은 같은
+집합이 아니다 — `done && !flowing`도 전자를 만족하는데 그때 `index === queue.length`라
+역참조가 `undefined`다. `noUncheckedIndexedAccess`가 꺼져 있어 tsc가 못 잡으므로,
+산문이 아니라 `call === undefined` 가드로 강제한다.
 
 조기 반환도 바뀐다:
 
