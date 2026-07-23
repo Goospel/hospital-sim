@@ -12,7 +12,7 @@ tags:
 
 **▶ 지금 플레이: https://goospel.github.io/hospital-sim/** (설치·API 키 없이 브라우저에서 바로 · main 푸시 시 자동 재배포)
 
-<sub>배포는 둘이고 게임 동작은 같다 — **GitHub Pages**(위 링크 · 제출용 정적 export)와 **Vercel**(https://hospital-sim-ashy.vercel.app/ · 서버 있는 빌드, 런타임 LLM이 붙을 곳). `PAGES_BASE_PATH` 하나로 갈린다([next.config.ts](next.config.ts) · [워크플로](.github/workflows/deploy-pages.yml)). 판정은 어느 쪽이든 결정론 코드라 동일하다.</sub>
+<sub>배포는 둘이고 게임 동작은 같다 — **GitHub Pages**(위 링크 · 제출용 정적 export)와 **Vercel**(https://hospital-sim-ashy.vercel.app/ · 서버 있는 빌드, 런타임 LLM이 붙을 곳). `PAGES_BASE_PATH` 하나로 갈린다([next.config.ts](next.config.ts) · 워크플로 `.github/workflows/deploy-pages.yml`). 판정은 어느 쪽이든 결정론 코드라 동일하다.</sub>
 
 ## 무엇을 겪나
 

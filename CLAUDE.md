@@ -20,7 +20,7 @@ tags:
 
 ## ⚙️ 환경 변수 · 기기 간 셋업 (데스크톱 ↔ 랩탑)
 
-env 셋업 절차는 [README.md](README.md)의 "환경 변수(env) — 여러 기기에서 이어 작업하기" 섹션과 [.env.example](.env.example)에 있다(단일 계약). 요약: 값 목록만 `.env.example`(커밋), 실제 값은 각 기기 `.env.local`(gitignore). 새 기기는 `cp .env.example .env.local` 후 값만 채운다. 시크릿(API 키)은 git이 아니라 비밀번호 관리자 또는 배포 후 `vercel env pull`로 동기화하고, `NEXT_PUBLIC_`을 붙이지 않는다(붙이면 브라우저 번들 노출).
+env 셋업 절차는 [README.md](README.md)의 "환경 변수(env) — 여러 기기에서 이어 작업하기" 섹션과 `.env.example`에 있다(단일 계약). 요약: 값 목록만 `.env.example`(커밋), 실제 값은 각 기기 `.env.local`(gitignore). 새 기기는 `cp .env.example .env.local` 후 값만 채운다. 시크릿(API 키)은 git이 아니라 비밀번호 관리자 또는 배포 후 `vercel env pull`로 동기화하고, `NEXT_PUBLIC_`을 붙이지 않는다(붙이면 브라우저 번들 노출).
 
 ## 🏷️ 옵시디언 문서 태그 — frontmatter `type/*` (검사기로 강제)
 
