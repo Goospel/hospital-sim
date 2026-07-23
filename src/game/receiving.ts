@@ -630,3 +630,36 @@ export function runningNetProfit(state: ReceivingState): number {
   const segmentTotal = accruedSegments(state).reduce((sum, s) => sum + s.profitManwon, 0)
   return segmentTotal + state.netProfitDeltaManwon + state.workupRevenueManwon
 }
+
+/**
+ * 못 받은 콜을 **라벨 × 사유**로 접어 횟수만 남긴다 — 하루 마감 목록의 단일 출처.
+ *
+ * 왜 접는가: 콜 제한을 없앤 뒤 하루가 60통을 넘겼는데, 마감 화면이 못 받은 콜을 한 통씩
+ * 나열해 「보톡스 상담 워크인 · 거절」이 스무 줄씩 반복됐다. 그 목록의 목적은 **무엇이
+ * 남았나**인데 같은 문장이 반복되면 정작 드문 줄(순환기내과 기다리다 감)이 그 안에 묻힌다 —
+ * 목록을 길게 만든 건 정보가 아니라 중복이었다.
+ *
+ * 사유를 키에 넣는 이유: 「내가 보냈다(거절)」와 「구조가 막았다(하드락)」와 「기다리다 갔다」는
+ * 같은 사건이 아니다. 라벨만으로 접으면 그 셋이 한 줄로 뭉개져 이 게임의 논지가 증발한다.
+ * 순서는 첫 등장 순서(Map의 삽입 순서)라 하루의 흐름이 뒤집히지 않는다.
+ */
+export function unacceptedGroups(
+  state: Pick<ReceivingState, 'log' | 'queue'>,
+): { label: string; outcome: string; count: number }[] {
+  const groups = new Map<string, { label: string; outcome: string; count: number }>()
+  state.log.forEach((entry, i) => {
+    if (entry.accepted) return
+    const label = state.queue[i].label
+    const outcome =
+      entry.reason === 'LEFT_WAITING'
+        ? '기다리다 감'
+        : entry.disposition === 'HARDLOCK_REJECT'
+          ? '하드락'
+          : '거절'
+    const key = `${label} ${outcome}`
+    const hit = groups.get(key)
+    if (hit) hit.count += 1
+    else groups.set(key, { label, outcome, count: 1 })
+  })
+  return [...groups.values()]
+}
