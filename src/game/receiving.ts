@@ -129,7 +129,7 @@ export function isElective(kind: CallKind): boolean {
  * (같은 의사를 두고 응급과 다투는 배후과 예약)과 구별이 안 된다.
  *
  * 그래서 **자동은 선택진료의 진부분집합**이다 — `SPECIALIST_ELECTIVE`는 남긴다.
- * 응급은 여기 들어올 일이 없다: decide가 accept를 무시하고 하드락만 보고 판정한다.
+ * 응급은 여기 들어올 일이 없다: 응급은 자명한 답이 없어 물어야 하는 콜이다(decide는 이제 그 답을 따른다).
  *
  * 자원이 없으면 자동이라도 못 받는다 — decide의 `free.length > 0` 가드가 그대로 걸려
  * 미용 의사가 전부 진료 중이면 자동 접수도 거절로 기록된다(자동 ≠ 무한 수용).
@@ -139,17 +139,17 @@ export function isAutoAccept(kind: CallKind): boolean {
 }
 
 /**
- * 흐름을 멈추고 플레이어에게 물어야 하는 콜인가 — **배후과 예약진료 하나뿐**이다.
+ * 흐름을 멈추고 플레이어에게 물어야 하는 콜인가 — **배후과 예약 + 응급 6종**.
  *
- * 응급은 `decide`가 accept를 무시하고 구조로 판정하고(거절 버튼이 없다), 워크인은 자동 접수라
- * 물어볼 게 없다. 하루 5통 시절엔 그래도 콜마다 「계속」을 눌러 전개를 봤지만, 20~40통이 되면
- * 그 클릭이 곧 노동이 된다 — 결정이 있는 자리에서만 멈추고 나머지는 흐르게 한다.
+ * 응급이 여기 들어온 건 방향 전환(스펙 2026-07-24)이다: 응급 판정을 자동으로 흘리면 이 게임의
+ * 감정적 핵심("당신이 그 벽이다")에서 플레이어가 구경꾼이 된다. 이제 하드락이어도 카드는 서고,
+ * 돌려보내는 버튼은 플레이어가 누른다 — 판정은 여전히 decide(코드)가 확정한다.
  *
  * 화면(`useHospitalClock`의 흐름 목표 · `ReceivingPhase`의 자동 처리)이 이 술어 하나를 공유한다.
- * 두 곳에 각자 조건을 적으면 흐름이 멈추는 지점과 카드가 뜨는 지점이 어긋난다.
+ * 두 곳에 각자 조건을 적으면 흐르는 지점과 카드가 뜨는 지점이 어긋난다.
  */
 export function needsDecision(call: IncomingCall): boolean {
-  return isElective(call.kind) && !isAutoAccept(call.kind)
+  return requiresBackupCare(call.kind) || (isElective(call.kind) && !isAutoAccept(call.kind))
 }
 
 /** 콜 한 통 수용으로 누적되는 손익 델타(만원). */
@@ -390,9 +390,10 @@ export function outpatientForBeds(beds: number): number {
 /**
  * 외래 몇 통마다 예약진료 한 통인가 — 나머지는 워크인.
  *
- * 예약은 플레이어가 멈춰서 고르는 **유일한** 콜이라, 이 값이 곧 하루의 결정 횟수를 정한다
- * (외래 60통 ÷ 12 = 5번). 5보다 촘촘하게 두면 하루 12번을 물어 「계속」 연타를 없앤 의미가
- * 사라지고, 더 성기게 두면 예약↔응급의 같은 과 점유 경쟁이 거의 안 일어난다.
+ * 응급(하루 2~4통)도 이제 결정 카드를 세우므로(needsDecision, 스펙 2026-07-24 §2) 하루
+ * 결정 횟수는 **예약 + 응급**이고, 이 값은 그중 예약 몫만 정한다(외래 60통 ÷ 12 = 5번).
+ * 5보다 촘촘하게 두면 하루 12번을 물어 「계속」 연타를 없앤 의미가 사라지고, 더 성기게
+ * 두면 예약↔응급의 같은 과 점유 경쟁이 거의 안 일어난다.
  */
 const ELECTIVE_EVERY = 12
 
@@ -528,18 +529,27 @@ export function initReceiving(
   }
 }
 
+/** 플레이어(또는 UI 타임아웃)가 콜 하나에 내리는 액션. TIMEOUT은 카운트다운 만료 — UI만 만들고 코어는 받기만 한다. */
+export type DecisionAction = 'ACCEPT' | 'DECLINE' | 'TIMEOUT'
+
 /**
- * 현재 콜을 처리한다 — **응급은 자동 판정, 선택진료만 플레이어가 결정**한다.
+ * 현재 콜을 처리한다 — **구조가 먼저 판정하고, 그 안에서만 플레이어의 선택이 산다**(응급 포함).
  *
- * - 응급(급성복증·고열감염·필수 4종): `accept`를 무시하고 자동으로 판정한다. 구조적 하드락(hardlockReason)이 없으면
- *   수용, 있으면 turnedAway. "아무리 애원해도, 아무리 거절하려 해도" 결과는 병원의 제약이 정한다.
- * - 선택진료(미용·배후과 예약): `accept && 그 과 자유 의사 있음`일 때만 수용. accept=false거나 담당
- *   의사가 다 바쁘면 미수용(하드락이 아니라 '못 받음' — 사유 없음).
+ * - 구조적 하드락(hardlockReason ≠ null): `action`을 **무시하고** 미수용이다. 배후과 없음·야간 당직 공백·
+ *   점유는 버튼으로 못 뚫는다. 로그 사유도 그 하드락 사유가 이긴다 — 구조가 막은 게 먼저 있었던 사실이다.
+ *   "아무리 애원해도, 아무리 받으려 해도" 결과는 병원의 제약이 정한다(이 게임의 논지 = 벽은 코드가 세운다).
+ * - 하드락이 없으면(disposition `'CHOICE'`) **응급도 선택진료도 똑같이 `action`을 따른다**:
+ *   - `'ACCEPT'` → 수용(그 과 자유 의사가 있을 때만 — 응급은 하드락이 없다는 게 곧 시작 가능이라 항상 성립).
+ *   - `'DECLINE'` → 내가 보냈다. 사유 없음(`reason: null`) — 자리가 있는데 안 받은 걸 벽 이름으로 적으면 로그가 거짓말한다.
+ *   - `'TIMEOUT'` → 회신이 없었다. `'UNANSWERED'`로 남는다 — 거절과 다른 사실이라 태그가 다르다.
+ *
+ * ⚠️ 응급이 `action`을 무시하던 옛 계약은 이 슬라이스에서 폐기됐다(스펙 2026-07-24 §2).
+ * 화면이 응급을 자동 디스패치하는지(`needsDecision`)는 이 리듀서와 별개 층이다.
  *
  * 수용하면 담당 과(handlingDept)의 자유 의사를 `arrivalMin + durationMin`까지 점유한다.
  * 그 과에 자유 의사가 없으면(미채용) 아무도 점유하지 않는다(pickAssignee는 자유 의사가 있을 때만).
  */
-export function decide(state: ReceivingState, accept: boolean): ReceivingState {
+export function decide(state: ReceivingState, action: DecisionAction): ReceivingState {
   if (state.done) {
     throw new Error('receiving already done')
   }
@@ -553,8 +563,10 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   const start = startMinFor(call, state.busyUntil, roster)
   const canStart = typeof start === 'number'
 
-  // 응급은 accept 무관 자동(하드락이 없으면 수용). 선택진료는 accept + 시작 가능해야 수용.
-  const effectiveAccept = disposition === 'CHOICE' && (isElective(call.kind) ? accept && canStart : true)
+  const accept = action === 'ACCEPT'
+  // 응급도 이제 플레이어 의사를 따른다 — 하드락(disposition)이 먼저 이기고, 그 안에서만 선택이 산다.
+  // (`canStart`는 응급에 대해 항등이다: hardlockReason이 startMinFor로 끝나 CHOICE면 반드시 시작 가능하다.)
+  const effectiveAccept = disposition === 'CHOICE' && accept && canStart
 
   // 수용한 콜은 담당 과 의사를 **시작 시각부터** 점유한다 — 기다린 콜은 도착이 아니라 시작이 기준이다.
   let busyUntil = state.busyUntil
@@ -575,7 +587,14 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   // "오늘 몇 명이 못 기다리고 갔나"가 북적임의 대가라 로그에 남아야 화면이 보여줄 수 있다.
   // 🔴 NO_FREE_SPECIALIST는 여기 넣지 않는다: 선택진료에서 그건 "구조가 막았다"가 아니라
   // "그 과를 애초에 안 뽑았다"라, 사유를 달면 로그가 거짓말을 한다(기존 계약 — log 필드 주석).
-  const logReason = reason ?? (!effectiveAccept && start === 'LEFT_WAITING' ? 'LEFT_WAITING' : null)
+  // TIMEOUT이 LEFT_WAITING보다 먼저다 — 전화를 안 받은 게 시간상 먼저 일어난 사실이다.
+  const logReason =
+    reason ??
+    (!effectiveAccept && action === 'TIMEOUT'
+      ? 'UNANSWERED'
+      : !effectiveAccept && start === 'LEFT_WAITING'
+        ? 'LEFT_WAITING'
+        : null)
 
   const log = [...state.log, { callId: call.id, accepted: effectiveAccept, disposition, reason: logReason, startMin }]
   const index = state.index + 1
@@ -653,9 +672,11 @@ export function unacceptedGroups(
     const outcome =
       entry.reason === 'LEFT_WAITING'
         ? '기다리다 감'
-        : entry.disposition === 'HARDLOCK_REJECT'
-          ? '하드락'
-          : '거절'
+        : entry.reason === 'UNANSWERED'
+          ? '응답 없음'
+          : entry.disposition === 'HARDLOCK_REJECT'
+            ? '하드락'
+            : '거절'
     const key = `${label} ${outcome}`
     const hit = groups.get(key)
     if (hit) hit.count += 1

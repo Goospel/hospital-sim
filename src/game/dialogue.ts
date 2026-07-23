@@ -108,6 +108,15 @@ export const RECEIVE_NIGHT_HARDLOCK =
   '순환기 당직이 오늘 밤은 없습니다. 낮이었으면 받았습니다.'
 
 /**
+ * 회신이 없어 환자가 넘어갔다(UNANSWERED) — 병원이 **아무 말도 하지 않은** 자리다.
+ *
+ * 그래서 이 문장의 주어는 병원이 아니다. 거절도(내가 보냈다) 벽도(구조가 막았다) 아닌
+ * 제3의 사실이라 두 대사를 재사용하면 대사가 거짓말을 한다(LEFT_WAITING과 같은 이유).
+ */
+export const RECEIVE_UNANSWERED =
+  '회신이 없어 다른 병원으로 갔습니다.'
+
+/**
  * 배후 부재(NO_BACKUP_CARE) 대사 — **그 응급의 배후과를 정확히 지목한다.**
  *
  * 다양화의 핵심 함정: "저희도 순환기 시술팀이 없습니다"를 산부/신경외과/외과 응급에 재사용하면
@@ -166,6 +175,9 @@ export function receivingLine(
   // 기다리다 떠난 건 disposition보다 먼저 가른다 — 선택진료(CHOICE)도 이탈하는데, 그때
   // RECEIVE_REJECT로 떨어지면 "제가 보냈습니다"가 되어 대사가 거짓말을 한다(안 보냈다, 떠났다).
   if (reason === 'LEFT_WAITING') return RECEIVE_BY_STRUCTURAL_REASON.LEFT_WAITING
+  // 회신이 없었다 — 같은 이유로 disposition보다 먼저 가른다. RECEIVE_REJECT로 떨어지면 "제가 보냈습니다"가
+  // 되는데, 보낸 적이 없다(전화를 든 채 시간이 갔다). 하드락과 겹치면 decide가 하드락 사유를 싣는다.
+  if (reason === 'UNANSWERED') return RECEIVE_UNANSWERED
   if (disposition === 'HARDLOCK_REJECT') {
     const spec = call.patient.requiredSpecialty
     if (reason) {

@@ -126,6 +126,12 @@ describe('🔴 신문은 거짓말하지 않는다', () => {
     expect(morningNews(2, [{ callId: 'd1c5', reason: 'ER_OVERCROWDED' }])[0].outlet).toContain('응급실 과밀')
     expect(morningNews(2, [{ callId: 'd1c5', reason: 'NO_NIGHT_BACKUP' }])[0].outlet).toContain('야간 당직 공백')
   })
+
+  it('UNANSWERED도 기사가 된다 — 사유 문구가 부제에 실린다', () => {
+    const n = morningNews(2, [{ callId: 'd1c5', kind: 'STEMI', reason: 'UNANSWERED' }])[0]
+    expect(n.headline).toBeTruthy()
+    expect(n.outlet).toContain('응답 없음')
+  })
 })
 
 describe('기사마다 다른 사건이어야 한다 — 해시 엔트로피', () => {

@@ -38,6 +38,10 @@ NAN 2026 (NHN Game × AI 해커톤) **사전 과제 제출**. 마감: **2026-08-
 - **연속 시간 흐름 — 콜 사이가 흐른다**: RECEIVING이 "정지가 기본이고 움직임이 예외"인 슬라이드쇼였다. 시계를 게임 1분 = 50ms로 늦추고 캡을 없애(콜 사이 0.48초 → 6초, `useHospitalClock`) 콜과 콜 사이가 끊기지 않고 흐른다. 시계만 늦추면 자유 의사가 복도에 서 있어 "느려진 정지 화면"이 되므로, 유휴 배회(`wanderTiming` — 아바타 안쪽 `transform`)와 배경 보행자(`ambientWalkers` — 조명 파생 주간 5/석양 2/야간 0, MapScene 밖 별도 레이어)를 **게임 시계와 분리된 CSS 층**으로 세웠다 — 결정 대기로 시계가 멈춰도 병원은 계속 돈다. 콜 카드는 도착해야 뜨고(`CallCard` 분리 — 마감 흐름에선 `queue[index]`가 undefined), 하루의 끝은 `session.ts`가 이미 계산해 내일 아침으로 넘기던 마감 초과 점유(`dayEndMin`)를 읽어 19시를 넘겨 재생한다(새 숫자 0개). 게임 로직(receiving·adjudicate·daysim·session) 0줄. 설계 [spec](../docs/superpowers/specs/2026-07-23-continuous-clock-design.md)·[플랜](../docs/superpowers/plans/2026-07-23-continuous-clock.md)
 
 ### 🔜 다음
+- 🔜 **재미 개선 3종 — 응급 결정화 · 대가 가시화 · 폐업** (2026-07-24 설계 확정, brainstorming): 플레이테스트+코드 전수 진단 — 실질 결정이 전부 개원 위저드에 몰려 있고 7일 루프는 그 결과의 결정론적 재생(관람)이다. 응급이라는 감정적 핵심에 플레이어 개입을 되돌린다. 독립 PR 3개 순차(앞의 것만 머지돼도 게임 성립). 설계 [spec](../docs/superpowers/specs/2026-07-24-emergency-agency-fun-design.md)
+  - ✅ **PR 1 — 응급 결정화 + 카운트다운** (2026-07-24, 상세 changeLog): `decide(state, action: DecisionAction)` — 응급도 플레이어가 받기/돌려보내기를 직접 누른다. 하드락(배후과 없음·야간 당직 공백·과밀)은 액션과 무관하게 이긴다. 만료(`TIMEOUT`)는 신설 사유 `UNANSWERED`(응답 없음)로 기록, 하드락이 있으면 하드락 사유가 우선. `needsDecision`이 응급 6종을 포함하도록 넓어져 응급이 흐름을 멈추고 카드를 세운다(하드락이어도 카드는 뜨고 [받기]만 잠긴다). 응급 카드에만 실초 15초 카운트다운(UI 전용, 코어는 실시간 모름).
+  - 🔜 **PR 2 — 트레이드오프 + 대가 가시화**: `busyWith` 점유 원인 추적 · `BUMP_ACCEPT`(예약 미루고 받기) · 점유 미리보기 · [받기] 비활성 사유 표시.
+  - ⬜ **PR 3 — 폐업**: `insolvencyStreak`(금고 음수 연속 2주) · 은행 통지 · 강제 에필로그(무한 주차 유지).
 - ✅ **수익 구조 재설계 — 부문 손익을 '버는 돈'에서 '고정비'로** (2026-07-23 완료, 상세 changeLog): `fixedCostPerDoctorManwon`(항상 양수)로 뒤집어 부문 손익에서 수익을 없애고 `CALL_ECONOMICS`를 유일 수익원으로. 단위 억 → **만원**(보톡스 30만원 / 응급 PCI 850만원 / 개원 자본 5억 / 병상 증설 1.0억). 과별 흑자·적자가 입력이 아니라 계산에서 창발한다. 실측 7일 완주: 공범 전부수용 +2,430만원 · **전부거절 −2,940만원**(전엔 +303억) · 양심 −3,990만원. 가드: `[I8-a]` 전부 거절하면 반드시 적자 · `[I8-b]` 부문 손익은 어떤 빌드에서도 ≤ 0. [T-071](troubleshooting/T-071.md)
   <details><summary>착수 시점 기록(원문)</summary>
 

@@ -138,6 +138,7 @@ LANDING → WORLD_EVENT → SETUP → (RECEIVING → DAY_END)×7 → WEEK_SUMMAR
 - THORACIC_SURGERY 응급(대동맥박리 등) 추가로 5개 배후 전부 게이트화.
 - 소아 응급(PEDIATRICS enum 신설).
 - 받는 콜 골든타임 압박(수락 카운트다운) — 은퇴한 시간 긴장을 받는 쪽에서 재도입.
+  → ✅ 소화(2026-07-24): [emergency-agency-fun 스펙](2026-07-24-emergency-agency-fun-design.md) PR 1로 구현.
 - LLM 서사(응급·뉴스 헤드라인 생성, 판정은 코드).
 
 ---

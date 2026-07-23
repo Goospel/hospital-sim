@@ -21,7 +21,7 @@ import {
   buildEpilogue,
   type SessionState,
 } from "@/game/session";
-import { decide } from "@/game/receiving";
+import { decide, type DecisionAction } from "@/game/receiving";
 import Landing from "./Landing";
 import WorldEventCard from "./WorldEventCard";
 import SetupWizard from "./SetupWizard";
@@ -61,8 +61,8 @@ export default function SessionClient() {
           day={session.day}
           news={session.morningNews}
           fatigue={session.fatigue}
-          onDecide={(accept) =>
-            setSession((s) => ({ ...s, receiving: decide(s.receiving!, accept) }))
+          onDecide={(action: DecisionAction) =>
+            setSession((s) => ({ ...s, receiving: decide(s.receiving!, action) }))
           }
           onContinue={() => setSession(completeReceiving(session))}
         />

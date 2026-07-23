@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { callerPleaAt } from "@/game/dialogue";
 import { formatSignedManwon } from "@/game/labels";
 import {
@@ -10,6 +10,7 @@ import {
   startMinFor,
   CALL_ECONOMICS,
   type ReceivingState,
+  type DecisionAction,
 } from "@/game/receiving";
 import { freeDoctorsOfDept, pickAssignee } from "@/game/daysim";
 import { handlingDept } from "@/game/doctor";
@@ -57,6 +58,61 @@ function CallEconomicsBreakdown({ call }: { call: IncomingCall }) {
 }
 
 /**
+ * 응급 결정 카운트다운(실초) — 구급대의 인내다. 만료면 환자는 다른 병원으로 넘어간다(TIMEOUT).
+ *
+ * 실시간은 여기 UI에만 있다 — 코어(decide)는 'TIMEOUT'이라는 명시 액션을 받을 뿐 시계를 모른다
+ * (결정론 테스트에 실초가 새지 않는 경계, 스펙 §4). 값 조정은 이 상수 하나다.
+ * 콜별 리셋은 ReceivingPhase의 key={call.id} 리마운트가 담당한다.
+ *
+ * 하드락(거부 도장이 이미 찍힌) 카드에서도 이 카운트다운은 그대로 돌고 만료 시 TIMEOUT이
+ * 나간다 — 의도된 동작이다. 구급대의 인내는 우리 병원 사정과 무관하게 흐른다. 로그는
+ * 오염되지 않는다: core의 decide가 `logReason = reason ?? (...)` 순서로 하드락 사유를
+ * UNANSWERED보다 먼저 채택한다(src/game/receiving.ts). 결함으로 보고 되돌리지 말 것.
+ */
+const EMERGENCY_DECISION_SECONDS = 15;
+
+function EmergencyCountdown({ onExpire }: { onExpire: () => void }) {
+  const [secondsLeft, setSecondsLeft] = useState(EMERGENCY_DECISION_SECONDS);
+  const firedRef = useRef(false); // StrictMode 이중 마운트·재렌더에서 TIMEOUT 1회 보장
+  useEffect(() => {
+    // 0 이하로는 더 셀 필요가 없다 — tick 안에서 스스로 clearInterval해 언마운트 전까지
+    // 매초 불필요한 리렌더가 쌓이는 걸 막는다. TIMEOUT 1회 보장은 아래 firedRef가 별도로 맡는다.
+    const t = setInterval(() => {
+      setSecondsLeft((s) => {
+        const next = s - 1;
+        if (next <= 0) clearInterval(t);
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (secondsLeft <= 0 && !firedRef.current) {
+      firedRef.current = true;
+      onExpire();
+    }
+  }, [secondsLeft, onExpire]);
+  return (
+    // role="timer"는 정확히 이 용도의 ARIA 역할이고 기본이 비발화(암묵 aria-live="off")다.
+    // 매초 바뀌는 값에 aria-live="polite"를 걸면 스크린리더가 15초 내내 초를 읽어 카드의
+    // 다른 정보(대사·수가·버튼)를 덮는다 — 빈번히 바뀌는 콘텐츠에 aria-live는 안티패턴.
+    // 숫자 텍스트 자체는 그대로 둔다(색 단독 신호 금지 규칙, 스펙 §7) — 접근 가능하되 조용할 뿐이다.
+    <div role="timer" aria-label="결정 제한 시간" className="flex items-center gap-2">
+      <div aria-hidden className="h-1.5 flex-1 overflow-hidden rounded-xs bg-desk">
+        <div
+          className="h-full bg-alarm transition-[width] duration-1000 ease-linear"
+          style={{ width: `${Math.max(0, (secondsLeft / EMERGENCY_DECISION_SECONDS) * 100)}%` }}
+        />
+      </div>
+      {/* 해석 0 — 숫자만. 색(alarm) 단독 신호 금지라 초 숫자가 판정을 진다(스펙 §7). */}
+      <span className="shrink-0 font-mono text-xs tabular-nums text-on-desk/70">
+        {Math.max(0, secondsLeft)}초
+      </span>
+    </div>
+  );
+}
+
+/**
  * 도착한 콜 한 통 — 라벨·대사·수가·행동.
  *
  * **전제: `!receiving.done`.** done이면 index === queue.length라 queue[index] 읽기가
@@ -68,7 +124,7 @@ export default function CallCard({
   onDecide,
 }: {
   receiving: ReceivingState;
-  onDecide: (accept: boolean) => void;
+  onDecide: (action: DecisionAction) => void;
 }) {
   const cardRef = useRef<HTMLElement>(null);
 
@@ -159,7 +215,7 @@ export default function CallCard({
         <div className="mt-auto flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={() => onDecide(true)}
+            onClick={() => onDecide("ACCEPT")}
             disabled={!canStart}
             aria-label={`${call.label} 받기`}
             className="flex-1 rounded-xs bg-go py-3 text-sm font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
@@ -168,7 +224,7 @@ export default function CallCard({
           </button>
           <button
             type="button"
-            onClick={() => onDecide(false)}
+            onClick={() => onDecide("DECLINE")}
             aria-label={`${call.label} 보내기`}
             className="flex-1 rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >
@@ -176,36 +232,39 @@ export default function CallCard({
           </button>
         </div>
       ) : (
-        // 응급 — decide가 accept를 무시하고 자동 판정한다. 여기선 그 결과만 먼저 보여주고
-        // '계속'이 실제 decide(true)를 부른다(전개는 그대로, accept 값은 무의미).
+        // 응급 — 이제 결과 통보가 아니라 결정이다. 하드락이면 그 사유가 도장으로 서고
+        // 「받기」가 잠긴다 — 결과는 코드가 정했지만, 돌려보내는 버튼은 플레이어가 누른다.
         <div className="mt-auto flex flex-col gap-3">
-          {/*
-            판정 표시 — 색 단독 신호를 금지한다(스펙 §7). 수용은 체크 사인 + "수용" 글자로,
-            거절은 **고무도장**(사유 텍스트 필수)으로 읽힌다. 흑백으로 찍어도 판정이 남는다.
-
-            도장은 이 화면의 유일한 도장이다(§5 "화면당 0~1종, 불가역 판정에만") — 밝은
-            도장밭(stamp-field) 위 어두운 잉크라 어두운 책상에서 종잇조각처럼 뜬다.
-            회전은 -1.5°(상한 ±3°) — 서류는 반듯하고, 도장만 손으로 찍혀 살짝 기운다.
-          */}
-          {reason === null ? (
-            <p className="flex items-center gap-2 rounded-xs border border-frame bg-desk px-4 py-3 text-sm text-on-desk">
-              <span aria-hidden className="font-mono text-base leading-none">
-                ✓
-              </span>
-              수용{assignee ? ` · ${assignee.name}` : ""}
-            </p>
-          ) : (
+          {reason !== null && (
+            /*
+              판정 도장 — 색 단독 신호 금지(스펙 §7)라 사유 텍스트를 반드시 싣는다(흑백으로
+              찍어도 판정이 남는다). 이 화면의 유일한 도장(§5 "화면당 0~1종, 불가역 판정에만").
+              회전 -1.5°는 상한 ±3° 안 — 서류는 반듯하고, 도장만 손으로 찍혀 살짝 기운다.
+            */
             <p className="-rotate-[1.5deg] self-start rounded-stamp border-2 border-stamp bg-stamp-field px-3 py-1.5 font-serif text-lg leading-tight text-stamp-ink">
               전원 불가 · {REASON_CLAUSE[reason]}
             </p>
           )}
-          <button
-            type="button"
-            onClick={() => onDecide(true)}
-            className="rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
-          >
-            계속
-          </button>
+          <EmergencyCountdown onExpire={() => onDecide("TIMEOUT")} />
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => onDecide("ACCEPT")}
+              disabled={reason !== null}
+              aria-label={`${call.label} 받기`}
+              className="flex-1 rounded-xs bg-go py-3 text-sm font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+            >
+              받기{reason === null && assignee ? ` · ${assignee.name}` : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => onDecide("DECLINE")}
+              aria-label={`${call.label} 돌려보내기`}
+              className="flex-1 rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+            >
+              돌려보내기
+            </button>
+          </div>
         </div>
       )}
     </section>

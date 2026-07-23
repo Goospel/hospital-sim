@@ -20,15 +20,20 @@ type Policy = boolean | ((call: IncomingCall) => boolean)
 /**
  * 그날의 RECEIVING을 끝까지 흘린다(하루 마감은 하지 않는다). 방침은 불리언(전부) 또는 콜별 함수.
  *
- * 응급(일반·필수)은 decide가 자동 판정하므로 accept를 무시한다 — 방침은 **선택진료**(미용·배후과 예약)에만
- * 먹는다. 그래서 '양심'은 선택진료를 거절해 그 과 의사를 응급에 비워두는 선택으로 표현된다(essentialFirst).
+ * 방침은 **선택진료**(미용·배후과 예약)에만 먹고, 응급은 언제나 받는다 — 그래서 '양심'은 선택진료를
+ * 거절해 그 과 의사를 응급에 비워두는 선택으로 표현된다(essentialFirst).
+ *
+ * ⚠️ 응급 강제 'ACCEPT'가 이 드레인의 핵심이다. 응급이 플레이어 결정이 된 뒤(스펙 2026-07-24 §2)
+ * 방침을 응급에도 그대로 먹이면 `accept=false` 루트가 "응급까지 전부 보낸다"로 뒤집혀, 이 스위트가
+ * 재는 게 하루의 경제가 아니라 새 의미론이 된다. 여기 고정된 건 **옛 자동 판정과 동등한 드레인**이다
+ * (receiving.test.ts의 drainAuto와 같은 매핑 — 응급은 받고 선택진료만 방침을 탄다).
  */
 function runDay(state: SessionState, accept: Policy) {
   let s = state
   while (!s.receiving!.done) {
     const call = s.receiving!.queue[s.receiving!.index]
-    const yes = typeof accept === 'function' ? accept(call) : accept
-    s = { ...s, receiving: decide(s.receiving!, yes) }
+    const yes = isElective(call.kind) ? (typeof accept === 'function' ? accept(call) : accept) : true
+    s = { ...s, receiving: decide(s.receiving!, yes ? 'ACCEPT' : 'DECLINE') }
   }
   return s
 }
@@ -166,8 +171,9 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
   })
 
   it('[신문] 배후과가 없어 못 받은 필수 응급이 전부 기사가 된다 — 능동 거절이 아니라 구조가 막는다', () => {
-    // 응급은 자동 판정이라 플레이어가 거절할 수 없다. 배후과가 하나도 없는 공범 병원에선 그날 온 필수
-    // 응급이 전부 NO_BACKUP_CARE로 막히고, 그 전원이 기사가 된다.
+    // runDay가 응급에 'ACCEPT'를 강제해도(위 policy 주석) 배후과가 하나도 없는 공범 병원에선
+    // 하드락(NO_BACKUP_CARE)이 action보다 먼저 이겨 그날 온 필수 응급이 전부 막힌다 —
+    // 플레이어의 선택이 아니라 구조가 막은 것이라 전부 기사가 된다.
     const CRITICAL: string[] = ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'ABDOMINAL_EMERGENCY', 'MEDICAL_EMERGENCY'] // 배후과 요구 응급 전체(신문 대상)
     const d1 = completeReceiving(runDay(completeSetup(collaborator), false)) // 배후과 0
     const criticalPerDay = d1.receiving!.queue.filter((c) => CRITICAL.includes(c.kind)).length
@@ -327,8 +333,8 @@ describe('통합 불변식', () => {
     const s = completeSetup(collaborator)
     // STEMI 콜 직전까지 거절로 흘려보낸 뒤(도착순 큐 위치는 재배치에 안 묶는다) accept 시도
     let r = s.receiving!
-    while (r.queue[r.index].kind !== 'STEMI') r = decide(r, false)
-    const afterStemi = decide(r, true)
+    while (r.queue[r.index].kind !== 'STEMI') r = decide(r, 'DECLINE')
+    const afterStemi = decide(r, 'ACCEPT')
     expect(afterStemi.log[afterStemi.log.length - 1].disposition).toBe('HARDLOCK_REJECT')
   })
 })

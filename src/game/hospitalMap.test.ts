@@ -191,7 +191,7 @@ describe('deriveMapScene — 병상', () => {
     const noCardio = buildHospital({ hospitalName: '무순환기', doctors: { NEUROSURGERY: 1 } }).hospital
     let r = initReceiving(noCardio, createCallQueue(1))
     const stemi = r.queue.find((c) => c.kind === 'STEMI')!
-    while (!r.done) r = decide(r, true)
+    while (!r.done) r = decide(r, 'ACCEPT')
     const scene = deriveMapScene(r, stemi.arrivalMin!)
     expect(scene.beds.every((b) => b.occupantDoctorId === undefined)).toBe(true)
     expect(scene.avatars.filter((v) => v.kind === 'PATIENT')).toHaveLength(0)
@@ -382,7 +382,7 @@ describe('deriveMapScene — 대기 환자(복도에 쌓인다)', () => {
   })
 
   it('진료가 시작되면 대기에서 빠진다 — 두 번 세지 않는다', () => {
-    const after = decide(initReceiving(soloHospital, [stemi('c1', 100)]), true)
+    const after = decide(initReceiving(soloHospital, [stemi('c1', 100)]), 'ACCEPT')
     expect(waitingCount(after, 150)).toBe(0)
   })
 
@@ -390,14 +390,14 @@ describe('deriveMapScene — 대기 환자(복도에 쌓인다)', () => {
     // 순환기 1명. 100분 도착분이 220분까지 점유 → 110·120분 도착분은 그때까지 대기한다.
     const q = [stemi('c1', 100), stemi('c2', 110), stemi('c3', 120)]
     let s = initReceiving(soloHospital, q)
-    for (let i = 0; i < 3; i++) s = decide(s, true)
+    for (let i = 0; i < 3; i++) s = decide(s, 'ACCEPT')
     expect(waitingCount(s, 150)).toBe(2) // c2·c3이 서 있다
   })
 
   it('표시 상한을 넘으면 아바타는 자르고 넘친 인원수를 남긴다(복도 폭은 유한하다)', () => {
     const q = Array.from({ length: 20 }, (_, i) => stemi(`c${i}`, 100 + i))
     let s = initReceiving(soloHospital, q)
-    for (let i = 0; i < q.length; i++) s = decide(s, true)
+    for (let i = 0; i < q.length; i++) s = decide(s, 'ACCEPT')
     const scene = deriveMapScene(s, 130)
     expect(scene.avatars.filter((a) => a.waiting).length).toBeLessThanOrEqual(MAX_WAITING_AVATARS)
     expect(scene.waitingOverflow).toBeGreaterThan(0)
