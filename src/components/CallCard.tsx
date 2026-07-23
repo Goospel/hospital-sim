@@ -7,6 +7,7 @@ import {
   callDelta,
   hardlockReason,
   isElective,
+  startMinFor,
   CALL_ECONOMICS,
   type ReceivingState,
 } from "@/game/receiving";
@@ -100,9 +101,19 @@ export default function CallCard({
   const elective = isElective(call.kind);
   const dept = handlingDept(call);
   const arrivalMin = call.arrivalMin ?? 0;
-  const free = freeDoctorsOfDept(roster, receiving.busyUntil, dept, arrivalMin);
-  // decide()와 같은 가드 — 담당 과 자유 의사가 있으면 점유한다(세분 응급 포함, GENERAL 특례 제거).
-  const assignee = free.length > 0 ? pickAssignee(free, receiving.busyUntil) : undefined;
+  /*
+    decide()와 **같은 함수**로 판정한다(startMinFor). 예전엔 여기서 도착 시각의 자유 의사만
+    셌는데, 대기가 생긴 뒤로 그 판정이 실제 처리와 어긋났다 — 담당 의사가 지금 바쁘기만 하면
+    「받기」가 비활성인데 decide는 기다렸다 받을 수 있었다. 두 곳에 판정을 각각 적으면 카드가
+    거짓말을 한다(브라우저에서 실제로 진행 불가 상태가 나왔다, 2026-07-23).
+  */
+  const start = startMinFor(call, receiving.busyUntil, roster);
+  const canStart = typeof start === "number";
+  const assignee = canStart
+    ? pickAssignee(freeDoctorsOfDept(roster, receiving.busyUntil, dept, start), receiving.busyUntil)
+    : undefined;
+  // 지금 바로 못 보고 기다려야 하는 시간. 0이면 즉시 진료다.
+  const waitMin = canStart ? start - arrivalMin : 0;
 
   return (
     // min-h는 FlowPanel(ReceivingPhase.tsx)과 공유하는 값이다 — 19rem = 304px,
@@ -132,14 +143,25 @@ export default function CallCard({
 
       <CallEconomicsBreakdown call={call} />
 
+      {/*
+        기다려야 받을 수 있는 콜이면 그 사실을 먼저 말한다 — 「받기」가 활성인데 정작 지금
+        비어 있는 의사가 없으면, 플레이어는 자기가 무엇에 동의하는지 모른 채 누르게 된다.
+        해석 0: 대기 분수와 담당자 이름만 놓는다("위험하다"고 쓰지 않는다).
+      */}
+      {waitMin > 0 && (
+        <p className="rounded-xs border border-frame bg-desk px-3 py-2 font-mono text-xs text-on-desk/70">
+          {waitMin}분 대기 후 진료 시작 · {assignee?.name}
+        </p>
+      )}
+
       {elective ? (
         // 선택진료 — 플레이어가 받기/보내기를 정한다. 하드락은 없다(reason은 항상 null) —
-        // 그 과 자유 의사가 없으면 '받기'만 비활성(구조가 막은 게 아니라 자원이 없는 것).
+        // 그 과 의사가 아예 없거나 대기 한계를 넘길 때만 '받기'가 비활성이다.
         <div className="mt-auto flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => onDecide(true)}
-            disabled={free.length === 0}
+            disabled={!canStart}
             aria-label={`${call.label} 받기`}
             className="flex-1 rounded-xs bg-go py-3 text-sm font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >

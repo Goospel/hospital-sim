@@ -50,10 +50,10 @@ describe('compareDeptKeys — 과 표시 순서(필수과 먼저)', () => {
   })
 })
 
-import { deriveMapScene } from './hospitalMap'
-import { initReceiving, createCallQueue, decide } from './receiving'
+import { deriveMapScene, MAX_WAITING_AVATARS } from './hospitalMap'
+import { initReceiving, createCallQueue, decide, type ReceivingState } from './receiving'
 import { buildHospital } from './setup'
-import type { Hospital, SetupChoices } from './types'
+import type { Hospital, IncomingCall, SetupChoices } from './types'
 // ⚠️ NIGHT_START_MIN·DEPARTMENTS는 1-A·1-B 블록에서 이미 import 했다 — 다시 쓰지 않는다(중복 선언 = 타입 에러).
 
 // 순환기 2명(24시간 배후 성립) + 미용 1명. 병상은 개원 기본값(FIXED_BEDS = 3).
@@ -156,7 +156,8 @@ describe('deriveMapScene — 병상', () => {
     expect(occupied).toHaveLength(2)
     expect(occupied.map((b) => b.occupantDoctorId).sort()).toEqual([d1.id, d2.id].sort())
 
-    const patients = scene.avatars.filter((v) => v.kind === 'PATIENT')
+    // waiting을 뺀다 — 이 계약은 '진료 중인 환자'에 대한 것이고, 대기 환자는 별개 축이다.
+    const patients = scene.avatars.filter((v) => v.kind === 'PATIENT' && !v.waiting)
     expect(patients).toHaveLength(2)
     expect(patients.every((v) => v.zone === 'BED')).toBe(true)
   })
@@ -171,7 +172,7 @@ describe('deriveMapScene — 병상', () => {
     const scene = deriveMapScene({ ...initReceiving(many, createCallQueue(1)), busyUntil: busyAll }, 100)
     expect(scene.beds).toHaveLength(3)
     expect(scene.beds.filter((b) => b.occupantDoctorId).length).toBe(3)
-    const patients = scene.avatars.filter((v) => v.kind === 'PATIENT')
+    const patients = scene.avatars.filter((v) => v.kind === 'PATIENT' && !v.waiting)
     expect(patients).toHaveLength(6) // 진료 중 의사 6명 = 환자 6명
     expect(patients.filter((v) => v.zone === 'CORRIDOR')).toHaveLength(3) // 초과분
   })
@@ -352,5 +353,53 @@ describe('ambientWalkers — 배경 보행자(순수 장식)', () => {
       expect(w.durationMs).toBeGreaterThanOrEqual(9000)
       expect(w.durationMs).toBeLessThan(16000)
     }
+  })
+})
+
+/*
+  대기 환자 — 북적임의 시각화(2026-07-23). 이전까지 맵에 뜨는 환자는 '진료 중인 의사 수'가
+  상한이라(의사 3명이면 환자 최대 3명) 병원이 구조적으로 북적일 수 없었다. 이제 도착했지만
+  아직 진료를 시작하지 못한 사람이 복도에 선다. 새 게임 상태는 0개 — log에서 파생만 한다.
+*/
+describe('deriveMapScene — 대기 환자(복도에 쌓인다)', () => {
+  const solo: SetupChoices = { hospitalName: '한칸병원', doctors: { CARDIOLOGY: 1 } }
+  const soloHospital: Hospital = buildHospital(solo).hospital
+  const stemi = (id: string, arrivalMin: number, durationMin = 120): IncomingCall => ({
+    id, kind: 'STEMI', label: 'STEMI', patient: { id: 's', requiredSpecialty: 'CARDIOLOGY', severity: 5 },
+    lawsuitRisk: true, nightShift: false, arrivalMin, durationMin,
+  })
+  const waitingCount = (s: ReceivingState, atMin: number) =>
+    deriveMapScene(s, atMin).avatars.filter((a) => a.kind === 'PATIENT' && a.waiting).length
+
+  it('도착 전에는 아무도 없다', () => {
+    const s = initReceiving(soloHospital, [stemi('c1', 100)])
+    expect(waitingCount(s, 50)).toBe(0)
+  })
+
+  it('도착했는데 아직 처리 전이면 대기 중으로 선다', () => {
+    const s = initReceiving(soloHospital, [stemi('c1', 100)])
+    expect(waitingCount(s, 100)).toBe(1)
+  })
+
+  it('진료가 시작되면 대기에서 빠진다 — 두 번 세지 않는다', () => {
+    const after = decide(initReceiving(soloHospital, [stemi('c1', 100)]), true)
+    expect(waitingCount(after, 150)).toBe(0)
+  })
+
+  it('앞사람 때문에 기다리는 사람이 복도에 쌓인다', () => {
+    // 순환기 1명. 100분 도착분이 220분까지 점유 → 110·120분 도착분은 그때까지 대기한다.
+    const q = [stemi('c1', 100), stemi('c2', 110), stemi('c3', 120)]
+    let s = initReceiving(soloHospital, q)
+    for (let i = 0; i < 3; i++) s = decide(s, true)
+    expect(waitingCount(s, 150)).toBe(2) // c2·c3이 서 있다
+  })
+
+  it('표시 상한을 넘으면 아바타는 자르고 넘친 인원수를 남긴다(복도 폭은 유한하다)', () => {
+    const q = Array.from({ length: 20 }, (_, i) => stemi(`c${i}`, 100 + i))
+    let s = initReceiving(soloHospital, q)
+    for (let i = 0; i < q.length; i++) s = decide(s, true)
+    const scene = deriveMapScene(s, 130)
+    expect(scene.avatars.filter((a) => a.waiting).length).toBeLessThanOrEqual(MAX_WAITING_AVATARS)
+    expect(scene.waitingOverflow).toBeGreaterThan(0)
   })
 })

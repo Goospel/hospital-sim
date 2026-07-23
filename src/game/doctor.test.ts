@@ -41,7 +41,9 @@ describe('handlingDept — 콜 한 통을 담당 과로', () => {
     const elective = q.find((c) => c.kind === 'SPECIALIST_ELECTIVE')!
     expect(handlingDept(stemi)).toBe('CARDIOLOGY')
     expect(handlingDept(elective)).toBe('CARDIOLOGY') // 월요일 예약은 순환기 배치(STEMI와 점유 경쟁)
-    expect(handlingDept(q[0])).toBe('AESTHETICS') // 보톡스 워크인(첫 도착)
+    // 워크인은 라벨로 과가 갈린다 — 도착순 정렬이라 q[0]이 무엇인지는 고정이 아니므로 라벨로 집는다.
+    expect(handlingDept(q.find((c) => c.label.includes('보톡스'))!)).toBe('AESTHETICS')
+    expect(handlingDept(q.find((c) => c.label.includes('검진'))!)).toBe('CHECKUP')
   })
 
   it('고열감염은 내과(INTERNAL_MEDICINE)로 라우팅된다 — requiredSpecialty 권위 출처', () => {

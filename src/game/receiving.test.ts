@@ -3,12 +3,12 @@ import {
   createCallQueue, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
   WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective, isAutoAccept, requiresBackupCare, carriesLawsuitRisk,
-  BACKUP_CARE_KINDS, callsForBeds,
+  BACKUP_CARE_KINDS, outpatientForBeds, needsDecision,
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
 import type { CallKind, DeptKey, Doctor, Hospital, IncomingCall, SetupChoices } from './types'
-import { DAY_LENGTH_MIN, NIGHT_START_MIN } from './daysim'
+import { DAY_LENGTH_MIN, NIGHT_START_MIN, patienceMin } from './daysim'
 
 describe('무게 술어 분리 — requiresBackupCare / carriesLawsuitRisk', () => {
   it('두 술어는 기존 필수 응급 4종에 대해 참이다(리팩터 기준선)', () => {
@@ -143,8 +143,15 @@ describe('CALL_ECONOMICS — 가격을 누가 정하는가', () => {
     expect(Math.abs(callDelta('STEMI'))).toBeLessThan(Math.abs(callDelta('MEDICAL_EMERGENCY')))
   })
 
-  it('미용 워크인만 흑자 — 가격 규제가 없는 유일한 콜', () => {
-    expect(callDelta('COSMETIC_WALKIN')).toBeGreaterThan(0)
+  /*
+    ⏸ 이 계약은 **의도적으로 뒤집혀 있다**(2026-07-23). 미용 흑자는 지금 부문 손익이 세고,
+    콜 델타는 0이다 — 하루 55통이 되면서 두 층이 같은 진료를 세는 이중 계상이 표면화됐기 때문이다
+    (CALL_ECONOMICS.COSMETIC_WALKIN 주석). 부문 손익을 고정비로 뒤집는 후속 작업에서 이 콜이
+    유일한 수익원이 되고, 그때 이 테스트는 다시 `toBeGreaterThan(0)`으로 돌아간다.
+    지금 0이 아니게 되면 이중 계상이 되살아난 것이므로 실패해야 한다.
+  */
+  it('⏸ 미용 워크인 콜 델타는 0 — 흑자는 부문 손익이 센다(이중 계상 방지, 후속 재설계까지)', () => {
+    expect(callDelta('COSMETIC_WALKIN')).toBe(0)
   })
 
   /**
@@ -158,7 +165,8 @@ describe('CALL_ECONOMICS — 가격을 누가 정하는가', () => {
     expect(recovery('STEMI')).toBeGreaterThan(0.75)
     expect(recovery('STEMI')).toBeLessThan(0.95)
     expect(recovery('STEMI')).toBeGreaterThan(recovery('MEDICAL_EMERGENCY'))
-    expect(recovery('COSMETIC_WALKIN')).toBeGreaterThan(1) // 비급여는 원가를 넘겨 받는다
+    // ⏸ 비급여 200%는 후속 재설계에서 콜 층으로 돌아온다 — 지금은 부문 손익이 담당한다(위 주석).
+    expect(recovery('COSMETIC_WALKIN')).toBeGreaterThanOrEqual(1) // 급여 콜과 달리 원가 미달은 아니다
   })
 
   it('고열감염 수용은 오늘 진료 수익을 깎는다 — 받을수록 장부가 나빠진다', () => {
@@ -240,11 +248,13 @@ describe('createCallQueue (시간 큐)', () => {
  * 밤에 오는 STEMI를 받을 수 있느냐. 이게 없으면 2명째는 손익만 −12 깎는 순수 함정이었다.
  */
 describe('야간 콜 — 시간대는 arrivalMin(도착시각)에서 파생(RNG 0)', () => {
-  it('하루 5통 중 마지막 1통이 야간 — 결정론', () => {
-    // count=5면 슬롯 폭 120분, NIGHT_START_MIN=480은 슬롯 경계라 마지막 슬롯([480,600))만 야간이다.
+  it('야간 배지는 도착시각 경계와 일치하고, 밤에도 사람이 온다 — 결정론', () => {
+    // 균등 슬롯을 버리면서(콜 제한 폐지) '마지막 1통만 야간'은 더 이상 참이 아니다.
+    // 계약은 '몇 통이냐'가 아니라 '경계와 일치하느냐 + 밤이 비지 않느냐'로 옮겼다.
     for (let day = 1; day <= DAYS_PER_WEEK; day++) {
       const q = createCallQueue(day)
-      expect(q.map((c) => c.nightShift)).toEqual([false, false, false, false, true])
+      for (const c of q) expect(c.nightShift).toBe(c.arrivalMin! >= NIGHT_START_MIN)
+      expect(q.some((c) => c.nightShift)).toBe(true)
     }
     // 같은 day는 항상 같은 큐
     expect(createCallQueue(3).map((c) => c.nightShift)).toEqual(createCallQueue(3).map((c) => c.nightShift))
@@ -343,12 +353,22 @@ describe('점유 벽 (NO_FREE_SPECIALIST)', () => {
   const solo = hospitalWith('CARDIOLOGY', 1) // 순환기 1명 — 자유/점유로 벽을 만든다
   const dayStemi = () => ({ ...dayCall('STEMI'), nightShift: false })
 
-  it('그 과 의사가 다 진료 중이면 응급은 벽(NO_FREE_SPECIALIST)', () => {
+  /*
+    점유 벽의 계약이 바뀌었다(2026-07-23) — 이제 **기다린다**. 잠깐 바쁜 건 벽이 아니고,
+    한계를 넘겨야 벽이다. 그래서 같은 "다 진료 중"이 대기 길이에 따라 두 결과로 갈린다.
+  */
+  it('잠깐 바쁘면 벽이 아니다 — 기다렸다 받는다', () => {
     const call = dayStemi()
     const roster = rosterOf(solo)
-    // 그 유일 순환기 의사를 도착 시각 이후까지 점유시킨다 → 자유 의사 0.
-    const busy = { [roster[0].id]: (call.arrivalMin ?? 0) + 1 }
-    expect(hardlockReason(solo, call, busy, roster)).toBe('NO_FREE_SPECIALIST')
+    const busy = { [roster[0].id]: (call.arrivalMin ?? 0) + 1 } // 1분 뒤 자유
+    expect(hardlockReason(solo, call, busy, roster)).toBeNull()
+  })
+
+  it('대기 한계를 넘기면 LEFT_WAITING — 자리는 났지만 늦었다', () => {
+    const call = dayStemi()
+    const roster = rosterOf(solo)
+    const busy = { [roster[0].id]: (call.arrivalMin ?? 0) + patienceMin('STEMI') + 1 }
+    expect(hardlockReason(solo, call, busy, roster)).toBe('LEFT_WAITING')
   })
 
   it('그 과 자유 의사가 있으면 통과(null)', () => {
@@ -367,13 +387,13 @@ describe('점유 벽 (NO_FREE_SPECIALIST)', () => {
     expect(hardlockReason(two, nightStemi, {}, rosterOf(two))).toBeNull()
   })
 
-  it('네 종류 필수 응급 모두 그 과 의사가 점유되면 NO_FREE_SPECIALIST', () => {
+  it('네 종류 필수 응급 모두 그 과 의사가 한계 넘게 점유되면 LEFT_WAITING', () => {
     for (const { kind, dept } of CRITICAL) {
       const h = hospitalWith(dept, 1)
       const call = { ...dayCall(kind), nightShift: false }
       const roster = rosterOf(h)
-      const busy = { [roster[0].id]: (call.arrivalMin ?? 0) + 1 }
-      expect(hardlockReason(h, call, busy, roster)).toBe('NO_FREE_SPECIALIST')
+      const busy = { [roster[0].id]: (call.arrivalMin ?? 0) + patienceMin(kind) + 1 }
+      expect(hardlockReason(h, call, busy, roster)).toBe('LEFT_WAITING')
       expect(hardlockReason(h, call, {}, roster)).toBeNull() // 자유면 통과
     }
   })
@@ -482,10 +502,9 @@ describe('dayProgress — 시간 기반(clockMin / DAY_LENGTH_MIN)', () => {
   })
 })
 
-describe('createCallQueue — 고정 5통(결정론)', () => {
-  it('5통이고 STEMI·워크인·고열감염을 모두 포함', () => {
+describe('createCallQueue — 하루치 도착 흐름(결정론)', () => {
+  it('STEMI·워크인·고열감염을 모두 포함', () => {
     const q = createCallQueue()
-    expect(q).toHaveLength(5)
     const kinds = new Set(q.map((c) => c.kind))
     expect(kinds).toContain('STEMI')
     expect(kinds).toContain('COSMETIC_WALKIN')
@@ -548,11 +567,11 @@ describe('자격 벽 — 배후과 유무(자리/총량이 아니라 자격)', (
 })
 
 describe('decide 리듀서 — 장부·소송 누적', () => {
-  it('워크인 수용 → 순이익 델타↑, 소송 노출 0', () => {
+  it('워크인 수용 → 소송 노출 0 (⏸ 델타는 부문 손익이 센다 — 후속 재설계까지 0)', () => {
     const walkin = createCallQueue().find((c) => c.kind === 'COSMETIC_WALKIN')!
     const s = initReceiving(hospitalOf(collaborator), [walkin])
     const after = decide(s, true)
-    expect(after.netProfitDeltaBillions).toBeGreaterThan(0)
+    expect(after.netProfitDeltaBillions).toBe(0)
     expect(after.lawsuitExposure).toBe(0)
     expect(after.done).toBe(true)
     expect(s.index).toBe(0) // 원본 불변 — decide는 입력 state를 변형하지 않는다
@@ -589,7 +608,7 @@ describe('decide 리듀서 — 장부·소송 누적', () => {
 
   it('전체 큐 소진 시 done, 이후 decide는 에러', () => {
     let s = initReceiving(hospitalOf(collaborator))
-    for (let i = 0; i < 5; i++) s = decide(s, false)
+    for (let i = s.queue.length; i > 0; i--) s = decide(s, false)
     expect(s.done).toBe(true)
     expect(() => decide(s, false)).toThrow()
   })
@@ -680,10 +699,9 @@ describe('runningNetProfit — 오늘 순이익(부문 손익 오늘치 + 오늘
   })
 })
 
-describe('createCallQueue(day) — 요일별 고정 큐(결정론)', () => {
-  it('7일 모두 5통이고, 같은 날은 항상 같은 큐(결정론)', () => {
+describe('createCallQueue(day) — 요일별 큐(결정론)', () => {
+  it('7일 모두 같은 날은 항상 같은 큐(결정론)', () => {
     for (let day = 1; day <= DAYS_PER_WEEK; day++) {
-      expect(createCallQueue(day)).toHaveLength(5)
       expect(createCallQueue(day)).toEqual(createCallQueue(day))
     }
   })
@@ -698,12 +716,13 @@ describe('createCallQueue(day) — 요일별 고정 큐(결정론)', () => {
     expect(new Set(Array.from({ length: DAYS_PER_WEEK }, (_, i) => kindsOf(i + 1))).size).toBeGreaterThan(1)
   })
 
-  it('라벨↔대사 정합 — 같은 kind가 큐에 여러 번 나와도 각기 다른 호소를 집는다', () => {
+  it('라벨↔대사 정합 — 같은 kind가 여러 번 나오면 라벨 풀을 고루 쓴다', () => {
     // callerPleaAt이 kind 내 등장 순번을 seed로 쓰므로(PR #29), 라벨도 같은 순번 규칙을 따라야 한다.
+    // 워크인이 하루 12통이 되면서 라벨 풀(2종)보다 많아졌다 — '인접한 둘이 다르다'는 성립할 수 없다.
+    // 계약은 '풀을 전부 쓰는가'로 옮긴다(순번 규칙이 죽으면 한 라벨만 나온다).
     for (let day = 1; day <= DAYS_PER_WEEK; day++) {
-      const q = createCallQueue(day)
-      const walkins = q.filter((c) => c.kind === 'COSMETIC_WALKIN')
-      if (walkins.length >= 2) expect(walkins[0].label).not.toBe(walkins[1].label)
+      const walkins = createCallQueue(day).filter((c) => c.kind === 'COSMETIC_WALKIN')
+      if (walkins.length >= 2) expect(new Set(walkins.map((c) => c.label)).size).toBe(2)
     }
   })
 
@@ -801,31 +820,31 @@ describe('DAY_PLANS — 4종 응급 분산(재구성)', () => {
     expect(back).toBeGreaterThan(front)
   })
 
-  it('여전히 하루 5통이고 야간은 마지막 1통 — 시간대 파생 규칙 보존', () => {
+  /*
+    야간 배지는 이제 '마지막 1통'이 아니라 arrivalMin에서만 파생한다 — 균등 슬롯을 버리고
+    하루 전체에 뿌리면서 야간 콜 수가 날마다 달라졌다(그게 자연스럽다). 계약은 '몇 통이냐'가
+    아니라 '경계와 일치하느냐'로 옮겼다.
+  */
+  it('야간 배지는 arrivalMin 경계와 정확히 일치한다', () => {
     for (let d = 1; d <= DAYS_PER_WEEK; d++) {
-      const q = createCallQueue(d)
-      expect(q).toHaveLength(5)
-      expect(q.map((c) => c.nightShift)).toEqual([false, false, false, false, true])
+      for (const c of createCallQueue(d)) {
+        expect(c.nightShift).toBe(c.arrivalMin! >= NIGHT_START_MIN)
+      }
+    }
+  })
+
+  it('매일 야간에도 사람이 온다 — 밤이 비지 않는다', () => {
+    for (let d = 1; d <= DAYS_PER_WEEK; d++) {
+      expect(createCallQueue(d).some((c) => c.nightShift)).toBe(true)
     }
   })
 })
 
 describe('병상 연동 콜 볼륨 — 커지면 환자도 더 온다', () => {
-  it('콜 수 = beds + 2 (3→5, 5→7, 7→9)', () => {
-    expect(callsForBeds(3)).toBe(5)
-    expect(callsForBeds(5)).toBe(7)
-    expect(callsForBeds(7)).toBe(9)
-  })
-
-  it('기본(beds 미지정)은 5통 — 기존 동작 불변', () => {
-    expect(createCallQueue(1)).toHaveLength(5)
-    expect(createCallQueue(1, FIXED_BEDS)).toHaveLength(5)
-  })
-
-  it('큰 병원은 더 많은 콜(같은 날 결정론)', () => {
-    expect(createCallQueue(1, 5)).toHaveLength(7)
-    expect(createCallQueue(1, 7)).toHaveLength(9)
-    expect(createCallQueue(1, 7)).toEqual(createCallQueue(1, 7)) // 결정론
+  it('외래 통수 = beds × 20 (3→60, 5→100, 7→140)', () => {
+    expect(outpatientForBeds(3)).toBe(60)
+    expect(outpatientForBeds(5)).toBe(100)
+    expect(outpatientForBeds(7)).toBe(140)
   })
 
   it('콜 id는 고유(볼륨 늘어도 React key 충돌 없음)', () => {
@@ -835,6 +854,144 @@ describe('병상 연동 콜 볼륨 — 커지면 환자도 더 온다', () => {
 
   it('야간은 arrivalMin에서 파생 — 볼륨 늘어도 정합', () => {
     const q = createCallQueue(1, 7)
-    expect(q.every((c) => c.nightShift === (c.arrivalMin! >= 480))).toBe(true)
+    expect(q.every((c) => c.nightShift === (c.arrivalMin! >= NIGHT_START_MIN))).toBe(true)
+  })
+})
+
+/*
+  이번 변경의 계약. 하루의 끝을 '개수'가 아니라 '시각'이 정하게 만든 결과를 잠근다 —
+  콜 총량은 병상 티어에서 파생하고, 그중 응급만 티어와 무관하게 고정이다.
+  (스펙: docs/superpowers/specs/2026-07-23-unbounded-arrival-flow-design.md)
+*/
+describe('콜 제한 폐지 — 외래가 밀려들고 응급은 그대로', () => {
+  const emergencyCount = (q: IncomingCall[]) => q.filter((c) => requiresBackupCare(c.kind)).length
+
+  it('총량 = 그날 응급 + 외래(beds × 5)', () => {
+    for (const beds of [3, 5, 7]) {
+      for (let d = 1; d <= DAYS_PER_WEEK; d++) {
+        const q = createCallQueue(d, beds)
+        expect(q.length - emergencyCount(q)).toBe(outpatientForBeds(beds))
+      }
+    }
+  })
+
+  it('병상이 커져도 응급 통수는 그대로 — 신문·소송이 배수로 늘지 않는다', () => {
+    for (let d = 1; d <= DAYS_PER_WEEK; d++) {
+      const base = emergencyCount(createCallQueue(d, 3))
+      expect(emergencyCount(createCallQueue(d, 5))).toBe(base)
+      expect(emergencyCount(createCallQueue(d, 7))).toBe(base)
+    }
+  })
+
+  it('하루 60명 이상이 온다 — 개수가 상한이던 시절(5~9통)의 10배 이상', () => {
+    expect(createCallQueue(1, FIXED_BEDS).length).toBeGreaterThanOrEqual(60)
+    expect(createCallQueue(1, 7).length).toBeGreaterThanOrEqual(140)
+  })
+
+  /*
+    동시 인원 = 도착률 × 체류시간(리틀의 법칙). 하루 600분에 60명이면 10분에 한 명이고
+    진료가 45분이라 평균 5명이 병원에 있다 — 이게 '북적임'의 산술적 근거다.
+    도착이 뭉치는 것만으로는 이 평균을 못 올린다(뭉침은 분산이지 평균이 아니다).
+  */
+  it('평균 도착 간격이 진료 시간보다 짧다 — 그래야 사람이 겹쳐 남는다', () => {
+    const q = createCallQueue(1, FIXED_BEDS)
+    expect(DAY_LENGTH_MIN / q.length).toBeLessThan(30) // 워크인 최단 진료(30분)보다 촘촘
+  })
+
+  it('외래는 워크인 위주 + 예약진료 소수(12통당 1) — 예약이 결정 지점이다', () => {
+    const q = createCallQueue(1, 3)
+    expect(q.filter((c) => c.kind === 'SPECIALIST_ELECTIVE')).toHaveLength(5)
+    expect(q.filter((c) => c.kind === 'COSMETIC_WALKIN')).toHaveLength(55)
+  })
+
+  it('하루 결정 횟수는 손에 잡히는 수준 — 예약이 10통을 넘지 않는다', () => {
+    for (const beds of [3, 5, 7]) {
+      for (let d = 1; d <= DAYS_PER_WEEK; d++) {
+        expect(createCallQueue(d, beds).filter(needsDecision).length).toBeLessThanOrEqual(12)
+      }
+    }
+  })
+
+  it('도착순 정렬 · 결정론 유지', () => {
+    const q = createCallQueue(3, 5)
+    expect(q.map((c) => c.arrivalMin)).toEqual([...q.map((c) => c.arrivalMin!)].sort((a, b) => a - b))
+    expect(createCallQueue(3, 5)).toEqual(q)
+  })
+
+  it('도착이 뭉친다 — 같은 30분 안에 2명 이상 겹치는 구간이 있다', () => {
+    const times = createCallQueue(1, 3).map((c) => c.arrivalMin!)
+    const crowded = times.some((t) => times.filter((o) => o >= t && o < t + 30).length >= 2)
+    expect(crowded).toBe(true)
+  })
+})
+
+describe('대기 — 버티면 받고 못 버티면 떠난다', () => {
+  const cardioHospital = (roster: Doctor[]): Hospital => ({
+    id: 'p', name: 'x', beds: 3, hasErOnCall: true, overcrowded: false,
+    backupCare: ['CARDIOLOGY'], roundTheClockBackup: ['CARDIOLOGY'], roster,
+  })
+  const solo: Doctor[] = [{ id: 'doc-CARDIOLOGY-1', name: '김민준', dept: 'CARDIOLOGY' }]
+  const stemiAt = (arrivalMin: number, id = 'c1'): IncomingCall => ({
+    id, kind: 'STEMI', label: 'STEMI', patient: { id: 's', requiredSpecialty: 'CARDIOLOGY', severity: 5 },
+    lawsuitRisk: true, nightShift: false, arrivalMin, durationMin: 60,
+  })
+
+  it('자유 의사가 있으면 도착 즉시 시작(startMin = arrivalMin)', () => {
+    const s = decide(initReceiving(cardioHospital(solo), [stemiAt(100)]), true)
+    expect(s.log[0].accepted).toBe(true)
+    expect(s.log[0].startMin).toBe(100)
+  })
+
+  it('다 바쁘면 가장 빨리 비는 시각까지 기다렸다 시작한다', () => {
+    // 첫 콜이 100분에 와서 160분까지 점유 → 두 번째 콜(120분 도착)은 160분까지 대기(40분 < 90분 한계)
+    const state = initReceiving(cardioHospital(solo), [stemiAt(100, 'c1'), stemiAt(120, 'c2')])
+    const after = decide(decide(state, true), true)
+    expect(after.log[1].accepted).toBe(true)
+    expect(after.log[1].startMin).toBe(160)
+    expect(after.busyUntil['doc-CARDIOLOGY-1']).toBe(220) // 160 + 60
+  })
+
+  it('대기가 한계(STEMI 90분)를 넘으면 LEFT_WAITING으로 떠난다', () => {
+    // 첫 콜 100분 도착·180분 소요 → 280분까지 점유. 두 번째가 150분에 오면 130분 대기 > 90분
+    const long: IncomingCall = { ...stemiAt(100, 'c1'), durationMin: 180 }
+    const state = initReceiving(cardioHospital(solo), [long, stemiAt(150, 'c2')])
+    const after = decide(decide(state, true), true)
+    expect(after.log[1].accepted).toBe(false)
+    expect(after.log[1].reason).toBe('LEFT_WAITING')
+    expect(after.log[1].startMin).toBeUndefined() // 진료를 시작한 적이 없다
+  })
+
+  it('그 과 의사가 아예 없으면 대기 없이 하드락 — 기다려도 소용없다', () => {
+    const noDocs = cardioHospital([])
+    expect(hardlockReason(noDocs, stemiAt(100), {}, [])).toBe('NO_FREE_SPECIALIST')
+  })
+
+  it('워크인은 참을성이 짧아 응급보다 먼저 떠난다', () => {
+    expect(patienceMin('COSMETIC_WALKIN')).toBeLessThan(patienceMin('STEMI'))
+  })
+})
+
+describe('경제 축소 — 금액은 각색, 비율이 근거(외래 4배에도 I8 유지)', () => {
+  const ratio = (k: CallKind) => CALL_ECONOMICS[k].revenueBillions / CALL_ECONOMICS[k].costBillions
+
+  it('⏸ 미용은 원가 미달이 아니다 — 200% 복원은 후속 수익 구조 재설계에서', () => {
+    expect(ratio('COSMETIC_WALKIN')).toBeGreaterThanOrEqual(1)
+  })
+  it('급여 수술 4종+STEMI는 원가 미달(80~85% 밴드)', () => {
+    for (const k of ['STEMI', 'OBSTETRIC_EMERGENCY', 'NEURO_EMERGENCY', 'TRAUMA_EMERGENCY', 'ABDOMINAL_EMERGENCY'] as const) {
+      expect(ratio(k)).toBeGreaterThan(0.8)
+      expect(ratio(k)).toBeLessThan(0.86)
+    }
+  })
+  it('고열·감염은 기본진료 밴드 50%', () => {
+    expect(ratio('MEDICAL_EMERGENCY')).toBeCloseTo(0.5, 2)
+  })
+  it('예약진료는 검체 흑자 밴드 160%대', () => {
+    expect(ratio('SPECIALIST_ELECTIVE')).toBeGreaterThan(1.6)
+  })
+  it('부호가 보존된다 — 예약은 흑자, 급여 응급은 전부 적자(⏸ 미용은 0 — 위 주석)', () => {
+    expect(callDelta('COSMETIC_WALKIN')).toBe(0)
+    expect(callDelta('SPECIALIST_ELECTIVE')).toBeGreaterThan(0)
+    for (const k of BACKUP_CARE_KINDS) expect(callDelta(k)).toBeLessThan(0)
   })
 })

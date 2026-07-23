@@ -76,7 +76,7 @@ describe('세션 페이즈 전이', () => {
     const s = completeSetup(collaborator)
     expect(s.phase).toBe('RECEIVING')
     expect(s.hospital!.name).toBe('흑자메디컬')
-    expect(s.receiving!.queue.length).toBe(5)
+    expect(s.receiving!.queue.length).toBeGreaterThan(0)
   })
 
   it('receiving 미완이면 completeReceiving 에러', () => {
@@ -105,7 +105,16 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     expect(d2.receiving!.index).toBe(0)
     expect(d2.receiving!.done).toBe(false)
     expect(d2.receiving!.clockMin).toBe(0) // 새 하루는 시각 0에서 연다
-    expect(d2.receiving!.busyUntil).toEqual({}) // 이 시나리오는 초과 점유가 없어 이월도 없다(전 유닛 자유)
+    /*
+      이월되는 값은 **어제 마감(DAY_LENGTH_MIN)을 넘긴 초과분뿐**이다(boarding의 시간 버전).
+      옛 주석은 "이 시나리오는 초과 점유가 없어 이월도 없다"였는데, 하루 도착이 60명이 되면서
+      마감을 넘겨 진료 중인 의사가 실제로 생긴다 — 구현이 바뀐 게 아니라 **드디어 발동한다**.
+      그래서 계약을 '비어 있다'가 아니라 '초과분만, 그것도 하루보다 짧게'로 잠근다.
+    */
+    for (const over of Object.values(d2.receiving!.busyUntil)) {
+      expect(over).toBeGreaterThan(0)
+      expect(over).toBeLessThan(DAY_LENGTH_MIN)
+    }
     expect(d2.receiving!.netProfitDeltaBillions).toBe(0) // 그날 진료 수익은 0에서 시작
     expect(d2.receiving!.queue[0].id).toContain('d2') // 2일차 큐
   })
@@ -179,10 +188,14 @@ describe('7일 루프 — day 전이와 달력 기록', () => {
     const d1 = completeReceiving(runDay(completeSetup(collaborator), true)) // 전부 수용 시도
     const rec = d1.ledgerDays[0]
     expect(rec.netProfitBillions).toBe(rec.segmentShareBillions + rec.callDeltaBillions)
-    // 미용 2(선택진료·미용 담당 있음). 순환기 예약·고열감염·STEMI는 담당/배후가 없어 미수용(세분 응급도 배후 필요).
-    expect(rec.accepted).toBe(2)
+    // 워크인만 받는다 — 순환기 예약·고열감염·STEMI는 담당/배후가 없어 미수용(세분 응급도 배후 필요).
+    // 통수는 이제 병상 티어에서 파생하므로 고정 숫자로 못 잠근다. 계약은 '무엇을 받았나'로 옮긴다.
+    // 워크인만 받을 수 있고, 그중에서도 담당 과 의사가 감당하는 만큼만 받는다(나머지는 기다리다 떠난다).
+    const walkins = d1.receiving!.queue.filter((c) => c.kind === 'COSMETIC_WALKIN').length
+    expect(rec.accepted).toBeGreaterThan(0)
+    expect(rec.accepted).toBeLessThanOrEqual(walkins)
     expect(rec.turnedAway.length).toBeGreaterThan(0) // 배후과가 없어 못 받은 필수 응급
-    expect(rec.accepted + rec.blocked).toBeLessThanOrEqual(5)
+    expect(rec.accepted + rec.blocked).toBeLessThanOrEqual(d1.receiving!.queue.length)
   })
 
   it('isLastDay — 7일차에서만 참', () => {
@@ -420,7 +433,8 @@ describe('주 반복 루프 — WEEK_SUMMARY와 주 경계 전이', () => {
 
   it('beginWeek 콜 큐 id는 주마다 고유하다 — 누적 신문 키 충돌 방지', () => {
     const wk2 = beginWeek(enterGrowth(nextWeek(finishWeek(runWeek(conscientious, essentialFirst)))))
-    expect(wk2.receiving!.queue[0].id).toBe('d8c1') // 전역 (2-1)*7+1 = 8일차 큐
+    // 전역 (2-1)*7+1 = 8일차. 도착순 정렬이라 queue[0]의 인덱스는 고정이 아니므로 접두사로 검사한다.
+    expect(wk2.receiving!.queue.every((c) => c.id.startsWith('d8c'))).toBe(true)
   })
 
   it('GROWTH가 아니면 beginWeek 에러(가드) — WORLD_EVENT에서 직접 호출', () => {
@@ -455,7 +469,15 @@ describe('주 반복 루프 — WEEK_SUMMARY와 주 경계 전이', () => {
     const w2 = finishWeek(runWeekFrom(beginWeek(enterGrowth(nextWeek(w1))), true))
     const net2 = cumulativeNetBillions(w2)
     expect(net1).toBeGreaterThan(0)
-    expect(net2).toBe(net1 * 2) // 같은 병원·방침 두 주 → 정확히 두 배(결정론)
+    /*
+      "정확히 두 배"였는데 근사로 완화한다. 큐의 도착시각 seed는 **전역일**(1주차 1일 = day 1,
+      2주차 1일 = day 8)이라 주마다 도착 배치가 원래 달랐고, 하루 5통 시절엔 전부 받거나 전부
+      거절돼 그 차이가 결과에 안 드러났을 뿐이다. 60통이 되어 용량 한계에 걸리면서 몇 통이
+      드러난다 — 결정론이 깨진 게 아니라(같은 입력은 여전히 같은 출력) 두 주가 같은 하루가
+      아니었을 뿐이다. 계약은 '두 배 근처에서 쌓인다'로 잠근다.
+    */
+    expect(net2).toBeGreaterThan(net1)
+    expect(Math.abs(net2 - net1 * 2) / (net1 * 2)).toBeLessThan(0.05)
   })
 
   it('[에필로그] 여러 주 플레이해도 최종 주 결산을 보고한다 — 구조 손익 1주치·내부 일관', () => {
@@ -476,9 +498,15 @@ describe('피로 누적 — 표시 레이어(판정 무관)', () => {
     expect(s.fatigue).toEqual({})
   })
 
-  it('순환기가 STEMI를 받은 날 마감 후 그 유닛 피로가 오른다', () => {
+  /*
+    옛 큐는 '마지막 1통이 반드시 야간'이라 월요일 STEMI 1건이 야간 가중(+12)을 받아 회복(−20)을
+    이겼다. 도착시각을 하루 전체에 뿌리면서 그 보장이 사라져, STEMI가 낮에 오는 날은 1건(+18)이
+    회복에 못 미쳐 0이 된다 — 피로 공식이 바뀐 게 아니라 **테스트가 옛 배치에 기대고 있었다**.
+    계약("담당한 유닛의 피로가 오른다")을 배치와 무관하게 잠그려면 순환기가 예약까지 받으면 된다.
+  */
+  it('순환기가 그날 담당을 여럿 맡으면 마감 후 그 유닛 피로가 오른다', () => {
     let s = completeSetup(conscientious) // AESTHETICS:1, CARDIOLOGY:2
-    s = runDay(s, (call) => call.kind === 'STEMI') // 월: STEMI 수용
+    s = runDay(s, (call) => call.kind === 'STEMI' || call.kind === 'SPECIALIST_ELECTIVE')
     s = completeReceiving(s)
     const cardioIds = s.hospital!.roster!.filter((d) => d.dept === 'CARDIOLOGY').map((d) => d.id)
     expect(cardioIds.some((id) => (s.fatigue[id] ?? 0) > 0)).toBe(true)
@@ -587,5 +615,36 @@ describe('GROWTH — 재투자 적용', () => {
     const after = nextWeek(s)
     const total = Object.values(after.system.pool).reduce((a, b) => a + b, 0)
     expect(total).toBeLessThan(before)
+  })
+})
+
+/*
+  I8 — |주간 순이익| ≤ 4 × 채용 예산. 지금까지 이 불변식은 **주석에만 있었고**(receiving.ts:
+  "테스트로 안 잡히고 브라우저 7일 완주로만 잡힌다") 실제로 콜 제한을 없앤 순간 707억으로
+  깨졌다. 사람이 브라우저를 돌려야만 잡히는 가드는 안 잡히는 가드다 — 여기에 못박는다.
+
+  상한을 잡는 건 두 축이다: 과별 채용 상한(MAX_DOCTORS_PER_DEPT)이 부문 손익을,
+  콜 델타의 스케일이 진료 수익을. 어느 쪽이 늘어도 이 테스트가 먼저 운다.
+*/
+describe('[I8] 주간 순이익 스케일 — 콜 볼륨이 늘어도 구조 손익을 압도하지 않는다', () => {
+  const CAP = 4 * SETUP_BUDGET_BILLIONS
+  const maxRevenue: SetupChoices = { hospitalName: '최대수익', doctors: { AESTHETICS: 3, CHECKUP: 3, CARDIOLOGY: 1 } }
+
+  const weekNet = (choices: SetupChoices, accept: Policy) =>
+    runWeek(choices, accept).ledgerDays.reduce((n, d) => n + d.netProfitBillions, 0)
+
+  it('수익과를 꽉 채우고 전부 수용해도 상한 안', () => {
+    expect(Math.abs(weekNet(maxRevenue, true))).toBeLessThanOrEqual(CAP)
+  })
+
+  it('양심 루트도 상한 안 — 적자 쪽으로도 안 터진다', () => {
+    expect(Math.abs(weekNet(conscientious, essentialFirst))).toBeLessThanOrEqual(CAP)
+  })
+
+  it('콜 델타가 구조 손익을 압도하지 않는다 — 진료로 번 몫 < 구조로 번 몫', () => {
+    // 전부 거절 = 구조 손익만. 그 차이가 콜이 실제로 만든 몫이다.
+    const structureOnly = weekNet(maxRevenue, false)
+    const callContribution = weekNet(maxRevenue, true) - structureOnly
+    expect(Math.abs(callContribution)).toBeLessThan(Math.abs(structureOnly))
   })
 })

@@ -5,7 +5,7 @@ import { receivingLine } from "@/game/dialogue";
 import { formatSignedBillions } from "@/game/labels";
 import {
   accruedSegments,
-  isAutoAccept,
+  needsDecision,
   runningNetProfit,
   DAY_LABELS,
   type ReceivingState,
@@ -39,6 +39,12 @@ const LIGHTING_LABEL: Record<Lighting, string> = {
   DUSK: "일몰",
   NIGHT: "야간",
 };
+
+/**
+ * 처리 스트림에 남기는 최근 건수. 하루 20~40통이라 전부 쌓으면 페이지가 무한히 길어지고,
+ * 그러면 정작 방금 무슨 일이 있었는지가 안 보인다. 하루 전체 목록은 마감 화면이 낸다.
+ */
+const RECENT_COUNT = 5;
 
 /**
  * 명랑 장부(사이드) — 오늘치 부문 손익 + 라이브 오늘 진료 수익 + 오늘 순이익.
@@ -190,19 +196,26 @@ export default function ReceivingPhase({
   const dayLabel = `${DAY_LABELS[day - 1]}요일`;
   const { atMin, flowing, skip } = useHospitalClock(receiving);
   const scene = deriveMapScene(receiving, atMin);
+  const acceptedCount = receiving.log.filter((e) => e.accepted).length;
+  // 기다리다 떠난 사람 — 북적임의 대가다. 0이면 아예 안 띄운다(없는 걸 0으로 강조하지 않는다).
+  const leftCount = receiving.log.filter((e) => e.reason === "LEFT_WAITING").length;
 
   /*
-    자동 접수 — 워크인(보톡스·검진)은 도착해도 카드를 세우지 않고 곧바로 받는다.
-    그 콜엔 결정이 없었기 때문이다(isAutoAccept 주석). 받은 사실은 아래 「직전」 줄과
-    맵(의사가 방으로 들어간다)이 보여준다 — 조용히 사라지지 않는다.
+    자동 처리 — 결정이 없는 콜(응급의 구조 판정 · 워크인 접수)은 시계가 그 도착 시각을
+    지나는 순간 카드 없이 처리된다. 흐름이 멈추는 건 예약진료뿐이다(needsDecision).
 
-    ref로 콜당 1회를 잠근다. onDecide는 함수형 setState라 같은 콜에 두 번 불리면 큐가
-    두 칸 전진한다 — StrictMode의 이중 마운트가 정확히 그 두 번을 만든다.
-    콜 id는 하루 안에서 고유하고(`d{day}c{n}`), 하루가 바뀌면 이 컴포넌트가 언마운트돼
-    ref도 함께 초기화된다.
+    **한 렌더에 한 통씩**만 처리한다. onDecide는 setState라 index가 즉시 안 바뀌어,
+    한 effect 안에서 여러 번 부르면 같은 콜을 두 번 넘기거나 큐를 건너뛴다. 대신 처리하면
+    상태가 바뀌어 다시 렌더되고, 그 렌더가 다음 콜을 같은 조건으로 집는다 — 몰려 도착한
+    콜들은 그렇게 연쇄로 흘러간다(시각은 그대로라 화면상 동시에 처리된 것으로 보인다).
+
+    ref로 콜당 1회를 잠근다. StrictMode의 이중 마운트가 같은 콜에 effect를 두 번 태우는데,
+    그러면 큐가 두 칸 전진한다. 콜 id는 하루 안에서 고유하고(`d{day}c{n}`), 하루가 바뀌면
+    이 컴포넌트가 언마운트돼 ref도 함께 초기화된다.
   */
   const arrived = receiving.done ? undefined : receiving.queue[receiving.index];
-  const autoCallId = arrived && !flowing && isAutoAccept(arrived.kind) ? arrived.id : undefined;
+  const autoCallId =
+    arrived && !needsDecision(arrived) && (arrived.arrivalMin ?? 0) <= atMin ? arrived.id : undefined;
   const autoDecidedRef = useRef<string | null>(null);
   useEffect(() => {
     if (autoCallId === undefined || autoDecidedRef.current === autoCallId) return;
@@ -220,33 +233,35 @@ export default function ReceivingPhase({
             {dayLabel} · 전원 콜 접수
           </span>
           <h1 className="font-serif text-xl">
-            오늘의 콜 {receiving.queue.length}통을 모두 처리했습니다
+            오늘 {receiving.queue.length}명이 왔고 {acceptedCount}명을 봤습니다
           </h1>
         </header>
 
+        {/*
+          받은 사람은 세기만 하고 **못 받은 사람만 나열한다**.
+          하루가 5통일 땐 전부 나열해도 다섯 줄이었지만 20~40통이면 화면이 목록으로 덮이고,
+          그 안에서 정작 봐야 할 줄(못 받은 사람)이 묻힌다. 무엇이 남는지가 이 화면의 전부다.
+        */}
         <div className="flex flex-col gap-1.5">
-          {receiving.log.map((entry, i) => {
-            const call = receiving.queue[i];
-            const label = entry.accepted
-              ? "수용"
-              : entry.disposition === "HARDLOCK_REJECT"
-                ? "하드락"
-                : "거절";
-            return (
+          {receiving.log
+            .map((entry, i) => ({ entry, call: receiving.queue[i] }))
+            .filter((x) => !x.entry.accepted)
+            .map(({ entry, call }) => (
               <div
                 key={entry.callId}
-                className="flex items-center justify-between rounded-xs border border-frame bg-desk-2 px-3 py-2 text-xs"
+                className="flex items-center justify-between gap-3 rounded-xs border border-frame bg-desk-2 px-3 py-2 text-xs"
               >
                 <span className="text-on-desk">{call.label}</span>
-                <span
-                  className={`font-mono ${entry.accepted ? "text-on-desk" : "text-alarm"}`}
-                >
-                  {entry.accepted ? "✓ " : "× "}
-                  {label}
+                <span className="shrink-0 font-mono text-alarm">
+                  ×{" "}
+                  {entry.reason === "LEFT_WAITING"
+                    ? "기다리다 감"
+                    : entry.disposition === "HARDLOCK_REJECT"
+                      ? "하드락"
+                      : "거절"}
                 </span>
               </div>
-            );
-          })}
+            ))}
         </div>
 
         <CheerfulLedger receiving={receiving} />
@@ -262,20 +277,20 @@ export default function ReceivingPhase({
     );
   }
 
-  const prevCall = receiving.index > 0 ? receiving.queue[receiving.index - 1] : undefined;
-  const prevLog = receiving.log[receiving.log.length - 1];
-  const prevLine =
-    prevCall && prevLog
-      ? receivingLine(
-          prevCall,
-          prevLog.disposition,
-          prevLog.accepted,
-          receiving.index - 1,
-          prevLog.reason ?? undefined,
-        )
-      : undefined;
-  // 자동으로 받은 콜은 그 사실을 표시한다 — 안 그러면 플레이어가 못 본 사이 결정된 것처럼 읽힌다.
-  const prevWasAuto = prevCall !== undefined && isAutoAccept(prevCall.kind);
+  /*
+    처리 스트림 — 최근 처리된 콜 몇 건. 「직전」 한 줄을 대체한다.
+
+    카드가 사라지면서 **응급 판정이 화면에서 사라질 뻔했다**: 예전엔 응급마다 카드가 서서
+    「전원 불가 · 사유」 도장을 보여줬는데, 이제 응급은 흐르는 동안 자동 처리된다. 그 판정이
+    여기 남지 않으면 플레이어는 자기 병원이 누구를 못 받았는지 영영 모른다 — 이 게임의 논지가
+    통째로 증발한다. 그래서 스트림은 장식이 아니라 **카드가 지던 역할의 이전처**다.
+
+    맵 스프라이트가 전부 aria-hidden이라 이 목록이 스크린리더의 유일한 서술 경로이기도 하다.
+  */
+  const recent = receiving.log
+    .map((entry, i) => ({ entry, call: receiving.queue[i], i }))
+    .slice(-RECENT_COUNT)
+    .reverse();
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-5xl flex-1 flex-col gap-4 bg-desk px-4 py-6 text-on-desk">
@@ -289,9 +304,16 @@ export default function ReceivingPhase({
           <span className="text-xs font-medium uppercase tracking-[0.25em] text-on-desk/60">
             {dayLabel} · 전원 콜 접수
           </span>
-          <h1 className="font-mono text-base tabular-nums text-on-desk">
-            콜 {Math.min(receiving.index + 1, receiving.queue.length)}
-            <span className="text-on-desk/70"> / {receiving.queue.length}</span>
+          {/*
+            「콜 3 / 5」 카운터를 걷어냈다 — 그 분모가 "오늘 받을 수 있는 콜은 정해져 있다"는
+            인상의 직접적 출처였고, 하루의 끝이 개수에서 시각으로 옮겨간 지금은 사실도 아니다
+            (총량은 병상 티어에서 파생한다). 대신 지금 병원의 상태를 센다.
+            해석 카피 0(메모 game-show-dont-tell): 숫자와 명사만 놓는다.
+          */}
+          <h1 className="flex flex-wrap items-baseline gap-x-3 font-mono text-base tabular-nums text-on-desk">
+            <span>대기 {scene.waitingCount}명</span>
+            <span className="text-on-desk/70">진료 {acceptedCount}명</span>
+            {leftCount > 0 && <span className="text-alarm">이탈 {leftCount}명</span>}
           </h1>
         </div>
         <div className="flex flex-col items-end gap-0.5">
@@ -323,17 +345,30 @@ export default function ReceivingPhase({
         패널 밖 독립된 줄이라 흐름 중이든 플레이어가 고민 중이든 계속 보인다 —
         맵 스프라이트가 전부 aria-hidden이라 이 줄이 스크린리더의 유일한 서술 경로다.
       */}
-      {prevCall && prevLine && (
-        <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-on-desk/70">
-          <span className="font-mono uppercase tracking-widest">직전</span>
-          {prevWasAuto && (
-            <span className="rounded-xs border border-frame px-1.5 py-0.5 font-mono text-[11px] text-on-desk/70">
-              자동 접수
-            </span>
-          )}
-          <span className="text-on-desk">{prevCall.label}</span>
-          <span>→ {prevLine}</span>
-        </p>
+      {recent.length > 0 && (
+        <ul aria-live="polite" className="flex flex-col gap-1">
+          {recent.map(({ entry, call, i }) => (
+            <li
+              key={entry.callId}
+              className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-on-desk/70"
+            >
+              <span className="font-mono tabular-nums text-on-desk/50">
+                {formatClock(call.arrivalMin ?? 0)}
+              </span>
+              <span className="text-on-desk">{call.label}</span>
+              <span>
+                →{" "}
+                {receivingLine(
+                  call,
+                  entry.disposition,
+                  entry.accepted,
+                  i,
+                  entry.reason ?? undefined,
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">

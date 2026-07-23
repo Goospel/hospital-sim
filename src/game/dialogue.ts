@@ -139,10 +139,15 @@ const RECEIVE_NIGHT_BY_SPECIALTY: Record<Specialty, string> = {
  * NO_FREE_SPECIALIST(그 과 의사가 다 진료 중)가 이제 실제 사유로 발생한다(점유 판정 = Task 5) —
  * 배후과 예약이 그 과 의사를 점유해 같은 날 응급을 밀어낸 상황이다. 병상 축(NO_BED)은 제거됐다.
  */
-const RECEIVE_BY_STRUCTURAL_REASON: Record<'NO_ER_ONCALL' | 'ER_OVERCROWDED' | 'NO_FREE_SPECIALIST', string> = {
+const RECEIVE_BY_STRUCTURAL_REASON: Record<
+  'NO_ER_ONCALL' | 'ER_OVERCROWDED' | 'NO_FREE_SPECIALIST' | 'LEFT_WAITING', string
+> = {
   NO_ER_ONCALL: '지금 응급실 당직이 없습니다. 접수 자체가 안 됩니다.',
   ER_OVERCROWDED: '자리는 있어도 응급실이 꽉 차서 지금은 못 받습니다.',
   NO_FREE_SPECIALIST: '그 과 의사가 지금 다른 진료 중입니다. 예약이 밀려 있어서요.',
+  // 거절한 적이 없다는 게 이 대사의 전부다 — 자리는 났고, 그게 늦었을 뿐이다.
+  // 해석 0(메모 game-show-dont-tell): "죽었다"고도 "당신 탓"이라고도 쓰지 않는다.
+  LEFT_WAITING: '기다리시다 다른 병원으로 갔습니다. 자리는 조금 뒤에 났습니다.',
 }
 
 /**
@@ -158,6 +163,9 @@ export function receivingLine(
   _seed = 0,
   reason?: RejectionReason,
 ): string {
+  // 기다리다 떠난 건 disposition보다 먼저 가른다 — 선택진료(CHOICE)도 이탈하는데, 그때
+  // RECEIVE_REJECT로 떨어지면 "제가 보냈습니다"가 되어 대사가 거짓말을 한다(안 보냈다, 떠났다).
+  if (reason === 'LEFT_WAITING') return RECEIVE_BY_STRUCTURAL_REASON.LEFT_WAITING
   if (disposition === 'HARDLOCK_REJECT') {
     const spec = call.patient.requiredSpecialty
     if (reason) {
