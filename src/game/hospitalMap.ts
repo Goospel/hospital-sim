@@ -1,7 +1,7 @@
 import type { DeptKey, Doctor } from './types'
 import type { ReceivingState } from './receiving' // type-only — 런타임 순환 없음
 import { DEPARTMENTS } from './setup'
-import { NIGHT_START_MIN } from './daysim'
+import { DAY_LENGTH_MIN, NIGHT_START_MIN } from './daysim'
 
 // 병원 맵 표시 레이어 — 순수·결정론. 판정·경제에 절대 닿지 않는다(0 침습).
 // 새 게임 상태 0개: ReceivingState 하나에서 그 순간의 장면을 파생만 한다.
@@ -137,27 +137,58 @@ export function deriveMapScene(receiving: ReceivingState, atMin: number): MapSce
   return { rooms, beds, avatars, lighting, clockMin: atMin }
 }
 
-// ── 빨리감기(연출 전용) ────────────────────────────────────────────────
+// ── 시계 흐름(연출 전용) ────────────────────────────────────────────────
 // 게임 상태와 무관하다. 중간에 끊기든 스킵하든 판정에 영향 0.
 
-/** 한 구간을 몇 장면으로 쪼갤지. 사이는 CSS transition이 걷는 걸로 메운다(rAF·게임 루프 없음). */
-export const FAST_FORWARD_STEPS = 12
-/** 한 구간 재생의 상한(ms) — 아침 첫 콜의 6시간을 그대로 기다리지 않는다. */
-export const FAST_FORWARD_MS_CAP = 1500
-/** 게임 1분당 재생 시간(ms). 캡에 걸리기 전까지는 긴 점프가 길게 보인다. */
-export const FAST_FORWARD_MS_PER_MIN = 4
+/**
+ * 게임 1분당 재생 시간(ms). **캡이 없다.**
+ *
+ * 캡을 두면 "게임 1분 = 50ms" 계약이 긴 구간에서만 깨져, 같은 길이의 구간이
+ * 어떤 날은 6초 어떤 날은 1.5초가 된다 — 화면 속도가 게임 시간과 어긋나는 게
+ * 긴 구간을 기다리는 것보다 나쁘다. 긴 구간의 탈출구는 건너뛰기다.
+ */
+export const MS_PER_GAME_MIN = 50
+/** 실시간 틱 간격(ms). 100ms마다 2게임분 → 시계 표시가 초당 10번 갱신돼 '흐르는' 것으로 읽힌다. */
+export const CLOCK_TICK_MS = 100
+
+/** 이 구간 재생에 쓸 총 시간(ms). 되감기·0구간은 0. */
+export function flowDurationMs(from: number, to: number): number {
+  return Math.max(0, to - from) * MS_PER_GAME_MIN
+}
+
+/**
+ * 이 구간을 몇 프레임으로 쪼갤지 — 항상 1 이상이고 **구간 길이(분)를 넘지 않는다**.
+ *
+ * 상한이 중요하다: steps > 구간분이면 sweepMinutes의 반올림이 같은 분을 두 번 내
+ * 무변화 프레임이 생긴다. MS_PER_GAME_MIN(50) < CLOCK_TICK_MS(100)이라
+ * steps ≈ 구간분/2 로 그 상한 아래에 구조적으로 머문다(테스트가 전 구간 검증).
+ */
+export function flowStepCount(from: number, to: number): number {
+  return Math.max(1, Math.round(flowDurationMs(from, to) / CLOCK_TICK_MS))
+}
+
+/**
+ * 오늘이 **실제로** 끝나는 시각 — 마감(DAY_LENGTH_MIN)과 마지막 진료 종료 중 늦은 쪽.
+ *
+ * 새 숫자를 만들지 않는다: session.ts의 boardedBusyUntilFrom이 이미 이 초과분을
+ * 내일 아침 점유로 넘기고 있다. 구현돼 있고 돌아가고 있는데 화면이 한 번도 안
+ * 보여줬을 뿐이다 — 여기선 그걸 **보이게만** 한다.
+ *
+ * 상한: arrivalMin ≤ 599 + durationMin ≤ 180 = 779(22:59)라 자정을 안 넘는다.
+ */
+export function dayEndMin(busyUntil: Record<string, number>): number {
+  return Math.max(DAY_LENGTH_MIN, ...Object.values(busyUntil))
+}
 
 /**
  * from(제외) → to(포함)를 steps개로 나눈 시각열.
  * 구간이 없거나 steps ≤ 1이면 [to] 하나 — 즉시 점프(prefers-reduced-motion 경로).
+ *
+ * ⚠️ steps > (to − from)이면 반올림이 같은 분을 여러 번 낸다(무변화 프레임).
+ * 호출부는 flowStepCount를 쓴다 — 그게 이 상한을 구조적으로 지킨다.
  */
 export function sweepMinutes(from: number, to: number, steps: number): number[] {
   if (to <= from || steps <= 1) return [to]
   const span = to - from
   return Array.from({ length: steps }, (_, i) => from + Math.round((span * (i + 1)) / steps))
-}
-
-/** 이 구간 재생에 쓸 총 시간(ms). */
-export function sweepDurationMs(from: number, to: number): number {
-  return Math.min(FAST_FORWARD_MS_CAP, Math.max(0, to - from) * FAST_FORWARD_MS_PER_MIN)
 }

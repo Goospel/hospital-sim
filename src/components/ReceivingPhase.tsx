@@ -20,7 +20,7 @@ import SegmentTree from "./SegmentTree";
 import DoctorRoster from "./DoctorRoster";
 import HospitalMap from "./HospitalMap";
 import { deriveMapScene } from "@/game/hospitalMap";
-import { useFastForwardClock } from "./useFastForwardClock";
+import { useHospitalClock } from "./useHospitalClock";
 
 /** 09:00(DAY_OPEN_MIN) 기준 하루 시각(분)을 HH:MM으로. */
 function formatClock(clockMin: number): string {
@@ -152,7 +152,7 @@ export default function ReceivingPhase({
   onContinue: () => void;
 }) {
   const dayLabel = `${DAY_LABELS[day - 1]}요일`;
-  const { atMin, sweeping, skip } = useFastForwardClock(receiving);
+  const { atMin, flowing, skip } = useHospitalClock(receiving);
   const scene = deriveMapScene(receiving, atMin);
   if (receiving.done) {
     return (
@@ -247,8 +247,8 @@ export default function ReceivingPhase({
 
       {/* 맵이 주인공. 재생 중 아무 데나 누르면 즉시 건너뛴다(반복 플레이 필수). */}
       <div
-        onClick={sweeping ? skip : undefined}
-        className={sweeping ? "cursor-pointer" : undefined}
+        onClick={flowing ? skip : undefined}
+        className={flowing ? "cursor-pointer" : undefined}
         role="presentation"
       >
         <HospitalMap scene={scene} />
