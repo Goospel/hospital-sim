@@ -28,7 +28,7 @@ function runDay(state: SessionState, accept: Policy) {
   while (!s.receiving!.done) {
     const call = s.receiving!.queue[s.receiving!.index]
     const yes = typeof accept === 'function' ? accept(call) : accept
-    s = { ...s, receiving: decide(s.receiving!, yes) }
+    s = { ...s, receiving: decide(s.receiving!, yes ? 'ACCEPT' : 'DECLINE') }
   }
   return s
 }
@@ -327,8 +327,8 @@ describe('통합 불변식', () => {
     const s = completeSetup(collaborator)
     // STEMI 콜 직전까지 거절로 흘려보낸 뒤(도착순 큐 위치는 재배치에 안 묶는다) accept 시도
     let r = s.receiving!
-    while (r.queue[r.index].kind !== 'STEMI') r = decide(r, false)
-    const afterStemi = decide(r, true)
+    while (r.queue[r.index].kind !== 'STEMI') r = decide(r, 'DECLINE')
+    const afterStemi = decide(r, 'ACCEPT')
     expect(afterStemi.log[afterStemi.log.length - 1].disposition).toBe('HARDLOCK_REJECT')
   })
 })

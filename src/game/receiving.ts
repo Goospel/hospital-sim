@@ -539,7 +539,10 @@ export function initReceiving(
  * 수용하면 담당 과(handlingDept)의 자유 의사를 `arrivalMin + durationMin`까지 점유한다.
  * 그 과에 자유 의사가 없으면(미채용) 아무도 점유하지 않는다(pickAssignee는 자유 의사가 있을 때만).
  */
-export function decide(state: ReceivingState, accept: boolean): ReceivingState {
+/** 플레이어(또는 UI 타임아웃)가 콜 하나에 내리는 액션. TIMEOUT은 카운트다운 만료 — UI만 만들고 코어는 받기만 한다. */
+export type DecisionAction = 'ACCEPT' | 'DECLINE' | 'TIMEOUT'
+
+export function decide(state: ReceivingState, action: DecisionAction): ReceivingState {
   if (state.done) {
     throw new Error('receiving already done')
   }
@@ -553,7 +556,8 @@ export function decide(state: ReceivingState, accept: boolean): ReceivingState {
   const start = startMinFor(call, state.busyUntil, roster)
   const canStart = typeof start === 'number'
 
-  // 응급은 accept 무관 자동(하드락이 없으면 수용). 선택진료는 accept + 시작 가능해야 수용.
+  const accept = action === 'ACCEPT'
+  // ⚠️ 과도기(동작 보존): 응급은 아직 액션 무관 자동 판정이다 — 플레이어 의사로 바꾸는 건 다음 슬라이스.
   const effectiveAccept = disposition === 'CHOICE' && (isElective(call.kind) ? accept && canStart : true)
 
   // 수용한 콜은 담당 과 의사를 **시작 시각부터** 점유한다 — 기다린 콜은 도착이 아니라 시작이 기준이다.

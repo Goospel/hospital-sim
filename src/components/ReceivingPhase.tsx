@@ -10,6 +10,7 @@ import {
   unacceptedGroups,
   DAY_LABELS,
   type ReceivingState,
+  type DecisionAction,
 } from "@/game/receiving";
 import { DAY_OPEN_MIN } from "@/game/daysim";
 import type { NewsItem } from "@/game/news";
@@ -153,7 +154,7 @@ export default function ReceivingPhase({
   day: number;
   news: NewsItem[];
   fatigue: Record<string, number>;
-  onDecide: (accept: boolean) => void;
+  onDecide: (action: DecisionAction) => void;
   onContinue: () => void;
 }) {
   const dayLabel = `${DAY_LABELS[day - 1]}요일`;
@@ -183,7 +184,7 @@ export default function ReceivingPhase({
   useEffect(() => {
     if (autoCallId === undefined || autoDecidedRef.current === autoCallId) return;
     autoDecidedRef.current = autoCallId;
-    onDecide(true);
+    onDecide('ACCEPT');
   }, [autoCallId, onDecide]);
 
   // 마감이어도 **흐르는 동안에는** 맵을 계속 보여준다 — 19시를 넘겨 마지막 진료가

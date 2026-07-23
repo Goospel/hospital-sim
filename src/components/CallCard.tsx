@@ -10,6 +10,7 @@ import {
   startMinFor,
   CALL_ECONOMICS,
   type ReceivingState,
+  type DecisionAction,
 } from "@/game/receiving";
 import { freeDoctorsOfDept, pickAssignee } from "@/game/daysim";
 import { handlingDept } from "@/game/doctor";
@@ -68,7 +69,7 @@ export default function CallCard({
   onDecide,
 }: {
   receiving: ReceivingState;
-  onDecide: (accept: boolean) => void;
+  onDecide: (action: DecisionAction) => void;
 }) {
   const cardRef = useRef<HTMLElement>(null);
 
@@ -159,7 +160,7 @@ export default function CallCard({
         <div className="mt-auto flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={() => onDecide(true)}
+            onClick={() => onDecide('ACCEPT')}
             disabled={!canStart}
             aria-label={`${call.label} 받기`}
             className="flex-1 rounded-xs bg-go py-3 text-sm font-semibold text-paper transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-desk disabled:text-on-desk/70 disabled:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
@@ -168,7 +169,7 @@ export default function CallCard({
           </button>
           <button
             type="button"
-            onClick={() => onDecide(false)}
+            onClick={() => onDecide('DECLINE')}
             aria-label={`${call.label} 보내기`}
             className="flex-1 rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >
@@ -176,8 +177,8 @@ export default function CallCard({
           </button>
         </div>
       ) : (
-        // 응급 — decide가 accept를 무시하고 자동 판정한다. 여기선 그 결과만 먼저 보여주고
-        // '계속'이 실제 decide(true)를 부른다(전개는 그대로, accept 값은 무의미).
+        // 응급 — decide가 action을 무시하고 자동 판정한다. 여기선 그 결과만 먼저 보여주고
+        // '계속'이 실제 decide(state, 'ACCEPT')를 부른다(전개는 그대로, action 값은 무의미).
         <div className="mt-auto flex flex-col gap-3">
           {/*
             판정 표시 — 색 단독 신호를 금지한다(스펙 §7). 수용은 체크 사인 + "수용" 글자로,
@@ -201,7 +202,7 @@ export default function CallCard({
           )}
           <button
             type="button"
-            onClick={() => onDecide(true)}
+            onClick={() => onDecide('ACCEPT')}
             className="rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
           >
             계속

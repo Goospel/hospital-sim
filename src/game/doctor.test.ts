@@ -60,7 +60,7 @@ describe('doctorCaseloads — 받은 콜을 유닛에 분배', () => {
 
   it('받은 콜만 계상하고 담당 과 유닛에 균등 분배한다', () => {
     let r = initReceiving(hospital, createCallQueue(1)) // 자리 3
-    while (!r.done) r = decide(r, r.queue[r.index].kind === 'STEMI') // STEMI만 수용
+    while (!r.done) r = decide(r, r.queue[r.index].kind === 'STEMI' ? 'ACCEPT' : 'DECLINE') // STEMI만 수용
     const { total } = doctorCaseloads(roster, r)
     const per = roster.map((d) => total.get(d.id)!)
     expect(per.reduce((a, b) => a + b, 0)).toBe(1) // 월요일 STEMI 1통(나머지 한 자리는 순환기 예약으로 바뀜)
