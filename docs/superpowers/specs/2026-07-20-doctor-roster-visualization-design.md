@@ -7,7 +7,7 @@ tags:
 
 > **상태**: 확정 설계 (2026-07-20, brainstorming). 다음 = writing-plans로 구현 계획.
 > **맥락**: 지금 의사는 과별 **숫자**(`SetupChoices.doctors`)일 뿐이고 개인 엔티티도 피로 개념도 없다([setup.ts](../../../src/game/setup.ts) · [types.ts](../../../src/game/types.ts)). 부하는 병원 단위(하루 콜 5 vs 자리 3)로만 표현된다. 이 스펙은 채용 인원수를 **이름 붙은 의사 개인**으로 태우고, 플레이 중 각자의 **담당 환자 수 + 피로도**를 보여주는 **순수 표시 레이어**를 얹는다. 판정·경제·생사는 무변경(0 침습).
-> **주제 근거**: [player-is-multivantage-not-just-doctor 메모](경영자 vantage) · [game-show-dont-tell 메모]. 이 레이어는 "문제는 개인이 아니라 시스템"과 충돌하지 않는다 — **시스템의 부하가 개인의 몸에 남기는 자국**을 보이게 해 그 논지를 강화한다.
+> **주제 근거**: `player-is-multivantage-not-just-doctor` 메모(경영자 vantage) · [game-show-dont-tell 메모]. 이 레이어는 "문제는 개인이 아니라 시스템"과 충돌하지 않는다 — **시스템의 부하가 개인의 몸에 남기는 자국**을 보이게 해 그 논지를 강화한다.
 
 ---
 
