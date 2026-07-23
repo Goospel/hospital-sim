@@ -324,3 +324,33 @@ describe('wanderTiming — 유휴 배회 박자', () => {
     }
   })
 })
+
+import { ambientWalkers } from './hospitalMap'
+
+describe('ambientWalkers — 배경 보행자(순수 장식)', () => {
+  it('주간 5 · 석양 2 · 야간 0 — 밤에 텅 비는 것과 소등이 같은 출처다', () => {
+    expect(ambientWalkers('DAY')).toHaveLength(5)
+    expect(ambientWalkers('DUSK')).toHaveLength(2)
+    expect(ambientWalkers('NIGHT')).toHaveLength(0)
+  })
+
+  it('같은 조명은 항상 같은 목록(RNG 0)', () => {
+    expect(ambientWalkers('DAY')).toEqual(ambientWalkers('DAY'))
+  })
+
+  it('id가 고유하고, 인원이 줄어도 남는 사람은 key를 유지한다(리마운트로 걸음이 끊기지 않게)', () => {
+    const day = ambientWalkers('DAY')
+    expect(new Set(day.map((w) => w.id)).size).toBe(day.length)
+    expect(ambientWalkers('DUSK').map((w) => w.id)).toEqual(day.slice(0, 2).map((w) => w.id))
+  })
+
+  it('lane은 복도 3줄 안(0|1|2)이고 지연·주기가 범위 안', () => {
+    for (const w of ambientWalkers('DAY')) {
+      expect([0, 1, 2]).toContain(w.lane)
+      expect(w.delayMs).toBeGreaterThanOrEqual(0)
+      expect(w.delayMs).toBeLessThan(8000)
+      expect(w.durationMs).toBeGreaterThanOrEqual(9000)
+      expect(w.durationMs).toBeLessThan(16000)
+    }
+  })
+})

@@ -216,3 +216,40 @@ export function wanderTiming(id: string): { delayMs: number; durationMs: number 
     durationMs: 2600 + Math.floor(seededUnit(h ^ 0x5bf03635) * 1600),
   }
 }
+
+/** 배경 보행자 한 명 — **게임 상태가 아니다**(순수 장식). 컴포넌트가 CSS 파라미터로 쓴다. */
+export interface AmbientWalker {
+  id: string
+  delayMs: number
+  durationMs: number
+  /** 복도 안 세로 줄 0|1|2 — 컴포넌트가 px 위치로 옮긴다. */
+  lane: number
+}
+
+/**
+ * 조명별 배경 보행자 수. 밤에 텅 비는 것과 방이 꺼지는 것이 **같은 출처**(lighting)에서
+ * 나온다 — 두 곳에 '밤'을 적으면 한쪽이 조용히 낡는다.
+ */
+const AMBIENT_COUNT: Record<Lighting, number> = { DAY: 5, DUSK: 2, NIGHT: 0 }
+
+/**
+ * 배경 보행자 목록 — 콜과 무관한 익명 통행이다.
+ *
+ * MapScene에 넣지 않는 이유: 이건 게임 상태 파생이 아니라 장식이라, avatars에 섞으면
+ * (a) 「보이는 것 = 게임이 모델링하는 것」이 깨지고 (b) deriveMapScene의 테스트가
+ * 장식을 검증하게 되고 (c) 복도 슬롯 카운터를 장식이 밀어낸다.
+ *
+ * id를 인덱스로 고정하는 이유: 조명이 바뀌어 인원이 줄어도 남는 사람은 같은 React key를
+ * 유지해야 리마운트로 걸음이 끊기지 않는다.
+ */
+export function ambientWalkers(lighting: Lighting): AmbientWalker[] {
+  return Array.from({ length: AMBIENT_COUNT[lighting] }, (_, i) => {
+    const h = hashId(`amb-${i}`)
+    return {
+      id: `amb-${i}`,
+      delayMs: Math.floor(seededUnit(h) * 8000),
+      durationMs: 9000 + Math.floor(seededUnit(h ^ 0x2545f491) * 7000),
+      lane: Math.floor(seededUnit(h ^ 0x1b873593) * 3),
+    }
+  })
+}

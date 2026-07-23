@@ -1,6 +1,6 @@
 "use client";
 
-import { wanderTiming, type Lighting, type MapAvatar, type MapScene } from "@/game/hospitalMap";
+import { ambientWalkers, wanderTiming, type Lighting, type MapAvatar, type MapScene } from "@/game/hospitalMap";
 import { BedSprite, DoctorSprite, PatientSprite } from "./PixelSprite";
 
 /**
@@ -90,6 +90,28 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
         {scene.beds.map((bed) => (
           <div key={bed.index} className="h-7 w-7 sm:h-9 sm:w-9">
             <BedSprite occupied={bed.occupantDoctorId !== undefined} />
+          </div>
+        ))}
+      </div>
+
+      {/*
+        배경 보행자 — 콜과 무관한 익명 통행. MapScene에 없다(게임 상태가 아니라 장식).
+        CSS 애니메이션이라 게임 시계가 멈춰도 계속 걷는다 — 결정 대기 중에도 병원이 돈다.
+        불투명도를 낮춰 침대 위의 '진짜' 환자와 구별한다.
+      */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+        {ambientWalkers(scene.lighting).map((w) => (
+          <div
+            key={w.id}
+            className="hm-walker absolute h-4 w-4 -translate-y-1/2 opacity-40 sm:h-5 sm:w-5"
+            style={{
+              // 복도 밴드(ROOMS_H% ~ ROOMS_H+CORRIDOR_H%) 안의 세 줄: 56% / 60% / 64%
+              top: `${ROOMS_H + 4 + w.lane * 4}%`,
+              animationDelay: `${w.delayMs}ms`,
+              animationDuration: `${w.durationMs}ms`,
+            }}
+          >
+            <PatientSprite />
           </div>
         ))}
       </div>

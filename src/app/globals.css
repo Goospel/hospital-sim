@@ -83,3 +83,28 @@ body { font-family: var(--font-sans); }
 @media (prefers-reduced-motion: reduce) {
   .hm-wander { animation: none; }
 }
+
+/* 배경 보행자 — 콜과 무관한 익명 통행. 게임 상태가 아니라 장식이라 aria-hidden이다.
+   transform: translateX(%)를 쓰지 않는 이유: 백분율이 **자기 너비** 기준이라 20px
+   스프라이트가 112%를 가도 22px밖에 안 움직인다. 복도를 가로지르려면 컨테이너 기준인
+   left여야 한다. 이 레이어는 left를 쓰는 다른 애니메이션이 없어 충돌하지 않는다. */
+@keyframes hm-walk {
+  from { left: -8%; }
+  to   { left: 108%; }
+}
+
+.hm-walker {
+  animation-name: hm-walk;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  /* backwards가 필수다 — 없으면 지연(최대 8초) 동안 from이 안 적용돼 left가 auto로
+     남아, 보행자가 화면 왼쪽 끝에 멈춰 선 채로 8초를 서 있는다. */
+  animation-fill-mode: backwards;
+  /* duration·delay는 ambientWalkers가 인라인 style로 준다 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 애니메이션만 끄면 left가 auto가 돼 다섯 명이 왼쪽 끝에 겹쳐 선다.
+     이 층은 존재 이유가 움직임이라 통째로 숨기는 게 맞다. */
+  .hm-walker { display: none; }
+}
