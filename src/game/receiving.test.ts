@@ -3,7 +3,7 @@ import {
   createCallQueue, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
   WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective, isAutoAccept, requiresBackupCare, carriesLawsuitRisk,
-  BACKUP_CARE_KINDS, outpatientForBeds, needsDecision, unacceptedGroups,
+  BACKUP_CARE_KINDS, outpatientForBeds, needsDecision, unacceptedGroups, bumpTarget, canBump,
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
@@ -477,6 +477,29 @@ describe('decide (시간 점유) — 응급 ACCEPT / 선택 점유', () => {
     decide(s, 'ACCEPT')
     expect(s.busyUntil).toEqual({}) // 원본은 그대로
     expect(s.clockMin).toBe(0)
+  })
+})
+
+describe('busyWith — 점유 원인 추적 (스펙 2026-07-24 §3)', () => {
+  it('수용 시 담당의 id에 {callId, kind, deltaManwon}이 실린다', () => {
+    const h = hospitalOf(conscientious) // 순환기 2 — 월요일 예약은 순환기
+    const elective = dayCall('SPECIALIST_ELECTIVE')
+    const after = decide(initReceiving(h, [elective]), 'ACCEPT')
+    const entries = Object.values(after.busyWith)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toEqual({
+      callId: elective.id,
+      kind: 'SPECIALIST_ELECTIVE',
+      deltaManwon: callDelta('SPECIALIST_ELECTIVE'),
+    })
+  })
+  it('미수용이면 busyWith가 비어 있다', () => {
+    const h = hospitalOf(conscientious)
+    const after = decide(initReceiving(h, [dayCall('SPECIALIST_ELECTIVE')]), 'DECLINE')
+    expect(after.busyWith).toEqual({})
+  })
+  it('초기 상태의 busyWith는 빈 맵', () => {
+    expect(initReceiving(hospitalOf(conscientious)).busyWith).toEqual({})
   })
 })
 
@@ -1122,5 +1145,107 @@ describe('unacceptedGroups — 못 받은 콜을 라벨·사유로 접어 횟수
 
   it('빈 로그는 빈 목록이다', () => {
     expect(unacceptedGroups({ queue: [], log: [] })).toEqual([])
+  })
+})
+
+describe('BUMP 판정 — bumpTarget · canBump (스펙 2026-07-24 §3)', () => {
+  const soloCardio = hospitalWith('CARDIOLOGY', 1) // 순환기 1명
+  const stemiDay = () => ({ ...dayCall('STEMI'), nightShift: false })
+  const electiveCardio = () => ({ ...dayCall('SPECIALIST_ELECTIVE'), nightShift: false })
+
+  // 순환기 1명이 예약으로 점유된 상태를 만든다: 예약 콜을 먼저 ACCEPT.
+  function afterElectiveThenStemi() {
+    const q = [electiveCardio(), stemiDay()]
+    return decide(initReceiving(soloCardio, q), 'ACCEPT') // index 0(예약) 수용 → index 1(STEMI)이 현재
+  }
+
+  it('그 과 의사가 예약으로 다 점유면 bumpTarget = 그 의사', () => {
+    const s = afterElectiveThenStemi()
+    const target = bumpTarget(s, s.queue[s.index])
+    expect(target).toBe(rosterOf(soloCardio)[0].id)
+  })
+
+  it('canBump = true — 하드락 아님 + 자유 의사 0 + 선택진료 점유 있음', () => {
+    const s = afterElectiveThenStemi()
+    expect(canBump(s, s.queue[s.index])).toBe(true)
+  })
+
+  it('그 과 의사가 자유면 canBump = false (BUMP 불필요)', () => {
+    const s = initReceiving(soloCardio, [stemiDay()]) // 아무도 점유 안 함
+    expect(canBump(s, s.queue[s.index])).toBe(false)
+    expect(bumpTarget(s, s.queue[s.index])).toBeUndefined()
+  })
+
+  it('그 과 미채용이면 canBump = false (하드락 NO_BACKUP_CARE — 밀어낼 의사 없음)', () => {
+    const noCardio = hospitalOf(collaborator)
+    const s = initReceiving(noCardio, [stemiDay()])
+    expect(canBump(s, s.queue[s.index])).toBe(false)
+    expect(bumpTarget(s, s.queue[s.index])).toBeUndefined()
+  })
+
+  it('점유 원인이 응급이면 canBump = false (응급은 응급을 밀어내지 않는다)', () => {
+    // 순환기 1명이 STEMI로 점유된 상태에서 또 STEMI가 오면, 그 점유는 응급이라 BUMP 불가.
+    const q = [stemiDay(), stemiDay()]
+    const s = decide(initReceiving(soloCardio, q), 'ACCEPT') // index 0(STEMI) 수용 → index 1이 현재
+    expect(canBump(s, s.queue[s.index])).toBe(false)
+    expect(bumpTarget(s, s.queue[s.index])).toBeUndefined()
+  })
+
+  it('야간 당직 공백(하드락)이면 canBump = false — BUMP는 하드락을 못 뚫는다', () => {
+    const nightStemi = { ...dayCall('STEMI'), nightShift: true }
+    const q = [electiveCardio(), nightStemi]
+    const s = decide(initReceiving(soloCardio, q), 'ACCEPT')
+    // 순환기 1명이라 야간엔 NO_NIGHT_BACKUP 하드락 — 예약 점유가 있어도 BUMP 무효
+    expect(canBump(s, s.queue[s.index])).toBe(false)
+  })
+})
+
+describe('BUMP_ACCEPT — 예약 미루고 받기 (스펙 2026-07-24 §3)', () => {
+  const soloCardio = hospitalWith('CARDIOLOGY', 1)
+  const stemiDay = () => ({ ...dayCall('STEMI'), nightShift: false })
+  const electiveCardio = () => ({ ...dayCall('SPECIALIST_ELECTIVE'), nightShift: false })
+
+  function bumped() {
+    const q = [electiveCardio(), stemiDay()]
+    const afterElective = decide(initReceiving(soloCardio, q), 'ACCEPT') // 예약 수용, STEMI가 현재
+    return { before: afterElective, after: decide(afterElective, 'BUMP_ACCEPT') }
+  }
+
+  it('밀어낸 예약은 로그가 BUMPED로 바뀌고 수용에서 빠진다', () => {
+    const { after } = bumped()
+    const electiveEntry = after.log.find((e) => e.callId === 'd1c1' /* electiveCardio id */)
+      ?? after.log[0]
+    expect(after.log[0].accepted).toBe(false)
+    expect(after.log[0].disposition).toBe('BUMPED')
+    expect(after.log[0].reason).toBeNull()
+    expect(electiveEntry.disposition).toBe('BUMPED')
+  })
+
+  it('응급은 수용된다 — 그 의사가 응급으로 재점유', () => {
+    const { after } = bumped()
+    const doctorId = rosterOf(soloCardio)[0].id
+    // 마지막 로그(STEMI)가 accepted, busyWith가 STEMI로 갈렸다
+    expect(after.log[after.log.length - 1].accepted).toBe(true)
+    expect(after.busyWith[doctorId].kind).toBe('STEMI')
+  })
+
+  it('예약 수익은 회수되고 응급 델타가 더해진다', () => {
+    const { before, after } = bumped()
+    // before(예약만 수용) 순이익에서 예약 델타를 빼고 STEMI 델타를 더한 값
+    const expected = before.netProfitDeltaManwon - callDelta('SPECIALIST_ELECTIVE') + callDelta('STEMI')
+    expect(after.netProfitDeltaManwon).toBe(expected)
+  })
+
+  it('BUMP 불가 상태에서 BUMP_ACCEPT는 일반 판정으로 폴백한다(하드락이면 미수용)', () => {
+    const noCardio = hospitalOf(collaborator) // NO_BACKUP_CARE
+    const after = decide(initReceiving(noCardio, [stemiDay()]), 'BUMP_ACCEPT')
+    expect(after.log[0].accepted).toBe(false)
+    expect(after.log[0].disposition).toBe('HARDLOCK_REJECT')
+  })
+
+  it('마감 목록에서 BUMPED는 「예약 중단」으로 접힌다', () => {
+    const { after } = bumped()
+    const groups = unacceptedGroups(after)
+    expect(groups.some((g) => g.outcome === '예약 중단')).toBe(true)
   })
 })

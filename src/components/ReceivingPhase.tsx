@@ -12,7 +12,7 @@ import {
   type ReceivingState,
   type DecisionAction,
 } from "@/game/receiving";
-import { DAY_OPEN_MIN } from "@/game/daysim";
+import { formatClockFromOpen as formatClock } from "@/game/daysim";
 import type { NewsItem } from "@/game/news";
 import SegmentTree from "./SegmentTree";
 import DoctorRoster from "./DoctorRoster";
@@ -20,14 +20,6 @@ import HospitalMap from "./HospitalMap";
 import CallCard from "./CallCard";
 import { deriveMapScene, type Lighting } from "@/game/hospitalMap";
 import { useHospitalClock } from "./useHospitalClock";
-
-/** 09:00(DAY_OPEN_MIN) 기준 하루 시각(분)을 HH:MM으로. */
-function formatClock(clockMin: number): string {
-  const total = DAY_OPEN_MIN + clockMin;
-  const h = Math.floor(total / 60) % 24;
-  const m = total % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
 
 /**
  * 시간대 라벨 — 조명 이모지(☀🌆🌙)를 활자로 바꾼 것.

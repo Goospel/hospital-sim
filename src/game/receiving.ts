@@ -190,7 +190,7 @@ export function canOrderWorkup(kind: CallKind): boolean {
   return CALL_ECONOMICS[kind].priceSetter === 'GOVERNMENT'
 }
 
-export type CallDisposition = 'HARDLOCK_REJECT' | 'CHOICE'
+export type CallDisposition = 'HARDLOCK_REJECT' | 'CHOICE' | 'BUMPED'
 
 /**
  * 이 콜이 **언제** 진료를 시작할 수 있는가 — 대기까지 감안한 시작 시각, 혹은 못 받는 사유.
@@ -236,6 +236,13 @@ export interface ReceivingState {
    * 초기값은 어제 넘어온 점유(boardedBusyUntil) — session.ts의 advanceDay가 어제 마감 초과분을 계산해 넘긴다.
    */
   busyUntil: Record<string, number>
+  /**
+   * 각 유닛이 **무엇 때문에** 점유됐는가 — busyUntil("언제까지")의 짝이다.
+   * BUMP(예약 미루고 받기)가 "밀어낼 선택진료 점유"를 찾고 그 수익을 회수하려면 원인이 필요하다.
+   * 이월 점유(어제 넘어온 boardedBusyUntil)는 원인 콜 정보가 없어 여기 실리지 않는다 —
+   * 그래서 어제 시작한 진료는 오늘 BUMP 대상이 아니다(어제 수익을 오늘 되돌리지 않는다).
+   */
+  busyWith: Record<string, { callId: string; kind: CallKind; deltaManwon: number }>
   netProfitDeltaManwon: number
   /**
    * 오늘 검사 수익 — 진료 수익과 **별도로** 쌓는 장부 라인.
@@ -503,6 +510,42 @@ export function hardlockReason(
 }
 
 /**
+ * BUMP(예약 미루고 받기)로 밀어낼 의사 id — 그 과 의사 중 **선택진료로 점유된** 것 가운데
+ * 가장 일찍 풀리는 하나. 없으면 undefined(밀어낼 예약이 없다).
+ *
+ * "선택진료로 점유"는 busyWith[id].kind가 선택진료인지로 판별한다 — 응급 점유는 후보가 아니다
+ * (응급은 응급을 밀어내지 않는다, §3). 이월 점유는 busyWith에 없어 자동으로 제외된다.
+ */
+export function bumpTarget(state: ReceivingState, call: IncomingCall): string | undefined {
+  const dept = handlingDept(call)
+  const roster = state.hospital.roster ?? []
+  const candidates = roster.filter((d) => {
+    if (d.dept !== dept) return false
+    const w = state.busyWith[d.id]
+    return w !== undefined && isElective(w.kind)
+  })
+  if (candidates.length === 0) return undefined
+  // 가장 일찍 풀리는 의사(pickAssignee와 같은 규칙 — busyUntil 오름차순).
+  return candidates.reduce((min, d) =>
+    (state.busyUntil[d.id] ?? 0) < (state.busyUntil[min.id] ?? 0) ? d : min,
+  ).id
+}
+
+/**
+ * 「예약 미루고 받기」 버튼을 열 조건 — 셋 다 참일 때만:
+ *   1) 하드락이 아니다(disposition CHOICE) — BUMP는 구조의 벽을 못 뚫는다(하드락이면 무효, §2 표).
+ *   2) 그 과에 지금 자유 의사가 0 — 자유 의사가 있으면 그냥 ACCEPT하면 되니 BUMP는 불필요.
+ *   3) 밀어낼 선택진료 점유가 있다(bumpTarget ≠ undefined).
+ */
+export function canBump(state: ReceivingState, call: IncomingCall): boolean {
+  const roster = state.hospital.roster ?? []
+  if (hardlockReason(state.hospital, call, state.busyUntil, roster) !== null) return false
+  const arrivalMin = call.arrivalMin ?? 0
+  if (freeDoctorsOfDept(roster, state.busyUntil, handlingDept(call), arrivalMin).length > 0) return false
+  return bumpTarget(state, call) !== undefined
+}
+
+/**
  * 하루 시작 — `boardedBusyUntil`은 **어제 넘어온 유닛별 점유 종료 시각**이다(기본 빈 맵).
  *
  * 병상 총량이 아니라 시각 기반 점유가 능력의 한계를 담는다: 어제 늦게까지 점유된 유닛은 오늘 아침에도
@@ -520,6 +563,7 @@ export function initReceiving(
     index: 0,
     clockMin: 0,
     busyUntil: { ...boardedBusyUntil }, // 어제 넘어온 점유에서 출발(지금은 빈 맵)
+    busyWith: {}, // 이월 점유는 원인 정보가 없어 비운다(위 필드 주석)
     netProfitDeltaManwon: 0,
     workupRevenueManwon: 0,
     workupCount: 0,
@@ -530,7 +574,7 @@ export function initReceiving(
 }
 
 /** 플레이어(또는 UI 타임아웃)가 콜 하나에 내리는 액션. TIMEOUT은 카운트다운 만료 — UI만 만들고 코어는 받기만 한다. */
-export type DecisionAction = 'ACCEPT' | 'DECLINE' | 'TIMEOUT'
+export type DecisionAction = 'ACCEPT' | 'DECLINE' | 'TIMEOUT' | 'BUMP_ACCEPT'
 
 /**
  * 현재 콜을 처리한다 — **구조가 먼저 판정하고, 그 안에서만 플레이어의 선택이 산다**(응급 포함).
@@ -554,6 +598,13 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
     throw new Error('receiving already done')
   }
   const call = state.queue[state.index]
+
+  // BUMP는 별도 경로다: 과거 예약 로그를 되돌리고(수익 회수) 현재 응급을 수용한다.
+  // 조건 불충족이면 일반 판정으로 폴백한다(BUMP_ACCEPT를 하드락 응급에 눌러도 안전).
+  if (action === 'BUMP_ACCEPT' && canBump(state, call)) {
+    return applyBump(state, call)
+  }
+
   const roster = state.hospital.roster ?? []
   const reason = hardlockReason(state.hospital, call, state.busyUntil, roster)
   const disposition: CallDisposition = reason === null ? 'CHOICE' : 'HARDLOCK_REJECT'
@@ -570,11 +621,16 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
 
   // 수용한 콜은 담당 과 의사를 **시작 시각부터** 점유한다 — 기다린 콜은 도착이 아니라 시작이 기준이다.
   let busyUntil = state.busyUntil
+  let busyWith = state.busyWith
   let startMin: number | undefined
   if (effectiveAccept && canStart) {
     const free = freeDoctorsOfDept(roster, state.busyUntil, handlingDept(call), start)
     const assignee = pickAssignee(free, state.busyUntil)
     busyUntil = { ...state.busyUntil, [assignee.id]: start + (call.durationMin ?? 0) }
+    busyWith = {
+      ...state.busyWith,
+      [assignee.id]: { callId: call.id, kind: call.kind, deltaManwon: callDelta(call.kind) },
+    }
     startMin = start
   }
 
@@ -602,9 +658,53 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
     ...state,
     clockMin: arrivalMin, // 현재 콜 도착 시각으로 하루를 전진시킨다
     busyUntil,
+    busyWith,
     netProfitDeltaManwon,
     lawsuitExposure,
     log,
+    index,
+    done: index >= state.queue.length,
+  }
+}
+
+/**
+ * 「예약 미루고 받기」 실행 — 밀어낼 의사의 진행 중 예약을 중단하고 현재 응급을 그 의사로 받는다.
+ * canBump가 참일 때만 불린다(bumpTarget ≠ undefined 보장).
+ *
+ * 로그 조작: 밀어낸 예약의 기존 엔트리(accepted:true)를 BUMPED로 되돌린다 — 받은 콜 수에서 빠지고
+ * 그 수익도 netProfitDelta에서 회수된다. 응급은 현재 index에 accepted로 새로 남는다. 두 사건이
+ * 로그에 다 보여야 "무엇을 포기하고 무엇을 받았나"가 마감 화면에 남는다.
+ */
+function applyBump(state: ReceivingState, call: IncomingCall): ReceivingState {
+  const targetId = bumpTarget(state, call)! // canBump가 참이라 반드시 있다
+  const bumped = state.busyWith[targetId] // 중단되는 예약의 원인 {callId, kind, deltaManwon}
+  const arrivalMin = call.arrivalMin ?? 0
+
+  // 밀어낸 예약의 로그 엔트리를 BUMPED로 되돌린다(불변 map).
+  const log = state.log.map((e) =>
+    e.callId === bumped.callId && e.accepted
+      ? { ...e, accepted: false, disposition: 'BUMPED' as CallDisposition, reason: null, startMin: undefined }
+      : e,
+  )
+
+  // 그 의사를 응급으로 재점유(지금부터 durationMin 동안). 예약 수익 회수 + 응급 델타 반영.
+  const busyUntil = { ...state.busyUntil, [targetId]: arrivalMin + (call.durationMin ?? 0) }
+  const busyWith = {
+    ...state.busyWith,
+    [targetId]: { callId: call.id, kind: call.kind, deltaManwon: callDelta(call.kind) },
+  }
+  const netProfitDeltaManwon = state.netProfitDeltaManwon - bumped.deltaManwon + callDelta(call.kind)
+  const lawsuitExposure = call.lawsuitRisk ? state.lawsuitExposure + 1 : state.lawsuitExposure
+
+  const index = state.index + 1
+  return {
+    ...state,
+    clockMin: arrivalMin,
+    busyUntil,
+    busyWith,
+    netProfitDeltaManwon,
+    lawsuitExposure,
+    log: [...log, { callId: call.id, accepted: true, disposition: 'CHOICE', reason: null, startMin: arrivalMin }],
     index,
     done: index >= state.queue.length,
   }
@@ -674,9 +774,11 @@ export function unacceptedGroups(
         ? '기다리다 감'
         : entry.reason === 'UNANSWERED'
           ? '응답 없음'
-          : entry.disposition === 'HARDLOCK_REJECT'
-            ? '하드락'
-            : '거절'
+          : entry.disposition === 'BUMPED'
+            ? '예약 중단'
+            : entry.disposition === 'HARDLOCK_REJECT'
+              ? '하드락'
+              : '거절'
     const key = `${label} ${outcome}`
     const hit = groups.get(key)
     if (hit) hit.count += 1
