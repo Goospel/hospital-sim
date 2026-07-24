@@ -236,6 +236,13 @@ export interface ReceivingState {
    * 초기값은 어제 넘어온 점유(boardedBusyUntil) — session.ts의 advanceDay가 어제 마감 초과분을 계산해 넘긴다.
    */
   busyUntil: Record<string, number>
+  /**
+   * 각 유닛이 **무엇 때문에** 점유됐는가 — busyUntil("언제까지")의 짝이다.
+   * BUMP(예약 미루고 받기)가 "밀어낼 선택진료 점유"를 찾고 그 수익을 회수하려면 원인이 필요하다.
+   * 이월 점유(어제 넘어온 boardedBusyUntil)는 원인 콜 정보가 없어 여기 실리지 않는다 —
+   * 그래서 어제 시작한 진료는 오늘 BUMP 대상이 아니다(어제 수익을 오늘 되돌리지 않는다).
+   */
+  busyWith: Record<string, { callId: string; kind: CallKind; deltaManwon: number }>
   netProfitDeltaManwon: number
   /**
    * 오늘 검사 수익 — 진료 수익과 **별도로** 쌓는 장부 라인.
@@ -520,6 +527,7 @@ export function initReceiving(
     index: 0,
     clockMin: 0,
     busyUntil: { ...boardedBusyUntil }, // 어제 넘어온 점유에서 출발(지금은 빈 맵)
+    busyWith: {}, // 이월 점유는 원인 정보가 없어 비운다(위 필드 주석)
     netProfitDeltaManwon: 0,
     workupRevenueManwon: 0,
     workupCount: 0,
@@ -570,11 +578,16 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
 
   // 수용한 콜은 담당 과 의사를 **시작 시각부터** 점유한다 — 기다린 콜은 도착이 아니라 시작이 기준이다.
   let busyUntil = state.busyUntil
+  let busyWith = state.busyWith
   let startMin: number | undefined
   if (effectiveAccept && canStart) {
     const free = freeDoctorsOfDept(roster, state.busyUntil, handlingDept(call), start)
     const assignee = pickAssignee(free, state.busyUntil)
     busyUntil = { ...state.busyUntil, [assignee.id]: start + (call.durationMin ?? 0) }
+    busyWith = {
+      ...state.busyWith,
+      [assignee.id]: { callId: call.id, kind: call.kind, deltaManwon: callDelta(call.kind) },
+    }
     startMin = start
   }
 
@@ -602,6 +615,7 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
     ...state,
     clockMin: arrivalMin, // 현재 콜 도착 시각으로 하루를 전진시킨다
     busyUntil,
+    busyWith,
     netProfitDeltaManwon,
     lawsuitExposure,
     log,

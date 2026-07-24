@@ -480,6 +480,29 @@ describe('decide (시간 점유) — 응급 ACCEPT / 선택 점유', () => {
   })
 })
 
+describe('busyWith — 점유 원인 추적 (스펙 2026-07-24 §3)', () => {
+  it('수용 시 담당의 id에 {callId, kind, deltaManwon}이 실린다', () => {
+    const h = hospitalOf(conscientious) // 순환기 2 — 월요일 예약은 순환기
+    const elective = dayCall('SPECIALIST_ELECTIVE')
+    const after = decide(initReceiving(h, [elective]), 'ACCEPT')
+    const entries = Object.values(after.busyWith)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toEqual({
+      callId: elective.id,
+      kind: 'SPECIALIST_ELECTIVE',
+      deltaManwon: callDelta('SPECIALIST_ELECTIVE'),
+    })
+  })
+  it('미수용이면 busyWith가 비어 있다', () => {
+    const h = hospitalOf(conscientious)
+    const after = decide(initReceiving(h, [dayCall('SPECIALIST_ELECTIVE')]), 'DECLINE')
+    expect(after.busyWith).toEqual({})
+  })
+  it('초기 상태의 busyWith는 빈 맵', () => {
+    expect(initReceiving(hospitalOf(conscientious)).busyWith).toEqual({})
+  })
+})
+
 describe('응급 결정권 — 플레이어가 직접 받고 보낸다 (스펙 2026-07-24 §2)', () => {
   const dayStemi = () => ({ ...dayCall('STEMI'), nightShift: false })
 
