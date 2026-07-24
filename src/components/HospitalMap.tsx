@@ -139,8 +139,13 @@ export default function HospitalMap({
         ))}
       </div>
 
-      {/* 아바타 레이어 — 이동이 곧 transition이다 */}
-      <div className="absolute inset-0">
+      {/*
+        아바타 레이어 — 이동이 곧 transition이다. inset-0로 맵 전체를 덮으므로 반드시
+        pointer-events-none이어야 한다: 안 그러면 이 투명 레이어가 아래 방 버튼(SETUP의
+        onRoomClick)을 덮어 실제 클릭을 삼킨다(형제 보행자·조명 레이어와 동일 규칙).
+        아바타 스프라이트는 장식이라 상호작용이 없어 레이어째 꺼도 잃는 게 없다.
+      */}
+      <div className="pointer-events-none absolute inset-0">
         {scene.avatars.map((a) => {
           const { left, top } = positionOf(a, scene);
           const wander = wanderTiming(a.id);
