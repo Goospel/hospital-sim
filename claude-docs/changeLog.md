@@ -9,6 +9,26 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-24 · 폐업 게임오버 — 금고 음수 연속 2주 (재미 개선 PR 3)
+
+**왜** — PR 1·2가 응급을 플레이어 결정으로 되돌리고 예약과의 대가를 가시화했지만, 주차는 무한히
+이어져도 아무리 적자를 내도 아무 일도 안 일어났다 — 경영의 실패에 결과가 없었다. [spec](../docs/superpowers/specs/2026-07-24-emergency-agency-fun-design.md) §6(폐업)의 마지막 슬라이스로, 재미 개선 3종(응급 결정화 ·
+대가 가시화 · 폐업)이 이 PR로 완성된다.
+
+**무엇을** — `insolvencyStreak`(금고가 음수인 채 이어진 주 수)을 신설해 `completeWeek`이 매주
+`treasury < 0 ? prev + 1 : 0`으로 갱신한다(경제 배선 자체는 무변경, 판정만 얹음). 두 주 연속(`>= 2`)이면
+`isInsolvent`가 참이 되고, `nextWeek`이 그 상태에서 throw로 다음 주 진행을 봉쇄하며 `SessionEpilogue.closed`가
+`true`로 굳는다. UI는 `WeekSummary`에서 streak 1(경고 — 「다음 주도 적자면 폐업합니다」, 「다음 주」 버튼
+유지)과 2(폐업 — 「두 주 연속 적자입니다. 병원은 폐업합니다」, 「다음 주」 버튼이 렌더 트리에서 통째로
+빠짐)를 갈라 은행 통지로 보여주고, `Epilogue`는 폐업이면 배지·머리글을 "폐업"·"병원이 문을 닫았다"로
+바꾼다(장부·전국 풀 등 내용부는 무변경). 봉쇄가 코어(throw)와 UI(미렌더) 이중이라 프로그램적 오용과
+정상 플레이 양쪽에서 막힌다. 흑자로 돌아오면 카운트가 0으로 리셋되고 계속 갈 수 있다 — 주차 자체는
+무한 유지.
+
+Task 1·2 모두 1회 리뷰로 Approved, fix 루프 0 — 이번 브랜치엔 근인 디버깅이 없어 신설한 troubleshooting
+항목도 없다. `npm test` 461/461(불변, UI 전용 변경) · `tsc --noEmit` 0 · `eslint src` 0 errors / 2
+warnings(선재).
+
 ## 2026-07-24 · 예약 미루고 받기 + 대가 가시화 (재미 개선 PR 2)
 
 **왜** — PR 1이 응급을 플레이어 결정으로 되돌렸지만, 하드락이 아니면서 그 과 의사가 전부 예약
