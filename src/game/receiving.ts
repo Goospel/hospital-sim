@@ -510,6 +510,42 @@ export function hardlockReason(
 }
 
 /**
+ * BUMP(예약 미루고 받기)로 밀어낼 의사 id — 그 과 의사 중 **선택진료로 점유된** 것 가운데
+ * 가장 일찍 풀리는 하나. 없으면 undefined(밀어낼 예약이 없다).
+ *
+ * "선택진료로 점유"는 busyWith[id].kind가 선택진료인지로 판별한다 — 응급 점유는 후보가 아니다
+ * (응급은 응급을 밀어내지 않는다, §3). 이월 점유는 busyWith에 없어 자동으로 제외된다.
+ */
+export function bumpTarget(state: ReceivingState, call: IncomingCall): string | undefined {
+  const dept = handlingDept(call)
+  const roster = state.hospital.roster ?? []
+  const candidates = roster.filter((d) => {
+    if (d.dept !== dept) return false
+    const w = state.busyWith[d.id]
+    return w !== undefined && isElective(w.kind)
+  })
+  if (candidates.length === 0) return undefined
+  // 가장 일찍 풀리는 의사(pickAssignee와 같은 규칙 — busyUntil 오름차순).
+  return candidates.reduce((min, d) =>
+    (state.busyUntil[d.id] ?? 0) < (state.busyUntil[min.id] ?? 0) ? d : min,
+  ).id
+}
+
+/**
+ * 「예약 미루고 받기」 버튼을 열 조건 — 셋 다 참일 때만:
+ *   1) 하드락이 아니다(disposition CHOICE) — BUMP는 구조의 벽을 못 뚫는다(하드락이면 무효, §2 표).
+ *   2) 그 과에 지금 자유 의사가 0 — 자유 의사가 있으면 그냥 ACCEPT하면 되니 BUMP는 불필요.
+ *   3) 밀어낼 선택진료 점유가 있다(bumpTarget ≠ undefined).
+ */
+export function canBump(state: ReceivingState, call: IncomingCall): boolean {
+  const roster = state.hospital.roster ?? []
+  if (hardlockReason(state.hospital, call, state.busyUntil, roster) !== null) return false
+  const arrivalMin = call.arrivalMin ?? 0
+  if (freeDoctorsOfDept(roster, state.busyUntil, handlingDept(call), arrivalMin).length > 0) return false
+  return bumpTarget(state, call) !== undefined
+}
+
+/**
  * 하루 시작 — `boardedBusyUntil`은 **어제 넘어온 유닛별 점유 종료 시각**이다(기본 빈 맵).
  *
  * 병상 총량이 아니라 시각 기반 점유가 능력의 한계를 담는다: 어제 늦게까지 점유된 유닛은 오늘 아침에도

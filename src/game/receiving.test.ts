@@ -3,7 +3,7 @@ import {
   createCallQueue, hardlockReason, initReceiving, decide, runningNetProfit,
   dayProgress, accruedSegments, CALL_ECONOMICS, callDelta,
   WORKUP_ECONOMICS, workupDelta, canOrderWorkup, isElective, isAutoAccept, requiresBackupCare, carriesLawsuitRisk,
-  BACKUP_CARE_KINDS, outpatientForBeds, needsDecision, unacceptedGroups,
+  BACKUP_CARE_KINDS, outpatientForBeds, needsDecision, unacceptedGroups, bumpTarget, canBump,
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
@@ -1145,5 +1145,57 @@ describe('unacceptedGroups — 못 받은 콜을 라벨·사유로 접어 횟수
 
   it('빈 로그는 빈 목록이다', () => {
     expect(unacceptedGroups({ queue: [], log: [] })).toEqual([])
+  })
+})
+
+describe('BUMP 판정 — bumpTarget · canBump (스펙 2026-07-24 §3)', () => {
+  const soloCardio = hospitalWith('CARDIOLOGY', 1) // 순환기 1명
+  const stemiDay = () => ({ ...dayCall('STEMI'), nightShift: false })
+  const electiveCardio = () => ({ ...dayCall('SPECIALIST_ELECTIVE'), nightShift: false })
+
+  // 순환기 1명이 예약으로 점유된 상태를 만든다: 예약 콜을 먼저 ACCEPT.
+  function afterElectiveThenStemi() {
+    const q = [electiveCardio(), stemiDay()]
+    return decide(initReceiving(soloCardio, q), 'ACCEPT') // index 0(예약) 수용 → index 1(STEMI)이 현재
+  }
+
+  it('그 과 의사가 예약으로 다 점유면 bumpTarget = 그 의사', () => {
+    const s = afterElectiveThenStemi()
+    const target = bumpTarget(s, s.queue[s.index])
+    expect(target).toBe(rosterOf(soloCardio)[0].id)
+  })
+
+  it('canBump = true — 하드락 아님 + 자유 의사 0 + 선택진료 점유 있음', () => {
+    const s = afterElectiveThenStemi()
+    expect(canBump(s, s.queue[s.index])).toBe(true)
+  })
+
+  it('그 과 의사가 자유면 canBump = false (BUMP 불필요)', () => {
+    const s = initReceiving(soloCardio, [stemiDay()]) // 아무도 점유 안 함
+    expect(canBump(s, s.queue[s.index])).toBe(false)
+    expect(bumpTarget(s, s.queue[s.index])).toBeUndefined()
+  })
+
+  it('그 과 미채용이면 canBump = false (하드락 NO_BACKUP_CARE — 밀어낼 의사 없음)', () => {
+    const noCardio = hospitalOf(collaborator)
+    const s = initReceiving(noCardio, [stemiDay()])
+    expect(canBump(s, s.queue[s.index])).toBe(false)
+    expect(bumpTarget(s, s.queue[s.index])).toBeUndefined()
+  })
+
+  it('점유 원인이 응급이면 canBump = false (응급은 응급을 밀어내지 않는다)', () => {
+    // 순환기 1명이 STEMI로 점유된 상태에서 또 STEMI가 오면, 그 점유는 응급이라 BUMP 불가.
+    const q = [stemiDay(), stemiDay()]
+    const s = decide(initReceiving(soloCardio, q), 'ACCEPT') // index 0(STEMI) 수용 → index 1이 현재
+    expect(canBump(s, s.queue[s.index])).toBe(false)
+    expect(bumpTarget(s, s.queue[s.index])).toBeUndefined()
+  })
+
+  it('야간 당직 공백(하드락)이면 canBump = false — BUMP는 하드락을 못 뚫는다', () => {
+    const nightStemi = { ...dayCall('STEMI'), nightShift: true }
+    const q = [electiveCardio(), nightStemi]
+    const s = decide(initReceiving(soloCardio, q), 'ACCEPT')
+    // 순환기 1명이라 야간엔 NO_NIGHT_BACKUP 하드락 — 예약 점유가 있어도 BUMP 무효
+    expect(canBump(s, s.queue[s.index])).toBe(false)
   })
 })
