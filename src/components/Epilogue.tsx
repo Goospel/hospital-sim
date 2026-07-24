@@ -45,7 +45,7 @@ export default function Epilogue({
   epilogue: SessionEpilogue;
   onRestart: () => void;
 }) {
-  const { ledger, weekNews, poolDepletion } = epilogue;
+  const { ledger, weekNews, poolDepletion, closed } = epilogue;
   const turnedAway = weekNews.length;
 
   const title = turnedAway > 0 ? `이번 주, ${turnedAway}명이 돌아갔다` : "이번 주, 아무도 돌려보내지 않았다";
@@ -54,21 +54,24 @@ export default function Epilogue({
       ? "받아줄 자리를 끝내 찾지 못한 사람들이다 — 명단은 아래."
       : "다 받아낸 대가는 아래 장부에 남는다.";
 
+  const headline = closed ? "병원이 문을 닫았다" : title;
+  const subhead = closed ? "두 주 연속 적자였다. 그동안의 기록은 아래에 남는다." : subtitle;
+
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-5 py-8 text-on-desk bg-desk">
       <span
         className={`text-xs uppercase tracking-[0.25em] ${
-          turnedAway > 0 ? "text-alarm" : "text-on-desk/70"
+          closed || turnedAway > 0 ? "text-alarm" : "text-on-desk/70"
         }`}
       >
-        결말
+        {closed ? "폐업" : "결말"}
       </span>
 
       <section className="flex flex-col items-center gap-2 text-center">
-        <p className={`font-serif text-2xl font-bold ${turnedAway > 0 ? "text-alarm" : "text-on-desk"}`}>
-          {title}
+        <p className={`font-serif text-2xl font-bold ${closed || turnedAway > 0 ? "text-alarm" : "text-on-desk"}`}>
+          {headline}
         </p>
-        <p className="text-sm text-on-desk/70">{subtitle}</p>
+        <p className="text-sm text-on-desk/70">{subhead}</p>
       </section>
 
       {/* 배치 = 논지: 제목 → 이번 주 신문(사람) → 장부(돈). 사람 바로 옆에 돈. */}
