@@ -98,6 +98,14 @@ export function earliestFreeMin(
   return Math.min(...docs.map((d) => busyUntil[d.id] ?? 0))
 }
 
+/**
+ * 점유 종료 시각(분) — 의사 개인 속도 반영. 점유 계산의 **유일한 자리**다(decide·applyBump 공유;
+ * 식이 두 곳에 살면 한쪽이 낡는다). speedFactor 없으면(무명 채용·구 경로) 현행과 동일.
+ */
+export function occupiedUntilMin(doc: Doctor, startMin: number, durationMin: number): number {
+  return startMin + Math.round(durationMin * (doc.speedFactor ?? 1))
+}
+
 /** 시각 atMin에 자유로운(busyUntil ≤ atMin) 그 과 유닛들. busyUntil 미기록=0(자유). */
 export function freeDoctorsOfDept(
   roster: Doctor[],

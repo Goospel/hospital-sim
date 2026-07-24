@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { adjustDoctors, isSetupReady, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS, MAX_DOCTORS_PER_DEPT, ROUND_THE_CLOCK_MIN_DOCTORS, SETUP_BUDGET_MANWON, buildHospital, backupCareOf, hiringCost, withinBudget, withinDeptCaps, BED_TIERS, deptCap, bedExpansionCost } from './setup'
+import { adjustDoctors, isSetupReady, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS, MAX_DOCTORS_PER_DEPT, ROUND_THE_CLOCK_MIN_DOCTORS, SETUP_BUDGET_MANWON, buildHospital, backupCareOf, hiringCost, withinBudget, withinDeptCaps, BED_TIERS, deptCap, bedExpansionCost, setupHiringCostManwon, hiredMatchesCounts } from './setup'
+import { CANDIDATES, doctorsCountsOf } from './candidates'
 import type { SetupChoices, DepartmentSpec } from './types'
 
 // 합리적 공범 빌드: 미용·검진만(흑자·필수과 0)
@@ -319,5 +320,31 @@ describe('병상 티어 — 성장의 용량 축', () => {
     const c = { hospitalName: 'h', doctors: {} }
     expect(adjustDoctors(c, 'CARDIOLOGY', 5, 5).doctors.CARDIOLOGY).toBe(5)
     expect(adjustDoctors(c, 'CARDIOLOGY', 9, 5).doctors.CARDIOLOGY).toBe(5) // 상한 클램프
+  })
+})
+
+describe('setupHiringCostManwon — 지원자 계약금 경로', () => {
+  const vet = CANDIDATES.find((c) => c.dept === 'CARDIOLOGY' && c.tier === 'VETERAN')!
+  const rookie = CANDIDATES.find((c) => c.dept === 'CARDIOLOGY' && c.tier === 'ROOKIE')!
+
+  it('hiredIds가 있으면 계약금 합산 — 같은 1명이라도 누구냐에 따라 값이 다르다', () => {
+    const base = { hospitalName: 'h', doctors: { CARDIOLOGY: 1 } }
+    expect(setupHiringCostManwon({ ...base, hiredIds: [vet.id] })).toBe(vet.hireCostManwon)
+    expect(setupHiringCostManwon({ ...base, hiredIds: [rookie.id] })).toBe(rookie.hireCostManwon)
+    expect(vet.hireCostManwon).not.toBe(rookie.hireCostManwon)
+  })
+
+  it('hiredIds가 없으면 기존 앵커가 경로(성장·구 테스트 하위호환)', () => {
+    const legacy = { hospitalName: 'h', doctors: { CARDIOLOGY: 2 } }
+    expect(setupHiringCostManwon(legacy)).toBe(hiringCost(legacy))
+  })
+
+  it('hiredMatchesCounts — doctors가 hiredIds 파생과 어긋나면 false(isSetupReady가 거부)', () => {
+    const ok = { hospitalName: 'h', doctors: doctorsCountsOf([vet.id]), hiredIds: [vet.id] }
+    expect(hiredMatchesCounts(ok)).toBe(true)
+    expect(isSetupReady(ok)).toBe(true)
+    const drift = { hospitalName: 'h', doctors: { CARDIOLOGY: 2 }, hiredIds: [vet.id] }
+    expect(hiredMatchesCounts(drift)).toBe(false)
+    expect(isSetupReady(drift)).toBe(false)
   })
 })

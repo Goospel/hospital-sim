@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { initialTreasury, doctorDeltaCost, withinTreasury } from './growth'
 import { SETUP_BUDGET_MANWON } from './setup'
+import { CANDIDATES } from './candidates'
 import type { SetupChoices } from './types'
 
 const open: SetupChoices = { hospitalName: 'h', doctors: { AESTHETICS: 3, CHECKUP: 2 } } // 채용비 27,000만원
@@ -8,6 +9,14 @@ const open: SetupChoices = { hospitalName: 'h', doctors: { AESTHETICS: 3, CHECKU
 describe('금고 산수', () => {
   it('개원 잔액 = 예산 − 개원 채용비', () => {
     expect(initialTreasury(open)).toBe(SETUP_BUDGET_MANWON - 27_000)
+  })
+
+  it('개원 잔액이 지원자 계약금(가변)을 반영한다 — 앵커가가 아니라', () => {
+    const vet = CANDIDATES.find((c) => c.dept === 'CARDIOLOGY' && c.tier === 'VETERAN')!
+    const hired: SetupChoices = { hospitalName: 'h', doctors: { CARDIOLOGY: 1 }, hiredIds: [vet.id] }
+    expect(initialTreasury(hired)).toBe(SETUP_BUDGET_MANWON - vet.hireCostManwon) // 19,500 차감
+    // 대조: hiredIds 없으면 앵커가(하위호환)
+    expect(initialTreasury({ hospitalName: 'h', doctors: { CARDIOLOGY: 1 } })).toBe(SETUP_BUDGET_MANWON - 15_000)
   })
 
   it('채용 증분 비용 = 늘린 인원 × 채용비', () => {

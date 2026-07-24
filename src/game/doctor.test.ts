@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { materializeRoster, walkinDept, handlingDept, doctorCaseloads, stepFatigue, FATIGUE_MAX } from './doctor'
 import { createCallQueue, decide, initReceiving } from './receiving'
 import { buildHospital, DEPARTMENTS } from './setup'
+import { CANDIDATES, SPEED_OF_TIER } from './candidates'
 import type { SetupChoices, IncomingCall } from './types'
 
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
@@ -74,6 +75,41 @@ describe('doctorCaseloads — 받은 콜을 유닛에 분배', () => {
     const { total } = doctorCaseloads(roster, r)
     const sum = roster.map((d) => total.get(d.id)!).reduce((a, b) => a + b, 0)
     expect(sum).toBe(0) // 외과 응급이라 순환기 유닛엔 안 붙는다
+  })
+})
+
+describe('materializeRoster — hiredIds 지원자 반영', () => {
+  const cardio = CANDIDATES.filter((c) => c.dept === 'CARDIOLOGY')
+  const vet = cardio.find((c) => c.tier === 'VETERAN')!
+
+  it('채용된 지원자의 이름·speedFactor·candidateId가 명단에 온다', () => {
+    const roster = materializeRoster(
+      { hospitalName: 'h', doctors: { CARDIOLOGY: 1 }, hiredIds: [vet.id] },
+      DEPARTMENTS,
+    )
+    expect(roster).toHaveLength(1)
+    expect(roster[0].name).toBe(vet.name)
+    expect(roster[0].speedFactor).toBe(SPEED_OF_TIER.VETERAN)
+    expect(roster[0].candidateId).toBe(vet.id)
+    expect(roster[0].id).toBe('doc-CARDIOLOGY-1') // id 체계 불변 — busyUntil·피로 키 연속성
+  })
+
+  it('카운트가 지원자 수를 넘으면 초과분은 무명(이름 자동 생성·speedFactor 없음)', () => {
+    const roster = materializeRoster(
+      { hospitalName: 'h', doctors: { CARDIOLOGY: 2 }, hiredIds: [vet.id] },
+      DEPARTMENTS,
+    )
+    expect(roster[0].candidateId).toBe(vet.id)
+    expect(roster[1].candidateId).toBeUndefined()
+    expect(roster[1].speedFactor).toBeUndefined()
+    expect(roster[1].name).not.toBe(vet.name)
+  })
+
+  it('hiredIds가 없으면 기존과 동일(하위호환) · 같은 입력 = 같은 명단(결정론)', () => {
+    const legacy = { hospitalName: 'h', doctors: { CARDIOLOGY: 2 } }
+    expect(materializeRoster(legacy, DEPARTMENTS)).toEqual(materializeRoster(legacy, DEPARTMENTS))
+    const withIds = { ...legacy, hiredIds: [vet.id] }
+    expect(materializeRoster(withIds, DEPARTMENTS)).toEqual(materializeRoster(withIds, DEPARTMENTS))
   })
 })
 

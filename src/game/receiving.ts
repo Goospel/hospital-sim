@@ -3,7 +3,7 @@ import { adjudicateTransfer } from './adjudicate'
 import { handlingDept } from './doctor'
 import { DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
 import {
-  arrivalMinFor, DAY_LENGTH_MIN, earliestFreeMin, freeDoctorsOfDept, NIGHT_START_MIN, patienceMin,
+  arrivalMinFor, DAY_LENGTH_MIN, earliestFreeMin, freeDoctorsOfDept, NIGHT_START_MIN, occupiedUntilMin, patienceMin,
   pickAssignee, procedureDurationMin,
 } from './daysim'
 
@@ -626,7 +626,7 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
   if (effectiveAccept && canStart) {
     const free = freeDoctorsOfDept(roster, state.busyUntil, handlingDept(call), start)
     const assignee = pickAssignee(free, state.busyUntil)
-    busyUntil = { ...state.busyUntil, [assignee.id]: start + (call.durationMin ?? 0) }
+    busyUntil = { ...state.busyUntil, [assignee.id]: occupiedUntilMin(assignee, start, call.durationMin ?? 0) }
     busyWith = {
       ...state.busyWith,
       [assignee.id]: { callId: call.id, kind: call.kind, deltaManwon: callDelta(call.kind) },
@@ -687,8 +687,9 @@ function applyBump(state: ReceivingState, call: IncomingCall): ReceivingState {
       : e,
   )
 
-  // 그 의사를 응급으로 재점유(지금부터 durationMin 동안). 예약 수익 회수 + 응급 델타 반영.
-  const busyUntil = { ...state.busyUntil, [targetId]: arrivalMin + (call.durationMin ?? 0) }
+  // 그 의사를 응급으로 재점유(지금부터 durationMin 동안·개인 속도 반영). 예약 수익 회수 + 응급 델타 반영.
+  const target = (state.hospital.roster ?? []).find((d) => d.id === targetId)! // bumpTarget은 roster에서 나온 id
+  const busyUntil = { ...state.busyUntil, [targetId]: occupiedUntilMin(target, arrivalMin, call.durationMin ?? 0) }
   const busyWith = {
     ...state.busyWith,
     [targetId]: { callId: call.id, kind: call.kind, deltaManwon: callDelta(call.kind) },

@@ -138,7 +138,7 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
                 className="hm-wander h-full w-full"
                 style={{ animationDelay: `${wander.delayMs}ms`, animationDuration: `${wander.durationMs}ms` }}
               >
-                {a.kind === "DOCTOR" && a.dept ? <DoctorSprite dept={a.dept} busy={a.busy} /> : <PatientSprite />}
+                {a.kind === "DOCTOR" && a.dept ? <DoctorSprite dept={a.dept} busy={a.busy} variantKey={a.candidateId} /> : <PatientSprite />}
               </div>
             </div>
           );

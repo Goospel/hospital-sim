@@ -1,7 +1,8 @@
 import type { DepartmentSpec, DeptKey, Doctor, IncomingCall, SetupChoices } from './types'
 import type { ReceivingState } from './receiving' // type-only — 런타임 순환 없음
+import { CANDIDATES, SPEED_OF_TIER, type Candidate } from './candidates'
 
-// 표시 레이어 순수 모듈. 판정·경제에 절대 닿지 않는다. 런타임 임포트 0(전부 type-only).
+// 표시 레이어 순수 모듈. 판정·경제에 절대 닿지 않는다. 런타임 임포트는 candidates.ts 하나(setup.ts는 여전히 type-only 회피 — 순환 차단).
 
 const FAMILY_NAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오']
 const GIVEN_NAMES = ['민준', '서연', '도윤', '하은', '지호', '수아', '예준', '지우', '준서', '서윤', '현우', '지민']
@@ -18,15 +19,23 @@ function doctorName(k: number): string {
 
 /**
  * 채용 선택 → 개인 유닛 명단. 결정론. `departments`를 인자로 받아 setup.ts를 임포트하지 않는다(순환 차단).
- * 전역 인덱스 k로 이름을 파생시켜 같은 선택은 항상 같은 명단이 된다.
+ * hiredIds의 지원자가 그 과 **앞 슬롯**부터 앉고(풀 순서 = 표시 순서), 초과분(성장 중도 채용)은
+ * 기존 무명 생성(doctorName)으로 채운다. k는 슬롯마다 전진해 무명 이름도 결정론이다.
  */
 export function materializeRoster(choices: SetupChoices, departments: DepartmentSpec[]): Doctor[] {
+  const hiredSet = new Set(choices.hiredIds ?? [])
   const roster: Doctor[] = []
   let k = 0
   for (const dept of departments) {
     const n = choices.doctors[dept.key] ?? 0
+    const hired: Candidate[] = CANDIDATES.filter((c) => c.dept === dept.key && hiredSet.has(c.id))
     for (let i = 1; i <= n; i++) {
-      roster.push({ id: `doc-${dept.key}-${i}`, name: doctorName(k), dept: dept.key })
+      const cand = hired[i - 1]
+      roster.push(
+        cand
+          ? { id: `doc-${dept.key}-${i}`, name: cand.name, dept: dept.key, speedFactor: SPEED_OF_TIER[cand.tier], candidateId: cand.id }
+          : { id: `doc-${dept.key}-${i}`, name: doctorName(k), dept: dept.key },
+      )
       k++
     }
   }

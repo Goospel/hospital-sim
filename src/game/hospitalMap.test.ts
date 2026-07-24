@@ -403,3 +403,18 @@ describe('deriveMapScene — 대기 환자(복도에 쌓인다)', () => {
     expect(scene.waitingOverflow).toBeGreaterThan(0)
   })
 })
+
+import { CANDIDATES } from './candidates'
+
+describe('deriveMapScene — 지원자 출신 의사의 candidateId 전달', () => {
+  it('roster의 candidateId가 아바타에 실린다(초상 변주 키) · 무명은 undefined', () => {
+    const vet = CANDIDATES.find((c) => c.dept === 'CARDIOLOGY' && c.tier === 'VETERAN')!
+    const h = buildHospital({
+      hospitalName: 'h', doctors: { CARDIOLOGY: 2 }, hiredIds: [vet.id],
+    }).hospital
+    const scene = deriveMapScene(initReceiving(h, createCallQueue(1)), 0)
+    const doctors = scene.avatars.filter((a) => a.kind === 'DOCTOR')
+    expect(doctors.find((a) => a.id === 'doc-CARDIOLOGY-1')!.candidateId).toBe(vet.id)
+    expect(doctors.find((a) => a.id === 'doc-CARDIOLOGY-2')!.candidateId).toBeUndefined()
+  })
+})

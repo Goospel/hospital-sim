@@ -131,6 +131,12 @@ export interface DepartmentSpec {
 export interface SetupChoices {
   hospitalName: string
   doctors: Partial<Record<DeptKey, number>> // 과별 의사 수
+  /**
+   * SETUP 채용 데스크에서 뽑은 지원자 id 목록(candidates.ts). 선택 필드 — 없으면 전원 무명(구 경로·테스트).
+   * ⚠️ doctors와 이중 기재 금지: doctors는 위저드 onComplete에서 doctorsCountsOf(hiredIds)로 **파생**해
+   * 한 번만 쓴다(단일 기록 지점). 성장 단계 중도 채용은 doctors만 늘린다(무명·표준가).
+   */
+  hiredIds?: string[]
 }
 
 /**
@@ -168,11 +174,14 @@ export interface IncomingCall {
 export type HospitalTier = 'UNDESIGNATED' | 'LOCAL_INSTITUTION' | 'LOCAL_CENTER' | 'REGIONAL_CENTER'
 
 /**
- * 의사 개인 유닛 — 표시 레이어 전용(판정 무관). 채용 인원수를 이름 붙은 개인으로 태운다.
- * 배경·특성·결함은 없다(사용자 결정: 림월드를 그대로 빼다 박지 않음).
+ * 의사 개인 유닛. 채용 인원수를 이름 붙은 개인으로 태운다.
+ * 배경·성격·결함은 없다(사용자 결정: 림월드를 그대로 빼다 박지 않음). 단 **speedFactor 하나만
+ * 판정(점유 시간)에 닿는다** — 채용 데스크(스펙 2026-07-24)의 "베테랑은 빨리 본다" 축.
  */
 export interface Doctor {
   id: string // 'doc-<dept>-<i>' — 결정론 고유
-  name: string // 결정론 자동 생성 한글 이름
+  name: string // 지원자 이름(hiredIds) 또는 결정론 자동 생성 한글 이름
   dept: DeptKey // 소속 과(수익과 + 필수과)
+  speedFactor?: number // 진료 소요 배율(SPEED_OF_TIER 파생). 없으면 1.0 — 무명 채용·구 경로
+  candidateId?: string // 출신 지원자(초상 변주 키). 없으면 무명 — 이력서 없이 온 사람
 }
