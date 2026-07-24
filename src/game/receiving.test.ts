@@ -9,6 +9,7 @@ import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
 import type { CallKind, DeptKey, Doctor, Hospital, IncomingCall, SetupChoices } from './types'
 import { DAY_LENGTH_MIN, NIGHT_START_MIN, patienceMin } from './daysim'
+import { SPEED_OF_TIER } from './candidates'
 
 describe('무게 술어 분리 — requiresBackupCare / carriesLawsuitRisk', () => {
   it('두 술어는 기존 필수 응급 4종에 대해 참이다(리팩터 기준선)', () => {
@@ -71,6 +72,29 @@ describe('GENERAL_EMERGENCY 제거 — 세분 응급이 대체', () => {
     const call: IncomingCall = { id: 'c', kind: 'ABDOMINAL_EMERGENCY', label: '급성복증', patient: { id: 'a', requiredSpecialty: 'GENERAL_SURGERY', severity: 4 }, lawsuitRisk: true, nightShift: false, arrivalMin: 60, durationMin: 120 }
     const next = decide(initReceiving(hospital, [call]), 'ACCEPT')
     expect(next.busyUntil['doc-GENERAL_SURGERY-1']).toBe(180) // 60 + 120 점유
+  })
+})
+
+describe('decide — occupiedUntilMin 라우팅: 베테랑은 점유가 짧다', () => {
+  const stemi: IncomingCall = {
+    id: 'c', kind: 'STEMI', label: 'STEMI', patient: { id: 's', requiredSpecialty: 'CARDIOLOGY', severity: 5 },
+    lawsuitRisk: true, nightShift: false, arrivalMin: 60, durationMin: 120,
+  }
+  const cardioHospital = (roster: Doctor[]): Hospital => ({
+    id: 'p', name: 'x', beds: 3, hasErOnCall: true, overcrowded: false,
+    backupCare: ['CARDIOLOGY'], roundTheClockBackup: ['CARDIOLOGY'], roster,
+  })
+
+  it('베테랑(speedFactor 0.8)이 받으면 busyUntil = start + round(duration×0.8)', () => {
+    const roster: Doctor[] = [{ id: 'doc-CARDIOLOGY-1', name: '김심장', dept: 'CARDIOLOGY', speedFactor: SPEED_OF_TIER.VETERAN }]
+    const next = decide(initReceiving(cardioHospital(roster), [stemi]), 'ACCEPT')
+    expect(next.busyUntil['doc-CARDIOLOGY-1']).toBe(60 + Math.round(120 * SPEED_OF_TIER.VETERAN)) // 156
+  })
+
+  it('speedFactor 없으면 현행과 동일(start + duration)', () => {
+    const roster: Doctor[] = [{ id: 'doc-CARDIOLOGY-1', name: '김심장', dept: 'CARDIOLOGY' }]
+    const next = decide(initReceiving(cardioHospital(roster), [stemi]), 'ACCEPT')
+    expect(next.busyUntil['doc-CARDIOLOGY-1']).toBe(180) // 60 + 120
   })
 })
 

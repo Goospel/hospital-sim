@@ -10,8 +10,20 @@ import {
   pickAssignee,
   earliestFreeMin,
   patienceMin,
+  occupiedUntilMin,
 } from './daysim'
 import type { Doctor } from './types'
+
+describe('occupiedUntilMin — 의사 개인 속도', () => {
+  const base = { id: 'doc-CARDIOLOGY-1', name: '김', dept: 'CARDIOLOGY' as const }
+  it('speedFactor 없으면 현행과 동일(start + duration)', () => {
+    expect(occupiedUntilMin(base, 100, 90)).toBe(190)
+  })
+  it('베테랑(0.8)은 짧게, 신입(1.15)은 길게 — 반올림', () => {
+    expect(occupiedUntilMin({ ...base, speedFactor: 0.8 }, 100, 90)).toBe(100 + 72)
+    expect(occupiedUntilMin({ ...base, speedFactor: 1.15 }, 100, 45)).toBe(100 + 52) // 51.75 → 52
+  })
+})
 
 describe('seededUnit', () => {
   it('같은 seed는 항상 같은 값(결정론)', () => {
