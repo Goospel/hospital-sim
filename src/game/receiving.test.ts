@@ -1199,3 +1199,53 @@ describe('BUMP 판정 — bumpTarget · canBump (스펙 2026-07-24 §3)', () => 
     expect(canBump(s, s.queue[s.index])).toBe(false)
   })
 })
+
+describe('BUMP_ACCEPT — 예약 미루고 받기 (스펙 2026-07-24 §3)', () => {
+  const soloCardio = hospitalWith('CARDIOLOGY', 1)
+  const stemiDay = () => ({ ...dayCall('STEMI'), nightShift: false })
+  const electiveCardio = () => ({ ...dayCall('SPECIALIST_ELECTIVE'), nightShift: false })
+
+  function bumped() {
+    const q = [electiveCardio(), stemiDay()]
+    const afterElective = decide(initReceiving(soloCardio, q), 'ACCEPT') // 예약 수용, STEMI가 현재
+    return { before: afterElective, after: decide(afterElective, 'BUMP_ACCEPT') }
+  }
+
+  it('밀어낸 예약은 로그가 BUMPED로 바뀌고 수용에서 빠진다', () => {
+    const { after } = bumped()
+    const electiveEntry = after.log.find((e) => e.callId === 'd1c1' /* electiveCardio id */)
+      ?? after.log[0]
+    expect(after.log[0].accepted).toBe(false)
+    expect(after.log[0].disposition).toBe('BUMPED')
+    expect(after.log[0].reason).toBeNull()
+    expect(electiveEntry.disposition).toBe('BUMPED')
+  })
+
+  it('응급은 수용된다 — 그 의사가 응급으로 재점유', () => {
+    const { after } = bumped()
+    const doctorId = rosterOf(soloCardio)[0].id
+    // 마지막 로그(STEMI)가 accepted, busyWith가 STEMI로 갈렸다
+    expect(after.log[after.log.length - 1].accepted).toBe(true)
+    expect(after.busyWith[doctorId].kind).toBe('STEMI')
+  })
+
+  it('예약 수익은 회수되고 응급 델타가 더해진다', () => {
+    const { before, after } = bumped()
+    // before(예약만 수용) 순이익에서 예약 델타를 빼고 STEMI 델타를 더한 값
+    const expected = before.netProfitDeltaManwon - callDelta('SPECIALIST_ELECTIVE') + callDelta('STEMI')
+    expect(after.netProfitDeltaManwon).toBe(expected)
+  })
+
+  it('BUMP 불가 상태에서 BUMP_ACCEPT는 일반 판정으로 폴백한다(하드락이면 미수용)', () => {
+    const noCardio = hospitalOf(collaborator) // NO_BACKUP_CARE
+    const after = decide(initReceiving(noCardio, [stemiDay()]), 'BUMP_ACCEPT')
+    expect(after.log[0].accepted).toBe(false)
+    expect(after.log[0].disposition).toBe('HARDLOCK_REJECT')
+  })
+
+  it('마감 목록에서 BUMPED는 「예약 중단」으로 접힌다', () => {
+    const { after } = bumped()
+    const groups = unacceptedGroups(after)
+    expect(groups.some((g) => g.outcome === '예약 중단')).toBe(true)
+  })
+})
