@@ -546,7 +546,7 @@ describe('성장 상태 — 개원 보존 + 금고', () => {
     s = { ...s, phase: 'DAY_END', day: 7,
       ledgerDays: [{ day: 7, netProfitManwon: 40, segmentShareManwon: 0, callDeltaManwon: 0,
         workupRevenueManwon: 0, workupCount: 0, turnedAway: [], receivedEmergency: 0, accepted: 0,
-        blocked: 0, lawsuitExposure: 0 }] }
+        blocked: 0, lawsuitExposure: 0, deptStats: {} }] }
     const before = s.treasury
     const after = completeWeek(s)
     expect(after.treasury).toBe(before + 40)

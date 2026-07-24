@@ -6,6 +6,7 @@ import {
 } from './receiving'
 import { DAY_LENGTH_MIN } from './daysim'
 import { buildSessionLedger, type Ledger } from './ledger'
+import { deptDayStats, type DeptDayStats } from './deptLedger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
 import { doctorCaseloads, stepFatigue } from './doctor'
 import { initSystem, backgroundAttrition, hireDelta, canHire, type SystemState } from './system'
@@ -42,6 +43,12 @@ export interface DayRecord {
   turnedAway: TurnedAway[]
   receivedEmergency: number // 그날 받은 필수 응급 수 — 돌려보낸 수(turnedAway)의 짝(결산 화면)
   netProfitManwon: number // 그날 순이익 = 위 셋의 합 (소송 비용은 결말에서만)
+  /**
+   * 그날 수용된 콜을 담당 과로 접은 스냅샷(환자 수·진료 델타) — 과별 손익 영수증의 데이터 소스.
+   * 주간 마감 시점엔 지난 날의 receiving이 이미 버려져 있어(즉석 계산 불가) 하루 마감에 여기 굳힌다.
+   * 고정비는 저장하지 않는다 — 병원 구성은 주 중 불변이라 렌더 때 economics.segments에서 파생한다.
+   */
+  deptStats: DeptDayStats
   accepted: number // 받은 콜 수
   blocked: number // 그 과 의사가 다 진료 중이라 구조가 막은 콜 수(NO_FREE_SPECIALIST) — 달력엔 안 찍히는 사람들
   lawsuitExposure: number // 그날 쌓인 소송 노출
@@ -188,6 +195,7 @@ function recordDay(day: number, receiving: ReceivingState): DayRecord {
     // 받은 필수 응급 — 돌려보낸 수의 짝. 일반 응급·워크인은 세지 않는다(응급의 '핵심'만).
     receivedEmergency: receiving.log.filter((e, i) => e.accepted && requiresBackupCare(receiving.queue[i].kind)).length,
     netProfitManwon: runningNetProfit(receiving),
+    deptStats: deptDayStats(receiving),
     accepted: receiving.log.filter((e) => e.accepted).length,
     blocked: receiving.log.filter((e) => e.reason === 'NO_FREE_SPECIALIST').length,
     lawsuitExposure: receiving.lawsuitExposure,
