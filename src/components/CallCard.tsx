@@ -12,8 +12,9 @@ import {
   type ReceivingState,
   type DecisionAction,
 } from "@/game/receiving";
-import { freeDoctorsOfDept, pickAssignee } from "@/game/daysim";
+import { freeDoctorsOfDept, pickAssignee, formatClockFromOpen as formatClock } from "@/game/daysim";
 import { handlingDept } from "@/game/doctor";
+import { DEPARTMENTS } from "@/game/setup";
 import { REASON_CLAUSE } from "@/game/news";
 import type { IncomingCall } from "@/game/types";
 
@@ -206,6 +207,25 @@ export default function CallCard({
       {waitMin > 0 && (
         <p className="rounded-xs border border-frame bg-desk px-3 py-2 font-mono text-xs text-on-desk/70">
           {waitMin}분 대기 후 진료 시작 · {assignee?.name}
+        </p>
+      )}
+
+      {elective && !canStart && (
+        // 받기가 잠긴 이유를 사실로 — 「그 과 의사가 다 진료 중, N시에 자리」 또는 「그 과 의사 없음」.
+        // 선택진료는 하드락이 아니라 사유 도장을 안 쓴다(그건 응급의 구조적 벽 전용). 담백한 한 줄.
+        <p className="rounded-xs border border-frame bg-desk px-3 py-2 font-mono text-xs text-on-desk/70">
+          {start === "NO_FREE_SPECIALIST"
+            ? `${DEPARTMENTS.find((d) => d.key === dept)?.label ?? dept} 의사가 없습니다`
+            : `${DEPARTMENTS.find((d) => d.key === dept)?.label ?? dept} 의사가 모두 진료 중 · 오늘 자리 없음`}
+        </p>
+      )}
+
+      {elective && canStart && assignee && (
+        // 수락 결과를 사실로 — 「이 의사가 이 시각까지 묶인다」. 그 시간에 같은 과 응급이 오면
+        // 못 받는다는 결론은 플레이어가 스스로 잇는다(해석 0). start·durationMin은 decide와 같은
+        // 값이라(startMinFor 공유) 카드에 뜬 미리보기와 실제 점유가 어긋나지 않는다.
+        <p className="rounded-xs border border-frame bg-desk px-3 py-2 font-mono text-xs text-on-desk/70">
+          수락 시 {assignee.name} · {formatClock(start + (call.durationMin ?? 0))}까지 점유
         </p>
       )}
 
