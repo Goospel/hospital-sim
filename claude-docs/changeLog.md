@@ -9,6 +9,10 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-24 · 채용 데스크 v2 — 빈 병원 맵 허브(무스크롤 1화면)
+
+v1 아코디언(세로 목록·스크롤·웹 패턴)을 하루 만에 은퇴시켰다. 사용자 요구 ①데스크톱 무스크롤 1화면 ②웹이 아니라 게임답게 — SETUP이 "개원 전 빈 병원 맵"이 됐다: 현판에 이름을 쓰고(NAME 화면 삭제), 어두운 빈 방을 클릭해 지원서 4장 오버레이에서 도장을 찍으면 그 방에 그 얼굴의 아바타가 즉시 선다. 개원을 누르면 그 맵이 그대로 게임 화면이 된다(개원 전·후 같은 공간). 신규는 `deriveSetupScene`(순수 파생)·`HospitalMap.onRoomClick`(옵셔널 — RECEIVING 0 변경)뿐, 판정·경제·채용 로직 0줄.
+
 ## 2026-07-24 · 채용 데스크 — SETUP 위저드 게임화(지원서+도장)
 
 **왜** — SETUP 위저드는 과별 +/- 카운터였다. 숫자만 조작하는 자리엔 딜레마가 안 실린다. [spec](../docs/superpowers/specs/2026-07-24-hiring-desk-setup-design.md)의 결정 — 카운터를 지원서 더미로 바꿔 "누구를 뽑을까"를 진짜 선택으로 만든다.
