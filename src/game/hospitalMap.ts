@@ -1,7 +1,8 @@
 import type { DeptKey, Doctor, IncomingCall } from './types'
 import type { ReceivingState } from './receiving' // type-only — 런타임 순환 없음
-import { DEPARTMENTS } from './setup'
+import { DEPARTMENTS, FIXED_BEDS } from './setup'
 import { DAY_LENGTH_MIN, NIGHT_START_MIN, patienceMin, seededUnit } from './daysim'
+import { CANDIDATES } from './candidates'
 
 // 병원 맵 표시 레이어 — 순수·결정론. 판정·경제에 절대 닿지 않는다(0 침습).
 // 새 게임 상태 0개: ReceivingState 하나에서 그 순간의 장면을 파생만 한다.
@@ -164,6 +165,43 @@ export function deriveMapScene(receiving: ReceivingState, atMin: number): MapSce
     clockMin: atMin,
     waitingCount: waiting.length,
     waitingOverflow: Math.max(0, waiting.length - MAX_WAITING_AVATARS),
+  }
+}
+
+/**
+ * SETUP(개원 전) 장면 — ReceivingState가 아직 없는 시점을 hiredIds에서 직접 합성한다.
+ * 개원 전·후가 **같은 MapScene 문법**이라 위저드의 빈 병원과 게임의 병원이 같은 공간으로 보인다
+ * (스펙 §2 연속성 장치). 순수·결정론: 같은 hired = 같은 장면. 조명은 항상 DAY(개원 전 아침),
+ * 채용한 지원자는 자기 방에 서 있다(zone ROOM · busy false — 아직 환자가 없다).
+ * 모르는 id는 무시한다(toggleHired·doctorsCountsOf와 같은 방어 결).
+ */
+export function deriveSetupScene(hired: string[], beds: number = FIXED_BEDS): MapScene {
+  const hiredSet = new Set(hired)
+  const hiredCands = CANDIDATES.filter((c) => hiredSet.has(c.id))
+
+  const rooms: MapRoom[] = ORDERED_DEPTS.map((d, col) => ({
+    dept: d.key,
+    label: d.label,
+    col,
+    staffed: hiredCands.some((c) => c.dept === d.key),
+    lit: true,
+  }))
+
+  const roomSlot = new Map<DeptKey, number>()
+  const avatars: MapAvatar[] = hiredCands.map((c) => {
+    const slot = roomSlot.get(c.dept) ?? 0
+    roomSlot.set(c.dept, slot + 1)
+    return { id: `setup-${c.id}`, kind: 'DOCTOR' as const, zone: 'ROOM' as const, dept: c.dept, slot, busy: false, candidateId: c.id }
+  })
+
+  return {
+    rooms,
+    beds: Array.from({ length: beds }, (_, index) => ({ index })),
+    avatars,
+    lighting: 'DAY',
+    clockMin: 0,
+    waitingCount: 0,
+    waitingOverflow: 0,
   }
 }
 

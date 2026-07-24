@@ -18,7 +18,7 @@ tags:
 | 스프라이트 격자·팔레트·과별 색 | `src/components/PixelSprite.tsx` |
 | 표시 크기·배치·조명 워시 | `src/components/HospitalMap.tsx` |
 | 배회·보행 애니메이션 | `src/app/globals.css` (`hm-wander` · `hm-walk`) |
-| 아바타의 존재·위치 규칙(파생) | `src/game/hospitalMap.ts` (`deriveMapScene`) |
+| 아바타의 존재·위치 규칙(파생) | `src/game/hospitalMap.ts` (`deriveMapScene` — 게임 중 · `deriveSetupScene` — 개원 전) |
 | 의사 이름 생성 | `src/game/doctor.ts` (`doctorName`) |
 | 발신자 대사 | `src/game/dialogue.ts` (`CALLER_PLEA`) |
 | 지원자 데이터(이름·연차·경력·계약금·티어) | `src/game/candidates.ts` |

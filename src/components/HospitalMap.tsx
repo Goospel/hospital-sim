@@ -1,6 +1,7 @@
 "use client";
 
 import { ambientWalkers, wanderTiming, type Lighting, type MapAvatar, type MapScene } from "@/game/hospitalMap";
+import type { DeptKey } from "@/game/types";
 import { BedSprite, DoctorSprite, PatientSprite } from "./PixelSprite";
 
 /**
@@ -46,7 +47,13 @@ function positionOf(a: MapAvatar, scene: MapScene): { left: string; top: string 
   return { left: `${6 + a.slot * step}%`, top: `${ROOMS_H + CORRIDOR_H / 2}%` };
 }
 
-export default function HospitalMap({ scene }: { scene: MapScene }) {
+export default function HospitalMap({
+  scene,
+  onRoomClick,
+}: {
+  scene: MapScene;
+  onRoomClick?: (dept: DeptKey) => void;
+}) {
   return (
     <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xs border border-frame bg-desk-2">
       {/* 진료실 줄 */}
@@ -54,28 +61,42 @@ export default function HospitalMap({ scene }: { scene: MapScene }) {
         className="absolute inset-x-0 top-0 grid gap-1 p-1.5"
         style={{ height: `${ROOMS_H}%`, gridTemplateColumns: `repeat(${scene.rooms.length}, minmax(0, 1fr))` }}
       >
-        {scene.rooms.map((room) => (
-          <div
-            key={room.dept}
-            className={`flex flex-col justify-end rounded-xs border transition-colors duration-500 ${
-              room.lit
-                ? room.staffed
-                  ? "border-frame bg-frame/70"
-                  : "border-frame/60 bg-frame/25" // 빈 방 — 안 뽑은 과가 여기 보인다
-                : "border-desk bg-black/60"
-            }`}
-          >
-            {/*
-              방 이름은 **조명과 무관하게 같은 잉크**다 — 라벨은 방에 붙은 명패이지 방 안의
-              불빛이 아니다. 밝기로 상태를 말하는 건 방의 채움색과 전역 조명 워시가 맡는다.
-              (조명 따라 라벨까지 어둡게 했더니 야간에 1.87:1까지 떨어졌다. 9px는 스펙의
-              12px 하한 아래라 대비를 깎을 여유가 애초에 없다.)
-            */}
+        {scene.rooms.map((room) => {
+          const roomCls = `flex flex-col justify-end rounded-xs border transition-colors duration-500 ${
+            room.lit
+              ? room.staffed
+                ? "border-frame bg-frame/70"
+                : "border-frame/60 bg-frame/25" // 빈 방 — 안 뽑은 과가 여기 보인다
+              : "border-desk bg-black/60"
+          }`;
+          /*
+            방 이름은 **조명과 무관하게 같은 잉크**다 — 라벨은 방에 붙은 명패이지 방 안의
+            불빛이 아니다. 밝기로 상태를 말하는 건 방의 채움색과 전역 조명 워시가 맡는다.
+            (조명 따라 라벨까지 어둡게 했더니 야간에 1.87:1까지 떨어졌다. 9px는 스펙의
+            12px 하한 아래라 대비를 깎을 여유가 애초에 없다.)
+          */
+          const label = (
             <span className="truncate px-1 pb-0.5 text-center text-[9px] leading-tight text-on-desk/70">
               {room.label}
             </span>
-          </div>
-        ))}
+          );
+          // SETUP에서만 방이 클릭 타깃이다(지원서 오버레이). RECEIVING은 onRoomClick을 안 넘겨 현행 그대로.
+          return onRoomClick ? (
+            <button
+              key={room.dept}
+              type="button"
+              onClick={() => onRoomClick(room.dept)}
+              aria-label={`${room.label} 지원서 보기`}
+              className={`${roomCls} cursor-pointer hover:border-on-desk-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted`}
+            >
+              {label}
+            </button>
+          ) : (
+            <div key={room.dept} className={roomCls}>
+              {label}
+            </div>
+          );
+        })}
       </div>
 
       {/* 복도 */}
