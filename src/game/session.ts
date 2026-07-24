@@ -71,13 +71,19 @@ export interface SessionState {
   choices: SetupChoices   // 현재 병원 명단(매주 성장). 1주차 이후 재투자의 시작점.
   beds: number            // 병상 티어(초기 FIXED_BEDS).
   treasury: number        // 금고 잔고(억).
+  /**
+   * 금고가 음수인 채 마감된 **연속 주 수**. completeWeek이 갱신한다(음수면 +1, 흑자면 0 리셋).
+   * 2에 도달하면 폐업(isInsolvent) — 다음 주로 못 넘어가고 강제 에필로그로 닫힌다(스펙 §6).
+   * 주차 자체는 무한이라 이 값이 "몇 주 버텼나"의 압력을 만든다(유한 회차를 만들지 않아 정답-퍼즐화 회피).
+   */
+  insolvencyStreak: number
   system: SystemState     // 전국 의사 풀.
 }
 
 export function startSession(): SessionState {
   return {
     phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
-    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, system: initSystem(),
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0, system: initSystem(),
   }
 }
 
@@ -104,7 +110,7 @@ export function enterWorldEvent(state: SessionState): SessionState {
   const world = applyEvent(initWorld(), event)
   return {
     phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
-    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, system: initSystem(),
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0, system: initSystem(),
   }
 }
 
@@ -116,7 +122,7 @@ export function beginSetup(state: SessionState): SessionState {
   return {
     phase: 'SETUP', world: state.world, event: state.event,
     week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
-    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, system: initSystem(),
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0, system: initSystem(),
   }
 }
 
@@ -136,6 +142,7 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
     choices,
     beds: FIXED_BEDS,
     treasury: initialTreasury(choices, world.departments),
+    insolvencyStreak: 0,
     system: initSystem(),
   }
 }
@@ -143,6 +150,11 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
 /** 7일차인가 — 이 날 마감은 다음 날이 아니라 주간 결산으로 이어진다. */
 export function isLastDay(state: SessionState): boolean {
   return state.day >= DAYS_PER_WEEK
+}
+
+/** 폐업했는가 — 금고 음수 연속 2주. WEEK_SUMMARY에서 참이면 다음 주로 못 가고 강제 에필로그로 닫힌다. */
+export function isInsolvent(state: SessionState): boolean {
+  return state.insolvencyStreak >= 2
 }
 
 /**
@@ -279,11 +291,15 @@ export function completeWeek(state: SessionState): SessionState {
     throw new Error('completeWeek requires the last day (day 7)')
   }
   const weekNet = state.ledgerDays.reduce((n, d) => n + d.netProfitManwon, 0)
+  const treasury = state.treasury + weekNet
+  // 금고가 음수인 채 마감되면 연속 카운트를 올리고, 흑자로 돌아오면 0으로 리셋한다.
+  const insolvencyStreak = treasury < 0 ? state.insolvencyStreak + 1 : 0
   return {
     ...state,
     phase: 'WEEK_SUMMARY',
     history: [...state.history, ...state.ledgerDays],
-    treasury: state.treasury + weekNet,
+    treasury,
+    insolvencyStreak,
   }
 }
 
@@ -295,6 +311,9 @@ export function completeWeek(state: SessionState): SessionState {
 export function nextWeek(state: SessionState): SessionState {
   if (state.phase !== 'WEEK_SUMMARY') {
     throw new Error(`nextWeek requires WEEK_SUMMARY, got ${state.phase}`)
+  }
+  if (isInsolvent(state)) {
+    throw new Error('nextWeek: 폐업 상태에서는 다음 주로 갈 수 없다 (강제 에필로그)')
   }
   const week = state.week + 1
   const event = selectEvent((week - 1) % EVENT_CATALOG.length)
@@ -405,6 +424,8 @@ export interface SessionEpilogue {
   weekNews: NewsItem[]
   /** 전국 배후과 풀 소진 — 채용(또는 배경 감소)으로 잔여가 초기보다 준 과만(에필로그 전국·지방 병치). */
   poolDepletion: { label: string; initial: number; remaining: number }[]
+  /** 폐업으로 끝났는가(금고 음수 연속 2주). 자발 종료(endGame)면 false. 머리글만 바꾸고 결산 내용은 동일. */
+  closed: boolean
 }
 
 export function buildEpilogue(state: SessionState): SessionEpilogue {
@@ -421,5 +442,5 @@ export function buildEpilogue(state: SessionState): SessionEpilogue {
   const poolDepletion = (Object.keys(state.system.poolInitial) as Specialty[])
     .map((s) => ({ label: SPECIALTY_LABEL[s], initial: state.system.poolInitial[s], remaining: state.system.pool[s] }))
     .filter((p) => p.remaining < p.initial) // 잔여가 준 것만(내가 뽑았거나 배경 감소)
-  return { ledger, weekNews, poolDepletion }
+  return { ledger, weekNews, poolDepletion, closed: isInsolvent(state) }
 }
