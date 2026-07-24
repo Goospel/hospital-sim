@@ -166,6 +166,8 @@ export default function SetupWizard({
           autoFocus
           className="w-full max-w-md rounded-xs border-b-2 border-frame bg-transparent px-3 py-1.5 text-center font-serif text-xl text-on-desk placeholder:font-sans placeholder:text-sm placeholder:text-on-desk-muted focus:border-on-desk-muted focus:outline-none"
         />
+        {/* 발견성 안내 — 빈 방이 클릭 대상임을 화면에 명시(해석 카피 아닌 조작 안내). 한 줄 고정 높이라 무스크롤 불변. */}
+        <p className="font-sans text-xs text-on-desk/50">빈 방을 눌러 의사를 채용하세요</p>
       </header>
 
       {/* 빈 병원 — 방 클릭이 채용의 입구다. 채용하면 그 방에 그 얼굴이 선다(deriveSetupScene). */}
