@@ -5,6 +5,8 @@ import { callerPleaAt } from "@/game/dialogue";
 import { formatSignedManwon } from "@/game/labels";
 import {
   callDelta,
+  canBump,
+  bumpTarget,
   hardlockReason,
   isElective,
   startMinFor,
@@ -172,6 +174,13 @@ export default function CallCard({
   // 지금 바로 못 보고 기다려야 하는 시간. 0이면 즉시 진료다.
   const waitMin = canStart ? start - arrivalMin : 0;
 
+  // BUMP(예약 미루고 받기) — 하드락이면 canBump가 false라 이 계산 자체가 무의미해진다(구조의 벽은 못 뚫는다).
+  const bumpable = !elective && canBump(receiving, call);
+  const bumpDoctor = bumpable
+    ? (receiving.hospital.roster ?? []).find((d) => d.id === bumpTarget(receiving, call))
+    : undefined;
+  const bumpedDelta = bumpDoctor ? receiving.busyWith[bumpDoctor.id]?.deltaManwon ?? 0 : 0;
+
   return (
     // 카드는 이제 화면 중앙 오버레이 안에 뜬다(ReceivingPhase) — 페이지 흐름의 한 칸이
     // 아니므로 자리를 잡아두는 min-h가 필요 없다. 폭만 잡고 높이는 내용에 맡긴다.
@@ -285,6 +294,18 @@ export default function CallCard({
               돌려보내기
             </button>
           </div>
+          {bumpable && bumpDoctor && (
+            // 「예약 미루고 받기」 — 라벨은 사실만: 누구의 진료를 중단하고 얼마를 잃는가(해석 0).
+            // 하드락이면 canBump가 false라 이 버튼은 애초에 안 뜬다(구조의 벽은 못 뚫는다).
+            <button
+              type="button"
+              onClick={() => onDecide("BUMP_ACCEPT")}
+              aria-label={`예약 미루고 받기 — ${bumpDoctor.name} 진료 중단`}
+              className="rounded-xs border border-frame bg-desk py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+            >
+              예약 미루고 받기 · {bumpDoctor.name} 진료 중단 · {formatSignedManwon(-bumpedDelta)}
+            </button>
+          )}
         </div>
       )}
     </section>
