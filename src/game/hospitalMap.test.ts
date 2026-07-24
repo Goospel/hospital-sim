@@ -418,3 +418,42 @@ describe('deriveMapScene — 지원자 출신 의사의 candidateId 전달', () 
     expect(doctors.find((a) => a.id === 'doc-CARDIOLOGY-2')!.candidateId).toBeUndefined()
   })
 })
+
+import { deriveSetupScene } from './hospitalMap'
+import { FIXED_BEDS } from './setup'
+
+describe('deriveSetupScene — 개원 전 장면(hiredIds 직접 합성)', () => {
+  const vet = CANDIDATES.find((c) => c.dept === 'CARDIOLOGY' && c.tier === 'VETERAN')!
+  const std = CANDIDATES.find((c) => c.dept === 'CARDIOLOGY' && c.tier === 'STANDARD')!
+
+  it('채용한 과만 staffed, 지원자 아바타가 자기 방에 선다(candidateId·slot·busy false)', () => {
+    const scene = deriveSetupScene([vet.id, std.id])
+    expect(scene.rooms.find((r) => r.dept === 'CARDIOLOGY')!.staffed).toBe(true)
+    expect(scene.rooms.find((r) => r.dept === 'NEUROSURGERY')!.staffed).toBe(false)
+    const docs = scene.avatars.filter((a) => a.kind === 'DOCTOR')
+    expect(docs).toHaveLength(2)
+    expect(docs.every((a) => a.zone === 'ROOM' && a.dept === 'CARDIOLOGY' && !a.busy)).toBe(true)
+    expect(new Set(docs.map((a) => a.slot))).toEqual(new Set([0, 1]))
+    expect(docs.map((a) => a.candidateId).sort()).toEqual([std.id, vet.id].sort())
+  })
+
+  it('빈 채용 = 전부 빈 방(lit)·아바타 0·침대 전부 빈 침대·조명 DAY·대기 0', () => {
+    const scene = deriveSetupScene([])
+    expect(scene.rooms).toHaveLength(DEPARTMENTS.length)
+    expect(scene.rooms.every((r) => !r.staffed && r.lit)).toBe(true)
+    expect(scene.avatars).toHaveLength(0)
+    expect(scene.beds).toHaveLength(FIXED_BEDS)
+    expect(scene.beds.every((b) => b.occupantDoctorId === undefined)).toBe(true)
+    expect(scene.lighting).toBe('DAY')
+    expect(scene.waitingCount).toBe(0)
+    expect(scene.waitingOverflow).toBe(0)
+  })
+
+  it('결정론 — 같은 hired는 같은 장면', () => {
+    expect(deriveSetupScene([vet.id])).toEqual(deriveSetupScene([vet.id]))
+  })
+
+  it('모르는 id는 무시(방어 — toggleHired·doctorsCountsOf와 같은 결)', () => {
+    expect(deriveSetupScene(['ghost']).avatars).toHaveLength(0)
+  })
+})
