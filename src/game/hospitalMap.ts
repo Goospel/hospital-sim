@@ -70,6 +70,7 @@ export interface MapAvatar {
   busy: boolean // 의사 전용
   /** 환자 전용 — 도착했으나 아직 진료를 못 받고 서 있다(진료 중인 환자와 구별). */
   waiting?: boolean
+  candidateId?: string // 출신 지원자(초상 변주 키) — Doctor.candidateId 파생. 무명이면 없음
 }
 
 /**
@@ -131,12 +132,12 @@ export function deriveMapScene(receiving: ReceivingState, atMin: number): MapSce
 
   for (const doc of ordered) {
     if (!isBusy(doc)) {
-      avatars.push({ id: doc.id, kind: 'DOCTOR', zone: 'CORRIDOR', dept: doc.dept, slot: corridorSlot++, busy: false })
+      avatars.push({ id: doc.id, kind: 'DOCTOR', zone: 'CORRIDOR', dept: doc.dept, slot: corridorSlot++, busy: false, candidateId: doc.candidateId })
       continue
     }
     const slot = roomSlot.get(doc.dept) ?? 0
     roomSlot.set(doc.dept, slot + 1)
-    avatars.push({ id: doc.id, kind: 'DOCTOR', zone: 'ROOM', dept: doc.dept, slot, busy: true })
+    avatars.push({ id: doc.id, kind: 'DOCTOR', zone: 'ROOM', dept: doc.dept, slot, busy: true, candidateId: doc.candidateId })
 
     // 그 의사가 지금 보고 있는 환자. 침대가 남으면 눕고, 정원을 넘으면 복도에서 기다린다.
     const patient = { id: `pat-${doc.id}`, kind: 'PATIENT' as const, busy: false }

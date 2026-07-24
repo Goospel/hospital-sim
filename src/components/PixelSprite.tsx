@@ -47,17 +47,28 @@ function PixelGrid({ rows, palette }: { rows: string[]; palette: Record<string, 
   );
 }
 
-/** 의사 — 흰 가운 + 과 색 어깨. busy면 가운이 밝아진다(상태점이 아니라 밝기로). */
-export function DoctorSprite({ dept, busy }: { dept: DeptKey; busy: boolean }) {
+// 지원자별 초상 변주 — 머리·피부 2슬롯만(character-design.md §1: 실루엣은 FIGURE 하나, 색으로만 구분).
+// id 해시 파생이라 결정론(RNG 0). 기본값(변주 키 없음) = 종전 렌더와 동일.
+const HAIR_VARIANTS = ["#3f3f46", "#1c1917", "#7c5a3a", "#57534e"];
+const SKIN_VARIANTS = ["#f0d3b4", "#e3b58a", "#c99a6b"];
+
+function variantOf(key: string): { hair: string; skin: string } {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (Math.imul(h, 31) + key.charCodeAt(i)) | 0;
+  const u = h >>> 0;
+  return {
+    hair: HAIR_VARIANTS[u % HAIR_VARIANTS.length],
+    skin: SKIN_VARIANTS[Math.floor(u / 7) % SKIN_VARIANTS.length],
+  };
+}
+
+/** 의사 — 흰 가운 + 과 색 어깨. busy면 가운이 밝아진다. variantKey(지원자 id)가 있으면 머리·피부 변주. */
+export function DoctorSprite({ dept, busy, variantKey }: { dept: DeptKey; busy: boolean; variantKey?: string }) {
+  const v = variantKey ? variantOf(variantKey) : { hair: "#3f3f46", skin: "#f0d3b4" };
   return (
     <PixelGrid
       rows={FIGURE}
-      palette={{
-        H: "#3f3f46",
-        S: "#f0d3b4",
-        C: busy ? "#fafafa" : "#d4d4d8",
-        A: DEPT_COLOR[dept],
-      }}
+      palette={{ H: v.hair, S: v.skin, C: busy ? "#fafafa" : "#d4d4d8", A: DEPT_COLOR[dept] }}
     />
   );
 }
