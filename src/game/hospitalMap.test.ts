@@ -105,8 +105,8 @@ describe('deriveMapScene — 야간 소등', () => {
   })
 })
 
-describe('deriveMapScene — 의사 위치', () => {
-  it('점유 중인 의사는 자기 진료실 안, 자유로운 의사는 복도', () => {
+describe('deriveMapScene — 의사 위치(항상 자기 진료실)', () => {
+  it('의사는 한가해도 자기 방을 지킨다 — 점유 여부는 busy로만 갈린다', () => {
     const doc = hospital.roster![0]
     const r = { ...base, busyUntil: { [doc.id]: 200 } }
     const scene = deriveMapScene(r, 100)
@@ -117,27 +117,47 @@ describe('deriveMapScene — 의사 위치', () => {
     expect(a.busy).toBe(true)
 
     const others = scene.avatars.filter((v) => v.kind === 'DOCTOR' && v.id !== doc.id)
-    expect(others.every((v) => v.zone === 'CORRIDOR' && !v.busy)).toBe(true)
+    expect(others.length).toBeGreaterThan(0)
+    expect(others.every((v) => v.zone === 'ROOM' && !v.busy)).toBe(true)
   })
 
-  it('경계값 busyUntil === atMin 은 자유 쪽(freeDoctorsOfDept와 같은 부등호)', () => {
+  it('경계값 busyUntil === atMin 은 자유 쪽(freeDoctorsOfDept와 같은 부등호) — 방은 그대로', () => {
     const doc = hospital.roster![0]
-    const scene = deriveMapScene({ ...base, busyUntil: { [doc.id]: 100 } }, 100)
-    expect(scene.avatars.find((v) => v.id === doc.id)!.zone).toBe('CORRIDOR')
+    const a = deriveMapScene({ ...base, busyUntil: { [doc.id]: 100 } }, 100).avatars.find((v) => v.id === doc.id)!
+    expect(a.zone).toBe('ROOM')
+    expect(a.busy).toBe(false)
   })
 
-  it('atMin이 전진하면 진료가 끝난 의사가 스스로 복도로 나온다(빨리감기의 근거)', () => {
+  it('atMin이 전진하면 진료가 끝난 의사의 busy가 스스로 풀린다(빨리감기의 근거)', () => {
     const doc = hospital.roster![0]
     const r = { ...base, busyUntil: { [doc.id]: 200 } }
-    expect(deriveMapScene(r, 150).avatars.find((v) => v.id === doc.id)!.zone).toBe('ROOM')
-    expect(deriveMapScene(r, 250).avatars.find((v) => v.id === doc.id)!.zone).toBe('CORRIDOR')
+    expect(deriveMapScene(r, 150).avatars.find((v) => v.id === doc.id)!.busy).toBe(true)
+    const after = deriveMapScene(r, 250).avatars.find((v) => v.id === doc.id)!
+    expect(after.busy).toBe(false)
+    expect(after.zone).toBe('ROOM')
   })
 
   it('같은 방의 두 의사는 서로 다른 slot을 받는다', () => {
-    const [d1, d2] = hospital.roster!.filter((d) => d.dept === 'CARDIOLOGY')
-    const scene = deriveMapScene({ ...base, busyUntil: { [d1.id]: 200, [d2.id]: 200 } }, 100)
-    const slots = scene.avatars.filter((v) => v.kind === 'DOCTOR' && v.zone === 'ROOM').map((v) => v.slot)
+    const scene = deriveMapScene(base, 100)
+    const slots = scene.avatars
+      .filter((v) => v.kind === 'DOCTOR' && v.dept === 'CARDIOLOGY')
+      .map((v) => v.slot)
     expect([...slots].sort()).toEqual([0, 1])
+  })
+
+  it('야간 소등된 방의 한가한 의사는 퇴근한다 — 아바타가 없다', () => {
+    const scene = deriveMapScene(base, NIGHT_START_MIN)
+    // 미용은 밤에 불이 꺼진다 → 의사도 없다. 순환기(당직 성립)는 남는다.
+    expect(scene.avatars.some((v) => v.kind === 'DOCTOR' && v.dept === 'AESTHETICS')).toBe(false)
+    expect(scene.avatars.filter((v) => v.kind === 'DOCTOR' && v.dept === 'CARDIOLOGY')).toHaveLength(2)
+  })
+
+  it('소등된 방이라도 진료가 남았으면 끝날 때까지 남는다', () => {
+    const aest = hospital.roster!.find((d) => d.dept === 'AESTHETICS')!
+    const r = { ...base, busyUntil: { [aest.id]: NIGHT_START_MIN + 60 } }
+    const a = deriveMapScene(r, NIGHT_START_MIN).avatars.find((v) => v.id === aest.id)
+    expect(a?.zone).toBe('ROOM')
+    expect(a?.busy).toBe(true)
   })
 })
 
@@ -149,20 +169,27 @@ describe('deriveMapScene — 병상', () => {
     expect(scene.beds.map((b) => b.index)).toEqual([0, 1, 2])
   })
 
-  it('진료 중인 의사 1명 = 침대 위 환자 1명', () => {
-    const [d1, d2] = hospital.roster!.filter((d) => d.dept === 'CARDIOLOGY')
-    const scene = deriveMapScene({ ...base, busyUntil: { [d1.id]: 200, [d2.id]: 200 } }, 100)
-    const occupied = scene.beds.filter((b) => b.occupantDoctorId !== undefined)
-    expect(occupied).toHaveLength(2)
-    expect(occupied.map((b) => b.occupantDoctorId).sort()).toEqual([d1.id, d2.id].sort())
-
-    // waiting을 뺀다 — 이 계약은 '진료 중인 환자'에 대한 것이고, 대기 환자는 별개 축이다.
-    const patients = scene.avatars.filter((v) => v.kind === 'PATIENT' && !v.waiting)
-    expect(patients).toHaveLength(2)
-    expect(patients.every((v) => v.zone === 'BED')).toBe(true)
+  it('첫 환자는 자기 과 진료실 진료대(slot 0)에 눕는다 — 병동은 아직 빈다', () => {
+    const d1 = hospital.roster!.find((d) => d.dept === 'CARDIOLOGY')!
+    const scene = deriveMapScene({ ...base, busyUntil: { [d1.id]: 200 } }, 100)
+    const pat = scene.avatars.find((v) => v.kind === 'PATIENT' && !v.waiting)!
+    expect(pat.zone).toBe('ROOM')
+    expect(pat.dept).toBe('CARDIOLOGY')
+    expect(pat.slot).toBe(0)
+    expect(scene.beds.every((b) => b.occupantDoctorId === undefined)).toBe(true)
   })
 
-  it('점유가 병상을 넘으면 초과분 환자는 복도에서 대기한다(침대 칸 수는 고정)', () => {
+  it('같은 과 둘째 환자부터 병동 침대로 넘어간다 — 진료 중 의사 1명 = 환자 1명은 유지', () => {
+    const [d1, d2] = hospital.roster!.filter((d) => d.dept === 'CARDIOLOGY')
+    const scene = deriveMapScene({ ...base, busyUntil: { [d1.id]: 200, [d2.id]: 200 } }, 100)
+    const patients = scene.avatars.filter((v) => v.kind === 'PATIENT' && !v.waiting)
+    expect(patients).toHaveLength(2)
+    expect(patients.filter((v) => v.zone === 'ROOM')).toHaveLength(1) // 진료대
+    expect(patients.filter((v) => v.zone === 'BED')).toHaveLength(1) // 초과분
+    expect(scene.beds.filter((b) => b.occupantDoctorId !== undefined)).toHaveLength(1)
+  })
+
+  it('진료대·병동이 다 차면 방 안에 선다(slot 1+) — 환자는 사라지지 않는다', () => {
     const many = buildHospital(
       { hospitalName: '만원', doctors: { CARDIOLOGY: 3, AESTHETICS: 3 } },
       DEPARTMENTS,
@@ -174,14 +201,19 @@ describe('deriveMapScene — 병상', () => {
     expect(scene.beds.filter((b) => b.occupantDoctorId).length).toBe(3)
     const patients = scene.avatars.filter((v) => v.kind === 'PATIENT' && !v.waiting)
     expect(patients).toHaveLength(6) // 진료 중 의사 6명 = 환자 6명
-    expect(patients.filter((v) => v.zone === 'CORRIDOR')).toHaveLength(3) // 초과분
+    expect(patients.filter((v) => v.zone === 'ROOM' && v.slot === 0)).toHaveLength(2) // 과당 진료대 1
+    expect(patients.filter((v) => v.zone === 'BED')).toHaveLength(3)
+    expect(patients.filter((v) => v.zone === 'ROOM' && v.slot > 0)).toHaveLength(1) // 서서 진료
   })
 
-  it('퇴원 — 담당의 busyUntil을 지난 시각에서 그 침대가 빈다', () => {
-    const d1 = hospital.roster!.find((d) => d.dept === 'CARDIOLOGY')!
-    const r = { ...base, busyUntil: { [d1.id]: 200 } }
-    expect(deriveMapScene(r, 150).beds.filter((b) => b.occupantDoctorId).length).toBe(1)
-    expect(deriveMapScene(r, 250).beds.filter((b) => b.occupantDoctorId).length).toBe(0)
+  it('퇴원 — 담당의 busyUntil을 지난 시각에서 환자가 사라진다', () => {
+    const [d1, d2] = hospital.roster!.filter((d) => d.dept === 'CARDIOLOGY')
+    const r = { ...base, busyUntil: { [d1.id]: 200, [d2.id]: 200 } }
+    const inTreatment = (atMin: number) =>
+      deriveMapScene(r, atMin).avatars.filter((v) => v.kind === 'PATIENT' && !v.waiting).length
+    expect(inTreatment(150)).toBe(2)
+    expect(inTreatment(250)).toBe(0)
+    expect(deriveMapScene(r, 250).beds.every((b) => b.occupantDoctorId === undefined)).toBe(true)
   })
 
   it('하드락·거절 콜은 침대를 만들지 않는다(busyUntil이 안 생긴다)', () => {
@@ -359,9 +391,9 @@ describe('ambientWalkers — 배경 보행자(순수 장식)', () => {
 /*
   대기 환자 — 북적임의 시각화(2026-07-23). 이전까지 맵에 뜨는 환자는 '진료 중인 의사 수'가
   상한이라(의사 3명이면 환자 최대 3명) 병원이 구조적으로 북적일 수 없었다. 이제 도착했지만
-  아직 진료를 시작하지 못한 사람이 복도에 선다. 새 게임 상태는 0개 — log에서 파생만 한다.
+  아직 진료를 시작하지 못한 사람이 대기실 의자에 앉는다. 새 게임 상태는 0개 — log에서 파생만 한다.
 */
-describe('deriveMapScene — 대기 환자(복도에 쌓인다)', () => {
+describe('deriveMapScene — 대기 환자(대기실 의자에 쌓인다)', () => {
   const solo: SetupChoices = { hospitalName: '한칸병원', doctors: { CARDIOLOGY: 1 } }
   const soloHospital: Hospital = buildHospital(solo).hospital
   const stemi = (id: string, arrivalMin: number, durationMin = 120): IncomingCall => ({
@@ -376,9 +408,12 @@ describe('deriveMapScene — 대기 환자(복도에 쌓인다)', () => {
     expect(waitingCount(s, 50)).toBe(0)
   })
 
-  it('도착했는데 아직 처리 전이면 대기 중으로 선다', () => {
+  it('도착했는데 아직 처리 전이면 대기실 의자(WAITING)에 앉는다', () => {
     const s = initReceiving(soloHospital, [stemi('c1', 100)])
     expect(waitingCount(s, 100)).toBe(1)
+    const w = deriveMapScene(s, 100).avatars.find((a) => a.waiting)!
+    expect(w.zone).toBe('WAITING')
+    expect(w.slot).toBe(0) // 의자 인덱스
   })
 
   it('진료가 시작되면 대기에서 빠진다 — 두 번 세지 않는다', () => {
@@ -394,7 +429,7 @@ describe('deriveMapScene — 대기 환자(복도에 쌓인다)', () => {
     expect(waitingCount(s, 150)).toBe(2) // c2·c3이 서 있다
   })
 
-  it('표시 상한을 넘으면 아바타는 자르고 넘친 인원수를 남긴다(복도 폭은 유한하다)', () => {
+  it('표시 상한을 넘으면 아바타는 자르고 넘친 인원수를 남긴다(의자 수는 유한하다)', () => {
     const q = Array.from({ length: 20 }, (_, i) => stemi(`c${i}`, 100 + i))
     let s = initReceiving(soloHospital, q)
     for (let i = 0; i < q.length; i++) s = decide(s, 'ACCEPT')
