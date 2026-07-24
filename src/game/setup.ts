@@ -1,5 +1,6 @@
 import type { DepartmentSpec, DeptKey, Hospital, HospitalEconomics, SetupChoices, Specialty } from './types'
 import { materializeRoster } from './doctor'
+import { doctorsCountsOf, hiringCostOfCandidates } from './candidates'
 
 // 병원 설립(위저드) — 순수·결정론. 위저드 선택이 곧 플레이어의 Hospital + HospitalEconomics다.
 // 부호(적자↔흑자)만 근거를 지키고 금액은 각색: essential-care-economics.md / essential-care-litigation-risk.md.
@@ -205,9 +206,25 @@ export function hiringCost(choices: SetupChoices, departments: DepartmentSpec[] 
   return departments.reduce((sum, d) => sum + d.hireCostManwon * count(choices, d.key), 0)
 }
 
+/** SETUP 채용비(만원) — 지원자 선택(hiredIds)이 있으면 계약금 합산, 없으면(성장·구 경로) 과 앵커가. */
+export function setupHiringCostManwon(choices: SetupChoices, departments: DepartmentSpec[] = DEPARTMENTS): number {
+  return choices.hiredIds ? hiringCostOfCandidates(choices.hiredIds) : hiringCost(choices, departments)
+}
+
+/**
+ * hiredIds가 있으면 doctors 카운트는 그 파생과 일치해야 한다 — 단일 기록 지점 계약(types.ts 주석)의
+ * 런타임 방어선. 위저드가 유일한 기록자라 정상 경로에선 항상 true다.
+ */
+export function hiredMatchesCounts(choices: SetupChoices): boolean {
+  if (!choices.hiredIds) return true
+  const derived = doctorsCountsOf(choices.hiredIds)
+  const keys = new Set([...Object.keys(derived), ...Object.keys(choices.doctors)]) as Set<DeptKey>
+  return [...keys].every((k) => (derived[k] ?? 0) === (choices.doctors[k] ?? 0))
+}
+
 /** 예산 한도 이내인가. */
 export function withinBudget(choices: SetupChoices, departments: DepartmentSpec[] = DEPARTMENTS): boolean {
-  return hiringCost(choices, departments) <= SETUP_BUDGET_MANWON
+  return setupHiringCostManwon(choices, departments) <= SETUP_BUDGET_MANWON
 }
 
 /** 모든 과가 인원 상한 이내인가 — 예산과 독립된 제약이다(미용 10명은 예산은 통과한다). */
@@ -234,11 +251,12 @@ export function adjustDoctors(
   return { ...choices, doctors }
 }
 
-/** 세션을 시작할 수 있는 선택인가 — 이름이 있고 예산·과별 상한 이내. */
+/** 세션을 시작할 수 있는 선택인가 — 이름이 있고 예산·과별 상한 이내, hiredIds↔doctors 정합. */
 export function isSetupReady(choices: SetupChoices, departments: DepartmentSpec[] = DEPARTMENTS): boolean {
   return (
     choices.hospitalName.trim().length > 0 &&
     withinBudget(choices, departments) &&
-    withinDeptCaps(choices, departments)
+    withinDeptCaps(choices, departments) &&
+    hiredMatchesCounts(choices)
   )
 }
