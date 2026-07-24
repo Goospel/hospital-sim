@@ -51,7 +51,7 @@ export interface Candidate {
 | VETERAN | ×1.3 | ×0.8 (빠름) | 1명 |
 
 - **speedFactor는 tier에서 파생한다**(`SPEED_OF_TIER: Record<CareerTier, number>`). Candidate에 중복 저장하지 않는다 — 이중 기재 병 방지.
-- 계약금 = `Math.round(dept.hireCostManwon × 배율)`. 앵커가 setup.ts의 기존 값이므로 **"순환기 1명 = 미용 3명" 비율 딜레마가 보존**된다. 베테랑 순환기 3명 = 19,500×3 = 58,500만원 > 예산 50,000만원 — 올(all) 베테랑 필수과는 불가능, 선택이 강제된다.
+- 계약금 = `Math.round(dept.hireCostManwon × 배율)`. 앵커가 setup.ts의 기존 값이므로 **"순환기 1명 = 미용 3명" 비율 딜레마가 보존**된다. 필수 6과의 베테랑을 전원 채용하면 105,300만원 > 예산 50,000만원 — 올(all) 베테랑은 불가능, 선택이 강제된다(풀이 과별 베테랑 1명이라 한 과에 베테랑을 셋 몰 수도 없다).
 - 계약금은 일회성 채용비다. **주간 고정비(`fixedCostPerDoctorManwon`)는 티어와 무관하게 현행 유지** — 7의 배수 불변식·결말 장부·명랑 장부에 0 침습.
 
 ### resumeLine 작성 규칙 (금지선)
