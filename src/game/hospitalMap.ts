@@ -55,33 +55,37 @@ export interface MapBed {
 }
 
 export type AvatarKind = 'DOCTOR' | 'PATIENT'
-export type AvatarZone = 'ROOM' | 'CORRIDOR' | 'BED'
+/**
+ * ROOM = 진료실 안(의사 상주 + 진료대 환자) · BED = 병동 침대 · WAITING = 대기실 의자.
+ * 복도 zone은 없다 — 의사가 환자와 나란히 줄 서 보이던 문제의 근원이라 제거했다(2026-07-24).
+ */
+export type AvatarZone = 'ROOM' | 'BED' | 'WAITING'
 
 export interface MapAvatar {
   id: string
   kind: AvatarKind
   zone: AvatarZone
-  /**
-   * 의사의 소속 과 — ROOM이면 어느 방인지이고, CORRIDOR여도 그대로 실린다.
-   * (설계 스펙 §3은 "ROOM일 때"라고 썼지만, 복도의 순환기 의사도 과 색으로 알아볼 수 있어야 해서 항상 싣는다.
-   *  정보가 늘 뿐이라 소비자는 zone으로만 분기하면 된다.) 환자는 undefined.
-   */
+  /** 어느 방인가 — 의사는 소속 과(항상), 환자는 zone이 ROOM일 때만(진료받는 방). */
   dept?: DeptKey
-  slot: number // 그 zone 안에서의 자리 인덱스 — 픽셀 좌표는 컴포넌트가 계산한다
+  /**
+   * 그 zone 안에서의 자리 인덱스 — 픽셀 좌표는 컴포넌트가 계산한다.
+   * ROOM 환자의 slot 0은 **진료대**이고 1+는 서서 진료(진료대·병동이 다 찼을 때).
+   */
+  slot: number
   busy: boolean // 의사 전용
-  /** 환자 전용 — 도착했으나 아직 진료를 못 받고 서 있다(진료 중인 환자와 구별). */
+  /** 환자 전용 — 도착했으나 아직 진료를 못 받고 앉아 있다(진료 중인 환자와 구별). */
   waiting?: boolean
   candidateId?: string // 출신 지원자(초상 변주 키) — Doctor.candidateId 파생. 무명이면 없음
 }
 
 /**
- * 복도에 세울 대기 환자 아바타의 표시 상한.
+ * 대기실 의자 수 = 대기 환자 아바타의 표시 상한.
  *
- * 게임은 대기 인원에 상한이 없다 — 이건 **순전히 폭의 문제**다. 복도 가용 폭이 88%뿐이라
+ * 게임은 대기 인원에 상한이 없다 — 이건 **순전히 가구의 문제**다. 의자가 6개뿐이라
  * 그 이상은 스프라이트가 서로 겹쳐 세는 게 불가능해진다. 넘친 인원은 사라지지 않고
  * `waitingOverflow`로 세어 화면이 「+N」으로 말한다.
  */
-export const MAX_WAITING_AVATARS = 8
+export const MAX_WAITING_AVATARS = 6
 
 export interface MapScene {
   rooms: MapRoom[]
@@ -99,8 +103,8 @@ export interface MapScene {
  * 그 순간의 병원 장면. 순수·결정론이고 **게임 상태를 만들지 않는다** — 저장되지 않는 파생 산출물이다.
  *
  * 핵심은 busyUntil 하나가 두 가지를 동시에 정한다는 것이다:
- *   (1) 의사가 진료실 안인가 복도인가
- *   (2) 지금 병원에 환자가 몇 명 누워 있는가
+ *   (1) 의사가 진료 중인가(가운 밝기 + 방 안 환자 유무) — 의사는 어느 쪽이든 자기 방에 있다
+ *   (2) 지금 병원에 환자가 몇 명 있는가, 그리고 어디에(진료대 → 병동 침대 → 방 안 입석 순)
  * decide()가 수용 시 정확히 한 명을 arrivalMin+durationMin까지 점유하므로
  * **진료 중인 의사 1명 = 환자 1명**이다. log를 훑을 필요도, 배정을 재현할 필요도 없다
  * (log에는 담당 의사 id가 없어 재현 자체가 불가능하다 — 설계 스펙 §4.3).
@@ -124,38 +128,48 @@ export function deriveMapScene(receiving: ReceivingState, atMin: number): MapSce
   // 방 순서와 같은 규칙으로 정렬해 아바타 배치·침대 배정을 결정론으로 만든다.
   const ordered = [...roster].sort((a, b) => compareDeptKeys(a.dept, b.dept))
   const isBusy = (doc: Doctor) => (receiving.busyUntil[doc.id] ?? 0) > atMin
+  const litByDept = new Map(rooms.map((r) => [r.dept, r.lit]))
 
   const beds: MapBed[] = Array.from({ length: hospital.beds }, (_, index) => ({ index }))
   const avatars: MapAvatar[] = []
-  const roomSlot = new Map<DeptKey, number>()
-  let corridorSlot = 0 // 의사·환자가 한 카운터를 공유한다 — 복도에서 자리가 겹치지 않게
+  // 의사·환자 각각 과별 ROOM 슬롯을 **따로** 센다: 의사 slot(0,1,…)은 방 안 서 있는 자리이고,
+  // 환자 slot 0은 진료대·1+는 입석이라 좌표를 컴포넌트가 kind로 갈라 배치한다(겹치지 않는다).
+  const docSlot = new Map<DeptKey, number>()
+  const patSlot = new Map<DeptKey, number>()
   let nextBed = 0
 
   for (const doc of ordered) {
-    if (!isBusy(doc)) {
-      avatars.push({ id: doc.id, kind: 'DOCTOR', zone: 'CORRIDOR', dept: doc.dept, slot: corridorSlot++, busy: false, candidateId: doc.candidateId })
-      continue
-    }
-    const slot = roomSlot.get(doc.dept) ?? 0
-    roomSlot.set(doc.dept, slot + 1)
-    avatars.push({ id: doc.id, kind: 'DOCTOR', zone: 'ROOM', dept: doc.dept, slot, busy: true, candidateId: doc.candidateId })
+    const busy = isBusy(doc)
+    // 의사는 **항상 자기 진료실**에 있다 — 복도 줄서기 없음. 단, 한가한데 방이 소등되면(야간·수익과)
+    // 퇴근해 아바타가 사라진다. 진료가 남았으면(busy) 소등돼도 끝날 때까지 방을 지킨다.
+    if (!busy && !litByDept.get(doc.dept)) continue
+    const slot = docSlot.get(doc.dept) ?? 0
+    docSlot.set(doc.dept, slot + 1)
+    avatars.push({ id: doc.id, kind: 'DOCTOR', zone: 'ROOM', dept: doc.dept, slot, busy, candidateId: doc.candidateId })
 
-    // 그 의사가 지금 보고 있는 환자. 침대가 남으면 눕고, 정원을 넘으면 복도에서 기다린다.
+    if (!busy) continue
+
+    // 그 의사가 지금 보고 있는 환자. 과의 첫 환자는 진료대(ROOM slot 0), 그다음은 병동 침대,
+    // 병동까지 차면 방 안에 서서(ROOM slot 1+) 받는다 — 환자는 상한 없이 어딘가엔 반드시 보인다.
     const patient = { id: `pat-${doc.id}`, kind: 'PATIENT' as const, busy: false }
-    if (nextBed < beds.length) {
+    const seenInDept = patSlot.get(doc.dept) ?? 0
+    patSlot.set(doc.dept, seenInDept + 1)
+    if (seenInDept === 0) {
+      avatars.push({ ...patient, zone: 'ROOM', dept: doc.dept, slot: 0 }) // 진료대
+    } else if (nextBed < beds.length) {
       beds[nextBed].occupantDoctorId = doc.id
       avatars.push({ ...patient, zone: 'BED', slot: nextBed })
       nextBed++
     } else {
-      avatars.push({ ...patient, zone: 'CORRIDOR', slot: corridorSlot++ })
+      avatars.push({ ...patient, zone: 'ROOM', dept: doc.dept, slot: seenInDept }) // 입석
     }
   }
 
-  // 대기 환자 — 도착했는데 아직 진료를 시작 못 한 사람들. 이들이 복도를 채운다.
+  // 대기 환자 — 도착했는데 아직 진료를 시작 못 한 사람들. 이들이 대기실 의자를 채운다.
   const waiting = waitingCalls(receiving, atMin)
-  for (const call of waiting.slice(0, MAX_WAITING_AVATARS)) {
-    avatars.push({ id: `wait-${call.id}`, kind: 'PATIENT', zone: 'CORRIDOR', slot: corridorSlot++, busy: false, waiting: true })
-  }
+  waiting.slice(0, MAX_WAITING_AVATARS).forEach((call, i) => {
+    avatars.push({ id: `wait-${call.id}`, kind: 'PATIENT', zone: 'WAITING', slot: i, busy: false, waiting: true })
+  })
 
   return {
     rooms,
@@ -206,9 +220,9 @@ export function deriveSetupScene(hired: string[], beds: number = FIXED_BEDS): Ma
 }
 
 /**
- * 시각 `atMin`에 **아직 진료를 못 받고 서 있는** 콜들. 순수 파생 — 새 게임 상태 0개.
+ * 시각 `atMin`에 **아직 진료를 못 받고 대기실에 앉아 있는** 콜들. 순수 파생 — 새 게임 상태 0개.
  *
- * 세 부류가 같은 자리에 선다. 셋 다 플레이어 눈엔 '기다리는 사람'이라 구분 없이 그린다:
+ * 세 부류가 같은 자리에 앉는다. 셋 다 플레이어 눈엔 '기다리는 사람'이라 구분 없이 그린다:
  *   1. 도착했는데 아직 처리 전   — log에 항목이 없다(흐름이 멈춰 카드가 떠 있는 동안)
  *   2. 받았지만 시작 전         — startMin이 아직 안 왔다(앞사람이 그 과 의사를 점유 중)
  *   3. 기다리다 떠날 사람       — 한계 시각까지는 서 있다가 사라진다
@@ -314,7 +328,7 @@ export interface AmbientWalker {
   id: string
   delayMs: number
   durationMs: number
-  /** 복도 안 세로 줄 0|1|2 — 컴포넌트가 px 위치로 옮긴다. */
+  /** 거리 안 통행 줄 0|1|2 — 컴포넌트가 세로 위치·진행 방향(홀짝)으로 옮긴다. */
   lane: number
 }
 
@@ -329,7 +343,7 @@ const AMBIENT_COUNT: Record<Lighting, number> = { DAY: 5, DUSK: 2, NIGHT: 0 }
  *
  * MapScene에 넣지 않는 이유: 이건 게임 상태 파생이 아니라 장식이라, avatars에 섞으면
  * (a) 「보이는 것 = 게임이 모델링하는 것」이 깨지고 (b) deriveMapScene의 테스트가
- * 장식을 검증하게 되고 (c) 복도 슬롯 카운터를 장식이 밀어낸다.
+ * 장식을 검증하게 되고 (c) 방·의자 슬롯 카운터를 장식이 밀어낸다.
  *
  * id를 인덱스로 고정하는 이유: 조명이 바뀌어 인원이 줄어도 남는 사람은 같은 React key를
  * 유지해야 리마운트로 걸음이 끊기지 않는다.

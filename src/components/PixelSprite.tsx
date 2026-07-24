@@ -101,3 +101,73 @@ export function BedSprite({ occupied }: { occupied: boolean }) {
     />
   );
 }
+
+/*
+  진료실·대기실·거리 가구 — 사람이 아니라 **집기**다. §1 "실루엣은 FIGURE 하나"는 인물 규칙이라
+  가구엔 적용되지 않는다(BED와 같은 결). 방을 "빈 상자"가 아니라 진료실로 읽히게 하는 배경이고,
+  상호작용·게임 상태가 없다. 색은 데스크 팔레트 계열로 낮춰 아바타(사람)가 시선을 먼저 받게 한다.
+*/
+
+// 진료대 — 위에서 본 짧은 침대(베개 있는 쪽이 머리). 병동 BED보다 작아 방 안에 들어간다.
+const EXAM_BED = [
+  "........",
+  "FFFFFFFF",
+  "FPPMMMMF",
+  "FMMMMMMF",
+  "FMMMMMMF",
+  "FFFFFFFF",
+  "........",
+  "........",
+];
+
+export function ExamBedSprite() {
+  return <PixelGrid rows={EXAM_BED} palette={{ F: "#3f3f46", P: "#c8c8cf", M: "#2f2f38" }} />;
+}
+
+// 책상 — 위에서 본 상판 + 서류 두 장.
+const DESK = [
+  "........",
+  ".DDDDDD.",
+  ".DWWWWD.",
+  ".DWPPWD.",
+  ".DWWWWD.",
+  ".DDDDDD.",
+  "........",
+  "........",
+];
+
+export function DeskSprite() {
+  return <PixelGrid rows={DESK} palette={{ D: "#4a3f33", W: "#6b5a45", P: "#d8d3c0" }} />;
+}
+
+// 대기실 의자 — 위에서 본 등받이 + 좌면.
+const CHAIR = [
+  "........",
+  ".BBBBBB.",
+  ".BSSSSB.",
+  ".BSSSSB.",
+  ".BSSSSB.",
+  ".BBBBBB.",
+  "..B..B..",
+  "........",
+];
+
+export function ChairSprite() {
+  return <PixelGrid rows={CHAIR} palette={{ B: "#3f3f46", S: "#2b2b33" }} />;
+}
+
+// 가로수 화분 — 병원 밖 거리 소품(잎·줄기·화분).
+const PLANTER = [
+  "..GGGG..",
+  ".GGGGGG.",
+  ".GGGGGG.",
+  "..GGGG..",
+  "...TT...",
+  "..PPPP..",
+  "..PPPP..",
+  "........",
+];
+
+export function PlanterSprite() {
+  return <PixelGrid rows={PLANTER} palette={{ G: "#3f6f4f", T: "#5a4632", P: "#3a3a44" }} />;
+}
