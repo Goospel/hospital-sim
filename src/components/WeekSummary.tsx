@@ -16,6 +16,7 @@ export default function WeekSummary({
   received,
   turnedAway,
   treasury,
+  insolvencyStreak,
   onNextWeek,
   onEnd,
 }: {
@@ -25,9 +26,12 @@ export default function WeekSummary({
   received: number;
   turnedAway: number;
   treasury: number;
+  insolvencyStreak: number;
   onNextWeek: () => void;
   onEnd: () => void;
 }) {
+  const warning = insolvencyStreak === 1; // 아직 폐업 아님 — 경고
+  const closed = insolvencyStreak >= 2; // 폐업
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col justify-center gap-6 bg-desk px-5 py-10 text-on-desk">
       <span className="text-center text-xs font-medium uppercase tracking-[0.3em] text-on-desk/60">
@@ -81,20 +85,36 @@ export default function WeekSummary({
         </div>
       </section>
 
+      {(warning || closed) && (
+        // 은행 통지 — 규칙의 사실만(해석 0). 경고는 "다음 주도 적자면 폐업", 폐업은 확정 통지.
+        // 색 단독 신호 금지: 붉은 잉크 + 글자가 함께 판정을 진다.
+        <p className="rounded-xs border border-stamp bg-stamp-field px-4 py-3 text-center text-sm font-medium text-stamp-ink">
+          {closed
+            ? `은행: 두 주 연속 적자입니다. 병원은 폐업합니다.`
+            : `은행: 잔고 ${formatSignedManwon(treasury)}. 다음 주도 적자면 폐업합니다.`}
+        </p>
+      )}
+
       <div className="flex flex-col gap-2.5">
-        <button
-          type="button"
-          onClick={onNextWeek}
-          className="rounded-xs bg-go py-3 text-base font-semibold text-paper transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
-        >
-          다음 주
-        </button>
+        {!closed && (
+          <button
+            type="button"
+            onClick={onNextWeek}
+            className="rounded-xs bg-go py-3 text-base font-semibold text-paper transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+          >
+            다음 주
+          </button>
+        )}
         <button
           type="button"
           onClick={onEnd}
-          className="rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+          className={
+            closed
+              ? "rounded-xs bg-go py-3 text-base font-semibold text-paper transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+              : "rounded-xs border border-frame py-3 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+          }
         >
-          종료
+          {closed ? "결말 보기" : "종료"}
         </button>
       </div>
     </main>

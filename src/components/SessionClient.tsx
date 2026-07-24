@@ -88,6 +88,7 @@ export default function SessionClient() {
           received={weekReceivedEmergencyCount(session)}
           turnedAway={weekTurnedAwayCount(session)}
           treasury={session.treasury}
+          insolvencyStreak={session.insolvencyStreak}
           onNextWeek={() => setSession(nextWeek(session))}
           onEnd={() => setSession(endGame(session))}
         />

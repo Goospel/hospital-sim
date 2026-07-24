@@ -3,7 +3,7 @@ import {
   startSession, beginSetup, completeSetup, completeReceiving, advanceDay, isLastDay, weekTotals,
   completeWeek, nextWeek, beginWeek, endGame, weekTurnedAwayCount, weekReceivedEmergencyCount,
   cumulativeNetManwon, buildEpilogue, enterWorldEvent, enterGrowth, growthCostOf, canApplyGrowth,
-  applyGrowth, type SessionState,
+  applyGrowth, isInsolvent, type SessionState,
 } from './session'
 import { initWorld, applyEvent, OPENING_EVENT } from './world'
 import { decide, isElective } from './receiving'
@@ -677,5 +677,55 @@ describe('[I8] 주간 순이익 스케일 — 콜 볼륨이 늘어도 예산 스
     const withCalls = weekNet(maxRevenue, true)
     expect(withCalls - structureOnly).toBeGreaterThan(0) // 콜은 순기여가 +
     expect(withCalls).toBeGreaterThan(structureOnly)
+  })
+})
+
+describe('폐업 판정 — insolvencyStreak (스펙 2026-07-24 §6)', () => {
+  // 7일차 DAY_END 상태를 만드는 최소 픽스처: completeWeek의 전제(phase DAY_END, isLastDay)만 충족시키고
+  // ledgerDays를 비워 weekNet=0으로 두어 treasury 부호를 그대로 넘긴다. treasury와 함께 금고 부호를 만든다.
+  function dayEndState(over: Partial<SessionState>): SessionState {
+    return {
+      ...startSession(),
+      phase: 'DAY_END', day: DAYS_PER_WEEK, hospital: {} as never,
+      ledgerDays: [], history: [], treasury: 0, insolvencyStreak: 0,
+      ...over,
+    }
+  }
+
+  it('초기 상태의 insolvencyStreak는 0', () => {
+    expect(startSession().insolvencyStreak).toBe(0)
+  })
+
+  it('금고가 음수로 마감되면 streak +1', () => {
+    const s = completeWeek(dayEndState({ treasury: -100 }))
+    expect(s.insolvencyStreak).toBe(1)
+  })
+
+  it('음수 연속 2주면 streak 2 (폐업 임계)', () => {
+    const s = completeWeek(dayEndState({ treasury: -100, insolvencyStreak: 1 }))
+    expect(s.insolvencyStreak).toBe(2)
+    expect(isInsolvent(s)).toBe(true)
+  })
+
+  it('흑자로 마감되면 streak가 0으로 리셋', () => {
+    const s = completeWeek(dayEndState({ treasury: 100, insolvencyStreak: 1 }))
+    expect(s.insolvencyStreak).toBe(0)
+    expect(isInsolvent(s)).toBe(false)
+  })
+
+  it('streak 1은 아직 폐업 아님(경고 단계)', () => {
+    expect(isInsolvent(completeWeek(dayEndState({ treasury: -100 })))).toBe(false)
+  })
+
+  it('폐업 상태에서 nextWeek은 throw', () => {
+    const insolvent = { ...completeWeek(dayEndState({ treasury: -100, insolvencyStreak: 1 })) }
+    expect(() => nextWeek(insolvent)).toThrow()
+  })
+
+  it('buildEpilogue: 폐업이면 closed=true, 자발 종료면 false', () => {
+    const closed = buildEpilogue({ ...dayEndState({ insolvencyStreak: 2 }), phase: 'EPILOGUE' })
+    expect(closed.closed).toBe(true)
+    const voluntary = buildEpilogue({ ...dayEndState({ insolvencyStreak: 0 }), phase: 'EPILOGUE' })
+    expect(voluntary.closed).toBe(false)
   })
 })
