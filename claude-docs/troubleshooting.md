@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-075](troubleshooting/T-075.md) · 맵 전체를 덮는 아바타 레이어(absolute inset-0)에 pointer-events-none이 빠져 아래 방 버튼의 실제 클릭을 삼켰고, 검증을 JS .click()으로 해서 히트테스트를 우회해 버그를 놓친 채 배포됐다
 - [T-074](troubleshooting/T-074.md) · SDD 세션 중 워크트리가 이전 세션의 정리 실패로 .git을 잃고 메인 저장소의 하위 디렉토리로 편입돼, .gitignore 패턴에 걸려 파일이 조용히 무시되고 커밋이 거부됐다
 - [T-073](troubleshooting/T-073.md) · SDD 브라우저 검증 중 클릭이 전달 안 되고 15초 카운트다운이 멈춘 것처럼 보였다 — 코드 결함이 아니라 브라우저 페인이 표시되지 않는 환경(document.hidden)의 아티팩트였다
 - [T-072](troubleshooting/T-072.md) · globals.css에 새 규칙을 넣었는데 dev 서버가 계속 옛 CSS를 내줬다 — Turbopack 청크 파일명이 내용이 바뀌어도 그대로라, 서버 재시작으로도 안 풀리고 .next를 지워야 했다

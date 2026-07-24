@@ -9,6 +9,10 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-24 · 방 클릭 차단 버그 수정 — 아바타 레이어 pointer-events-none
+
+v2에서 **방을 눌러도 아무 일도 안 일어나던** 실사용 버그를 잡았다. 원인은 아바타 레이어 `<div className="absolute inset-0">`가 맵 전체를 덮으면서 `pointer-events-none`이 빠져, 이 투명 레이어가 아래 방 버튼의 실제 클릭을 삼킨 것(형제 보행자·조명 레이어는 이미 있었는데 아바타만 누락). `elementFromPoint`로 방 8개 전부 최상단이 버튼이 아님을 확인해 근인을 특정했다. 진짜 교훈은 **검증 방법**에 있다 — v2 검증이 JS `.click()`(히트테스트 우회)·DOM read라 이 버그를 못 잡고 배포됐다. 이번엔 `computer` 실제 좌표 클릭으로 방→오버레이→도장→예산→맵 아바타 전 흐름을 확인했다([T-075](troubleshooting/T-075.md)).
+
 ## 2026-07-24 · 채용 발견성 — 현판 아래 안내 한 줄
 
 v2 맵 허브가 무스크롤·게임 느낌은 잡았지만, 어두운 빈 방이 클릭 대상으로 안 보여 "채용 과정이 사라졌나?"로 읽혔다(실사용 피드백). 채용은 이 화면의 핵심 행동인데 발견이 안 되면 없는 거나 같다. 현판(이름 입력) 아래 조작 안내 한 줄 "빈 방을 눌러 의사를 채용하세요"를 고정으로 넣어 입구를 명시했다 — 해석 카피가 아닌 조작 안내라 show-don't-tell 톤과 상충 없음. `SetupWizard` 표시층 한 줄만, 로직 0 변경. 1280×720 무스크롤 불변(실측 scrollHeight=clientHeight=720).
