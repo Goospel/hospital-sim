@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-24 · 과별 손익 영수증 — 하루·주간 마감에 과별 내역
+
+**왜** — 수익/손해 표시가 순이익 큰 숫자 하나뿐이라 *"어느 과가 얼마나 손해를 내는지 모르겠다"*(사용자 지적). 과별 고정비 데이터는 있는데(economics.segments) 과별 **수익** 집계가 없었을 뿐 — 콜 로그에 담당 과(handlingDept)가 다 있어 계산은 기존 데이터로 가능했다. [spec](../docs/superpowers/specs/2026-07-24-dept-ledger-receipt-design.md).
+
+**무엇을** — 하루 마감·주간 마감에 `과 · 환자수 | 진료 | 고정비 | 순익` 4열 표를 깐다. 하루 마감 시점에 과별 스냅샷(`DayRecord.deptStats`)을 굳히고(주간 땐 지난 receiving이 버려져 즉석 계산 불가), 공유 순수 함수 `deptLedgerLines`로 하루(days 1개)·주간(7개)이 **같은 표**를 그려 두 화면이 어긋날 수 없다. 고정비는 저장 안 하고 렌더 때 파생(economics.segments ÷ 7 — 미래 확정 값 이중 기재 금지). 판정·경제 0줄. 불변식 둘을 테스트로 못박음: 과별 진료 합=netProfitDelta, 과별 순익 합=일별 순이익 합(오차 0). 브라우저 실렌더로 순환기내과 −3,330만원이 최대 적자(24h 대기 고정비 −2,380 + 원가미달 진료 −950), 미용만 흑자(+1,400)임을 확인.
+
 ## 2026-07-24 · 방 클릭 차단 버그 수정 — 아바타 레이어 pointer-events-none
 
 v2에서 **방을 눌러도 아무 일도 안 일어나던** 실사용 버그를 잡았다. 원인은 아바타 레이어 `<div className="absolute inset-0">`가 맵 전체를 덮으면서 `pointer-events-none`이 빠져, 이 투명 레이어가 아래 방 버튼의 실제 클릭을 삼킨 것(형제 보행자·조명 레이어는 이미 있었는데 아바타만 누락). `elementFromPoint`로 방 8개 전부 최상단이 버튼이 아님을 확인해 근인을 특정했다. 진짜 교훈은 **검증 방법**에 있다 — v2 검증이 JS `.click()`(히트테스트 우회)·DOM read라 이 버그를 못 잡고 배포됐다. 이번엔 `computer` 실제 좌표 클릭으로 방→오버레이→도장→예산→맵 아바타 전 흐름을 확인했다([T-075](troubleshooting/T-075.md)).

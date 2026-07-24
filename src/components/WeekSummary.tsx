@@ -1,6 +1,8 @@
 "use client";
 
 import { formatSignedManwon } from "@/game/labels";
+import type { DeptLedgerLine } from "@/game/deptLedger";
+import DeptLedgerTable from "./DeptLedgerTable";
 
 /**
  * 주간 결산 — 한 주(7일)를 닫고 사용자가 계속할지 끝낼지 고르는 갈림길.
@@ -17,6 +19,7 @@ export default function WeekSummary({
   turnedAway,
   treasury,
   insolvencyStreak,
+  lines,
   onNextWeek,
   onEnd,
 }: {
@@ -27,6 +30,7 @@ export default function WeekSummary({
   turnedAway: number;
   treasury: number;
   insolvencyStreak: number;
+  lines: DeptLedgerLine[]; // 이번 주 7일 합산 과별 손익(SessionClient가 deptLedgerLines(ledgerDays, …)로 계산)
   onNextWeek: () => void;
   onEnd: () => void;
 }) {
@@ -59,6 +63,11 @@ export default function WeekSummary({
               ? `응급 · ${received}명 수용 · ${turnedAway}명 돌려보냄`
               : `응급 · ${received}명 전부 수용`}
           </span>
+        </div>
+
+        {/* 과별 손익 영수증 — 이번 주 순이익을 과별 7일 합산으로 쪼갠다(재투자 결정 직전에 가장 쓸모). */}
+        <div className="border-t border-rule pt-3">
+          <DeptLedgerTable lines={lines} />
         </div>
 
         <div className="flex flex-col gap-2 border-t border-rule pt-3 font-mono text-sm">

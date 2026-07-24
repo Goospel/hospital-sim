@@ -4,6 +4,8 @@ import { DAY_LABELS } from "@/game/receiving";
 import { formatSignedManwon } from "@/game/labels";
 import { DAYS_PER_WEEK } from "@/game/setup";
 import type { DayRecord } from "@/game/session";
+import type { DeptLedgerLine } from "@/game/deptLedger";
+import DeptLedgerTable from "./DeptLedgerTable";
 
 /**
  * 하루 마감 달력 — 한 주(7일)가 한 칸씩 채워진다.
@@ -17,11 +19,13 @@ export default function DayEnd({
   days,
   currentDay,
   isLast,
+  lines,
   onContinue,
 }: {
   days: DayRecord[];
   currentDay: number;
   isLast: boolean;
+  lines: DeptLedgerLine[]; // 오늘 과별 손익(SessionClient가 deptLedgerLines([today], …)로 계산)
   onContinue: () => void;
 }) {
   const today = days.find((d) => d.day === currentDay);
@@ -49,6 +53,9 @@ export default function DayEnd({
             {formatSignedManwon(today?.netProfitManwon ?? 0)}
           </span>
         </p>
+
+        {/* 과별 손익 영수증 — 큰 숫자를 과별로 쪼갠다. 어느 과가 얼마나 밑지는지 여기서 처음 보인다. */}
+        <DeptLedgerTable lines={lines} />
 
         {/* 달력 — 지난 날은 숫자, 오늘은 테두리, 아직 안 온 날은 빈칸. */}
         <div className="grid grid-cols-7 gap-1">

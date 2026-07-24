@@ -22,6 +22,7 @@ import {
   type SessionState,
 } from "@/game/session";
 import { decide, type DecisionAction } from "@/game/receiving";
+import { deptLedgerLines } from "@/game/deptLedger";
 import Landing from "./Landing";
 import WorldEventCard from "./WorldEventCard";
 import SetupWizard from "./SetupWizard";
@@ -67,19 +68,31 @@ export default function SessionClient() {
           onContinue={() => setSession(completeReceiving(session))}
         />
       );
-    case "DAY_END":
+    case "DAY_END": {
       // 7일차 마감은 다음 날이 아니라 곧바로 주간 결산으로 간다(completeWeek).
+      // 과별 손익은 **오늘 한 날**만 쪼갠다(deptLedgerLines에 [today] 하나만 넘긴다).
+      const today = session.ledgerDays.find((d) => d.day === session.day);
+      const dayLines =
+        today && session.hospital
+          ? deptLedgerLines([today], session.hospital, session.world?.departments)
+          : [];
       return (
         <DayEnd
           days={session.ledgerDays}
           currentDay={session.day}
           isLast={isLastDay(session)}
+          lines={dayLines}
           onContinue={() =>
             setSession(isLastDay(session) ? completeWeek(session) : advanceDay(session))
           }
         />
       );
-    case "WEEK_SUMMARY":
+    }
+    case "WEEK_SUMMARY": {
+      // 이번 주 7일 합산 과별 손익 — 재투자(다음 주) 결정 직전에 어느 과가 부담인지 보인다.
+      const weekLines = session.hospital
+        ? deptLedgerLines(session.ledgerDays, session.hospital, session.world?.departments)
+        : [];
       return (
         <WeekSummary
           week={session.week}
@@ -89,10 +102,12 @@ export default function SessionClient() {
           turnedAway={weekTurnedAwayCount(session)}
           treasury={session.treasury}
           insolvencyStreak={session.insolvencyStreak}
+          lines={weekLines}
           onNextWeek={() => setSession(nextWeek(session))}
           onEnd={() => setSession(endGame(session))}
         />
       );
+    }
     case "EPILOGUE":
       return (
         <Epilogue
