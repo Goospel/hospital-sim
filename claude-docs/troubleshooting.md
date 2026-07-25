@@ -43,7 +43,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
 - [T-079](troubleshooting/T-079.md) · 파생값의 단위를 바꾸는 변경(점유 분 → 강도 가중 표준강도분)이 그 단위를 소비하는 상수(FATIGUE_FREE_MIN=360)를 조용히 사문화시켰다 — 상수 상대값 테스트는 전부 green이라 못 잡고, 결정론 프로브(7일 시뮬 계측)만이 "피로가 영원히 0"을 드러냈다
-- [T-078](troubleshooting/T-078.md) · block-fable-implement 훅이 Opus 서브에이전트의 코드 편집을 전부 오탐 차단했다 — 이 하네스 버전은 서브에이전트 턴을 부모 트랜스크립트에 기록하지 않아 훅이 항상 부모 모델(fable)을 읽기 때문이고, 훅이 스스로 안내하는 탈출구(Opus 위임)가 바로 그 이유로 막힌다
+- [T-078](troubleshooting/T-078.md) · block-fable-implement 훅이 Opus 서브에이전트의 코드 편집을 전부 오탐 차단했다 — 서브에이전트 턴이 부모 트랜스크립트에 기록되지 않아 훅이 항상 부모 모델(fable)을 읽기 때문이며, PreToolUse 입력의 agent_id로 판별하도록 고쳐 해결했다
 - [T-077](troubleshooting/T-077.md) · 66커밋 pull 후 npm ci가 ENOTEMPTY(rmdir node_modules/caniuse-lite/...)로 실패했다 — npm ci가 node_modules를 통째로 지우는 첫 단계에서 Windows 파일 잠금과 경합하기 때문이고, 디렉터리를 직접 지운 뒤 재실행하면 통과한다
 - [T-076](troubleshooting/T-076.md) · 옵시디언이 설정 JSON을 LF로 되쓰는데 core.autocrlf=true는 CRLF로 체크아웃해, 내용이 한 글자도 안 바뀐 .obsidian/app.json이 git status에 유령 M으로 상주했다 — 인덱스 blob과 worktree 해시가 동일한데도
 - [T-075](troubleshooting/T-075.md) · 맵 전체를 덮는 아바타 레이어(absolute inset-0)에 pointer-events-none이 빠져 아래 방 버튼의 실제 클릭을 삼켰고, 검증을 JS .click()으로 해서 히트테스트를 우회해 버그를 놓친 채 배포됐다
