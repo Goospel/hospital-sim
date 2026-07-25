@@ -15,6 +15,8 @@ tags:
 
 **설계 스펙:** [2026-07-25-fatigue-adjudication-design.md](../specs/2026-07-25-fatigue-adjudication-design.md)
 
+> ⚠️ **실행 중 개정(2026-07-25)**: Task 4의 "점유 분" 모델은 구현 중 실측으로 반박돼(시간만 재면 미용이 갈리고 필수과가 0 — 스펙 §2-3) **표준강도분(점유 분 × 강도)** 모델로 대체 확정됐다(스펙 §4-1 개정·결정 E·F). 이 문서의 Task 4 코드 블록은 착수 시점 기록으로 남긴다 — 최종 형태의 단일 출처는 스펙과 코드다(최종 상수: `FATIGUE_FREE_MIN=160`·`FATIGUE_PER_OVER_HOUR=15`, `doctorCaseloads`는 `loadMin`·`nightLoad` 반환).
+
 ---
 
 ## 파일 구조

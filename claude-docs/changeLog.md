@@ -9,6 +9,10 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-25 · 피로 승격 — 피로가 판정을 먹는다 (표시 전용 8개월의 끝)
+
+**왜** — 피로 막대는 2026-07-20에 "일단 보여주기만"으로 태어나 아무것도 안 바꿨다. 부하 → 피로 → (없음)에서 인과가 끊겨 있었고, 원 스펙 §7이 열어 둔 승격 문을 사용자 결정으로 열었다(조용한 침식 · 기존 레버만 · 흉부외과 보류). **무엇을** — 피로가 `occupiedUntilMin` 한 자리에 합류해 진료 소요를 늘린다(34 이하 1.0 → 100에서 ×1.5, 연속·단조 — 임계 게이밍 방지). 승격 전 전제 2개를 수리했다: ①피로 입력을 건수에서 **표준강도분**(점유 분 × 강도 계수 — 미용 0.3/예약 1.0/고열감염 1.5/응급수술 2.0, 상대가치점수 "업무량" 근거)으로 — 건수는 첫날 포화 유물이었고, 시간 단독도 실측 반박됐다("많이 보는 과가 갈린다" — 미용 D2 포화·순환기 0, 사용자의 도메인 지적으로 강도 축 확정) ②수용 로그에 `assigneeId`·`endMin`을 남겨 피로 장부=판정 장부(막대가 지목한 의사=실제 느려지는 의사). 야간 가중도 강도 비례라 "미용은 야간 당직이 없다"가 표 하나에서 나온다. 실측 곡선: 1인 순환기 D1 52→주 내내 레드존→2주차 이월로 82+ 상시(갈려나감), 2인 분담 최대 20(감속 지대 밖 — "채용이 곧 회복"), 미용·검진 무풍(≤1). `adjudicate.ts` 0줄·판정 사유 0개 변경·새 UI 카피 0. 덤: CallCard 점유 미리보기가 `speedFactor`를 빠뜨리던 기존 버그 수리(이제 decide와 같은 함수). Fable 설계/Opus 서브에이전트 구현 분업으로 진행 — 그 과정의 함정 2건 등재: [T-078](troubleshooting/T-078.md) 훅이 Opus 서브에이전트 오탐 차단, [T-079](troubleshooting/T-079.md) 단위 전환이 상수를 green인 채 사문화. **523 vitest** · tsc 0 · lint 0. 설계 [spec](../docs/superpowers/specs/2026-07-25-fatigue-adjudication-design.md)·[플랜](../docs/superpowers/plans/2026-07-25-fatigue-adjudication.md).
+
 ## 2026-07-25 · 옵시디언 설정의 유령 `M` 제거 — `.obsidian/**`를 LF로 못박음
 
 **왜** — `.obsidian/app.json`이 `git status`에 늘 ` M`으로 상주해, pull 할 때마다 stash 하는 헛수고가 붙고 *"지금 뭘 건드렸나"*를 status로 읽을 수 없었다. **무엇을** — 해시 대조로 **커밋할 변경이 0**임을 확정하고(인덱스 blob = worktree = `c9e454e`), 원인을 EOL 왕복으로 특정했다: `core.autocrlf=true`가 CRLF로 체크아웃하는데 옵시디언은 설정을 항상 LF로 되쓴다 → 앱이 저장할 때마다 재발하는 구조적 잡음. `.gitattributes`에 `.obsidian/** text eol=lf` 한 줄로 git이 CRLF 변환을 포기하게 했다(이미 커밋된 blob이 LF라 `--renormalize` 변경 0). 재현으로 검증 — 강제 재체크아웃이 `w/crlf`→`w/lf`, 앱 저장 시뮬레이션 후 status 깨끗. 함정 2건 등재: [T-076](troubleshooting/T-076.md) 유령 `M`(+ `grep '\r'`이 문자 `r`을 세는 가짜 측정으로 한 번 오진한 기록), [T-077](troubleshooting/T-077.md) Windows `npm ci` ENOTEMPTY.
