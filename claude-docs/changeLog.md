@@ -9,6 +9,10 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-25 · 옵시디언 설정의 유령 `M` 제거 — `.obsidian/**`를 LF로 못박음
+
+**왜** — `.obsidian/app.json`이 `git status`에 늘 ` M`으로 상주해, pull 할 때마다 stash 하는 헛수고가 붙고 *"지금 뭘 건드렸나"*를 status로 읽을 수 없었다. **무엇을** — 해시 대조로 **커밋할 변경이 0**임을 확정하고(인덱스 blob = worktree = `c9e454e`), 원인을 EOL 왕복으로 특정했다: `core.autocrlf=true`가 CRLF로 체크아웃하는데 옵시디언은 설정을 항상 LF로 되쓴다 → 앱이 저장할 때마다 재발하는 구조적 잡음. `.gitattributes`에 `.obsidian/** text eol=lf` 한 줄로 git이 CRLF 변환을 포기하게 했다(이미 커밋된 blob이 LF라 `--renormalize` 변경 0). 재현으로 검증 — 강제 재체크아웃이 `w/crlf`→`w/lf`, 앱 저장 시뮬레이션 후 status 깨끗. 함정 2건 등재: [T-076](troubleshooting/T-076.md) 유령 `M`(+ `grep '\r'`이 문자 `r`을 세는 가짜 측정으로 한 번 오진한 기록), [T-077](troubleshooting/T-077.md) Windows `npm ci` ENOTEMPTY.
+
 ## 2026-07-24 · 병원 맵 개편 — 안/밖 분리 · 의사는 진료실 안 · 대기실→진료실 동선
 
 **왜** — 맵이 너무 단순하고 세 가지가 어색했다(사용자 지적): ①의사와 환자가 복도에 나란히 줄 서 누가 누군지 흐렸다 ②지나가는 사람이 병원 안에 섞여 "행인인지 대기 환자인지" 구분이 안 됐다 ③방이 빈 상자였다. **무엇을** — 공간을 세 겹으로 재구성했다: 병원 밖 **거리 밴드**(하단, 외벽으로 안과 갈림 — 배경 보행자는 여기서만 좌우로 지나가고 좌·우 두 방향 `hm-walk-rev` 추가), 병원 **건물**(진료실 줄 + 복도 + 대기실/병동 분할, 방마다 책상·진료대 가구 + 문 개구부 + 입구/십자 간판), **아바타 한 레이어**(연속성). 의사는 **항상 자기 진료실 안**(복도 zone 제거) — 진료 여부는 위치가 아니라 가운 밝기·진료대 환자 유무가 말한다(한가한데 소등되면 퇴근). 환자 동선은 **입구 → 대기실 의자 → 진료대(그 과 방 slot 0) → 병동 침대 → 방 안 입석**. `AvatarZone` `CORRIDOR`→`ROOM`/`BED`/`WAITING`, 가구·아바타가 같은 좌표 함수를 공유(`chairPos`·`bedPos`·`examBedPos`). 판정·경제 0 침습(순수 파생만). TDD·**503 vitest**·tsc 0·DOM 기하 실측(건물 820×398·거리 밴드 85%~·의사 2명 slot 0·1 나란히·의자 6석 좌하단·침대 3개 우하단·콘솔 에러 0). 설계 [목업 4안](../docs/concept/character-design.md).

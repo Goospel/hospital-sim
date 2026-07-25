@@ -42,6 +42,8 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-077](troubleshooting/T-077.md) · 66커밋 pull 후 npm ci가 ENOTEMPTY(rmdir node_modules/caniuse-lite/...)로 실패했다 — npm ci가 node_modules를 통째로 지우는 첫 단계에서 Windows 파일 잠금과 경합하기 때문이고, 디렉터리를 직접 지운 뒤 재실행하면 통과한다
+- [T-076](troubleshooting/T-076.md) · 옵시디언이 설정 JSON을 LF로 되쓰는데 core.autocrlf=true는 CRLF로 체크아웃해, 내용이 한 글자도 안 바뀐 .obsidian/app.json이 git status에 유령 M으로 상주했다 — 인덱스 blob과 worktree 해시가 동일한데도
 - [T-075](troubleshooting/T-075.md) · 맵 전체를 덮는 아바타 레이어(absolute inset-0)에 pointer-events-none이 빠져 아래 방 버튼의 실제 클릭을 삼켰고, 검증을 JS .click()으로 해서 히트테스트를 우회해 버그를 놓친 채 배포됐다
 - [T-074](troubleshooting/T-074.md) · SDD 세션 중 워크트리가 이전 세션의 정리 실패로 .git을 잃고 메인 저장소의 하위 디렉토리로 편입돼, .gitignore 패턴에 걸려 파일이 조용히 무시되고 커밋이 거부됐다
 - [T-073](troubleshooting/T-073.md) · SDD 브라우저 검증 중 클릭이 전달 안 되고 15초 카운트다운이 멈춘 것처럼 보였다 — 코드 결함이 아니라 브라우저 페인이 표시되지 않는 환경(document.hidden)의 아티팩트였다
