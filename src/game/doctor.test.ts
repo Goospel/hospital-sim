@@ -134,7 +134,9 @@ describe('stepFatigue — 하루 강도 가중 부하로 피로 누적(주 간 �
   })
 
   it('야간은 강도에 비례해 가중된다 — 야간 STEMI(2.0)가 저녁 보톡스(0.3)보다 무겁다', () => {
-    const over = FATIGUE_FREE_MIN + 60 // 초과 1시간 — 상한에 안 붙어 대소가 클램프에 안 먹힌다
+    // 초과 4시간 — 양쪽 클램프(0·FATIGUE_MAX)에서 떨어져 대소가 살아남는다. 1시간이면 초과분(PER 15)이
+    // 회복(FATIGUE_REST 20)에 통째로 먹혀 셋 다 0으로 붙는다 — 재튜닝(300/35 → 160/15)으로 드러난 마진이다.
+    const over = FATIGUE_FREE_MIN + 240
     const next = stepFatigue({}, load([['a', over], ['b', over], ['c', over]], [['b', 0.3], ['c', 2]]))
     expect(next.b).toBeGreaterThan(next.a)
     expect(next.c).toBeGreaterThan(next.b)
