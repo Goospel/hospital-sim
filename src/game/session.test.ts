@@ -507,17 +507,33 @@ describe('피로 누적 — 표시 레이어(판정 무관)', () => {
   })
 
   /*
-    옛 큐는 '마지막 1통이 반드시 야간'이라 월요일 STEMI 1건이 야간 가중(+12)을 받아 회복(−20)을
-    이겼다. 도착시각을 하루 전체에 뿌리면서 그 보장이 사라져, STEMI가 낮에 오는 날은 1건(+18)이
-    회복에 못 미쳐 0이 된다 — 피로 공식이 바뀐 게 아니라 **테스트가 옛 배치에 기대고 있었다**.
-    계약("담당한 유닛의 피로가 오른다")을 배치와 무관하게 잠그려면 순환기가 예약까지 받으면 된다.
+    ⚠️ 2026-07-25 승격으로 이 계약이 바뀌었다. 옛 계약은 "담당하면 오른다"(건수 기반)였다.
+    이제 입력이 **시간 × 강도**(FATIGUE_INTENSITY)라 FATIGUE_FREE_MIN까지는 부하 0이고, 그 아래면
+    회복(−FATIGUE_REST)이 이겨 0으로 내려간다. 그래서 "담당했다"만으로는 안 오른다 —
+    **무거운 일을 오래 해야** 오른다.
+
+    아래 두 테스트가 그 대조를 잠근다: 같은 부하를 1명이 다 받으면 오르고, 2명이 나눠 받으면
+    각자 free 라인을 안 넘겨 회복이 이긴다. 이게 이번 승격의 논지다 — **채용이 곧 회복**이고,
+    미용 무풍지대와 1인 필수과의 대조가 여기서 나온다.
   */
-  it('순환기가 그날 담당을 여럿 맡으면 마감 후 그 유닛 피로가 오른다', () => {
-    let s = completeSetup(conscientious) // AESTHETICS:1, CARDIOLOGY:2
-    s = runDay(s, (call) => call.kind === 'STEMI' || call.kind === 'SPECIALIST_ELECTIVE')
+  const soloCardio: SetupChoices = { hospitalName: '1인병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 1 } }
+  const acceptCardioLoad = (call: { kind: string }) =>
+    call.kind === 'STEMI' || call.kind === 'SPECIALIST_ELECTIVE'
+
+  it('순환기 1명이 하루 부하를 다 받으면 마감 후 그 유닛 피로가 오른다', () => {
+    let s = completeSetup(soloCardio)
+    s = runDay(s, acceptCardioLoad)
+    s = completeReceiving(s)
+    const solo = s.hospital!.roster!.find((d) => d.dept === 'CARDIOLOGY')!.id
+    expect(s.fatigue[solo]).toBeGreaterThan(0)
+  })
+
+  it('같은 부하를 2명이 나눠 받으면 회복이 이긴다 — 채용이 곧 회복', () => {
+    let s = completeSetup(conscientious) // CARDIOLOGY: 2
+    s = runDay(s, acceptCardioLoad)
     s = completeReceiving(s)
     const cardioIds = s.hospital!.roster!.filter((d) => d.dept === 'CARDIOLOGY').map((d) => d.id)
-    expect(cardioIds.some((id) => (s.fatigue[id] ?? 0) > 0)).toBe(true)
+    expect(cardioIds.every((id) => (s.fatigue[id] ?? 0) === 0)).toBe(true)
   })
 
   it('주가 넘어가도 피로가 리셋되지 않는다(nextWeek 이월)', () => {
