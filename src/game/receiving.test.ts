@@ -1273,3 +1273,52 @@ describe('BUMP_ACCEPT — 예약 미루고 받기 (스펙 2026-07-24 §3)', () =
     expect(groups.some((g) => g.outcome === '예약 중단')).toBe(true)
   })
 })
+
+describe('로그의 실제 배정 기록 + 하루 피로 스냅샷 (스펙 2026-07-25 §3)', () => {
+  const solo = hospitalWith('CARDIOLOGY', 1)
+  const docId = 'doc-CARDIOLOGY-1'
+  const stemi: IncomingCall = {
+    id: 'c1', kind: 'STEMI', label: '급성심근경색 — 타 병원 전원 요청',
+    patient: { id: 'p1', requiredSpecialty: 'CARDIOLOGY', severity: 5 },
+    lawsuitRisk: true, nightShift: false, arrivalMin: 60, durationMin: 100,
+  }
+
+  it('수용 엔트리에만 assigneeId·endMin이 실린다', () => {
+    const r = decide(initReceiving(solo, [stemi]), 'ACCEPT')
+    expect(r.log[0].assigneeId).toBe(docId)
+    expect(r.log[0].endMin).toBe(160) // 60 + 100, 피로 0
+  })
+
+  it('거절 엔트리엔 두 필드가 없다', () => {
+    const r = decide(initReceiving(solo, [stemi]), 'DECLINE')
+    expect(r.log[0].assigneeId).toBeUndefined()
+    expect(r.log[0].endMin).toBeUndefined()
+  })
+
+  it('fatigueAtOpen이 점유 종료를 늦춘다(포화 → ×1.5) — 로그와 busyUntil이 같은 값', () => {
+    const r = decide(initReceiving(solo, [stemi], {}, { [docId]: 100 }), 'ACCEPT')
+    expect(r.log[0].endMin).toBe(210) // 60 + round(100 × 1.5)
+    expect(r.busyUntil[docId]).toBe(210)
+  })
+
+  it('fatigueAtOpen 기본값은 빈 맵 — 현행과 동일(F-0)', () => {
+    expect(initReceiving(solo, [stemi]).fatigueAtOpen).toEqual({})
+  })
+
+  it('BUMP은 밀린 예약의 배정 기록을 지우고 응급 엔트리에 새로 남긴다', () => {
+    // 예약이 130분까지 점유 → STEMI(60분 도착)의 대기 70분은 인내 한계(90) 이내라 하드락이 아니다.
+    // 한계를 넘기면 LEFT_WAITING 하드락이 먼저 이겨 BUMP 경로 자체를 안 탄다(canBump 조건 1).
+    const elective: IncomingCall = {
+      id: 'c0', kind: 'SPECIALIST_ELECTIVE', label: '순환기내과 예약 진료',
+      patient: { id: 'e0', requiredSpecialty: 'CARDIOLOGY', severity: 1 },
+      lawsuitRisk: false, nightShift: false, arrivalMin: 10, durationMin: 120,
+    }
+    const afterElective = decide(initReceiving(solo, [elective, stemi]), 'ACCEPT')
+    expect(afterElective.log[0].assigneeId).toBe(docId) // 예약이 점유 중
+    const after = decide(afterElective, 'BUMP_ACCEPT')
+    expect(after.log[0].assigneeId).toBeUndefined() // 중단된 예약 — 부분 점유는 피로로 안 센다
+    expect(after.log[0].endMin).toBeUndefined()
+    expect(after.log[1].assigneeId).toBe(docId) // 응급이 그 의사를 새로 점유
+    expect(after.log[1].endMin).toBe(160) // 60 + 100
+  })
+})
