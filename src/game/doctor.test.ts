@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { materializeRoster, walkinDept, handlingDept, doctorCaseloads, stepFatigue, FATIGUE_MAX } from './doctor'
+import {
+  materializeRoster, walkinDept, handlingDept, doctorCaseloads, stepFatigue,
+  fatigueSlowFactor, FATIGUE_MAX, FATIGUE_SLOW_FROM, FATIGUE_RED, FATIGUE_FREE_MIN, FATIGUE_REST,
+} from './doctor'
 import { createCallQueue, decide, initReceiving } from './receiving'
 import { buildHospital, DEPARTMENTS } from './setup'
 import { CANDIDATES, SPEED_OF_TIER } from './candidates'
@@ -113,36 +116,119 @@ describe('materializeRoster — hiredIds 지원자 반영', () => {
   })
 })
 
-describe('stepFatigue — 하루 담당으로 피로 누적(주 간 유지)', () => {
-  const cl = (total: [string, number][], night: [string, number][] = []) => ({
-    total: new Map(total),
-    night: new Map(night),
+describe('stepFatigue — 하루 강도 가중 부하로 피로 누적(주 간 유지)', () => {
+  const load = (loadMin: [string, number][], nightLoad: [string, number][] = []) => ({
+    total: new Map<string, number>(),
+    loadMin: new Map(loadMin),
+    nightLoad: new Map(nightLoad),
   })
 
-  it('담당이 많을수록 더 오른다', () => {
-    const next = stepFatigue({}, cl([['a', 1], ['b', 3]]))
+  it('부하가 클수록 더 오른다', () => {
+    const next = stepFatigue({}, load([['a', FATIGUE_FREE_MIN + 60], ['b', FATIGUE_FREE_MIN + 120]]))
     expect(next.b).toBeGreaterThan(next.a)
   })
 
-  it('야간 담당은 가중된다(같은 건수라도 야간이 더 높다)', () => {
-    const next = stepFatigue({}, cl([['a', 1], ['b', 1]], [['b', 1]]))
+  it('정상 근무(FATIGUE_FREE_MIN 이하)에 야간 0이면 회복만 남는다', () => {
+    const next = stepFatigue({ a: 50 }, load([['a', FATIGUE_FREE_MIN]]))
+    expect(next.a).toBe(50 - FATIGUE_REST)
+  })
+
+  it('야간은 강도에 비례해 가중된다 — 야간 STEMI(2.0)가 저녁 보톡스(0.3)보다 무겁다', () => {
+    // 초과 4시간 — 양쪽 클램프(0·FATIGUE_MAX)에서 떨어져 대소가 살아남는다. 1시간이면 초과분(PER 15)이
+    // 회복(FATIGUE_REST 20)에 통째로 먹혀 셋 다 0으로 붙는다 — 재튜닝(300/35 → 160/15)으로 드러난 마진이다.
+    const over = FATIGUE_FREE_MIN + 240
+    const next = stepFatigue({}, load([['a', over], ['b', over], ['c', over]], [['b', 0.3], ['c', 2]]))
     expect(next.b).toBeGreaterThan(next.a)
+    expect(next.c).toBeGreaterThan(next.b)
   })
 
   it('무부하 날은 회복으로 내려간다(0 클램프)', () => {
-    const next = stepFatigue({ a: 30 }, cl([['a', 0]]))
-    expect(next.a).toBeLessThan(30)
-    expect(next.a).toBeGreaterThanOrEqual(0)
+    const next = stepFatigue({ a: 10 }, load([['a', 0]]))
+    expect(next.a).toBe(0)
   })
 
   it('상한 클램프(FATIGUE_MAX 초과 없음)', () => {
-    const next = stepFatigue({ a: 90 }, cl([['a', 3]], [['a', 3]]))
-    expect(next.a).toBeLessThanOrEqual(FATIGUE_MAX)
+    const next = stepFatigue({ a: 90 }, load([['a', FATIGUE_FREE_MIN * 4]], [['a', 4]]))
+    expect(next.a).toBe(FATIGUE_MAX)
   })
 
   it('이전 값에 누적한다(리셋 아님)', () => {
-    const day1 = stepFatigue({}, cl([['a', 2]]))
-    const day2 = stepFatigue(day1, cl([['a', 2]]))
+    const day1 = stepFatigue({}, load([['a', FATIGUE_FREE_MIN + 120]]))
+    const day2 = stepFatigue(day1, load([['a', FATIGUE_FREE_MIN + 120]]))
     expect(day2.a).toBeGreaterThan(day1.a)
+  })
+})
+
+describe('doctorCaseloads — 부하는 시간 × 강도다(F-2)', () => {
+  const soloChoices: SetupChoices = { hospitalName: 'h', doctors: { CARDIOLOGY: 1 } }
+  const soloHospital = buildHospital(soloChoices).hospital
+  const soloRoster = materializeRoster(soloChoices, DEPARTMENTS)
+  const stemi: IncomingCall = {
+    id: 'c1', kind: 'STEMI', label: '급성심근경색 — 타 병원 전원 요청',
+    patient: { id: 'p1', requiredSpecialty: 'CARDIOLOGY', severity: 5 },
+    lawsuitRisk: true, nightShift: false, arrivalMin: 60, durationMin: 100,
+  }
+
+  const beautyChoices: SetupChoices = { hospitalName: 'h', doctors: { AESTHETICS: 1 } }
+  const beautyHospital = buildHospital(beautyChoices).hospital
+  const beautyRoster = materializeRoster(beautyChoices, DEPARTMENTS)
+  const botox: IncomingCall = {
+    id: 'w1', kind: 'COSMETIC_WALKIN', label: '보톡스 상담 워크인',
+    patient: { id: 'p2', requiredSpecialty: 'CARDIOLOGY', severity: 1 }, // 명목값(판정 안 함)
+    lawsuitRisk: false, nightShift: false, arrivalMin: 60, durationMin: 100,
+  }
+
+  it('응급 수술 100분은 강도 2.0이라 부하 200 — 담당 건수는 그대로 1', () => {
+    const r = decide(initReceiving(soloHospital, [stemi]), 'ACCEPT')
+    const { loadMin, total } = doctorCaseloads(soloRoster, r)
+    expect(loadMin.get('doc-CARDIOLOGY-1')).toBe(200)
+    expect(total.get('doc-CARDIOLOGY-1')).toBe(1)
+  })
+
+  it('같은 100분도 미용 워크인은 0.3이라 부하 30 — 보톡스 1분과 응급 PCI 1분은 같은 무게가 아니다', () => {
+    const r = decide(initReceiving(beautyHospital, [botox]), 'ACCEPT')
+    const { loadMin } = doctorCaseloads(beautyRoster, r)
+    expect(loadMin.get('doc-AESTHETICS-1')).toBe(30)
+  })
+
+  it('거절한 콜은 부하가 0이고, 모든 유닛이 0으로 초기화된다', () => {
+    const r = decide(initReceiving(soloHospital, [stemi]), 'DECLINE')
+    const { loadMin, nightLoad } = doctorCaseloads(soloRoster, r)
+    expect(loadMin.get('doc-CARDIOLOGY-1')).toBe(0)
+    expect(nightLoad.get('doc-CARDIOLOGY-1')).toBe(0)
+  })
+
+  it('야간 콜은 강도만큼 nightLoad에 실린다 — 야간 STEMI 2.0', () => {
+    const duoChoices: SetupChoices = { hospitalName: 'h', doctors: { CARDIOLOGY: 2 } } // 야간 당직은 2명부터
+    const duoHospital = buildHospital(duoChoices).hospital
+    const duoRoster = materializeRoster(duoChoices, DEPARTMENTS)
+    const nightStemi: IncomingCall = { ...stemi, nightShift: true, arrivalMin: 500 }
+    const r = decide(initReceiving(duoHospital, [nightStemi]), 'ACCEPT')
+    const { nightLoad } = doctorCaseloads(duoRoster, r)
+    expect(nightLoad.get('doc-CARDIOLOGY-1')).toBe(2)
+  })
+
+  it('피로로 늘어난 점유가 그대로 다음 부하가 된다(악순환)', () => {
+    const r = decide(initReceiving(soloHospital, [stemi], {}, { 'doc-CARDIOLOGY-1': 100 }), 'ACCEPT')
+    const { loadMin } = doctorCaseloads(soloRoster, r)
+    expect(loadMin.get('doc-CARDIOLOGY-1')).toBe(300) // 점유 150분(100 × 1.5) × 강도 2.0
+  })
+})
+
+describe('fatigueSlowFactor — 피로 → 진료 소요 배율(조용한 침식)', () => {
+  it('정상 근무 구간(FATIGUE_SLOW_FROM 이하)은 정확히 1.0 — 무영향', () => {
+    expect(fatigueSlowFactor(0)).toBe(1)
+    expect(fatigueSlowFactor(FATIGUE_SLOW_FROM)).toBe(1)
+  })
+
+  it('레드존 경계에서 ×1.25, 포화에서 ×1.5', () => {
+    expect(fatigueSlowFactor(FATIGUE_RED)).toBeCloseTo(1.25, 10)
+    expect(fatigueSlowFactor(FATIGUE_MAX)).toBeCloseTo(1.5, 10)
+  })
+
+  it('단조증가 — 넘는 순간(임계 벽)이 없다', () => {
+    for (let f = 0; f < FATIGUE_MAX; f++) {
+      expect(fatigueSlowFactor(f + 1)).toBeGreaterThanOrEqual(fatigueSlowFactor(f))
+    }
   })
 })

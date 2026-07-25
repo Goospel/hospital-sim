@@ -23,6 +23,23 @@ describe('occupiedUntilMin — 의사 개인 속도', () => {
     expect(occupiedUntilMin({ ...base, speedFactor: 0.8 }, 100, 90)).toBe(100 + 72)
     expect(occupiedUntilMin({ ...base, speedFactor: 1.15 }, 100, 45)).toBe(100 + 52) // 51.75 → 52
   })
+
+  it('피로 미전달 = 현행 동일(하위호환 F-0)', () => {
+    expect(occupiedUntilMin(base, 100, 90)).toBe(occupiedUntilMin(base, 100, 90, 0))
+  })
+
+  it('피로가 높을수록 점유가 같거나 늦다(F-1 단조성)', () => {
+    const at = (f: number) => occupiedUntilMin(base, 0, 100, f)
+    expect(at(34)).toBe(100) // 정상 근무 구간은 무영향
+    expect(at(67)).toBe(125) // ×1.25
+    expect(at(100)).toBe(150) // ×1.5
+    expect(at(80)).toBeGreaterThan(at(50))
+  })
+
+  it('speedFactor와 합성된다 — 반올림은 끝에서 한 번', () => {
+    // 베테랑(0.8) × 포화(1.5) = 1.2 → 100분이 120분
+    expect(occupiedUntilMin({ ...base, speedFactor: 0.8 }, 0, 100, 100)).toBe(120)
+  })
 })
 
 describe('seededUnit', () => {

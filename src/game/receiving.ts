@@ -243,6 +243,12 @@ export interface ReceivingState {
    * 그래서 어제 시작한 진료는 오늘 BUMP 대상이 아니다(어제 수익을 오늘 되돌리지 않는다).
    */
   busyWith: Record<string, { callId: string; kind: CallKind; deltaManwon: number }>
+  /**
+   * 오늘 아침 유닛별 피로(0~100) — **하루 안에서 불변**이라 아침 막대에 보이는 그 값이
+   * 오늘 하루의 배율이다. 실시간으로 변하게 하면 같은 콜이 아침·저녁에 다른 소요를 갖고,
+   * 막대와 실제 감속이 또 어긋난다(피로 장부와 판정 장부를 한 책으로 묶은 취지가 깨진다).
+   */
+  fatigueAtOpen: Record<string, number>
   netProfitDeltaManwon: number
   /**
    * 오늘 검사 수익 — 진료 수익과 **별도로** 쌓는 장부 라인.
@@ -264,6 +270,13 @@ export interface ReceivingState {
     disposition: CallDisposition
     reason: RejectionReason | null
     startMin?: number
+    /**
+     * 실제로 이 콜을 맡은 의사 — 표시용 라운드로빈이 아니라 `pickAssignee`의 결과다.
+     * 피로 적립이 이 필드를 읽어 **막대가 지목한 의사와 실제로 느려지는 의사가 일치**한다(F-2).
+     */
+    assigneeId?: string
+    /** 실제 점유 종료 시각 — `occupiedUntilMin`의 결과 그대로. 점유 분 = endMin − startMin. */
+    endMin?: number
   }[]
   done: boolean
 }
@@ -556,6 +569,7 @@ export function initReceiving(
   hospital: Hospital,
   queue: IncomingCall[] = createCallQueue(),
   boardedBusyUntil: Record<string, number> = {},
+  fatigueAtOpen: Record<string, number> = {},
 ): ReceivingState {
   return {
     hospital,
@@ -564,6 +578,7 @@ export function initReceiving(
     clockMin: 0,
     busyUntil: { ...boardedBusyUntil }, // 어제 넘어온 점유에서 출발(지금은 빈 맵)
     busyWith: {}, // 이월 점유는 원인 정보가 없어 비운다(위 필드 주석)
+    fatigueAtOpen, // 기본 빈 맵 = 배율 1.0 — 안 넘기는 호출부는 승격 전과 동일하다(F-0)
     netProfitDeltaManwon: 0,
     workupRevenueManwon: 0,
     workupCount: 0,
@@ -623,15 +638,21 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
   let busyUntil = state.busyUntil
   let busyWith = state.busyWith
   let startMin: number | undefined
+  let assigneeId: string | undefined
+  let endMin: number | undefined
   if (effectiveAccept && canStart) {
     const free = freeDoctorsOfDept(roster, state.busyUntil, handlingDept(call), start)
     const assignee = pickAssignee(free, state.busyUntil)
-    busyUntil = { ...state.busyUntil, [assignee.id]: occupiedUntilMin(assignee, start, call.durationMin ?? 0) }
+    // 오늘 아침 피로가 이 진료를 늘린다 — 하루 안에서 고정이라 콜마다 배율이 흔들리지 않는다.
+    const until = occupiedUntilMin(assignee, start, call.durationMin ?? 0, state.fatigueAtOpen[assignee.id] ?? 0)
+    busyUntil = { ...state.busyUntil, [assignee.id]: until }
     busyWith = {
       ...state.busyWith,
       [assignee.id]: { callId: call.id, kind: call.kind, deltaManwon: callDelta(call.kind) },
     }
     startMin = start
+    assigneeId = assignee.id
+    endMin = until
   }
 
   const netProfitDeltaManwon = effectiveAccept
@@ -652,7 +673,10 @@ export function decide(state: ReceivingState, action: DecisionAction): Receiving
         ? 'LEFT_WAITING'
         : null)
 
-  const log = [...state.log, { callId: call.id, accepted: effectiveAccept, disposition, reason: logReason, startMin }]
+  const log = [
+    ...state.log,
+    { callId: call.id, accepted: effectiveAccept, disposition, reason: logReason, startMin, assigneeId, endMin },
+  ]
   const index = state.index + 1
   return {
     ...state,
@@ -680,16 +704,21 @@ function applyBump(state: ReceivingState, call: IncomingCall): ReceivingState {
   const bumped = state.busyWith[targetId] // 중단되는 예약의 원인 {callId, kind, deltaManwon}
   const arrivalMin = call.arrivalMin ?? 0
 
-  // 밀어낸 예약의 로그 엔트리를 BUMPED로 되돌린다(불변 map).
+  // 밀어낸 예약의 로그 엔트리를 BUMPED로 되돌린다(불변 map). 배정 기록도 함께 지운다 —
+  // 중단된 예약의 부분 점유는 피로로 계상하지 않는다(스펙 §3-1).
   const log = state.log.map((e) =>
     e.callId === bumped.callId && e.accepted
-      ? { ...e, accepted: false, disposition: 'BUMPED' as CallDisposition, reason: null, startMin: undefined }
+      ? {
+          ...e, accepted: false, disposition: 'BUMPED' as CallDisposition, reason: null,
+          startMin: undefined, assigneeId: undefined, endMin: undefined,
+        }
       : e,
   )
 
-  // 그 의사를 응급으로 재점유(지금부터 durationMin 동안·개인 속도 반영). 예약 수익 회수 + 응급 델타 반영.
+  // 그 의사를 응급으로 재점유(지금부터 durationMin 동안·개인 속도 + 피로 반영). 예약 수익 회수 + 응급 델타 반영.
   const target = (state.hospital.roster ?? []).find((d) => d.id === targetId)! // bumpTarget은 roster에서 나온 id
-  const busyUntil = { ...state.busyUntil, [targetId]: occupiedUntilMin(target, arrivalMin, call.durationMin ?? 0) }
+  const until = occupiedUntilMin(target, arrivalMin, call.durationMin ?? 0, state.fatigueAtOpen[targetId] ?? 0)
+  const busyUntil = { ...state.busyUntil, [targetId]: until }
   const busyWith = {
     ...state.busyWith,
     [targetId]: { callId: call.id, kind: call.kind, deltaManwon: callDelta(call.kind) },
@@ -705,7 +734,10 @@ function applyBump(state: ReceivingState, call: IncomingCall): ReceivingState {
     busyWith,
     netProfitDeltaManwon,
     lawsuitExposure,
-    log: [...log, { callId: call.id, accepted: true, disposition: 'CHOICE', reason: null, startMin: arrivalMin }],
+    log: [...log, {
+      callId: call.id, accepted: true, disposition: 'CHOICE' as CallDisposition, reason: null,
+      startMin: arrivalMin, assigneeId: targetId, endMin: until,
+    }],
     index,
     done: index >= state.queue.length,
   }

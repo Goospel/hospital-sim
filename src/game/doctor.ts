@@ -1,8 +1,13 @@
-import type { DepartmentSpec, DeptKey, Doctor, IncomingCall, SetupChoices } from './types'
+import type { CallKind, DepartmentSpec, DeptKey, Doctor, IncomingCall, SetupChoices } from './types'
 import type { ReceivingState } from './receiving' // type-only — 런타임 순환 없음
 import { CANDIDATES, SPEED_OF_TIER, type Candidate } from './candidates'
 
-// 표시 레이어 순수 모듈. 판정·경제에 절대 닿지 않는다. 런타임 임포트는 candidates.ts 하나(setup.ts는 여전히 type-only 회피 — 순환 차단).
+// 의사 개인 유닛 모듈 — 명단·담당 분배·**피로**의 단일 출처.
+// 런타임 임포트는 candidates.ts 하나(setup.ts는 여전히 type-only 회피 — 순환 차단).
+//
+// ⚠️ 2026-07-25 승격: 피로는 더 이상 표시 전용이 아니다. fatigueSlowFactor가 daysim의
+// occupiedUntilMin에 합류해 진료 소요를 늘린다(스펙 2026-07-25-fatigue-adjudication-design.md).
+// 그 배율 하나를 빼면 이 모듈은 여전히 판정·경제에 닿지 않는다.
 
 const FAMILY_NAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오']
 const GIVEN_NAMES = ['민준', '서연', '도윤', '하은', '지호', '수아', '예준', '지우', '준서', '서윤', '현우', '지민']
@@ -56,51 +61,125 @@ export function handlingDept(call: IncomingCall): DeptKey {
 }
 
 /**
- * 받은(accepted) 콜을 담당 과 유닛에 라운드로빈(가장 적게 받은 유닛부터)으로 분배.
- * total = 전체, night = 그중 야간 콜(피로 가중용, 일관된 부분집합). 담당 과 미채용 콜은 무배정.
+ * 하루 부하 파생 — **로그의 실제 배정(assigneeId)** 으로 접는다. 표시용 라운드로빈이던 옛 분배는
+ * 승격과 함께 폐기됐다: 감속당하는 의사와 카드에 뜨는 의사가 달라지면 이 레이어가 거짓말을 한다(F-2).
+ *
+ * total = 담당 건수(명단 스트립 표시용) · loadMin = **시간 × 강도**의 합(피로 입력) ·
+ * nightLoad = 야간 콜의 강도 합. 시간만 재면 "많이 보는 과가 갈린다"가 돼 미용이 포화하고
+ * 필수과가 0이 된다(§FATIGUE_INTENSITY) — 그래서 두 부하 축 모두 강도를 곱한다.
+ *
  * 모든 유닛을 0으로 초기화해 표시가 안정적이다(콜 0인 유닛도 카드에 0으로 뜬다).
+ * 배정이 없는 수용 엔트리(합성 로그·명단 밖 id)는 아무에게도 안 붙는다.
  */
 export function doctorCaseloads(
   roster: Doctor[],
   receiving: ReceivingState,
-): { total: Map<string, number>; night: Map<string, number> } {
+): { total: Map<string, number>; loadMin: Map<string, number>; nightLoad: Map<string, number> } {
   const total = new Map<string, number>()
-  const night = new Map<string, number>()
+  const loadMin = new Map<string, number>()
+  const nightLoad = new Map<string, number>()
   for (const doc of roster) {
     total.set(doc.id, 0)
-    night.set(doc.id, 0)
+    loadMin.set(doc.id, 0)
+    nightLoad.set(doc.id, 0)
   }
   receiving.log.forEach((entry, i) => {
     if (!entry.accepted) return
+    const id = entry.assigneeId
+    if (id === undefined || !total.has(id)) return // 무배정 — 아무에게도 안 붙음
     const call = receiving.queue[i]
-    const dept = handlingDept(call)
-    const deptDocs = roster.filter((d) => d.dept === dept)
-    if (deptDocs.length === 0) return // 담당 과 미채용 — 아무에게도 안 붙음
-    const target = deptDocs.reduce((min, d) => (total.get(d.id)! < total.get(min.id)! ? d : min))
-    total.set(target.id, total.get(target.id)! + 1)
-    if (call.nightShift) night.set(target.id, night.get(target.id)! + 1)
+    const intensity = call ? FATIGUE_INTENSITY[call.kind] : 1
+    total.set(id, total.get(id)! + 1)
+    if (call?.nightShift) nightLoad.set(id, nightLoad.get(id)! + intensity)
+    if (entry.startMin !== undefined && entry.endMin !== undefined) {
+      loadMin.set(id, loadMin.get(id)! + Math.max(0, entry.endMin - entry.startMin) * intensity)
+    }
   })
-  return { total, night }
+  return { total, loadMin, nightLoad }
 }
 
-// 피로 상수 — 예시값(임상 주장 아님). 방향만 정직: 담당 많을수록·야간일수록 ↑, 무부하 회복 ↓.
-export const FATIGUE_PER_CASE = 18
-export const FATIGUE_NIGHT_EXTRA = 12
+// 피로 상수 — 예시값(임상 주장 아님). 방향만 정직: 무거운 일을 오래 할수록·야간일수록 ↑, 한가한 날 회복 ↓.
+// ⚠️ FATIGUE_PER_CASE(건수 기반, 18)는 은퇴했다 — 콜 제한 폐지로 하루가 62~142명이 되면서
+// 건수 척도가 개원 첫날 포화를 만들었다(보톡스 30분과 뇌수술 180분에 같은 값을 매기던 게 근인).
+//
+// ⚠️ 단위 주의 — 부하는 이제 **분이 아니라 '표준강도분'**(분 × FATIGUE_INTENSITY)이다. 그래서
+// FREE_MIN이 "하루 600분 중 6시간"이던 옛 해석은 더 이상 성립하지 않는다: 미용 의사가 600분을
+// 꽉 채워도 강도 0.3이라 180이고, 응급 수술 두 건(각 75분)이면 300이다. 실측 튜닝값(2026-07-25,
+// 순환기1+미용1 / 순환기2+미용1 / 미용3+검진3 / 1인 2주차 이월 — 네 시나리오)이지 임상 주장이 아니다.
+//
+// ⚠️ 재튜닝(2026-07-25, 300/35 → 160/15) — **문턱을 낮추고 기울기를 눕혔다.** 옛 값은 두 목표를
+// 동시에 못 냈다: 1인 순환기는 D2에 포화(100)해 "주 후반에 갈려나간다"가 아니라 "이틀 만에 끝난다"였고,
+// 2인이 나눠 받으면 각자 문턱 아래라 **주 내내 정확히 0** — 주 간 누적이라는 이 기능의 존재 이유가
+// 사라졌다. 낮은 문턱 + 완만한 기울기면 1인은 주 내내 감속 지대에 눌러앉고(실측 W1 52 → 100 → 78,
+// 2주차는 82~100으로 더 높게 머문다), 2인은 밤 몫만큼만 남되 감속 지대(34)에 못 미친다(실측 최대 20).
+// 저강도 과는 여전히 무풍이다 — 미용·검진의 표준강도분은 하루 200 이하라 회복(FATIGUE_REST)이 이긴다.
+export const FATIGUE_FREE_MIN = 160 // 이 부하까지는 정상 근무 — 델타 0(표준강도분 · 강도 1.0이면 2시간 40분)
+export const FATIGUE_PER_OVER_HOUR = 15 // 초과 부하 1시간(표준강도)당 피로
+export const FATIGUE_NIGHT_EXTRA = 12 // 야간 콜 강도 1.0당 추가 — 야간의 무게도 일의 강도에 비례한다
 export const FATIGUE_REST = 20
 export const FATIGUE_MAX = 100
 
 /**
- * 하루 담당 → 유닛별 피로 갱신(0~FATIGUE_MAX 클램프). 이전 값에 누적한다(주 간 유지 — 리셋은 세션이 안 한다).
- * 야간 담당은 기본에 추가 가중이 붙는다(같은 건수라도 밤이 무겁다). 무부하 날은 회복(−FATIGUE_REST)으로 내려간다.
+ * 콜 종류별 **강도 계수** — 부하 분 = 점유 분 × 강도. 예시값(임상 주장 아님)이되 축의 근거는
+ * 상대가치점수의 "업무량"(시간 × 강도: 정신적 노력·스트레스·기술)이다(fee-schedule 리서치).
+ *
+ * 시간만 재면 "많이 보는 과가 갈린다"는 엉뚱한 이야기가 나온다 — 실측(2026-07-25): 미용 1명이
+ * 워크인으로 600분을 채워 D2에 포화하고, 응급 2~4통뿐인 순환기는 내내 0이었다. 보톡스 1분과
+ * 응급 PCI 1분은 의사에게 같은 무게가 아니다: 미용은 예약제 루틴 시술이고(야간 당직도 없다),
+ * 필수의료는 생사·집중·체력이다. 이 비대칭이 **같은 시간을 일해도 필수의료가 더 갈리는데
+ * 흑자는 미용이 가져간다**는 이 게임의 논지를 피로 축에서 완성한다.
+ */
+export const FATIGUE_INTENSITY: Record<CallKind, number> = {
+  COSMETIC_WALKIN: 0.3, // 예약제 루틴 — 저강도
+  SPECIALIST_ELECTIVE: 1.0, // 외래+검사 — 기준선
+  MEDICAL_EMERGENCY: 1.5, // 입원·수액 — 응급이되 수술 아님
+  STEMI: 2.0, // 응급 수술·시술급 — 생사·집중
+  OBSTETRIC_EMERGENCY: 2.0,
+  NEURO_EMERGENCY: 2.0,
+  TRAUMA_EMERGENCY: 2.0,
+  ABDOMINAL_EMERGENCY: 2.0,
+}
+
+/** 막대 '중' 경계 — 여기까지 배율 1.0(정상 근무 무영향). DoctorRoster의 색 단계와 같은 출처. */
+export const FATIGUE_SLOW_FROM = 34
+/** 막대 '고'(레드존) 경계 — 색과 감속 구간을 한 출처로 묶는다. */
+export const FATIGUE_RED = 67
+/** 포화(FATIGUE_MAX)에서의 추가 소요 비율 — +50%. */
+export const FATIGUE_SLOW_MAX = 0.5
+
+/**
+ * 피로 → 진료 소요 배율. FATIGUE_SLOW_FROM 이하는 1.0, 거기서 FATIGUE_MAX까지 선형으로 오른다
+ * (67 → ×1.25, 100 → ×1.5). **연속·단조**라 임계를 넘는 순간이 없다 — "레드존 직전까지 굴리기"
+ * 같은 게이밍 표면을 만들지 않기 위한 형태 선택이다(스펙 §5 정답-퍼즐 방지).
+ */
+export function fatigueSlowFactor(fatigue: number): number {
+  const over = Math.max(0, fatigue - FATIGUE_SLOW_FROM)
+  return 1 + (FATIGUE_SLOW_MAX * over) / (FATIGUE_MAX - FATIGUE_SLOW_FROM)
+}
+
+/**
+ * 하루 부하 → 유닛별 피로 갱신(0~FATIGUE_MAX 클램프). 이전 값에 누적한다(주 간 유지 — 리셋은 세션이 안 한다).
+ *
+ * 입력이 **시간 × 강도**인 게 핵심이다. 건수는 부하의 대리물일 뿐이라 보톡스 30분과 뇌수술 180분에
+ * 같은 값을 매겼고(콜 제한 폐지 뒤 개원 첫날 포화), 시간만 재면 이번엔 반대로 **많이 보는 과**가
+ * 갈려 미용이 이틀 만에 포화하고 응급 2~4통뿐인 필수과는 내내 0이었다(실측 2026-07-25).
+ * 강도를 곱하면 축이 "몇 분 일했나"가 아니라 "얼마나 무거운 일을 했나"가 된다(FATIGUE_INTENSITY).
+ *
+ * FATIGUE_FREE_MIN(표준강도분)까지는 부하 0이고 그 초과분만 시간당 쌓인다 — 완편 수익과가 저지대를
+ * 유지하고 1인 필수과만 레드존으로 가는 대조가 여기서 나온다(채용이 곧 회복). 단 나눠 받는다고 0이
+ * 되지는 않는다: 야간 가중은 문턱과 무관해 **당직을 나눠도 밤은 밤**이다(session.test.ts의 duo 계약).
+ * 야간은 강도에 비례해 가중되고(밤의 STEMI와 저녁의 보톡스가 같을 리 없다), 한가한 날은 회복으로 내려간다.
  */
 export function stepFatigue(
   prev: Record<string, number>,
-  caseloads: { total: Map<string, number>; night: Map<string, number> },
+  load: { loadMin: Map<string, number>; nightLoad: Map<string, number> },
 ): Record<string, number> {
   const next: Record<string, number> = { ...prev }
-  for (const [id, cases] of caseloads.total) {
-    const nights = caseloads.night.get(id) ?? 0
-    const delta = cases * FATIGUE_PER_CASE + nights * FATIGUE_NIGHT_EXTRA - FATIGUE_REST
+  for (const [id, mins] of load.loadMin) {
+    const nights = load.nightLoad.get(id) ?? 0
+    const overHours = Math.max(0, mins - FATIGUE_FREE_MIN) / 60
+    const delta =
+      Math.round(overHours * FATIGUE_PER_OVER_HOUR + nights * FATIGUE_NIGHT_EXTRA) - FATIGUE_REST
     next[id] = Math.max(0, Math.min(FATIGUE_MAX, (prev[id] ?? 0) + delta))
   }
   return next

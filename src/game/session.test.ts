@@ -10,6 +10,7 @@ import { decide, isElective } from './receiving'
 import { DAYS_PER_WEEK, SETUP_BUDGET_MANWON } from './setup'
 import { DAY_LENGTH_MIN } from './daysim'
 import { initSystem, POOL_INITIAL } from './system'
+import { FATIGUE_SLOW_FROM } from './doctor'
 import type { IncomingCall, SetupChoices } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
@@ -507,17 +508,66 @@ describe('피로 누적 — 표시 레이어(판정 무관)', () => {
   })
 
   /*
-    옛 큐는 '마지막 1통이 반드시 야간'이라 월요일 STEMI 1건이 야간 가중(+12)을 받아 회복(−20)을
-    이겼다. 도착시각을 하루 전체에 뿌리면서 그 보장이 사라져, STEMI가 낮에 오는 날은 1건(+18)이
-    회복에 못 미쳐 0이 된다 — 피로 공식이 바뀐 게 아니라 **테스트가 옛 배치에 기대고 있었다**.
-    계약("담당한 유닛의 피로가 오른다")을 배치와 무관하게 잠그려면 순환기가 예약까지 받으면 된다.
+    ⚠️ 2026-07-25 승격으로 이 계약이 바뀌었고, 같은 날 재튜닝(FREE 300→160 / PER 35→15)이 한 번 더 바꿨다.
+    옛 계약은 "담당하면 오른다"(건수 기반)였다. 이제 입력이 **시간 × 강도**(FATIGUE_INTENSITY)라
+    FATIGUE_FREE_MIN까지는 부하 0이고, 그 아래면 회복(−FATIGUE_REST)이 이긴다 — **무거운 일을 오래 해야** 오른다.
+
+    ⚠️ duo 핀이 "하루 만에 정확히 0"에서 **감속 지대 진입 없음**으로 완화됐다. 문턱 하나로 (a) 1인 필수과가
+    주 후반 60+로 갈려나가는 곡선과 (b) 2인이 하루 만에 0으로 리셋되는 핀은 양립하지 않는다 — 실측(2026-07-25):
+    옛 값(300/35)은 (b)를 지키느라 2인의 주 간 누적을 통째로 0으로 만들어 **주가 쌓일수록 무거워진다**는
+    이 기능의 존재 이유를 지웠다. 나눠 받아도 0이 아닌 게 오히려 정직하다 — 당직을 나눠도 밤은 밤이다
+    (FATIGUE_NIGHT_EXTRA). 회복이 이기는 건 **하루 만의 리셋**이 아니라 **주중 내내 감속 지대 밖**이라는 뜻이다.
+
+    아래 두 테스트가 그 대조를 잠근다: 1명이 다 받으면 주말까지 감속 지대에 눌러앉고, 2명이 나눠 받으면
+    밤 몫만 남되 감속 지대에 못 미친다. 이게 이번 승격의 논지다 — **채용이 곧 회복**이고,
+    미용 무풍지대와 1인 필수과의 대조가 여기서 나온다.
   */
-  it('순환기가 그날 담당을 여럿 맡으면 마감 후 그 유닛 피로가 오른다', () => {
-    let s = completeSetup(conscientious) // AESTHETICS:1, CARDIOLOGY:2
-    s = runDay(s, (call) => call.kind === 'STEMI' || call.kind === 'SPECIALIST_ELECTIVE')
+  const soloCardio: SetupChoices = { hospitalName: '1인병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 1 } }
+  const acceptCardioLoad = (call: { kind: string }) =>
+    call.kind === 'STEMI' || call.kind === 'SPECIALIST_ELECTIVE'
+
+  it('순환기 1명이 하루 부하를 다 받으면 마감 후 그 유닛 피로가 오른다 — 주말까지 감속 지대', () => {
+    let s = completeSetup(soloCardio)
+    s = runDay(s, acceptCardioLoad)
+    s = completeReceiving(s)
+    const solo = s.hospital!.roster!.find((d) => d.dept === 'CARDIOLOGY')!.id
+    expect(s.fatigue[solo]).toBeGreaterThan(0)
+
+    // 7일 완주해도 내려오지 않는다 — 주 후반 내내 감속 지대(실측 D7 = 78). 이게 갈려나감 서사의 몸통이다.
+    const week = runWeekFrom(completeSetup(soloCardio), acceptCardioLoad)
+    expect(week.fatigue[solo]).toBeGreaterThanOrEqual(FATIGUE_SLOW_FROM)
+  })
+
+  it('분담은 감속 지대 밖에 머문다 — 당직을 나눠도 밤은 밤이라 0은 아니다', () => {
+    let s = completeSetup(conscientious) // CARDIOLOGY: 2
+    s = runDay(s, acceptCardioLoad)
     s = completeReceiving(s)
     const cardioIds = s.hospital!.roster!.filter((d) => d.dept === 'CARDIOLOGY').map((d) => d.id)
-    expect(cardioIds.some((id) => (s.fatigue[id] ?? 0) > 0)).toBe(true)
+    const day1 = cardioIds.map((id) => s.fatigue[id] ?? 0)
+    expect(day1.every((v) => v < FATIGUE_SLOW_FROM)).toBe(true) // 감속 구간 진입 없음 — 판정에 무영향
+    expect(day1.every((v) => v > 0)).toBe(true) // 그래도 0은 아니다 — 야간 몫은 나눠도 남는다
+
+    // 7일 완주해도 저지대 — 주중 회복이 누적을 이긴다(1인 순환기와의 대조).
+    const week = runWeekFrom(completeSetup(conscientious), acceptCardioLoad)
+    const day7 = cardioIds.map((id) => week.fatigue[id] ?? 0)
+    expect(day7.every((v) => v < FATIGUE_SLOW_FROM)).toBe(true)
+    expect(Math.max(...day7)).toBeLessThanOrEqual(Math.max(...day1)) // 주가 갈수록 갈리지 않는다
+  })
+
+  it('advanceDay가 어제 스텝된 피로를 오늘 스냅샷으로 넘긴다 — 악순환의 이음매', () => {
+    let s = completeSetup(soloCardio)
+    s = runDay(s, acceptCardioLoad)
+    s = completeReceiving(s)
+    const stepped = s.fatigue
+    expect(Object.keys(stepped).length).toBeGreaterThan(0) // 스텝이 실제로 일어났는지(빈 맵 비교의 허수 방지)
+    s = advanceDay(s)
+    // 오늘 아침 배율이 곧 어제 마감의 피로다 — 한 칸 밀리면 막대와 감속이 하루씩 어긋난다.
+    expect(s.receiving!.fatigueAtOpen).toEqual(stepped)
+  })
+
+  it('개원 첫날은 전원 쌩쌩(빈 스냅샷)', () => {
+    const s = completeSetup(soloCardio)
+    expect(s.receiving!.fatigueAtOpen).toEqual({})
   })
 
   it('주가 넘어가도 피로가 리셋되지 않는다(nextWeek 이월)', () => {

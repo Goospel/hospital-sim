@@ -1,4 +1,5 @@
 import type { CallKind, DeptKey, Doctor } from './types'
+import { fatigueSlowFactor } from './doctor'
 
 // 순수 시간 원시함수. RNG 0 — 모든 무작위성은 seed 해시(Math.random·Date.now 금지).
 // splitmix32류 정수 해시 → [0,1). 결정론이라 같은 seed=같은 값(테스트·재현).
@@ -99,11 +100,21 @@ export function earliestFreeMin(
 }
 
 /**
- * 점유 종료 시각(분) — 의사 개인 속도 반영. 점유 계산의 **유일한 자리**다(decide·applyBump 공유;
- * 식이 두 곳에 살면 한쪽이 낡는다). speedFactor 없으면(무명 채용·구 경로) 현행과 동일.
+ * 점유 종료 시각(분) — 의사 개인 속도 + **피로**를 반영. 점유 계산의 **유일한 자리**다
+ * (decide·applyBump·CallCard 공유; 식이 두 곳에 살면 한쪽이 낡는다).
+ *
+ * fatigue 기본값 0이라 안 넘기면 배율 1.0으로 현행과 완전 동일하다(불변식 F-0) —
+ * 승격 전 호출부·테스트가 그대로 green인 이유가 이 기본 인자다.
+ * speedFactor와 곱으로 합성되고 **반올림은 끝에서 한 번**이라, 지친 베테랑이 쌩쌩한
+ * 신입과 비슷해지는 질감이 따로 코드를 쓰지 않고 나온다.
  */
-export function occupiedUntilMin(doc: Doctor, startMin: number, durationMin: number): number {
-  return startMin + Math.round(durationMin * (doc.speedFactor ?? 1))
+export function occupiedUntilMin(
+  doc: Doctor,
+  startMin: number,
+  durationMin: number,
+  fatigue = 0,
+): number {
+  return startMin + Math.round(durationMin * (doc.speedFactor ?? 1) * fatigueSlowFactor(fatigue))
 }
 
 /** 시각 atMin에 자유로운(busyUntil ≤ atMin) 그 과 유닛들. busyUntil 미기록=0(자유). */

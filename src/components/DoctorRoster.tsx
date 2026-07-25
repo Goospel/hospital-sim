@@ -1,6 +1,6 @@
 "use client";
 
-import { doctorCaseloads } from "@/game/doctor";
+import { doctorCaseloads, FATIGUE_RED, FATIGUE_SLOW_FROM } from "@/game/doctor";
 import { DEPARTMENTS } from "@/game/setup";
 import { compareDeptKeys } from "@/game/hospitalMap";
 import type { ReceivingState } from "@/game/receiving";
@@ -13,10 +13,14 @@ const deptMeta = (k: DeptKey) => DEPARTMENTS.find((d) => d.key === k)!;
  *
  * 어두운 책상 위 붉은색은 `--alarm` 하나뿐이다(스펙 §2-C) — 종이 위 적자(stamp-ink)와
  * 섞지 않는다. 색은 강조일 뿐이라 **길이**가 판정을 나른다(흑백에서도 읽힌다).
+ *
+ * 경계는 doctor.ts의 상수다 — **색 단계가 곧 감속 구간**이라(중=배율 시작, 고=×1.25 이상)
+ * 두 곳에 숫자를 적으면 한쪽이 조용히 낡는다.
  */
 function FatigueBar({ value }: { value: number }) {
   // 흐릿함 → 밝음 → 붉음. 흑백으로 찍어도 밝기 단계가 남는 3단이라 색이 사라져도 읽힌다.
-  const color = value >= 67 ? "bg-alarm" : value >= 34 ? "bg-on-desk" : "bg-on-desk-muted";
+  const color =
+    value >= FATIGUE_RED ? "bg-alarm" : value >= FATIGUE_SLOW_FROM ? "bg-on-desk" : "bg-on-desk-muted";
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-desk">
       <div className={`h-full ${color} transition-all`} style={{ width: `${Math.min(100, value)}%` }} />

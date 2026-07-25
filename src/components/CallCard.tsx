@@ -14,7 +14,7 @@ import {
   type ReceivingState,
   type DecisionAction,
 } from "@/game/receiving";
-import { freeDoctorsOfDept, pickAssignee, formatClockFromOpen as formatClock } from "@/game/daysim";
+import { freeDoctorsOfDept, pickAssignee, occupiedUntilMin, formatClockFromOpen as formatClock } from "@/game/daysim";
 import { handlingDept } from "@/game/doctor";
 import { DEPARTMENTS } from "@/game/setup";
 import { REASON_CLAUSE } from "@/game/news";
@@ -231,10 +231,16 @@ export default function CallCard({
 
       {elective && canStart && assignee && (
         // 수락 결과를 사실로 — 「이 의사가 이 시각까지 묶인다」. 그 시간에 같은 과 응급이 오면
-        // 못 받는다는 결론은 플레이어가 스스로 잇는다(해석 0). start·durationMin은 decide와 같은
-        // 값이라(startMinFor 공유) 카드에 뜬 미리보기와 실제 점유가 어긋나지 않는다.
+        // 못 받는다는 결론은 플레이어가 스스로 잇는다(해석 0).
+        // ⚠️ 옛 코드는 start + durationMin을 직접 더해 speedFactor·피로를 둘 다 빠뜨렸다 —
+        // occupiedUntilMin이 "점유 계산의 유일한 자리"라는 계약 밖에 있던 한 곳이다.
+        // 이제 decide와 같은 함수·같은 인자라 카드와 실제 점유가 어긋날 수 없다.
         <p className="rounded-xs border border-frame bg-desk px-3 py-2 font-mono text-xs text-on-desk/70">
-          수락 시 {assignee.name} · {formatClock(start + (call.durationMin ?? 0))}까지 점유
+          수락 시 {assignee.name} ·{" "}
+          {formatClock(
+            occupiedUntilMin(assignee, start, call.durationMin ?? 0, receiving.fatigueAtOpen[assignee.id] ?? 0),
+          )}
+          까지 점유
         </p>
       )}
 
