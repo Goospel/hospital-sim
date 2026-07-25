@@ -536,6 +536,22 @@ describe('피로 누적 — 표시 레이어(판정 무관)', () => {
     expect(cardioIds.every((id) => (s.fatigue[id] ?? 0) === 0)).toBe(true)
   })
 
+  it('advanceDay가 어제 스텝된 피로를 오늘 스냅샷으로 넘긴다 — 악순환의 이음매', () => {
+    let s = completeSetup(soloCardio)
+    s = runDay(s, acceptCardioLoad)
+    s = completeReceiving(s)
+    const stepped = s.fatigue
+    expect(Object.keys(stepped).length).toBeGreaterThan(0) // 스텝이 실제로 일어났는지(빈 맵 비교의 허수 방지)
+    s = advanceDay(s)
+    // 오늘 아침 배율이 곧 어제 마감의 피로다 — 한 칸 밀리면 막대와 감속이 하루씩 어긋난다.
+    expect(s.receiving!.fatigueAtOpen).toEqual(stepped)
+  })
+
+  it('개원 첫날은 전원 쌩쌩(빈 스냅샷)', () => {
+    const s = completeSetup(soloCardio)
+    expect(s.receiving!.fatigueAtOpen).toEqual({})
+  })
+
   it('주가 넘어가도 피로가 리셋되지 않는다(nextWeek 이월)', () => {
     let s = completeSetup(conscientious)
     s = runWeekFrom(s, (call) => call.kind === 'STEMI') // 7일차 DAY_END

@@ -73,7 +73,11 @@ export interface SessionState {
   morningNews: NewsItem[]
   world?: WorldState // 외생 이벤트가 재구성한 세계(채용 경제). 없으면 기본 세계.
   event?: WorldEvent // WORLD_EVENT 화면에 고지할 이벤트.
-  /** 유닛별 피로도(0~100). 표시 전용·판정 무관. 하루 마감(completeReceiving)에 스텝, 주 간 유지. */
+  /**
+   * 유닛별 피로도(0~100). 하루 마감(completeReceiving)에 스텝, 주 간 유지.
+   * ⚠️ 2026-07-25 승격: 더 이상 표시 전용이 아니다 — 다음 날 receiving의 fatigueAtOpen으로
+   * 실려 진료 소요를 늘린다(occupiedUntilMin). 판정 우선순위·사유는 그대로다.
+   */
   fatigue: Record<string, number>
   choices: SetupChoices   // 현재 병원 명단(매주 성장). 1주차 이후 재투자의 시작점.
   beds: number            // 병상 티어(초기 FIXED_BEDS).
@@ -240,7 +244,7 @@ export function advanceDay(state: SessionState): SessionState {
     phase: 'RECEIVING',
     day,
     receiving: initReceiving(
-      state.hospital!, weekDayQueue(state.week, day, state.beds), boardedBusyUntilFrom(state.receiving),
+      state.hospital!, weekDayQueue(state.week, day, state.beds), boardedBusyUntilFrom(state.receiving), state.fatigue,
     ),
     morningNews: morningNews(day, yesterday?.turnedAway ?? []),
   }
@@ -410,7 +414,7 @@ export function beginWeek(state: SessionState): SessionState {
     phase: 'RECEIVING',
     day: 1,
     ledgerDays: [],
-    receiving: initReceiving(state.hospital, weekDayQueue(state.week, 1, state.beds)),
+    receiving: initReceiving(state.hospital, weekDayQueue(state.week, 1, state.beds), {}, state.fatigue),
     morningNews: [],
   }
 }
