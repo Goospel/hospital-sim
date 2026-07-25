@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { materializeRoster, walkinDept, handlingDept, doctorCaseloads, stepFatigue, FATIGUE_MAX } from './doctor'
+import {
+  materializeRoster, walkinDept, handlingDept, doctorCaseloads, stepFatigue,
+  fatigueSlowFactor, FATIGUE_MAX, FATIGUE_SLOW_FROM, FATIGUE_RED,
+} from './doctor'
 import { createCallQueue, decide, initReceiving } from './receiving'
 import { buildHospital, DEPARTMENTS } from './setup'
 import { CANDIDATES, SPEED_OF_TIER } from './candidates'
@@ -144,5 +147,23 @@ describe('stepFatigue — 하루 담당으로 피로 누적(주 간 유지)', ()
     const day1 = stepFatigue({}, cl([['a', 2]]))
     const day2 = stepFatigue(day1, cl([['a', 2]]))
     expect(day2.a).toBeGreaterThan(day1.a)
+  })
+})
+
+describe('fatigueSlowFactor — 피로 → 진료 소요 배율(조용한 침식)', () => {
+  it('정상 근무 구간(FATIGUE_SLOW_FROM 이하)은 정확히 1.0 — 무영향', () => {
+    expect(fatigueSlowFactor(0)).toBe(1)
+    expect(fatigueSlowFactor(FATIGUE_SLOW_FROM)).toBe(1)
+  })
+
+  it('레드존 경계에서 ×1.25, 포화에서 ×1.5', () => {
+    expect(fatigueSlowFactor(FATIGUE_RED)).toBeCloseTo(1.25, 10)
+    expect(fatigueSlowFactor(FATIGUE_MAX)).toBeCloseTo(1.5, 10)
+  })
+
+  it('단조증가 — 넘는 순간(임계 벽)이 없다', () => {
+    for (let f = 0; f < FATIGUE_MAX; f++) {
+      expect(fatigueSlowFactor(f + 1)).toBeGreaterThanOrEqual(fatigueSlowFactor(f))
+    }
   })
 })

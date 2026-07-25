@@ -2,7 +2,12 @@ import type { DepartmentSpec, DeptKey, Doctor, IncomingCall, SetupChoices } from
 import type { ReceivingState } from './receiving' // type-only — 런타임 순환 없음
 import { CANDIDATES, SPEED_OF_TIER, type Candidate } from './candidates'
 
-// 표시 레이어 순수 모듈. 판정·경제에 절대 닿지 않는다. 런타임 임포트는 candidates.ts 하나(setup.ts는 여전히 type-only 회피 — 순환 차단).
+// 의사 개인 유닛 모듈 — 명단·담당 분배·**피로**의 단일 출처.
+// 런타임 임포트는 candidates.ts 하나(setup.ts는 여전히 type-only 회피 — 순환 차단).
+//
+// ⚠️ 2026-07-25 승격: 피로는 더 이상 표시 전용이 아니다. fatigueSlowFactor가 daysim의
+// occupiedUntilMin에 합류해 진료 소요를 늘린다(스펙 2026-07-25-fatigue-adjudication-design.md).
+// 그 배율 하나를 빼면 이 모듈은 여전히 판정·경제에 닿지 않는다.
 
 const FAMILY_NAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오']
 const GIVEN_NAMES = ['민준', '서연', '도윤', '하은', '지호', '수아', '예준', '지우', '준서', '서윤', '현우', '지민']
@@ -83,11 +88,31 @@ export function doctorCaseloads(
   return { total, night }
 }
 
-// 피로 상수 — 예시값(임상 주장 아님). 방향만 정직: 담당 많을수록·야간일수록 ↑, 무부하 회복 ↓.
+// 피로 상수 — 예시값(임상 주장 아님). 방향만 정직: 오래 점유될수록·야간일수록 ↑, 한가한 날 회복 ↓.
+/** @deprecated 건수 기반 유물 — 점유 시간 기반으로 교체되는 중이다(FATIGUE_FREE_MIN). 곧 제거. */
 export const FATIGUE_PER_CASE = 18
+export const FATIGUE_FREE_MIN = 360 // 이 점유까지는 정상 근무 — 부하 0(하루 600분 중 6시간)
+export const FATIGUE_PER_OVER_HOUR = 15 // 초과 1시간당 피로
 export const FATIGUE_NIGHT_EXTRA = 12
 export const FATIGUE_REST = 20
 export const FATIGUE_MAX = 100
+
+/** 막대 '중' 경계 — 여기까지 배율 1.0(정상 근무 무영향). DoctorRoster의 색 단계와 같은 출처. */
+export const FATIGUE_SLOW_FROM = 34
+/** 막대 '고'(레드존) 경계 — 색과 감속 구간을 한 출처로 묶는다. */
+export const FATIGUE_RED = 67
+/** 포화(FATIGUE_MAX)에서의 추가 소요 비율 — +50%. */
+export const FATIGUE_SLOW_MAX = 0.5
+
+/**
+ * 피로 → 진료 소요 배율. FATIGUE_SLOW_FROM 이하는 1.0, 거기서 FATIGUE_MAX까지 선형으로 오른다
+ * (67 → ×1.25, 100 → ×1.5). **연속·단조**라 임계를 넘는 순간이 없다 — "레드존 직전까지 굴리기"
+ * 같은 게이밍 표면을 만들지 않기 위한 형태 선택이다(스펙 §5 정답-퍼즐 방지).
+ */
+export function fatigueSlowFactor(fatigue: number): number {
+  const over = Math.max(0, fatigue - FATIGUE_SLOW_FROM)
+  return 1 + (FATIGUE_SLOW_MAX * over) / (FATIGUE_MAX - FATIGUE_SLOW_FROM)
+}
 
 /**
  * 하루 담당 → 유닛별 피로 갱신(0~FATIGUE_MAX 클램프). 이전 값에 누적한다(주 간 유지 — 리셋은 세션이 안 한다).
