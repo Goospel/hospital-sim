@@ -9,3 +9,12 @@
 # 제출물 바이너리 — core.autocrlf 가 손대지 못하게 못박는다(PDF 한 바이트만 바뀌어도 파일이 깨진다).
 *.pdf binary
 *.png binary
+
+# 옵시디언 설정(JSON)은 **반드시 LF**로 체크아웃한다.
+#
+# 옵시디언은 자기 설정 파일을 항상 LF 로 쓴다(크로스플랫폼 앱). 그런데 core.autocrlf=true 는
+# 체크아웃 때 CRLF 로 풀어놓는다 — 그래서 앱이 설정을 한 번 저장할 때마다 worktree 가 LF 로
+# 되돌아가고, git 은 **내용이 한 글자도 안 바뀐 파일을 `M` 으로 표시**한다(실측: 인덱스 blob 과
+# worktree 해시가 동일한데 status 는 M). 커밋할 게 없는 이 유령 M 이 status 에 상주하면
+# `git status` 로 "지금 뭘 건드렸나"를 읽을 수 없고, pull 전에 stash 하는 헛수고가 붙는다.
+.obsidian/** text eol=lf
