@@ -172,7 +172,10 @@ export function isWalkable(w: SimWorld, x: number, y: number): boolean {
 
 **Files:**
 - Create: `src/sim/build.ts`
+- Modify: `src/sim/world.ts`, `src/sim/world.test.ts` (Step 0 개명)
 - Test: `src/sim/build.test.ts`
+
+- [ ] **Step 0: 개명 선행(Task 1 품질 리뷰 Minor 처리)** — `wallTiles` → `blockedPerimeter`로 개명한다(기하「둘레」와 정책「문은 뚫림」이 한 이름에 숨는 문제 — Task 3의 `buildBlockedSet`이 이 이름을 참조한다). `world.ts`·`world.test.ts`의 호출부 전부 치환, 겸사겸사 `world.test.ts`의 홀수 폭 단언 `y: 8`을 `y: 4 + 5 - 1`로 통일(x만 유도식이던 표기 불일치). 개명 후 `npx vitest run src/sim` green 확인하고 별도 커밋 — `refactor: wallTiles를 blockedPerimeter로 — 이름이 문 정책을 말하게`.
 
 - [ ] **Step 1: 실패하는 테스트 작성**
 
@@ -365,19 +368,34 @@ describe('findPath', () => {
 
 - [ ] **Step 3: 최소 구현** — 4방향 A*, 휴리스틱 = 맨해튼, 타이브레이크는 삽입 순서(결정론). 우선순위 큐 없이 배열 정렬로 충분(그리드 48×32).
 
+⚠️ **선결(Task 1 품질 리뷰 · 2026-07-27)**: `isWalkable`은 호출마다 전 방의 벽 배열을 재계산한다(실측 56배 차이 — 방 10개·전체 스캔 벤치 735.6ms vs Set 사전계산 13.1ms). A*가 노드마다 부르면 경로당 15~30ms로 폰 여러 마리 재탐색 시 끊긴다. 그래서 `findPath`는 진입 시 `buildBlockedSet(world)`을 **한 번** 만들어 내부 판정에 쓴다(시그니처 불변 — 호출부는 모름). `blockedPerimeter`는 Task 2에서 `wallTiles`를 개명한 것(기하+문 정책이 한 이름에 숨는 문제).
+
 ```ts
 // src/sim/path.ts
 // 그리드 A* — 4방향, 맨해튼 휴리스틱, 결정론(타이브레이크 = push 순서).
-import { isWalkable, type SimWorld } from './world'
+// 통행 판정은 buildBlockedSet 사전계산 1회 — isWalkable을 노드마다 부르지 않는다(56x).
+import { GRID_W, GRID_H, blockedPerimeter, type SimWorld } from './world'
 
 export interface Pt { x: number; y: number }
+
+/** 막힌 타일 인덱스(y*GRID_W+x) 집합 — findPath 진입 시 1회 계산 */
+export function buildBlockedSet(world: SimWorld): Set<number> {
+  const blocked = new Set<number>()
+  for (const r of world.rooms) for (const t of blockedPerimeter(r)) blocked.add(t.y * GRID_W + t.x)
+  for (const f of world.furniture) blocked.add(f.y * GRID_W + f.x)
+  return blocked
+}
+
+const walkableAt = (blocked: Set<number>, x: number, y: number): boolean =>
+  x >= 0 && y >= 0 && x < GRID_W && y < GRID_H && !blocked.has(y * GRID_W + x)
 
 const DIRS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
 const key = (p: Pt) => `${p.x},${p.y}`
 
 export function findPath(world: SimWorld, from: Pt, to: Pt): Pt[] | null {
   if (from.x === to.x && from.y === to.y) return []
-  if (!isWalkable(world, to.x, to.y)) return null
+  const blocked = buildBlockedSet(world)
+  if (!walkableAt(blocked, to.x, to.y)) return null
   const h = (p: Pt) => Math.abs(p.x - to.x) + Math.abs(p.y - to.y)
   interface Node { p: Pt; g: number; f: number; order: number }
   const open: Node[] = [{ p: from, g: 0, f: h(from), order: 0 }]
@@ -398,7 +416,7 @@ export function findPath(world: SimWorld, from: Pt, to: Pt): Pt[] | null {
     }
     for (const d of DIRS) {
       const nx = { x: cur.p.x + d.x, y: cur.p.y + d.y }
-      if (!isWalkable(world, nx.x, nx.y)) continue
+      if (!walkableAt(blocked, nx.x, nx.y)) continue
       const ng = cur.g + 1
       if (ng < (gScore.get(key(nx)) ?? Infinity)) {
         gScore.set(key(nx), ng)
@@ -409,6 +427,24 @@ export function findPath(world: SimWorld, from: Pt, to: Pt): Pt[] | null {
   }
   return null
 }
+```
+
+Task 3 테스트에 다음 케이스를 추가한다(사전계산과 `isWalkable`의 동치 — 회귀 시 두 판정이 갈리면 여기서 잡힌다):
+
+```ts
+import { GRID_W, GRID_H, isWalkable } from './world'
+import { buildBlockedSet } from './path'
+
+describe('buildBlockedSet', () => {
+  it('전 타일에서 isWalkable과 일치한다 (홀수 폭 방 포함)', () => {
+    const placed = placeRoom(createWorld(1), { type: 'EXAM', x: 10, y: 10, w: 7, h: 5 })
+    if (!placed.ok) throw new Error('전제 실패')
+    const blocked = buildBlockedSet(placed.world)
+    for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
+      expect(!blocked.has(y * GRID_W + x)).toBe(isWalkable(placed.world, x, y))
+    }
+  })
+})
 ```
 
 - [ ] **Step 4: 통과 확인** — Run: `npx vitest run src/sim/path.test.ts` / Expected: PASS
