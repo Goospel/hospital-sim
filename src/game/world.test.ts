@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, EVENT_CATALOG, OPENING_EVENT } from './world'
+import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, transferPressure, EVENT_CATALOG, OPENING_EVENT, REGION_LABELS } from './world'
 import { DEPARTMENTS } from './setup'
 import { POOL_INITIAL } from './system'
 import type { DeptKey, DepartmentSpec, Specialty } from './types'
@@ -331,5 +331,30 @@ describe('RegionEffect — 이벤트가 지역 수치를 흔든다 (spec §4)', 
     const snapshot = JSON.parse(JSON.stringify(world))
     applyEvent(world, EVENT_CATALOG.find((e) => e.id === 'LITIGATION_CHILL')!)
     expect(world).toEqual(snapshot)
+  })
+})
+
+describe('transferPressure — 세계 → 콜 구성 번역 (spec §5)', () => {
+  it('초기 세계의 압력은 0', () => {
+    expect(transferPressure(initWorld())).toBe(0)
+  })
+
+  it('RURAL 배후가 무너질수록 압력이 단조 증가하고 1을 넘지 않는다', () => {
+    let world = initWorld()
+    let prev = transferPressure(world)
+    for (let week = 2; week <= 30; week++) {
+      world = stepWorld(world, week)
+      const p = transferPressure(world)
+      expect(p).toBeGreaterThanOrEqual(prev)
+      expect(p).toBeLessThanOrEqual(1)
+      prev = p
+    }
+    expect(prev).toBeGreaterThan(0) // 30주면 반드시 올라 있다
+  })
+
+  it('REGION_LABELS는 세 지역 모두 1개 이상의 가공 지명을 갖는다', () => {
+    for (const key of ['CAPITAL', 'METRO', 'RURAL'] as const) {
+      expect(REGION_LABELS[key].length).toBeGreaterThanOrEqual(1)
+    }
   })
 })

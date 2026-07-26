@@ -281,3 +281,40 @@ export function stepWorld(world: WorldState, week: number): WorldState {
   if (seededUnit(callSeed(week, 0, 0, EXTRA_DRIFT_SALT)) >= EXTRA_DRIFT_CHANCE) return first
   return driftOnce(first, week, 1) ?? first
 }
+
+/** RURAL 배후 총량(필수과별 배후 병원 수의 합) — transferPressure의 분모·분자. */
+function ruralBackupTotal(regions: RegionState[]): number {
+  const rural = regions.find((r) => r.key === 'RURAL')!
+  return (Object.keys(rural.doctors) as Specialty[])
+    .reduce((n, s) => n + backupHospitals(rural, s), 0)
+}
+
+/**
+ * 전원 압력 0..1 — 지방 배후가 초기 대비 얼마나 무너졌나.
+ * 0 = 온전(초기), 1 = 전멸. receiving.createCallQueue의 3번째 인자로 들어가(Task 7)
+ * 원거리(RURAL발) 응급 전원 비중을 끌어올린다. 판정에는 안 들어간다.
+ *
+ * 단조성은 우연이 아니다: stepWorld는 RURAL에서 빼기만 하고 backupHospitals는
+ * doctors에 대해 단조 증가라 — 드리프트가 도는 동안 이 값은 절대 안 내려간다.
+ * (이벤트 쇼크는 유입도 표현할 수 있어 그때는 내려갈 수 있다 — 의도된 비대칭.)
+ */
+export function transferPressure(world: WorldState): number {
+  const initial = ruralBackupTotal(REGION_INITIAL)
+  if (initial <= 0) return 0
+  const now = ruralBackupTotal(world.regions)
+  return Math.min(1, Math.max(0, 1 - now / initial))
+}
+
+/**
+ * 발신 지역 표시용 가공 지명 — 실존 지명·실사건 토큰 금지.
+ * ⚠️ news.ts의 FICTIONAL_REGIONS(한내시·서림시·금하시·백천시)와 **이름을 겹치지 않는다** —
+ * 겹치면 같은 가공 도시가 두 상수에 살아 이중 기재가 된다(용도가 다르다: 저긴 신문, 여긴 콜 발신지).
+ *
+ * 📌 계획서 초안의 서흥구·청단시는 **실존 행정구역명**이라 버렸다(서흥군·청단군 — 황해도).
+ * 남은 이름은 전부 순우리말 조어라 실존 대조가 불필요하다: 가온·누리·늘목·벼리·먼내·두메·새벌.
+ */
+export const REGION_LABELS: Record<RegionKey, readonly string[]> = {
+  CAPITAL: ['가온구', '누리구'],
+  METRO: ['늘목시', '벼리시'],
+  RURAL: ['먼내군', '두메군', '새벌군'],
+}
