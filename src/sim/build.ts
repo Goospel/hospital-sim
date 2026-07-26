@@ -1,5 +1,5 @@
 // 방 단위 건설 — 검증·비용·가구 자동 배치. 전부 순수 함수.
-import { GRID_W, GRID_H, type Room, type RoomType, type SimWorld, type Furniture } from './world'
+import { GRID_W, GRID_H, doorTile, type Room, type RoomType, type SimWorld, type Furniture } from './world'
 
 export const MIN_ROOM_W = 4
 export const MIN_ROOM_H = 4
@@ -45,9 +45,11 @@ function autoFurniture(room: Room): Furniture[] {
       out.push({ kind, x: ix + dx, y: iy + dy, roomId: room.id })
     }
   }
-  // 문 앞 타일을 가구가 막지 않게 — 문 바로 안쪽 칸은 비운다
-  const doorInsideX = room.x + Math.floor(room.w / 2), doorInsideY = room.y + room.h - 2
-  return out.filter(f => !(f.x === doorInsideX && f.y === doorInsideY))
+  // 문 앞 타일을 가구가 막지 않게 — 문 바로 안쪽 칸은 비운다.
+  // 문 위치는 doorTile이 단일 출처다 — 여기서 공식을 다시 유도하면 홀수 폭 방에서
+  // 둘이 갈려(floor vs ceil) 유일 통로에 가구가 남고 방이 통째로 고립된다.
+  const door = doorTile(room)
+  return out.filter(f => !(f.x === door.x && f.y === door.y - 1))
 }
 
 export function placeRoom(world: SimWorld, spec: { type: RoomType; dept?: Room['dept']; x: number; y: number; w: number; h: number }): PlaceResult {

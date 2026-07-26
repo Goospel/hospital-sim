@@ -19,6 +19,10 @@ describe('placeRoom', () => {
   it('타일당 50만원 — 6×5 방은 1,500만원', () => {
     expect(roomCostManwon(6, 5)).toBe(1_500)
   })
+  it('최소 방 크기는 4×4다', () => {
+    expect(MIN_ROOM_W).toBe(4)
+    expect(MIN_ROOM_H).toBe(4)
+  })
   it('최소 크기 미만이면 거부한다', () => {
     const res = placeRoom(createWorld(1), { type: 'EXAM', x: 4, y: 4, w: MIN_ROOM_W - 1, h: MIN_ROOM_H })
     expect(res.ok).toBe(false)
@@ -39,6 +43,9 @@ describe('placeRoom', () => {
     // 첫 방은 x 4..9 를 쓴다 — 바로 다음 칸 x:10 은 겹치지 않는다
     const res = placeRoom(first.world, { type: 'WAITING', x: 4 + 6, y: 4, w: 6, h: 5 })
     expect(res.ok).toBe(true)
+    // 세로도 같다 — 첫 방은 y 4..8 을 쓰므로 y:9 부터는 겹치지 않는다
+    const below = placeRoom(first.world, { type: 'WARD', x: 4, y: 4 + 5, w: 6, h: 5 })
+    expect(below.ok).toBe(true)
   })
   it('그리드 가장자리 1타일 여백을 침범하면 거부한다', () => {
     const res = placeRoom(createWorld(1), { type: 'EXAM', x: 0, y: 4, w: 6, h: 5 })
@@ -117,5 +124,14 @@ describe('placeRoom', () => {
     const door = doorTile(res.world.rooms[0])
     expect(isWalkable(res.world, door.x, door.y)).toBe(true)      // 문 자체
     expect(isWalkable(res.world, door.x, door.y - 1)).toBe(true)  // 문 바로 안쪽
+  })
+  it('홀수 폭 방에서도 문 안쪽이 뚫려 있다 — 문 위치를 재유도하면 여기서 어긋난다', () => {
+    // 7×5: floor(7/2)=3 과 ceil(7/2)=4 가 갈리는 폭. 짝수 폭 방만 재면 이 어긋남이 안 보인다.
+    const res = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w: 7, h: 5 })
+    if (!res.ok) throw new Error('전제 실패')
+    const door = doorTile(res.world.rooms[0])
+    const inside = { x: door.x, y: door.y - 1 }
+    expect(res.world.furniture).not.toContainEqual(expect.objectContaining(inside))
+    expect(isWalkable(res.world, inside.x, inside.y)).toBe(true)
   })
 })
