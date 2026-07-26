@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, EVENT_CATALOG, OPENING_EVENT } from './world'
+import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, EVENT_CATALOG, OPENING_EVENT } from './world'
 import { DEPARTMENTS } from './setup'
 import type { DeptKey, DepartmentSpec, Specialty } from './types'
 
@@ -191,5 +191,54 @@ describe('지역 세계 — 데이터 모델 (spec 2026-07-26 §2)', () => {
     for (const s of SPECIALTIES) {
       expect(metro.doctors[s] + rural.doctors[s]).toBe(expected[s])
     }
+  })
+})
+
+describe('stepWorld — 주간 드리프트 (spec §3)', () => {
+  it('결정론: 같은 (world, week)는 항상 같은 결과', () => {
+    expect(stepWorld(initWorld(), 3)).toEqual(stepWorld(initWorld(), 3))
+  })
+
+  it('매주 RURAL에서 1~2명이 떠나고, 떠난 만큼 CAPITAL이 받는다(전국 총원 보존)', () => {
+    const before = initWorld()
+    const after = stepWorld(before, 2)
+    const total = (w: ReturnType<typeof initWorld>, key: 'CAPITAL' | 'METRO' | 'RURAL') =>
+      SPECIALTIES.reduce((n, s) => n + regionOf(w, key).doctors[s], 0)
+    const ruralLoss = total(before, 'RURAL') - total(after, 'RURAL')
+    expect(ruralLoss).toBeGreaterThanOrEqual(1)
+    expect(ruralLoss).toBeLessThanOrEqual(2)
+    expect(total(after, 'CAPITAL') - total(before, 'CAPITAL')).toBe(ruralLoss)
+    expect(total(after, 'METRO')).toBe(total(before, 'METRO'))
+  })
+
+  it('의사 수는 0 밑으로 내려가지 않고, hospitals는 드리프트로 변하지 않는다', () => {
+    let world = initWorld()
+    for (let week = 2; week <= 30; week++) world = stepWorld(world, week)
+    const rural = regionOf(world, 'RURAL')
+    for (const s of SPECIALTIES) expect(rural.doctors[s]).toBeGreaterThanOrEqual(0)
+    expect(rural.hospitals).toBe(2)
+    expect(regionOf(world, 'CAPITAL').hospitals).toBe(8)
+  })
+
+  it('lawsuitRisk 과가 지방을 먼저 떠난다 — 가중 3배 (여러 주 누적으로 검증)', () => {
+    let world = initWorld()
+    for (let week = 2; week <= 9; week++) world = stepWorld(world, week)
+    const before = regionOf(initWorld(), 'RURAL')
+    const after = regionOf(world, 'RURAL')
+    const risky = initWorld().departments.filter((d) => d.providesBackup && d.lawsuitRisk).map((d) => d.providesBackup!)
+    const safe = initWorld().departments.filter((d) => d.providesBackup && !d.lawsuitRisk).map((d) => d.providesBackup!)
+    const lossOf = (ss: Specialty[]) => ss.reduce((n, s) => n + before.doctors[s] - after.doctors[s], 0)
+    expect(lossOf(risky)).toBeGreaterThan(lossOf(safe))
+  })
+
+  it('RURAL이 완전히 비면 stepWorld는 세계를 그대로 반환한다', () => {
+    const world = initWorld()
+    const emptied = {
+      ...world,
+      regions: world.regions.map((r) => r.key !== 'RURAL' ? r : {
+        ...r, doctors: { THORACIC_SURGERY: 0, CARDIOLOGY: 0, OBSTETRICS: 0,
+          NEUROSURGERY: 0, GENERAL_SURGERY: 0, INTERNAL_MEDICINE: 0 } }),
+    }
+    expect(stepWorld(emptied, 5)).toEqual(emptied)
   })
 })

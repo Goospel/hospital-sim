@@ -1,5 +1,6 @@
 import type { DepartmentSpec, DeptKey, RegionKey, Specialty } from './types'
 import { DEPARTMENTS, ROUND_THE_CLOCK_MIN_DOCTORS } from './setup'
+import { callSeed, seededUnit } from './daysim'
 
 // 외생 이벤트가 세계 파라미터를 재구성하는 순수 코어(spec: 2026-07-18-world-event-slice).
 // 이번 슬라이스의 세계 = 채용 경제(DEPARTMENTS)뿐. 확장점: hospitals·week·appliedEvents.
@@ -180,4 +181,42 @@ export function applyEvent(world: WorldState, event: WorldEvent): WorldState {
 /** 카탈로그에서 결정론적으로 이벤트를 고른다. */
 export function selectEvent(index: number): WorldEvent {
   return EVENT_CATALOG[index]
+}
+
+/** 지역 간 1명 이동 — 불변 갱신. from에서 빼고 to에 더한다(0 하한). */
+function moveDoctor(world: WorldState, s: Specialty, from: RegionKey, to: RegionKey): WorldState {
+  const regions = world.regions.map((r) => {
+    if (r.key === from) return { ...r, doctors: { ...r.doctors, [s]: Math.max(0, r.doctors[s] - 1) } }
+    if (r.key === to) return { ...r, doctors: { ...r.doctors, [s]: r.doctors[s] + 1 } }
+    return r
+  })
+  return { ...world, regions }
+}
+
+/** RURAL에 남은 과 중 하나를 lawsuitRisk 가중(3배) 시드 추첨으로 골라 CAPITAL로 옮긴다. 없으면 null. */
+function driftOnce(world: WorldState, week: number, salt: number): WorldState | null {
+  const rural = regionOf(world, 'RURAL')
+  const weighted: Specialty[] = []
+  for (const d of world.departments) {
+    if (!d.providesBackup) continue // 수익과는 지역 시뮬 밖
+    if (rural.doctors[d.providesBackup] <= 0) continue
+    const w = d.lawsuitRisk ? 3 : 1
+    for (let i = 0; i < w; i++) weighted.push(d.providesBackup)
+  }
+  if (weighted.length === 0) return null
+  const pick = weighted[Math.floor(seededUnit(callSeed(week, 0, 0, salt)) * weighted.length)]
+  return moveDoctor(world, pick, 'RURAL', 'CAPITAL')
+}
+
+/**
+ * 주간 드리프트 — 매주 지방 이탈 1명(+시드 30%로 1명 추가), lawsuitRisk 과 가중 3배.
+ * 의사는 줄어도 환자 발생(응급 콜 수)은 안 준다 — 격차가 스스로 벌어진다("필연"의 수학적 형태).
+ * hospitals는 여기서 안 변한다(이벤트 전용). 순수·결정론(week 시드).
+ */
+export function stepWorld(world: WorldState, week: number): WorldState {
+  const first = driftOnce(world, week, 11)
+  if (!first) return world
+  const extra = seededUnit(callSeed(week, 0, 1, 11)) < 0.3
+  if (!extra) return first
+  return driftOnce(first, week, 12) ?? first
 }
