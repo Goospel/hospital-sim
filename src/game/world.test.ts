@@ -220,15 +220,35 @@ describe('stepWorld — 주간 드리프트 (spec §3)', () => {
     expect(regionOf(world, 'CAPITAL').hospitals).toBe(8)
   })
 
-  it('lawsuitRisk 과가 지방을 먼저 떠난다 — 가중 3배 (여러 주 누적으로 검증)', () => {
+  /**
+   * 🔴 **손실 총량을 그냥 비교하면 이 테스트는 공허하다** — 두 교란요인 때문에 가중치를 3→1로
+   * 지워도 통과한다(실측 2026-07-26, 아래 표).
+   *
+   *   ① **집단 크기**: 위험과는 5개(내과만 안전)라, 균등 추첨이어도 손실이 5배로 쏠린다.
+   *      `risky=5 / safe=1`도 `5 > 1`로 통과한다 — 가중이 아니라 과 개수를 재고 있었다.
+   *   ② **고갈**: RURAL 총원 13명이 9주차에 전멸해, 그 뒤로는 누적 손실이 가중치와 무관하게
+   *      초기 인구(위험과 10 / 내과 3)로 수렴한다 — 창을 넓히면 **더** 공허해진다.
+   *
+   * | 창 | 가중 3 | 가중 1 |
+   * |---|---|---|
+   * | 2..6 총량 | 8 vs 1 통과 | 7 vs 2 **통과(공허)** |
+   * | 2..6 과당 | 1.6 vs 1 통과 | 1.4 vs 2 **깨짐 ✓** |
+   * | 2..9 총량 | 10 vs 3 | 10 vs 3 — 수치까지 동일 |
+   *
+   * 그래서 **과당 손실률**로 정규화한다 — driftOnce가 가중치를 *의사 1명당*이 아니라 *과 1개당*
+   * 밀어넣으므로, 과당 비율이 정확히 그 가중치를 분리하는 척도다. 창(2..6)은 고갈 전이면서
+   * 양방향 여유가 있는 지점이다(넓히면 ②로 공허, 2..4로 좁히면 가중 1에서 1.00 vs 1.00 간발).
+   */
+  it('lawsuitRisk 과가 지방을 먼저 떠난다 — 과당 손실률이 안전과보다 높다 (가중 3배)', () => {
     let world = initWorld()
-    for (let week = 2; week <= 9; week++) world = stepWorld(world, week)
+    for (let week = 2; week <= 6; week++) world = stepWorld(world, week)
     const before = regionOf(initWorld(), 'RURAL')
     const after = regionOf(world, 'RURAL')
     const risky = initWorld().departments.filter((d) => d.providesBackup && d.lawsuitRisk).map((d) => d.providesBackup!)
     const safe = initWorld().departments.filter((d) => d.providesBackup && !d.lawsuitRisk).map((d) => d.providesBackup!)
     const lossOf = (ss: Specialty[]) => ss.reduce((n, s) => n + before.doctors[s] - after.doctors[s], 0)
-    expect(lossOf(risky)).toBeGreaterThan(lossOf(safe))
+    // 과 개수로 나눠 ①을 제거한다 — 하드코딩(5/1) 대신 실제 길이로 나눠 DEPARTMENTS가 바뀌어도 유효하다.
+    expect(lossOf(risky) / risky.length).toBeGreaterThan(lossOf(safe) / safe.length)
   })
 
   it('RURAL이 완전히 비면 stepWorld는 세계를 그대로 반환한다', () => {

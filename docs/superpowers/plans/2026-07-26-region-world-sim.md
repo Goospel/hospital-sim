@@ -242,15 +242,16 @@ describe('stepWorld — 주간 드리프트 (spec §3)', () => {
     expect(regionOf(world, 'CAPITAL').hospitals).toBe(8)
   })
 
-  it('lawsuitRisk 과가 지방을 먼저 떠난다 — 가중 3배 (여러 주 누적으로 검증)', () => {
+  // ⚠️ 총량 비교는 공허하다 — 과당 손실률로 정규화하고 창은 고갈 전(2..6)으로 잡는다(Step 4 참고).
+  it('lawsuitRisk 과가 지방을 먼저 떠난다 — 과당 손실률이 안전과보다 높다 (가중 3배)', () => {
     let world = initWorld()
-    for (let week = 2; week <= 9; week++) world = stepWorld(world, week)
+    for (let week = 2; week <= 6; week++) world = stepWorld(world, week)
     const before = regionOf(initWorld(), 'RURAL')
     const after = regionOf(world, 'RURAL')
     const risky = initWorld().departments.filter((d) => d.providesBackup && d.lawsuitRisk).map((d) => d.providesBackup!)
     const safe = initWorld().departments.filter((d) => d.providesBackup && !d.lawsuitRisk).map((d) => d.providesBackup!)
     const lossOf = (ss: Specialty[]) => ss.reduce((n, s) => n + before.doctors[s] - after.doctors[s], 0)
-    expect(lossOf(risky)).toBeGreaterThan(lossOf(safe))
+    expect(lossOf(risky) / risky.length).toBeGreaterThan(lossOf(safe) / safe.length)
   })
 
   it('RURAL이 완전히 비면 stepWorld는 세계를 그대로 반환한다', () => {
@@ -316,7 +317,23 @@ export function stepWorld(world: WorldState, week: number): WorldState {
 - [ ] **Step 4: 통과 확인**
 
 Run: `npx vitest run src/game/world.test.ts`
-Expected: PASS. (lawsuitRisk 가중 테스트가 시드 우연으로 깨지면 — 결정론이라 항상 같은 결과다 — 루프 주차를 `2..12`로 늘려 재확인한다. 그래도 역전이면 구현 버그다.)
+Expected: PASS.
+
+⚠️ **lawsuitRisk 가중 테스트는 "루프 주차를 늘려 재확인"하면 안 된다.** 결정론이라 "시드 우연"은 애초에 없고(같은 world·week면 항상 같은 결과), 창을 넓히면 판별력이 **더** 떨어진다. 이 테스트는 **손실 총량을 비교하면 무엇을 해도 공허하다** — 교란요인이 둘이다(실측 2026-07-26):
+
+1. **집단 크기**: 위험과가 5개(내과만 안전)라 균등 추첨이어도 손실이 5배로 쏠린다. `risky=5 / safe=1`도 `5 > 1`로 통과한다 — 가중이 아니라 과 개수를 재고 있다.
+2. **고갈**: RURAL 총원 13명이 9주차에 전멸해, 그 뒤 누적 손실은 가중치와 무관하게 초기 인구(위험과 10 / 내과 3)로 수렴한다.
+
+| 창 | 가중 3 | 가중 1 | 판별 |
+|---|---|---|---|
+| 2..4 총량 | 6 vs 0 | 5 vs 1 | ✗ 둘 다 통과 |
+| 2..6 총량 | 8 vs 1 | 7 vs 2 | ✗ 둘 다 통과 |
+| 2..9 총량 | 10 vs 3 | 10 vs 3 | ✗ 수치까지 동일 |
+| **2..6 과당** | **1.6 vs 1** | **1.4 vs 2** | **✓ 깨진다** |
+
+→ **과당 손실률로 정규화한다**(`lossOf(x) / x.length`). driftOnce가 가중치를 *의사 1명당*이 아니라 *과 1개당* 밀어넣으므로 과당 비율이 그 가중치를 분리하는 정확한 척도다. 창은 `2..6` — 고갈 전이면서 양방향 여유가 있다(`2..4`는 가중 1에서 1.00 vs 1.00 간발).
+
+**통과했으면 판별력을 반드시 확인한다**: 가중치를 임시로 1(`d.lawsuitRisk ? 1 : 1`)로 바꿔 이 테스트가 **실제로 깨지는지** 보고 되돌린다. 안 깨지면 척도가 틀린 것이니 정규화를 고친다 — 창을 넓히지 않는다.
 
 - [ ] **Step 5: 커밋**
 
