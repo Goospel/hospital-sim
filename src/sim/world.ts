@@ -39,7 +39,7 @@ export function doorTile(r: Room): { x: number; y: number } {
   return { x: r.x + Math.floor(r.w / 2), y: r.y + r.h - 1 }
 }
 
-export function wallTiles(r: Room): Array<{ x: number; y: number }> {
+export function blockedPerimeter(r: Room): Array<{ x: number; y: number }> {
   const door = doorTile(r)
   const out: Array<{ x: number; y: number }> = []
   for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y; y < r.y + r.h; y++) {
@@ -52,7 +52,7 @@ export function wallTiles(r: Room): Array<{ x: number; y: number }> {
 export function isWalkable(w: SimWorld, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) return false
   for (const r of w.rooms) {
-    for (const t of wallTiles(r)) if (t.x === x && t.y === y) return false
+    for (const t of blockedPerimeter(r)) if (t.x === x && t.y === y) return false
   }
   for (const f of w.furniture) if (f.x === x && f.y === y) return false
   return true

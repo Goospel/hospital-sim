@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  GRID_W, GRID_H, createWorld, isWalkable, wallTiles, doorTile,
+  GRID_W, GRID_H, createWorld, isWalkable, blockedPerimeter, doorTile,
   type Room,
 } from './world'
 
@@ -56,13 +56,13 @@ describe('isWalkable', () => {
 describe('doorTile', () => {
   it('홀수 폭 방의 문은 정중앙 타일이다 (floor)', () => {
     const d = doorTile(room({ w: 5 }))
-    expect(d).toEqual({ x: 4 + 2, y: 8 }) // floor(5/2)=2 — ceil이면 x:7로 어긋난다
+    expect(d).toEqual({ x: 4 + 2, y: 4 + 5 - 1 }) // floor(5/2)=2 — ceil이면 x:7로 어긋난다
   })
 })
 
-describe('wallTiles', () => {
+describe('blockedPerimeter', () => {
   it('둘레 타일 전부에서 문 하나를 뺀다', () => {
-    const tiles = wallTiles(room())
+    const tiles = blockedPerimeter(room())
     // 둘레 = 2*(6+5) - 4 = 18, 문 1개 제외 = 17
     expect(tiles.length).toBe(17)
     expect(tiles).not.toContainEqual(doorTile(room()))
