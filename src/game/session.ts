@@ -1,6 +1,9 @@
 import type { Hospital, SetupChoices, Specialty } from './types'
 import { buildHospital, bedExpansionCost, withinDeptCaps, DEPARTMENTS, DAYS_PER_WEEK, FIXED_BEDS } from './setup'
-import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent } from './world'
+import {
+  initWorld, applyEvent, selectEvent, stepWorld, hireFromRegions,
+  EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent,
+} from './world'
 import {
   accruedSegments, createCallQueue, initReceiving, requiresBackupCare, runningNetProfit, type ReceivingState,
 } from './receiving'
@@ -9,7 +12,7 @@ import { buildSessionLedger, type Ledger } from './ledger'
 import { deptDayStats, type DeptDayStats } from './deptLedger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
 import { doctorCaseloads, stepFatigue } from './doctor'
-import { initSystem, backgroundAttrition, hireDelta, canHire, type SystemState } from './system'
+import { initSystem, deriveSystem, canHire, type SystemState } from './system'
 import { initialTreasury, doctorDeltaCost, withinTreasury } from './growth'
 import { SPECIALTY_LABEL } from './labels'
 
@@ -154,7 +157,9 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
     beds: FIXED_BEDS,
     treasury: initialTreasury(choices, world.departments),
     insolvencyStreak: 0,
-    system: initSystem(),
+    // 개원 세계에서 풀을 파생한다 — initSystem()이면 개원 이벤트에 지역 쇼크가 붙는 순간
+    // 풀과 세계가 어긋난다(현재 OPENING_EVENT는 regionEffects가 없어 값은 동일 — 원천만 통일).
+    system: deriveSystem(world),
   }
 }
 
@@ -329,7 +334,9 @@ export function nextWeek(state: SessionState): SessionState {
   }
   const week = state.week + 1
   const event = selectEvent((week - 1) % EVENT_CATALOG.length)
-  const world = applyEvent(state.world ?? initWorld(), event)
+  // 드리프트(구조적 필연) 먼저, 이벤트 쇼크(주차별 리듬)를 그 위에 — spec 2026-07-26 §7.
+  // 순서가 뒤집히면 그 주의 쇼크가 드리프트 추첨 후보에 섞여, "쇼크로 이미 떠난 사람이 또 떠난다".
+  const world = applyEvent(stepWorld(state.world ?? initWorld(), week), event)
   return {
     ...state,
     phase: 'WORLD_EVENT',
@@ -340,7 +347,8 @@ export function nextWeek(state: SessionState): SessionState {
     ledgerDays: [],
     receiving: undefined,
     morningNews: [],
-    system: backgroundAttrition(state.system, week),
+    // 갱신된 세계에서 풀을 재파생 — 옛 backgroundAttrition을 대체한다(감소분은 이제 드리프트가 만든다).
+    system: deriveSystem(world, state.system.poolInitial),
   }
 }
 
@@ -387,13 +395,17 @@ export function applyGrowth(state: SessionState, next: SetupChoices, nextBeds: n
   const deps = state.world?.departments
   const cost = growthCostOf(state, next, nextBeds)
   const { hospital } = buildHospital(next, deps, nextBeds)
+  // 내가 뽑은 사람은 창출이 아니라 **이동**이다 — METRO·RURAL 중 어딘가에서 실제로 빠진다.
+  // 풀을 직접 깎던 옛 hireDelta와 달리 원천(세계)을 고치고 풀은 거기서 다시 파생한다(단일 출처).
+  const world = hireFromRegions(state.world ?? initWorld(), backupDeltas(state, next), state.week)
   return {
     ...state,
     hospital,
     choices: next,
     beds: nextBeds,
     treasury: state.treasury - cost,
-    system: hireDelta(state.system, backupDeltas(state, next)),
+    world,
+    system: deriveSystem(world, state.system.poolInitial),
   }
 }
 

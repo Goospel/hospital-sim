@@ -5,13 +5,13 @@ import {
   cumulativeNetManwon, buildEpilogue, enterWorldEvent, enterGrowth, growthCostOf, canApplyGrowth,
   applyGrowth, isInsolvent, type SessionState,
 } from './session'
-import { initWorld, applyEvent, OPENING_EVENT } from './world'
+import { initWorld, applyEvent, transferPressure, regionOf, OPENING_EVENT, type WorldState } from './world'
 import { decide, isElective } from './receiving'
 import { DAYS_PER_WEEK, SETUP_BUDGET_MANWON } from './setup'
 import { DAY_LENGTH_MIN } from './daysim'
-import { initSystem, POOL_INITIAL } from './system'
+import { hirablePool, POOL_INITIAL } from './system'
 import { FATIGUE_SLOW_FROM } from './doctor'
-import type { IncomingCall, SetupChoices } from './types'
+import type { IncomingCall, SetupChoices, Specialty } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
@@ -666,7 +666,13 @@ describe('GROWTH — 재투자 적용', () => {
     expect(beginWeek(s).phase).toBe('RECEIVING')
   })
 
-  it('nextWeek이 배경 풀 감소를 적용한다', () => {
+  /*
+    옛 제목은 "nextWeek이 배경 풀 감소를 적용한다"였다(`backgroundAttrition` 전제 — 매주 한 과 −1).
+    그 함수는 지역 드리프트에 흡수·삭제됐고(spec 2026-07-26 §3), 이제 감소분은 stepWorld가
+    RURAL→CAPITAL로 옮긴 사람 수(1~2명)다. **수치를 고정하지 않고 방향만** 잠근다 —
+    페이스에 핀을 박는 건 world.test.ts의 특성화 테스트 몫이고, 여기서 또 박으면 이중 기재다.
+  */
+  it('nextWeek이 세계 드리프트만큼 채용 풀을 줄인다(옛 배경 감소를 대체)', () => {
     let s = completeSetup({ hospitalName: '한바다', doctors: { AESTHETICS: 1 } })
     s = { ...s, phase: 'WEEK_SUMMARY' }
     const before = Object.values(s.system.pool).reduce((a, b) => a + b, 0)
@@ -777,5 +783,51 @@ describe('폐업 판정 — insolvencyStreak (스펙 2026-07-24 §6)', () => {
     expect(closed.closed).toBe(true)
     const voluntary = buildEpilogue({ ...dayEndState({ insolvencyStreak: 0 }), phase: 'EPILOGUE' })
     expect(voluntary.closed).toBe(false)
+  })
+})
+
+/**
+ * 세계 시뮬 배선 — 지역 드리프트·채용 차감이 상태기계의 어느 지점에서 도는가(spec 2026-07-26 §7).
+ *
+ * 🔴 이 블록의 몸통은 **일관성 불변식** `system.pool ≡ hirablePool(world.regions)`다.
+ * 풀이 세계의 파생값이 된 뒤로 둘이 어긋나면 "돈은 있는데 왜 못 뽑나"가 설명 불가가 된다 —
+ * 세계가 변하는 지점(nextWeek·applyGrowth·completeSetup)마다 deriveSystem을 다시 밟는지 지점별로 못박는다.
+ */
+describe('세계 시뮬 배선 (spec §7)', () => {
+  // 리터럴 재기재 대신 RegionState.doctors 키에서 파생 — 과가 늘어도 자동 포함(world.test.ts와 같은 이유).
+  const SPECIALTIES = Object.keys(regionOf(initWorld(), 'RURAL').doctors) as Specialty[]
+  const ruralTotal = (w: WorldState) =>
+    SPECIALTIES.reduce((n, s) => n + regionOf(w, 'RURAL').doctors[s], 0)
+
+  it('nextWeek: 드리프트가 적용되고, system.pool ≡ hirablePool(world.regions) 일관성 불변식이 선다', () => {
+    const summary = finishWeek(runWeek(conscientious, essentialFirst))
+    const next = nextWeek(summary)
+    expect(next.system.pool).toEqual(hirablePool(next.world!.regions)) // 🔴 일관성 불변식
+    expect(ruralTotal(next.world!)).toBeLessThan(ruralTotal(summary.world!)) // 드리프트 1~2명
+  })
+
+  it('applyGrowth: 배후과 채용이 world.regions에서 차감되고 pool 일관성이 유지된다', () => {
+    const growth = enterGrowth(nextWeek(finishWeek(runWeek(conscientious, essentialFirst))))
+    const next: SetupChoices = { ...growth.choices,
+      doctors: { ...growth.choices.doctors, CARDIOLOGY: (growth.choices.doctors.CARDIOLOGY ?? 0) + 1 } }
+    const grown = applyGrowth({ ...growth, treasury: 100_000 }, next, growth.beds)
+    expect(grown.system.pool).toEqual(hirablePool(grown.world!.regions))
+    expect(grown.system.pool.CARDIOLOGY).toBe(growth.system.pool.CARDIOLOGY - 1)
+  })
+
+  it('주가 갈수록 transferPressure가 내려가지 않는다(단조)', () => {
+    let s = finishWeek(runWeek(conscientious, essentialFirst))
+    let prev = transferPressure(s.world!)
+    for (let i = 0; i < 3; i++) {
+      s = finishWeek(runWeekFrom(beginWeek(enterGrowth(nextWeek(s))), essentialFirst))
+      const p = transferPressure(s.world!)
+      expect(p).toBeGreaterThanOrEqual(prev)
+      prev = p
+    }
+  })
+
+  it('1주차(enterWorldEvent)는 드리프트를 밟지 않는다 — 초기 세계 = 1주차 세계 (spec §7)', () => {
+    const state = enterWorldEvent(startSession())
+    expect(regionOf(state.world!, 'RURAL').doctors).toEqual(regionOf(initWorld(), 'RURAL').doctors)
   })
 })

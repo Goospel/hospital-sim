@@ -164,8 +164,12 @@ export const REGION_INITIAL: RegionState[] = [
  * 지역 배열에서 키로 찾기 — 없으면 throw. **지역 조회의 단일 이디엄**이다.
  * `find(...)!`을 곳곳에 흩으면 non-null 단정이 늘어나 "없을 수 없다"는 근거가 호출부마다 흩어진다.
  * regions는 항상 3개 고정이라 못 찾는 건 프로그래밍 오류지, 런타임에 처리할 상태가 아니다.
+ *
+ * 📌 **export로 승격**(2026-07-26 Task 5): system.ts의 `hirablePool`이 `WorldState` 없이
+ * `RegionState[]`만 받아 조회해야 한다. 내부 함수로 두면 그쪽이 `regions.find(...)!`를 새로 쓰게 되어
+ * "지역 조회의 단일 이디엄"이라는 이 함수의 존재 이유가 첫 외부 호출자에서 바로 깨진다.
  */
-function findRegion(regions: RegionState[], key: RegionKey): RegionState {
+export function findRegion(regions: RegionState[], key: RegionKey): RegionState {
   const found = regions.find((r) => r.key === key)
   if (!found) throw new Error(`region not found: ${key}`)
   return found
@@ -292,6 +296,50 @@ export function stepWorld(world: WorldState, week: number): WorldState {
   if (!first) return world // RURAL 고갈 — 더 빠질 사람이 없다
   if (seededUnit(callSeed(week, 0, 0, EXTRA_DRIFT_SALT)) >= EXTRA_DRIFT_CHANCE) return first
   return driftOnce(first, week, 1) ?? first
+}
+
+/**
+ * 한 지역에서 1명 차감 — 채용 전용이라 **목적지가 없다**(그 의사는 우리 병원 명단으로 간다).
+ * 그래서 moveDoctor와 달리 전국 총원이 실제로 준다 — 내 채용은 이동이지 창출이 아니다.
+ *
+ * ⚠️ **0 클램프를 두지 않는다**(moveDoctor 주석과 같은 이유): 클램프는 도달 불가 방어인 동시에
+ * 도달했을 때 "존재하지 않는 의사를 뽑았다"를 조용히 삼킨다 — 이 기능이 막으려는 바로 그 허구다.
+ * 대신 **호출자가 ≥1을 보장**한다(hireFromRegions가 뽑는 지역은 항상 잔여 > 0 — 그 증명은 아래).
+ */
+function removeDoctor(world: WorldState, s: Specialty, from: RegionKey): WorldState {
+  const regions = world.regions.map((r) =>
+    r.key === from ? { ...r, doctors: { ...r.doctors, [s]: r.doctors[s] - 1 } } : r,
+  )
+  return { ...world, regions }
+}
+
+/** 채용 시드 salt — daysim callSeed 레지스트리에 13으로 예약된 스트림(드리프트 11·12·15와 다른 축). */
+const HIRE_SALT = 13
+
+/**
+ * 성장 채용이 세계에서 사람을 빼간다 — METRO·RURAL 중 남은 수 비례 시드 추첨(수도권 정착 의사는 안 온다).
+ * 내 채용이 지방·광역시의 배후를 실제로 줄인다 — 구조적 아이러니가 여기서 물리적으로 성립한다.
+ *
+ * 📌 **뽑히는 지역은 항상 잔여 ≥ 1이다**(removeDoctor의 무클램프 전제): metro+rural ≤ 0이면 break,
+ * rural이 0이면 pickMetro가 참(그때 metro > 0), metro가 0이면 pickMetro가 거짓이고 rural > 0.
+ * 순수·결정론(week 시드 파생) — 같은 (world, deltas, week)는 항상 같은 결과.
+ */
+export function hireFromRegions(
+  world: WorldState, deltas: Partial<Record<Specialty, number>>, week: number,
+): WorldState {
+  let next = world
+  for (const s of Object.keys(deltas) as Specialty[]) {
+    const n = deltas[s] ?? 0
+    for (let i = 0; i < n; i++) {
+      const metro = findRegion(next.regions, 'METRO').doctors[s]
+      const rural = findRegion(next.regions, 'RURAL').doctors[s]
+      if (metro + rural <= 0) break // 전국에 남은 사람이 없다 — 돈이 있어도 못 뽑는 벽
+      const pickMetro = metro > 0
+        && (rural <= 0 || seededUnit(callSeed(week, 1, i, HIRE_SALT)) < metro / (metro + rural))
+      next = removeDoctor(next, s, pickMetro ? 'METRO' : 'RURAL')
+    }
+  }
+  return next
 }
 
 /** RURAL 배후 총량(필수과별 배후 병원 수의 합) — transferPressure의 분모·분자. */
