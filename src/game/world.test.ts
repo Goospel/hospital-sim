@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, transferPressure, EVENT_CATALOG, OPENING_EVENT, REGION_LABELS, type RegionEffect, type WorldEvent } from './world'
+import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, transferPressure, hireFromRegions, EVENT_CATALOG, OPENING_EVENT, REGION_LABELS, type RegionEffect, type WorldEvent } from './world'
 import { DEPARTMENTS } from './setup'
 import { POOL_INITIAL } from './system'
 // 지명 비중복 검사기의 단일 출처 — 목록을 복제하지 않고 news.ts에서 그대로 가져온다.
@@ -300,6 +300,41 @@ describe('stepWorld — 주간 드리프트 (spec §3)', () => {
           NEUROSURGERY: 0, GENERAL_SURGERY: 0, INTERNAL_MEDICINE: 0 } }),
     }
     expect(stepWorld(emptied, 5)).toEqual(emptied)
+  })
+})
+
+describe('hireFromRegions — 채용 추첨 스트림 (spec §6)', () => {
+  /**
+   * 🔴 **과마다 자기 추첨을 갖는다** — 추첨 카운터가 과별로 리셋되면 같은 주 모든 과의 첫 채용이
+   * 난수 **하나**를 공유해, "남은 수 비례 추첨"이 **단일 임계 컷**으로 붕괴한다
+   * (실측: week 2의 롤 0.8163이면 metro 점유율이 그보다 낮은 과가 전부 RURAL로 쏠린다).
+   *
+   * ⚠️ **계측기 선택이 이 테스트의 전부다.** 처음엔 흉부(metro 0)와 내과를 짝지었는데 **판별력이
+   * 0이었다**(돌연변이 실측: 과별 리셋으로 되돌려도 통과) — 흉부는 metro가 비어 롤과 무관하게 RURAL로
+   * 강제되므로, 그 비교는 "내과가 METRO로 간 주가 있나"만 묻고 그건 스트림 공유와 무관하게 참이다.
+   *
+   * 판별하는 짝은 **metro 점유율이 같고 둘 다 강제되지 않는 두 과**다: 순환기(metro 2/rural 2)와
+   * 내과(metro 3/rural 3)는 임계값이 똑같이 0.5다. 스트림을 공유하면 같은 롤을 같은 임계와 비교하니
+   * **매주 반드시 같은 지역**으로 간다. 독립이면 서로 다른 롤이라 갈리는 주가 나온다.
+   */
+  it('같은 주에 여러 과를 뽑으면 과별로 다른 추첨을 쓴다 — 임계가 같은 두 과가 갈린다', () => {
+    const metroBase = regionOf(initWorld(), 'METRO')
+    // 임계가 같은(0.5) 두 과 — 스트림이 공유되면 결정이 완전히 붙어 버린다.
+    const pickOf = (world: ReturnType<typeof initWorld>, s: Specialty) =>
+      regionOf(world, 'METRO').doctors[s] < metroBase.doctors[s] ? 'METRO' : 'RURAL'
+
+    let sawDifferent = false
+    for (let week = 2; week <= 12; week++) {
+      // 한 번의 호출에서 두 과를 1명씩 — 카운터가 과 경계를 넘어 이어지는지가 여기서 갈린다.
+      const after = hireFromRegions(initWorld(), { CARDIOLOGY: 1, INTERNAL_MEDICINE: 1 }, week)
+      if (pickOf(after, 'CARDIOLOGY') !== pickOf(after, 'INTERNAL_MEDICINE')) sawDifferent = true
+    }
+    expect(sawDifferent).toBe(true) // 카운터를 과별 리셋(i)으로 되돌리면 거짓이 된다
+  })
+
+  it('음수 증분(해고)은 세계를 안 바꾼다 — 내보낸 사람은 세계로 돌아오지 않는다', () => {
+    const world = initWorld()
+    expect(hireFromRegions(world, { CARDIOLOGY: -2 }, 2)).toEqual(world)
   })
 })
 

@@ -323,19 +323,32 @@ const HIRE_SALT = 13
  * 📌 **뽑히는 지역은 항상 잔여 ≥ 1이다**(removeDoctor의 무클램프 전제): metro+rural ≤ 0이면 break,
  * rural이 0이면 pickMetro가 참(그때 metro > 0), metro가 0이면 pickMetro가 거짓이고 rural > 0.
  * 순수·결정론(week 시드 파생) — 같은 (world, deltas, week)는 항상 같은 결과.
+ *
+ * 📌 **음수 증분(해고)은 무시한다** — 내보낸 사람은 세계로 돌아오지 않는다(`i < n`이 애초에 안 돈다).
+ * 성장은 증축만이라 게이트(canApplyGrowth의 noFiring)가 이미 막지만, 계약을 여기서도 명시한다.
+ *
+ * ⚠️ **추첨 카운터 `draw`는 과 루프 밖에 있다** — 과별로 리셋하면 같은 주 모든 과의 첫 채용이
+ * 난수 **하나**를 공유해, 비례 추첨이 단일 임계 컷으로 붕괴한다(실측: week 2의 롤 0.8163이면
+ * metro 점유율이 그보다 낮은 5개 과가 **전부** RURAL로 쏠린다 — 과마다 비율이 다른 게 무의미해진다).
+ * 전역 카운터면 매 뽑기가 자기 스트림을 갖는다.
  */
 export function hireFromRegions(
   world: WorldState, deltas: Partial<Record<Specialty, number>>, week: number,
 ): WorldState {
   let next = world
+  let draw = 0 // 이 호출에서 몇 번째 뽑기인가 — 과 경계를 넘어 이어진다(위 ⚠️)
   for (const s of Object.keys(deltas) as Specialty[]) {
     const n = deltas[s] ?? 0
     for (let i = 0; i < n; i++) {
       const metro = findRegion(next.regions, 'METRO').doctors[s]
       const rural = findRegion(next.regions, 'RURAL').doctors[s]
       if (metro + rural <= 0) break // 전국에 남은 사람이 없다 — 돈이 있어도 못 뽑는 벽
-      const pickMetro = metro > 0
-        && (rural <= 0 || seededUnit(callSeed(week, 1, i, HIRE_SALT)) < metro / (metro + rural))
+      // 뽑기 하나에 스트림 하나 — 롤을 **먼저 굳힌다**(단축평가 안에서 draw++를 굴리면 강제 선택일 때
+      // 조용히 안 오르는 숨은 부수효과가 된다). day 자리의 1은 하드코딩이다: 스트림을 가르는 축은
+      // salt(13)라 실익은 없고, 드리프트가 쓰는 0과 눈으로 구분되는 표기일 뿐이다(callSeed 주석).
+      const roll = seededUnit(callSeed(week, 1, draw++, HIRE_SALT))
+      // 한쪽이 비면 남은 쪽으로 강제된다(그때 roll은 쓰이지 않는다).
+      const pickMetro = metro > 0 && (rural <= 0 || roll < metro / (metro + rural))
       next = removeDoctor(next, s, pickMetro ? 'METRO' : 'RURAL')
     }
   }

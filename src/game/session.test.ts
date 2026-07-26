@@ -794,13 +794,43 @@ describe('폐업 판정 — insolvencyStreak (스펙 2026-07-24 §6)', () => {
  *
  * 🔴 이 블록의 몸통은 **일관성 불변식** `system.pool ≡ hirablePool(world.regions)`다.
  * 풀이 세계의 파생값이 된 뒤로 둘이 어긋나면 "돈은 있는데 왜 못 뽑나"가 설명 불가가 된다 —
- * 세계가 변하는 지점(nextWeek·applyGrowth·completeSetup)마다 deriveSystem을 다시 밟는지 지점별로 못박는다.
+ * 세계를 실어 나르는 **다섯 지점**(enterWorldEvent·beginSetup·completeSetup·nextWeek·applyGrowth)
+ * 전부에서 deriveSystem을 밟는지 지점별로 못박는다. `startSession`만 예외다 — 그 자리엔 world가
+ * 아직 없어 파생할 원천 자체가 없다(system.ts initSystem docstring).
  */
 describe('세계 시뮬 배선 (spec §7)', () => {
   // 리터럴 재기재 대신 RegionState.doctors 키에서 파생 — 과가 늘어도 자동 포함(world.test.ts와 같은 이유).
   const SPECIALTIES = Object.keys(regionOf(initWorld(), 'RURAL').doctors) as Specialty[]
   const ruralTotal = (w: WorldState) =>
     SPECIALTIES.reduce((n, s) => n + regionOf(w, 'RURAL').doctors[s], 0)
+
+  /** 지역 쇼크(RURAL 산부 −1)가 든 세계 — 파생 경로와 고정 초기값 경로를 갈라놓는 리트머스. */
+  const shockedWorld = () => applyEvent(initWorld(), {
+    id: 'X', headline: 'x', direction: 'worsen', effects: [], briefing: [],
+    regionEffects: [{ region: 'RURAL', field: 'doctors', dept: 'OBSTETRICS', delta: -1 }],
+  })
+
+  /*
+    ⚠️ **이 두 단정은 현재 값으로는 판별력이 없다**(정직하게 남긴다): enterWorldEvent의 세계는 항상
+    `applyEvent(initWorld(), OPENING_EVENT)`이고 OPENING_EVENT엔 regionEffects가 없어, 파생과
+    옛 initSystem()이 **같은 값**을 낸다 — 여기에 주입 지점이 없어 리트머스를 끼울 수 없다.
+    그래도 남기는 이유는 이게 **OPENING_EVENT에 지역 효과가 붙는 날 터지는 가드**라는 것이다.
+    (판별력이 있는 쪽은 아래 beginSetup·completeSetup 두 테스트다 — 그쪽은 세계를 주입할 수 있다.)
+  */
+  it('enterWorldEvent·beginSetup도 파생 지점이다 — 다섯 지점 전부에서 일관성 불변식이 선다', () => {
+    const entered = enterWorldEvent(startSession())
+    expect(entered.system.pool).toEqual(hirablePool(entered.world!.regions))
+    const setup = beginSetup(entered)
+    expect(setup.system.pool).toEqual(hirablePool(setup.world!.regions))
+  })
+
+  it('beginSetup: 쇼크가 든 세계를 받으면 풀이 그 세계의 파생과 일치한다(판별)', () => {
+    const shocked = shockedWorld()
+    // WORLD_EVENT 상태의 world만 쇼크본으로 바꿔 넘긴다 — beginSetup이 state.world에서 파생하는지 본다.
+    const setup = beginSetup({ ...enterWorldEvent(startSession()), world: shocked })
+    expect(setup.system.pool).toEqual(hirablePool(shocked.regions))
+    expect(setup.system.pool.OBSTETRICS).toBe(POOL_INITIAL.OBSTETRICS - 1) // initSystem()이면 3으로 남는다
+  })
 
   it('nextWeek: 드리프트가 적용되고, system.pool ≡ hirablePool(world.regions) 일관성 불변식이 선다', () => {
     const summary = finishWeek(runWeek(conscientious, essentialFirst))
@@ -841,14 +871,11 @@ describe('세계 시뮬 배선 (spec §7)', () => {
    *
    * 그래서 **지역 쇼크가 있는 세계로 개원**한다. 그러면 두 경로가 갈리고(파생 = 3−1 = 2 / 고정 = 3),
    * 개원 이벤트에 지역 효과가 붙는 날 이 테스트가 먼저 깨진다.
-   * (world.test.ts의 `shockOf` 팩토리는 export가 아니라 여기선 리터럴로 쓴다 — 판별 유니온이라
-   *  잘못된 조합은 이 리터럴에서도 tsc가 막는다.)
+   * (world.test.ts의 `shockOf` 팩토리는 export가 아니라 여기선 `shockedWorld()`로 쓴다 — 판별
+   *  유니온이라 잘못된 조합은 그 리터럴에서도 tsc가 막는다.)
    */
   it('completeSetup: 지역 쇼크가 있는 세계로 개원하면 풀이 그 세계의 파생과 일치한다', () => {
-    const shocked = applyEvent(initWorld(), {
-      id: 'X', headline: 'x', direction: 'worsen', effects: [], briefing: [],
-      regionEffects: [{ region: 'RURAL', field: 'doctors', dept: 'OBSTETRICS', delta: -1 }],
-    })
+    const shocked = shockedWorld()
     const s = completeSetup(conscientious, shocked)
     expect(s.system.pool).toEqual(hirablePool(shocked.regions))
     expect(s.system.pool.OBSTETRICS).toBe(POOL_INITIAL.OBSTETRICS - 1) // initSystem()이면 3으로 남는다

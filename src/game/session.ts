@@ -124,7 +124,8 @@ export function enterWorldEvent(state: SessionState): SessionState {
   const world = applyEvent(initWorld(), event)
   return {
     phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
-    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0, system: initSystem(),
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0,
+    system: deriveSystem(world), // 세계가 있는 자리에선 항상 파생 — completeSetup과 같은 이유(원천 통일)
   }
 }
 
@@ -136,7 +137,9 @@ export function beginSetup(state: SessionState): SessionState {
   return {
     phase: 'SETUP', world: state.world, event: state.event,
     week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
-    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0, system: initSystem(),
+    choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0,
+    // LANDING에서 바로 올 수도 있어 world가 없을 수 있다 — 그때만 기본 세계에서 파생한다.
+    system: deriveSystem(state.world ?? initWorld()),
   }
 }
 
@@ -358,7 +361,13 @@ export function growthCostOf(state: SessionState, nextChoices: SetupChoices, nex
   return doctorDeltaCost(state.choices, nextChoices, deps) + bedExpansionCost(state.beds, nextBeds)
 }
 
-/** 배후과 증분(양수)만 뽑아 풀 검증에 쓴다. */
+/**
+ * 배후과 증분 중 **0이 아닌 것**(음수 포함)을 뽑아 풀 검증·채용 차감에 쓴다.
+ *
+ * 음수(해고)가 섞여 나가도 두 소비자 모두 무해하다: `canHire`는 음수 count에 항상 참이고,
+ * `hireFromRegions`는 음수 델타를 무시한다. 해고 자체를 막는 건 이 함수가 아니라
+ * `canApplyGrowth`의 별도 `noFiring` 검사다(그쪽은 choices를 직접 본다).
+ */
 function backupDeltas(state: SessionState, next: SetupChoices): Partial<Record<Specialty, number>> {
   const deps = state.world?.departments ?? DEPARTMENTS
   const out: Partial<Record<Specialty, number>> = {}
@@ -389,9 +398,19 @@ export function enterGrowth(state: SessionState): SessionState {
   return { ...state, phase: 'GROWTH' }
 }
 
-/** 성장 적용 — 병원 재구성 + 금고/풀 차감 + choices/beds 갱신. GROWTH 유지(이어서 beginWeek). */
+/**
+ * 성장 적용 — 병원 재구성 + 금고/풀 차감 + choices/beds 갱신. GROWTH 유지(이어서 beginWeek).
+ *
+ * 🔴 **게이트를 선행조건으로 단정한다**(T-055 게이트/실행 비대칭의 대증): 게이트를 우회해 부르면
+ * 명단은 +N인데 세계는 그대로인 **유령 의사**가 생긴다 — 풀이 세계의 파생값이 된 뒤로 그 어긋남은
+ * `hirablePool`이 잔여를 다시 채워 주는 형태로 나타나 조용히 무한 채용이 된다.
+ * 판단을 두 번 하는 게 아니라, 판단한 쪽을 반드시 지나왔음을 확인하는 것이다.
+ */
 export function applyGrowth(state: SessionState, next: SetupChoices, nextBeds: number): SessionState {
   if (state.phase !== 'GROWTH') throw new Error(`applyGrowth requires GROWTH, got ${state.phase}`)
+  if (!canApplyGrowth(state, next, nextBeds)) {
+    throw new Error('applyGrowth: 게이트 미통과 — canApplyGrowth를 먼저 통과해야 한다')
+  }
   const deps = state.world?.departments
   const cost = growthCostOf(state, next, nextBeds)
   const { hospital } = buildHospital(next, deps, nextBeds)

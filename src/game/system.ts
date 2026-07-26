@@ -33,6 +33,11 @@ export function hirablePool(regions: RegionState[]): Record<Specialty, number> {
  */
 export const POOL_INITIAL: Record<Specialty, number> = hirablePool(REGION_INITIAL)
 
+/**
+ * **세계 없는 자리값** — 초기 세계의 파생본을 그대로 담는다.
+ * 세계가 있는 자리에선 쓰지 않는다(`deriveSystem`이 그 자리다). 남은 유일한 소비자는
+ * `startSession`(LANDING): 아직 world가 없어 파생할 원천 자체가 없는 유일한 페이즈다.
+ */
 export function initSystem(): SystemState {
   return { pool: { ...POOL_INITIAL }, poolInitial: { ...POOL_INITIAL } }
 }
@@ -42,7 +47,12 @@ export function initSystem(): SystemState {
  * 한 곳이라도 빠지면 `system.pool ≡ hirablePool(world.regions)` 일관성 불변식이 조용히 깨진다
  * (session.test.ts가 그 불변식을 지점별로 못박는다).
  *
- * `poolInitial`은 표시용 초기 사본이라 세계와 무관하게 실려 다닌다 — 기본값은 초기 세계 파생본.
+ * **두 필드의 기준 세계가 다르다(의도)**: `pool`은 **인자로 받은 지금 세계**의 파생이고,
+ * `poolInitial`은 기본값이 모듈 상수 `POOL_INITIAL` = **초기 세계**(REGION_INITIAL)의 파생이다.
+ * 그래서 지역 쇼크가 있는 세계로 개원하면 에필로그의 "N → 잔여"가 *쇼크 후*가 아니라
+ * **쇼크 전 원본 대비**로 읽힌다 — 그게 의도다. 에필로그는 "이 세상에 원래 몇 명 있었나"를
+ * 병치하는 자리라, 개원 시점의 쇼크까지 이미 반영된 분모는 그 질문에 답하지 못한다.
+ * (주 경계에서는 session.ts가 `state.system.poolInitial`을 넘겨 그 원본을 실어 나른다.)
  */
 export function deriveSystem(
   world: WorldState, poolInitial: Record<Specialty, number> = POOL_INITIAL,
