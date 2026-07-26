@@ -10,6 +10,7 @@ import { decide, isElective } from './receiving'
 import { DAYS_PER_WEEK, SETUP_BUDGET_MANWON } from './setup'
 import { DAY_LENGTH_MIN } from './daysim'
 import { initSystem, POOL_INITIAL } from './system'
+import { RESIGN_SATURATED_DAYS } from './doctor'
 import { FATIGUE_SLOW_FROM } from './doctor'
 import type { IncomingCall, SetupChoices } from './types'
 
@@ -577,6 +578,65 @@ describe('피로 누적 — 표시 레이어(판정 무관)', () => {
     const before = { ...s.fatigue }
     s = nextWeek(s)
     expect(s.fatigue).toEqual(before) // 이월(변경 없음)
+  })
+})
+
+describe('사직 — completeWeek 통합', () => {
+  const soloCardio: SetupChoices = { hospitalName: 'h', doctors: { AESTHETICS: 1, CARDIOLOGY: 1 } }
+
+  /** 포화 일수를 직접 심어 임계를 만든다 — 여러 주를 돌리지 않고 계약만 잠근다. */
+  function seedSaturated(s: SessionState, id: string): SessionState {
+    return { ...s, saturatedDays: { ...s.saturatedDays, [id]: RESIGN_SATURATED_DAYS } }
+  }
+  const cardioIdOf = (s: SessionState) => s.hospital!.roster!.find((d) => d.dept === 'CARDIOLOGY')!.id
+
+  it('임계를 넘긴 순환기 1인이 사직하고 결산에 실린다', () => {
+    let s = runWeek(soloCardio, true)
+    s = completeWeek(seedSaturated(s, cardioIdOf(s)))
+    expect(s.weekResignations.map((r) => r.dept)).toEqual(['CARDIOLOGY'])
+    expect(s.choices.doctors.CARDIOLOGY ?? 0).toBe(0)
+  })
+
+  it('사직은 풀을 줄인다 — 되돌릴 수 없다 [R-2]', () => {
+    let s = runWeek(soloCardio, true)
+    const before = s.system.pool.CARDIOLOGY
+    s = completeWeek(seedSaturated(s, cardioIdOf(s)))
+    expect(s.system.pool.CARDIOLOGY).toBe(before - 1)
+  })
+
+  it('임계 미달이면 사직 0 — 승격 전과 동일 [R-0]', () => {
+    const s = completeWeek(runWeek(soloCardio, true))
+    expect(s.weekResignations).toEqual([])
+    expect(s.choices.doctors.CARDIOLOGY).toBe(1)
+  })
+
+  it('생존자가 사직자의 포화를 물려받지 않는다 [R-4]', () => {
+    let s = runWeek({ hospitalName: 'h', doctors: { CARDIOLOGY: 2 } }, true)
+    s = { ...s, saturatedDays: { 'doc-CARDIOLOGY-1': RESIGN_SATURATED_DAYS, 'doc-CARDIOLOGY-2': 1 } }
+    s = completeWeek(s)
+    expect(s.saturatedDays['doc-CARDIOLOGY-1']).toBe(1) // 옛 2번의 1이 새 1번으로
+  })
+
+  it('수익과만 있으면 7일을 완주해도 사직 0 [R-1]', () => {
+    expect(completeWeek(runWeek(collaborator, true)).weekResignations).toEqual([])
+  })
+
+  it('completeWeek은 병원을 재구성하지 않는다 — 그 주 숫자가 흔들리면 안 된다', () => {
+    const end = runWeek(soloCardio, true)
+    const rosterBefore = end.hospital!.roster!.length
+    // 같은 주를 사직 유무로 두 번 닫아 본다 — 이번 주 숫자는 사직과 무관해야 한다(설계 §5 시점 계약).
+    const without = completeWeek(end)
+    const withResign = completeWeek(seedSaturated(end, cardioIdOf(end)))
+    expect(withResign.weekResignations).toHaveLength(1)
+    expect(withResign.treasury).toBe(without.treasury)
+    expect(withResign.hospital!.roster!.length).toBe(rosterBefore) // 재구성은 GROWTH에서
+  })
+
+  it('nextWeek은 지난주 사직 목록을 비운다', () => {
+    let s = runWeek(soloCardio, true)
+    s = completeWeek(seedSaturated(s, cardioIdOf(s)))
+    expect(s.weekResignations).toHaveLength(1)
+    expect(nextWeek(s).weekResignations).toEqual([])
   })
 })
 

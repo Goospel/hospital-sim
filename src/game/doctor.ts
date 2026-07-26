@@ -47,6 +47,35 @@ export function materializeRoster(choices: SetupChoices, departments: Department
   return roster
 }
 
+/**
+ * 사직을 명단에 반영한다 — 순수. `choices`(명단의 단일 출처)를 줄이고, 배후과 사직분을 낸다.
+ *
+ * `doctors` 카운트와 `hiredIds`를 **함께** 줄이는 게 정합의 핵심이다: 하나만 줄이면
+ * `materializeRoster`가 남은 지원자·무명으로 빈자리를 메워 **사직이 없던 일이 된다**.
+ *
+ * 풀 차감은 호출부(session)가 `releaseFromPool`로 적용한다 — 이 모듈은 system.ts를 모른다
+ * (순환 차단). 그래서 여기선 "어느 배후과가 몇 명 줄었나"만 낸다.
+ */
+export function applyResignations(
+  choices: SetupChoices,
+  resigning: Doctor[],
+  departments: DepartmentSpec[],
+): { choices: SetupChoices; poolDelta: Partial<Record<string, number>> } {
+  if (resigning.length === 0) return { choices, poolDelta: {} }
+
+  const doctors = { ...choices.doctors }
+  const poolDelta: Partial<Record<string, number>> = {}
+  for (const d of resigning) {
+    doctors[d.dept] = Math.max(0, (doctors[d.dept] ?? 0) - 1)
+    const backup = departments.find((x) => x.key === d.dept)?.providesBackup
+    if (backup) poolDelta[backup] = (poolDelta[backup] ?? 0) + 1
+  }
+
+  const gone = new Set(resigning.map((d) => d.candidateId).filter(Boolean) as string[])
+  const hiredIds = choices.hiredIds?.filter((id) => !gone.has(id))
+  return { choices: { ...choices, doctors, ...(hiredIds ? { hiredIds } : {}) }, poolDelta }
+}
+
 /** 워크인 라벨로 미용/검진 판별. receiving.ts CALL_LABELS와 커플링(표시 전용). */
 export function walkinDept(label: string): DeptKey {
   return label.includes('검진') ? 'CHECKUP' : 'AESTHETICS'
@@ -155,6 +184,84 @@ export const FATIGUE_SLOW_MAX = 0.5
 export function fatigueSlowFactor(fatigue: number): number {
   const over = Math.max(0, fatigue - FATIGUE_SLOW_FROM)
   return 1 + (FATIGUE_SLOW_MAX * over) / (FATIGUE_MAX - FATIGUE_SLOW_FROM)
+}
+
+/**
+ * 포화 상태로 일한 날이 이만큼 누적되면 사직한다(예시값 — 튜닝 대상).
+ * 실측 곡선(전부 수용·순환기 1인): 1주차 2일 + 2주차 3일 → 2주차 결산에서 이탈.
+ * 응급을 더 거절하면 피로가 덜 올라 시점이 미뤄진다 — 플레이어 선택이 움직인다.
+ */
+export const RESIGN_SATURATED_DAYS = 4
+
+/**
+ * 하루 마감 피로 → 포화 일수 누적. **리셋이 없다.**
+ *
+ * 포화(FATIGUE_MAX)로 마감한 날만 센다. 회복해도 그 날들은 몸에 남는다는 뜻이고, 무엇보다
+ * 완편 병원은 실측상 34조차 안 넘어 이 카운터가 **영원히 0**이다 — 구조적으로 망가진
+ * 배치에서만 돌아간다. 리셋 규칙을 두면 "며칠 쉬게 해 되돌리는" 최적화 표면이 생기는데,
+ * 대응 레버가 채용뿐이라(피로 승격 결정 B) 그 조작은 애초에 불가능하다.
+ */
+export function stepSaturatedDays(
+  prev: Record<string, number>,
+  fatigue: Record<string, number>,
+): Record<string, number> {
+  const next: Record<string, number> = { ...prev }
+  for (const [id, f] of Object.entries(fatigue)) {
+    if (f >= FATIGUE_MAX) next[id] = (next[id] ?? 0) + 1
+  }
+  return next
+}
+
+/**
+ * 임계를 넘긴 유닛 — 이번 주에 떠나는 사람들. 명단 순서를 보존한다(표시 안정).
+ * 명단에 없는 키는 무시한다(사직·재구성으로 생긴 구 상태 잔재).
+ */
+export function resigningDoctors(
+  roster: Doctor[],
+  saturatedDays: Record<string, number>,
+): Doctor[] {
+  return roster.filter((d) => (saturatedDays[d.id] ?? 0) >= RESIGN_SATURATED_DAYS)
+}
+
+/**
+ * 사직으로 id가 밀렸을 때 유닛별 상태(fatigue·saturatedDays)를 **사람을 따라** 옮긴다.
+ *
+ * ⚠️ 이게 없으면 조용한 데이터 오염이 난다: `Doctor.id`는 `doc-<dept>-<i>` 인덱스 기반이라
+ * 1번이 사직하면 옛 2번이 그 번호를 물려받고, id로 키를 잡은 상태가 **사직자의 포화를
+ * 생존자에게 상속**시킨다(방금 남은 사람이 즉시 사직 임계에 걸린다).
+ *
+ * 대응은 **과별 위치**로 한다: `materializeRoster`는 그 과의 hiredIds 지원자를 CANDIDATES
+ * 순서로 앞 슬롯부터 앉히고 나머지를 무명으로 채우므로, **사직자를 뺀 옛 명단**과 새 명단은
+ * 과별로 같은 순서다. 그래서 zip 한 번이 정확하고, 이름·후보 id 매칭보다 단순하며
+ * 무명 유닛 엣지케이스가 함께 사라진다.
+ *
+ * `survivorsInOldOrder`는 옛 명단에서 **사직자만 제거**한 것이어야 한다(순서 보존).
+ * 교차 주 상태는 fatigue·saturatedDays 둘뿐이다 — busyUntil·busyWith는 하루마다 리셋된다.
+ */
+export function remapDoctorState<T>(
+  survivorsInOldOrder: Doctor[],
+  newRoster: Doctor[],
+  state: Record<string, T>,
+): Record<string, T> {
+  const byDept = (roster: Doctor[]) => {
+    const m = new Map<DeptKey, Doctor[]>()
+    for (const d of roster) {
+      const list = m.get(d.dept) ?? []
+      list.push(d)
+      m.set(d.dept, list)
+    }
+    return m
+  }
+  const oldByDept = byDept(survivorsInOldOrder)
+  const out: Record<string, T> = {}
+  for (const [dept, newDocs] of byDept(newRoster)) {
+    const oldDocs = oldByDept.get(dept) ?? []
+    newDocs.forEach((nd, i) => {
+      const od = oldDocs[i]
+      if (od && state[od.id] !== undefined) out[nd.id] = state[od.id]
+    })
+  }
+  return out
 }
 
 /**
