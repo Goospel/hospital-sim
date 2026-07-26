@@ -1,4 +1,4 @@
-import type { CallKind, Doctor, Hospital, IncomingCall, Patient, RejectionReason, Specialty } from './types'
+import type { CallKind, Doctor, Hospital, IncomingCall, Patient, RegionKey, RejectionReason, Specialty } from './types'
 import { adjudicateTransfer } from './adjudicate'
 import { handlingDept } from './doctor'
 import { DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
@@ -420,6 +420,25 @@ export function outpatientForBeds(beds: number): number {
 const ELECTIVE_EVERY = 12
 
 /**
+ * 응급 한 통의 발신 지역 추첨 — RURAL 몫이 pressure로 커진다(0.3 → 0.9), 나머지에서 METRO가 0.25.
+ *
+ * salt 17은 **이 축 전용**이다(daysim.ts callSeed의 레지스트리). 도착시각 스트림(salt 2)과 합치면
+ * 발신 지역이 도착시각과 완전 상관되는 **무성 실패**가 된다 — 규칙 테스트는 그걸 못 잡아서
+ * receiving.test.ts의 시드 궤적 특성화 핀이 그 자리를 지킨다.
+ */
+function originRegionFor(day: number, index: number, pressure: number): RegionKey {
+  const roll = seededUnit(callSeed(1, day, index, 17))
+  const ruralShare = 0.3 + 0.6 * pressure
+  return roll < ruralShare ? 'RURAL' : roll < ruralShare + 0.25 ? 'METRO' : 'CAPITAL'
+}
+
+/** 그 지역의 가공 지명 하나(salt 19 — 지역 롤과 다른 축이라야 지명이 지역에 종속되지 않는다). */
+function originLabelFor(day: number, index: number, region: RegionKey): string {
+  const names = REGION_LABELS[region]
+  return names[Math.floor(seededUnit(callSeed(1, day, index, 19)) * names.length)]
+}
+
+/**
  * 그날의 콜 큐 — 결정론(같은 day·beds는 항상 같은 큐), 도착순 정렬.
  *
  * **두 스트림을 합쳐 만든다**(콜 제한 폐지, 2026-07-23):
@@ -464,17 +483,9 @@ export function createCallQueue(day = 1, beds = FIXED_BEDS, pressure = 0): Incom
     const occurrence = seen[kind] ?? 0
     seen[kind] = occurrence + 1
     const arrivalMin = arrivalMinFor(1, day, i)
-    // 발신 지역 — 응급만. RURAL 몫이 pressure로 커진다(0.3 → 0.9). 시드 콜별 독립(salt 17·19).
-    const emergency = requiresBackupCare(kind)
-    const originRoll = seededUnit(callSeed(1, day, i, 17))
-    const ruralShare = 0.3 + 0.6 * pressure
-    const originRegion = !emergency ? undefined
-      : originRoll < ruralShare ? ('RURAL' as const)
-      : originRoll < ruralShare + 0.25 ? ('METRO' as const)
-      : ('CAPITAL' as const)
-    const originLabel = originRegion === undefined ? undefined
-      : REGION_LABELS[originRegion][
-          Math.floor(seededUnit(callSeed(1, day, i, 19)) * REGION_LABELS[originRegion].length)]
+    // 발신 지역 — 응급만(외래는 발신지가 없다: 걸어 들어온 사람이다).
+    const originRegion = requiresBackupCare(kind) ? originRegionFor(day, i, pressure) : undefined
+    const originLabel = originRegion === undefined ? undefined : originLabelFor(day, i, originRegion)
     const basePatient = kind === 'SPECIALIST_ELECTIVE' ? electivePatientFor(dept ?? 'CARDIOLOGY') : PATIENT_OF[kind]
     // 멀리서 온 재이송은 상태가 나쁘다 — RURAL발 응급만 중증도 +1(5 상한). 판정 무관(표시·서사 데이터).
     const patient = originRegion === 'RURAL'

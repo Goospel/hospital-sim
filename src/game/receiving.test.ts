@@ -1392,6 +1392,33 @@ describe('콜 발신 지역 — 세계가 콜 구성에 닿는다 (spec §5)', (
     expect(compared).toBeGreaterThan(0) // 판별력 보장 — +1이 실제로 관측된 짝이 있다
   })
 
+  /*
+    🔴 **이 테스트는 규칙이 아니라 현재 시드 궤적을 핀한다** — salt(17·19)·밴드(0.3+0.6p, METRO 0.25)를
+    바꾸면 여기가 깨지는 게 정상이고, 의도적 튜닝이면 기대값을 갱신하라. 특히 salt를 기존
+    스트림(2 = 도착시각 arrivalMinFor)과 합치면 발신 지역이 도착시각과 상관되는 **무성 실패**가 된다
+    (daysim.ts callSeed의 salt 레지스트리 참조 — "스트림을 가르는 축은 salt다"). 위의 규칙 테스트들은
+    그 실패를 하나도 못 잡는다: 실측 2026-07-26에 salt 17→2로 바꿔도, METRO 밴드 0.25→0.5로
+    바꿔도 568개가 전부 통과했다. 지명(originLabel)까지 핀하는 건 salt 19 축도 똑같이 무방비여서다.
+    pressure 0.5를 고른 이유 — 세 지역이 모두 등장해 밴드 경계 두 개를 한 입력으로 덮는다
+    (0이면 RURAL이 드물고, 1이면 ruralShare 0.9라 CAPITAL 밴드가 거의 사라져 경계가 안 걸린다).
+  */
+  it('시드 궤적 특성화 핀 — (day 1..7, beds 3, pressure 0.5) 응급 발신 지역·지명 시퀀스', () => {
+    const seq = Array.from({ length: DAYS_PER_WEEK }, (_, i) =>
+      createCallQueue(i + 1, 3, 0.5)
+        .filter((c) => requiresBackupCare(c.kind))
+        .map((c) => [c.originRegion, c.originLabel].join('/'))
+        .join(' '))
+    expect(seq).toEqual([
+      'METRO/늘목시 CAPITAL/가온구',
+      'RURAL/새벌군 CAPITAL/가온구',
+      'RURAL/새벌군 RURAL/먼내군 METRO/늘목시 RURAL/먼내군',
+      'CAPITAL/누리구 METRO/벼리시 RURAL/새벌군 RURAL/먼내군',
+      'RURAL/새벌군 RURAL/먼내군 RURAL/먼내군 RURAL/먼내군',
+      'RURAL/두메군 METRO/늘목시 RURAL/새벌군 RURAL/두메군',
+      'RURAL/두메군 RURAL/먼내군 RURAL/새벌군 RURAL/두메군',
+    ])
+  })
+
   it('pressure 없이 부르면(기존 시그니처) 이전과 동일하게 동작한다 — 하위호환', () => {
     expect(createCallQueue(1, 3)).toEqual(createCallQueue(1, 3, 0))
   })
