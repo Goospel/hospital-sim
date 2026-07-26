@@ -1,6 +1,41 @@
 import { describe, it, expect } from 'vitest'
 import { initSystem, poolRemaining, canHire, POOL_INITIAL, hirablePool, deriveSystem } from './system'
-import { initWorld, stepWorld, regionOf, hireFromRegions } from './world'
+import { initWorld, stepWorld, regionOf, hireFromRegions, resignFromRegions } from './world'
+
+/*
+  옛 `releaseFromPool`(풀 직접 차감)의 계약을 새 경로로 이식한다 — 그 함수는 파생 아키텍처에서
+  금지된 **두 번째 쓰기 경로**라 삭제됐고(pool ≡ hirablePool(world.regions)), 사직의 차감은
+  이제 `resignFromRegions`(세계)가 하고 풀은 `deriveSystem`으로 따라온다. 계약 자체는 그대로다:
+  배후과 사직분만큼 잔여가 줄고 · 0 밑으로 안 가고 · poolInitial은 안 바뀐다(에필로그 "N → 잔여").
+*/
+describe('사직은 세상에서 사람을 지운다 — 풀 차감을 세계 차감으로', () => {
+  it('배후과 사직분만큼 풀이 준다', () => {
+    const s = deriveSystem(resignFromRegions(initWorld(), { CARDIOLOGY: 1 }, 2))
+    expect(s.pool.CARDIOLOGY).toBe(POOL_INITIAL.CARDIOLOGY - 1)
+  })
+
+  it('0 클램프 — 음수로 안 내려간다', () => {
+    const s = deriveSystem(resignFromRegions(initWorld(), { THORACIC_SURGERY: 99 }, 2))
+    expect(s.pool.THORACIC_SURGERY).toBe(0)
+  })
+
+  it('poolInitial(표시용 초기 사본)은 안 바뀐다', () => {
+    const s = deriveSystem(resignFromRegions(initWorld(), { CARDIOLOGY: 1 }, 2), POOL_INITIAL)
+    expect(s.poolInitial).toEqual(POOL_INITIAL)
+  })
+
+  it('빈 델타는 무변경', () => {
+    expect(deriveSystem(resignFromRegions(initWorld(), {}, 2)).pool).toEqual(POOL_INITIAL)
+  })
+
+  it('차감은 사직한 배후과만 — 다른 과 잔여는 그대로', () => {
+    const s = deriveSystem(resignFromRegions(initWorld(), { CARDIOLOGY: 1 }, 2))
+    for (const key of Object.keys(POOL_INITIAL) as (keyof typeof POOL_INITIAL)[]) {
+      if (key === 'CARDIOLOGY') continue
+      expect(s.pool[key]).toBe(POOL_INITIAL[key])
+    }
+  })
+})
 
 describe('전국 의사 풀 — 세상에 존재하는 유한 의사 수', () => {
   it('초기 풀 = 각색 고정값, poolInitial은 표시용 사본', () => {

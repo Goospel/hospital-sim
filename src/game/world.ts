@@ -315,25 +315,33 @@ function removeDoctor(world: WorldState, s: Specialty, from: RegionKey): WorldSt
 
 /** 채용 시드 salt — daysim callSeed 레지스트리에 13으로 예약된 스트림(드리프트 11·12·15와 다른 축). */
 const HIRE_SALT = 13
+/**
+ * 사직 시드 salt — 23. **채용(13)과 반드시 달라야 한다**: 같은 주에 채용(GROWTH)과 사직(주간 결산)이
+ * 한 스트림을 공유하면 두 뽑기가 서로를 밀어내, "그 주에 채용을 했느냐"가 사직자의 출신 지역을
+ * 바꾸는 숨은 결합이 된다. 두 사건은 서사적으로 무관하니 시드도 무관해야 한다
+ * (world.test.ts의 "채용과 다른 salt를 쓴다" 테스트가 그 가드).
+ */
+const RESIGN_SALT = 23
 
 /**
- * 성장 채용이 세계에서 사람을 빼간다 — METRO·RURAL 중 남은 수 비례 시드 추첨(수도권 정착 의사는 안 온다).
- * 내 채용이 지방·광역시의 배후를 실제로 줄인다 — 구조적 아이러니가 여기서 물리적으로 성립한다.
+ * METRO·RURAL 중 남은 수 비례 시드 추첨으로 한 명씩 세계에서 **뺀다** — `hireFromRegions`(이동)와
+ * `resignFromRegions`(소멸)의 공통 기계. 두 export가 같은 몸통을 쓰는 건 우연이 아니라 계약이다:
+ * 어느 쪽이든 "전국 채용 가능 인력 통계에서 한 명이 빠진다"의 표현이고, 갈리는 건 **의미와 시드**뿐이다.
+ * (수도권 정착 의사는 두 경우 모두 후보가 아니다 — 지방 병원에 오지도, 여기서 사직하지도 않는다.)
  *
  * 📌 **뽑히는 지역은 항상 잔여 ≥ 1이다**(removeDoctor의 무클램프 전제): metro+rural ≤ 0이면 break,
  * rural이 0이면 pickMetro가 참(그때 metro > 0), metro가 0이면 pickMetro가 거짓이고 rural > 0.
- * 순수·결정론(week 시드 파생) — 같은 (world, deltas, week)는 항상 같은 결과.
+ * 순수·결정론(week 시드 파생) — 같은 (world, deltas, week, salt)는 항상 같은 결과.
  *
- * 📌 **음수 증분(해고)은 무시한다** — 내보낸 사람은 세계로 돌아오지 않는다(`i < n`이 애초에 안 돈다).
- * 성장은 증축만이라 게이트(canApplyGrowth의 noFiring)가 이미 막지만, 계약을 여기서도 명시한다.
+ * 📌 **음수 증분은 무시한다** — `i < n`이 애초에 안 돈다(해고도, 음수 사직도 세계로 사람을 되돌리지 않는다).
  *
- * ⚠️ **추첨 카운터 `draw`는 과 루프 밖에 있다** — 과별로 리셋하면 같은 주 모든 과의 첫 채용이
+ * ⚠️ **추첨 카운터 `draw`는 과 루프 밖에 있다** — 과별로 리셋하면 같은 주 모든 과의 첫 뽑기가
  * 난수 **하나**를 공유해, 비례 추첨이 단일 임계 컷으로 붕괴한다(실측: week 2의 롤 0.8163이면
  * metro 점유율이 그보다 낮은 5개 과가 **전부** RURAL로 쏠린다 — 과마다 비율이 다른 게 무의미해진다).
  * 전역 카운터면 매 뽑기가 자기 스트림을 갖는다.
  */
-export function hireFromRegions(
-  world: WorldState, deltas: Partial<Record<Specialty, number>>, week: number,
+function drawFromRegions(
+  world: WorldState, deltas: Partial<Record<Specialty, number>>, week: number, salt: number,
 ): WorldState {
   let next = world
   let draw = 0 // 이 호출에서 몇 번째 뽑기인가 — 과 경계를 넘어 이어진다(위 ⚠️)
@@ -345,14 +353,50 @@ export function hireFromRegions(
       if (metro + rural <= 0) break // 전국에 남은 사람이 없다 — 돈이 있어도 못 뽑는 벽
       // 뽑기 하나에 스트림 하나 — 롤을 **먼저 굳힌다**(단축평가 안에서 draw++를 굴리면 강제 선택일 때
       // 조용히 안 오르는 숨은 부수효과가 된다). day 자리의 1은 하드코딩이다: 스트림을 가르는 축은
-      // salt(13)라 실익은 없고, 드리프트가 쓰는 0과 눈으로 구분되는 표기일 뿐이다(callSeed 주석).
-      const roll = seededUnit(callSeed(week, 1, draw++, HIRE_SALT))
+      // salt라 실익은 없고, 드리프트가 쓰는 0과 눈으로 구분되는 표기일 뿐이다(callSeed 주석).
+      const roll = seededUnit(callSeed(week, 1, draw++, salt))
       // 한쪽이 비면 남은 쪽으로 강제된다(그때 roll은 쓰이지 않는다).
       const pickMetro = metro > 0 && (rural <= 0 || roll < metro / (metro + rural))
       next = removeDoctor(next, s, pickMetro ? 'METRO' : 'RURAL')
     }
   }
   return next
+}
+
+/**
+ * **이동** — 성장 채용이 세계에서 사람을 빼간다. 그 의사는 사라지지 않고 **우리 병원 명단으로 온다**
+ * (전국 채용 가능 풀에서만 빠진다). 내 채용이 지방·광역시의 배후를 실제로 줄인다 —
+ * 구조적 아이러니가 여기서 물리적으로 성립한다.
+ *
+ * 📌 **음수 증분(해고)은 무시한다** — 내보낸 사람은 세계로 돌아오지 않는다.
+ * 성장은 증축만이라 게이트(canApplyGrowth의 noFiring)가 이미 막지만, 계약을 여기서도 명시한다.
+ */
+export function hireFromRegions(
+  world: WorldState, deltas: Partial<Record<Specialty, number>>, week: number,
+): WorldState {
+  return drawFromRegions(world, deltas, week, HIRE_SALT)
+}
+
+/**
+ * **소멸** — 우리 병원에서 사직한 의사가 세계의 채용 가능 인력에서도 사라진다.
+ * 사직은 "다른 병원으로 감"이 아니라 **필수의료를 떠남**이라 어느 지역으로도 돌아오지 않는다
+ * (설계 2026-07-25-attrition-resignation-design.md 결정 A). 그래서 채용은 이동이지만 사직은 소멸이고,
+ * 이 비대칭이 제로섬을 실제로 조인다 — 잃은 사람은 돈으로도 못 되돌린다.
+ *
+ * 📌 **왜 세계에서 빼는가**(머지 통합 2026-07-27): 옛 구현은 `system.pool`을 직접 깎았는데(옛
+ * `releaseFromPool`), 풀은 이제 `hirablePool(world.regions)`의 **파생값**이라 그건 불변식을
+ * 우회하는 두 번째 쓰기 경로다. 지역 배분(METRO·RURAL 비례 추첨)은 "필수의료 이탈이 어느 지역
+ * 통계에서 빠지나"의 각색이다 — 옛 `backgroundAttrition`이 '다른 병원 채용·은퇴'를 시드 한 방으로
+ * 추상화했던 것과 같은 수법이고, 그 함수를 세계 시뮬이 흡수한 것도 같은 이유였다.
+ *
+ * ⚠️ **클램프 = 차감 없음**: 대상 과가 METRO+RURAL에 0명이면 세계는 안 변한다(`hireFromRegions`와
+ * 동일 계약). 사직 자체(명단 축소·weekResignations·리맵)는 **풀 상태와 무관하게 항상** 적용된다 —
+ * 우리 병원 명단과 전국 통계는 별개 장부고, 통계가 이미 0이라고 사직이 취소되지는 않는다.
+ */
+export function resignFromRegions(
+  world: WorldState, deltas: Partial<Record<Specialty, number>>, week: number,
+): WorldState {
+  return drawFromRegions(world, deltas, week, RESIGN_SALT)
 }
 
 /** RURAL 배후 총량(필수과별 배후 병원 수의 합) — transferPressure의 분모·분자. */

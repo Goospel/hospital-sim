@@ -18,7 +18,9 @@ export function seededUnit(seed: number): number {
  * 들어가((…*101 + salt)에 index가 이미 섞여 있다) `(i=1, salt=11)`과 `(i=0, salt=112)`처럼
  * 서로 다른 의도가 같은 시드로 앨리어싱될 수 있다. 새 무작위 축이 필요하면 **새 salt를 받는다**.
  *
- * salt 사용처: 1·2·3(daysim) 7(구 attrition) 11·12·15(world 드리프트) 13(채용) 17·19(콜 발신)
+ * salt 사용처: 1·2·3(daysim) 7(구 attrition) 11·12·15(world 드리프트) 13(채용) 17·19(콜 발신) 23(사직)
+ * 📌 **채용 13과 사직 23은 반드시 다른 축이다** — 같은 주에 두 사건이 한 스트림을 공유하면
+ *    "그 주에 채용을 했느냐"가 사직자의 출신 지역을 바꾼다(world.ts RESIGN_SALT 주석).
  */
 export function callSeed(week: number, day: number, index: number, salt: number): number {
   return (((week * 7 + day) * 97 + index) * 101 + salt) | 0

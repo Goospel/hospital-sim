@@ -2,6 +2,8 @@
 
 import { formatSignedManwon } from "@/game/labels";
 import type { DeptLedgerLine } from "@/game/deptLedger";
+import { DEPARTMENTS } from "@/game/setup";
+import type { DeptKey } from "@/game/types";
 import DeptLedgerTable from "./DeptLedgerTable";
 
 /**
@@ -20,6 +22,7 @@ export default function WeekSummary({
   treasury,
   insolvencyStreak,
   lines,
+  resignations,
   onNextWeek,
   onEnd,
 }: {
@@ -31,6 +34,7 @@ export default function WeekSummary({
   treasury: number;
   insolvencyStreak: number;
   lines: DeptLedgerLine[]; // 이번 주 7일 합산 과별 손익(SessionClient가 deptLedgerLines(ledgerDays, …)로 계산)
+  resignations: { dept: DeptKey; name: string }[]; // 이번 주 사직 — 사유 없이 사실만
   onNextWeek: () => void;
   onEnd: () => void;
 }) {
@@ -64,6 +68,24 @@ export default function WeekSummary({
               : `응급 · ${received}명 전부 수용`}
           </span>
         </div>
+
+        {/*
+          사직 — 사실 한 줄씩. **사유를 쓰지 않는다**: 피로 막대가 몇 주간 이미 말했고,
+          사유를 설명하는 순간 "번아웃한 순환기 김 선생의 사연"이 된다(character-design §43 —
+          의사는 개인이 아니라 자리 하나). 이름은 이미 명단에 있는 스펙 시트 수준의 정보다.
+
+          이 줄이 위의 순이익과 **같은 종이에** 놓이는 게 이 화면의 문장이다: 다음 주 결산에서
+          그 숫자가 오르는 걸 보고 플레이어가 스스로 인과를 잇는다(설계 §5). 잇는 카피는 없다.
+        */}
+        {resignations.length > 0 && (
+          <ul className="flex flex-col gap-1 border-t border-rule pt-3">
+            {resignations.map((r) => (
+              <li key={`${r.dept}-${r.name}`} className="font-mono text-xs text-stamp-ink">
+                {DEPARTMENTS.find((d) => d.key === r.dept)?.label ?? r.dept} · {r.name} — 사직
+              </li>
+            ))}
+          </ul>
+        )}
 
         {/* 과별 손익 영수증 — 이번 주 순이익을 과별 7일 합산으로 쪼갠다(재투자 결정 직전에 가장 쓸모). */}
         <div className="border-t border-rule pt-3">

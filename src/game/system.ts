@@ -6,6 +6,12 @@ import { REGION_INITIAL, findRegion, type RegionState, type WorldState } from '.
 // 매주 드리프트(stepWorld)가 RURAL→CAPITAL로 옮길 때마다 이 풀이 준다 —
 // 옛 backgroundAttrition(매주 시드로 1 차감)이 하던 일을 세계 시뮬이 흡수했다(spec 2026-07-26 §3·§6).
 // 같은 변동을 두 군데서 굴리면 이중 기재라, 원천을 세계 하나로 통일한다.
+//
+// ⚠️ **이 파일에는 풀을 직접 쓰는 함수가 없다 — 앞으로도 두지 않는다.** 옛 hireDelta(채용)·
+// releaseFromPool(사직)·backgroundAttrition(배경 감소)이 그런 함수였고, 셋 다 삭제됐다:
+// 파생값을 직접 쓰면 `pool ≡ hirablePool(world.regions)` 불변식을 우회하는 두 번째 쓰기 경로가 생겨,
+// 풀만 줄고 세계는 그대로인 상태가 조용히 만들어진다. 감소는 전부 world.ts에서 일어난다 —
+// stepWorld(드리프트) · hireFromRegions(채용=이동) · resignFromRegions(사직=소멸).
 
 export interface SystemState {
   pool: Record<Specialty, number>
@@ -43,7 +49,8 @@ export function initSystem(): SystemState {
 }
 
 /**
- * 세계에서 풀 스냅샷을 재파생 — 세계가 변한 **모든** 지점(nextWeek·applyGrowth·completeSetup) 직후 호출.
+ * 세계에서 풀 스냅샷을 재파생 — 세계가 변한 **모든** 지점 직후 호출
+ * (enterWorldEvent·beginSetup·completeSetup·completeWeek·nextWeek·applyGrowth).
  * 한 곳이라도 빠지면 `system.pool ≡ hirablePool(world.regions)` 일관성 불변식이 조용히 깨진다
  * (session.test.ts가 그 불변식을 지점별로 못박는다).
  *

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, transferPressure, hireFromRegions, EVENT_CATALOG, OPENING_EVENT, REGION_LABELS, type RegionEffect, type WorldEvent } from './world'
+import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, transferPressure, hireFromRegions, resignFromRegions, EVENT_CATALOG, OPENING_EVENT, REGION_LABELS, type RegionEffect, type WorldEvent, type WorldState } from './world'
 import { DEPARTMENTS } from './setup'
 import { POOL_INITIAL } from './system'
 // 지명 비중복 검사기의 단일 출처 — 목록을 복제하지 않고 news.ts에서 그대로 가져온다.
@@ -335,6 +335,61 @@ describe('hireFromRegions — 채용 추첨 스트림 (spec §6)', () => {
   it('음수 증분(해고)은 세계를 안 바꾼다 — 내보낸 사람은 세계로 돌아오지 않는다', () => {
     const world = initWorld()
     expect(hireFromRegions(world, { CARDIOLOGY: -2 }, 2)).toEqual(world)
+  })
+})
+
+describe('resignFromRegions — 사직은 세계에서 사람을 지운다', () => {
+  it('사직 1명이면 METRO 또는 RURAL에서 정확히 1명 준다(CAPITAL 불변)', () => {
+    const before = initWorld()
+    const after = resignFromRegions(before, { CARDIOLOGY: 1 }, 2)
+    const loss = (key: 'CAPITAL' | 'METRO' | 'RURAL') =>
+      regionOf(before, key).doctors.CARDIOLOGY - regionOf(after, key).doctors.CARDIOLOGY
+    expect(loss('CAPITAL')).toBe(0)
+    expect(loss('METRO') + loss('RURAL')).toBe(1)
+  })
+
+  it('METRO+RURAL이 0인 과는 클램프 — 세계를 안 바꾼다(음수 없음)', () => {
+    const world = initWorld()
+    const after = resignFromRegions(world, { THORACIC_SURGERY: 99 }, 2)
+    // 흉부는 METRO 0 + RURAL 2 — 2명까지만 빠지고 그 이상은 무시된다(hireFromRegions와 동일 계약).
+    expect(regionOf(after, 'METRO').doctors.THORACIC_SURGERY).toBe(0)
+    expect(regionOf(after, 'RURAL').doctors.THORACIC_SURGERY).toBe(0)
+    expect(regionOf(after, 'CAPITAL').doctors.THORACIC_SURGERY)
+      .toBe(regionOf(world, 'CAPITAL').doctors.THORACIC_SURGERY)
+  })
+
+  it('결정론: 같은 입력은 같은 결과', () => {
+    expect(resignFromRegions(initWorld(), { OBSTETRICS: 2 }, 3))
+      .toEqual(resignFromRegions(initWorld(), { OBSTETRICS: 2 }, 3))
+  })
+
+  it('입력 world를 변이하지 않는다', () => {
+    const world = initWorld()
+    const snapshot = JSON.parse(JSON.stringify(world))
+    resignFromRegions(world, { CARDIOLOGY: 2 }, 2)
+    expect(world).toEqual(snapshot)
+  })
+
+  /**
+   * 🔴 **사직은 채용과 다른 시드 스트림이다.** 같은 주에 채용(GROWTH)과 사직(결산)이 같은 salt를
+   * 공유하면 두 뽑기가 한 스트림을 밀어내며 서로의 궤적을 흔든다 — "채용을 했느냐"가 사직자의
+   * 출신 지역을 바꾸는 숨은 결합이다. salt를 가르면 두 사건이 서로 독립이다.
+   *
+   * 계측기는 hireFromRegions의 스트림 테스트와 같은 이유로 **강제되지 않는 과**여야 한다:
+   * 순환기(METRO 2 / RURAL 2)는 임계 0.5라 롤에 실제로 반응한다.
+   */
+  it('채용과 다른 salt를 쓴다 — 같은 (world, 과, 주)에서도 궤적이 갈리는 주가 있다', () => {
+    const metroBase = regionOf(initWorld(), 'METRO').doctors.CARDIOLOGY
+    const pickOf = (world: WorldState) =>
+      regionOf(world, 'METRO').doctors.CARDIOLOGY < metroBase ? 'METRO' : 'RURAL'
+
+    let sawDifferent = false
+    for (let week = 1; week <= 20; week++) {
+      const hired = pickOf(hireFromRegions(initWorld(), { CARDIOLOGY: 1 }, week))
+      const resigned = pickOf(resignFromRegions(initWorld(), { CARDIOLOGY: 1 }, week))
+      if (hired !== resigned) sawDifferent = true
+    }
+    expect(sawDifferent).toBe(true) // salt를 HIRE_SALT로 되돌리면 두 궤적이 완전히 붙어 거짓이 된다
   })
 })
 

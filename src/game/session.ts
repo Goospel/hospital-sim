@@ -1,7 +1,7 @@
-import type { Hospital, SetupChoices, Specialty } from './types'
+import type { Doctor, Hospital, SetupChoices, Specialty } from './types'
 import { buildHospital, bedExpansionCost, withinDeptCaps, DEPARTMENTS, DAYS_PER_WEEK, FIXED_BEDS } from './setup'
 import {
-  initWorld, applyEvent, selectEvent, stepWorld, hireFromRegions, transferPressure,
+  initWorld, applyEvent, selectEvent, stepWorld, hireFromRegions, resignFromRegions, transferPressure,
   EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent,
 } from './world'
 import {
@@ -11,7 +11,10 @@ import { DAY_LENGTH_MIN } from './daysim'
 import { buildSessionLedger, type Ledger } from './ledger'
 import { deptDayStats, type DeptDayStats } from './deptLedger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
-import { doctorCaseloads, stepFatigue } from './doctor'
+import {
+  doctorCaseloads, stepFatigue, stepSaturatedDays, resigningDoctors, applyResignations,
+  remapDoctorState, materializeRoster,
+} from './doctor'
 import { initSystem, deriveSystem, canHire, type SystemState } from './system'
 import { initialTreasury, doctorDeltaCost, withinTreasury } from './growth'
 import { SPECIALTY_LABEL } from './labels'
@@ -82,6 +85,13 @@ export interface SessionState {
    * 실려 진료 소요를 늘린다(occupiedUntilMin). 판정 우선순위·사유는 그대로다.
    */
   fatigue: Record<string, number>
+  /**
+   * 유닛별 **피로 포화로 마감한 날 수**(누적·주 간 유지·리셋 없음). 사직 판정의 유일한 입력.
+   * completeReceiving이 fatigue 스텝 직후 같은 자리에서 갱신한다.
+   */
+  saturatedDays: Record<string, number>
+  /** 이번 주에 사직한 유닛들(주간 결산 표시용). completeWeek이 채우고 nextWeek이 비운다. */
+  weekResignations: Doctor[]
   choices: SetupChoices   // 현재 병원 명단(매주 성장). 1주차 이후 재투자의 시작점.
   beds: number            // 병상 티어(초기 FIXED_BEDS).
   treasury: number        // 금고 잔고(억).
@@ -96,7 +106,7 @@ export interface SessionState {
 
 export function startSession(): SessionState {
   return {
-    phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {}, saturatedDays: {}, weekResignations: [],
     choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0, system: initSystem(),
   }
 }
@@ -127,6 +137,7 @@ export function enterWorldEvent(state: SessionState): SessionState {
   const world = applyEvent(initWorld(), event)
   return {
     phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    saturatedDays: {}, weekResignations: [],
     choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0,
     system: deriveSystem(world), // 세계가 있는 자리에선 항상 파생 — completeSetup과 같은 이유(원천 통일)
   }
@@ -140,6 +151,7 @@ export function beginSetup(state: SessionState): SessionState {
   return {
     phase: 'SETUP', world: state.world, event: state.event,
     week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    saturatedDays: {}, weekResignations: [],
     choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0,
     // LANDING에서 바로 올 수도 있어 world가 없을 수 있다 — 그때만 기본 세계에서 파생한다.
     system: deriveSystem(state.world ?? initWorld()),
@@ -159,6 +171,8 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
     history: [],
     morningNews: [], // 개원 첫날 아침엔 어제가 없다
     fatigue: {},
+    saturatedDays: {},
+    weekResignations: [],
     choices,
     beds: FIXED_BEDS,
     treasury: initialTreasury(choices, world.departments),
@@ -227,11 +241,14 @@ export function completeReceiving(state: SessionState): SessionState {
   }
   const roster = state.hospital?.roster ?? []
   const caseloads = doctorCaseloads(roster, state.receiving)
+  const fatigue = stepFatigue(state.fatigue, caseloads)
   return {
     ...state,
     phase: 'DAY_END',
     ledgerDays: [...state.ledgerDays, recordDay(state.day, state.receiving)],
-    fatigue: stepFatigue(state.fatigue, caseloads),
+    fatigue,
+    // 포화 일수는 방금 스텝한 피로를 읽는다 — 사직 판정의 유일한 입력이 여기서 자란다.
+    saturatedDays: stepSaturatedDays(state.saturatedDays, fatigue),
   }
 }
 
@@ -318,12 +335,54 @@ export function completeWeek(state: SessionState): SessionState {
   const treasury = state.treasury + weekNet
   // 금고가 음수인 채 마감되면 연속 카운트를 올리고, 흑자로 돌아오면 0으로 리셋한다.
   const insolvencyStreak = treasury < 0 ? state.insolvencyStreak + 1 : 0
+
+  /*
+    ── 사직 ── (설계 2026-07-25-attrition-resignation-design.md)
+    포화 상태로 일한 날이 임계를 넘긴 유닛이 떠난다. 떠난 사람은 **전국 풀에서 사라진다**
+    (다른 병원으로 간 게 아니라 필수의료를 떠났다 — 결정 A).
+
+    📌 **그 차감은 세계에서 한다**(머지 통합 2026-07-27): 풀은 `hirablePool(world.regions)`의
+       파생값이라 풀을 직접 깎으면(옛 `releaseFromPool`) 불변식 `pool ≡ hirablePool(world.regions)`을
+       우회하는 두 번째 쓰기 경로가 된다. 그래서 `resignFromRegions`가 세계에서 빼고(**소멸** —
+       채용의 `hireFromRegions`는 이동이다) 풀은 `deriveSystem`으로 따라온다. 결과적으로
+       **completeWeek도 세계가 변하는 지점**이라, 일관성 불변식 테스트가 여기까지 걸려 있다.
+
+    ⏱️ 시점 계약(설계 §5): 이번 주 숫자(weekNet)는 이미 마감된 ledgerDays로 계산됐으므로
+       사직이 그 주를 바꾸지 않는다. 고정비·처리량이 달라지는 건 병원이 재구성되는 **다음 주**
+       부터다 — 그래서 "사람이 떠나면 장부가 좋아진다"는 결과가 한 주 뒤에 나타나고,
+       플레이어는 결산 두 장을 걸쳐 그 인과를 스스로 잇는다.
+
+    ⚠️ hospital은 여기서 재구성하지 않는다. 2주차 이후 재구성은 GROWTH의 applyGrowth가
+       줄어든 choices를 받아서 한다. 결산 화면에서 병원을 바꾸면 이미 없는 의사로 그 주
+       숫자가 다시 계산돼 흔들린다.
+  */
+  const deps = state.world?.departments ?? DEPARTMENTS
+  const roster = state.hospital?.roster ?? []
+  const resigning = resigningDoctors(roster, state.saturatedDays)
+  const applied = applyResignations(state.choices, resigning, deps)
+  const resignedIds = new Set(resigning.map((d) => d.id))
+  const survivors = roster.filter((d) => !resignedIds.has(d.id))
+  const nextRoster = materializeRoster(applied.choices, deps)
+  // 사직분을 세계에서 뺀다 — 사직이 없으면 poolDelta가 비어 세계·풀 모두 무변경이다.
+  const world = resignFromRegions(
+    state.world ?? initWorld(),
+    applied.poolDelta as Partial<Record<Specialty, number>>,
+    state.week,
+  )
+
   return {
     ...state,
     phase: 'WEEK_SUMMARY',
     history: [...state.history, ...state.ledgerDays],
     treasury,
     insolvencyStreak,
+    choices: applied.choices,
+    world,
+    system: deriveSystem(world, state.system.poolInitial),
+    // id가 밀리므로 유닛별 상태를 사람에 맞춰 옮긴다 — 안 하면 생존자가 사직자의 포화를 상속한다.
+    fatigue: remapDoctorState(survivors, nextRoster, state.fatigue),
+    saturatedDays: remapDoctorState(survivors, nextRoster, state.saturatedDays),
+    weekResignations: resigning,
   }
 }
 
@@ -354,6 +413,7 @@ export function nextWeek(state: SessionState): SessionState {
     ledgerDays: [],
     receiving: undefined,
     morningNews: [],
+    weekResignations: [], // 지난주 사직 목록은 그 결산 화면의 것이다 — 다음 주로 넘기지 않는다
     // 갱신된 세계에서 풀을 재파생 — 옛 backgroundAttrition을 대체한다(감소분은 이제 드리프트가 만든다).
     system: deriveSystem(world, state.system.poolInitial),
   }

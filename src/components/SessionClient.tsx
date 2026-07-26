@@ -103,6 +103,7 @@ export default function SessionClient() {
           treasury={session.treasury}
           insolvencyStreak={session.insolvencyStreak}
           lines={weekLines}
+          resignations={session.weekResignations.map((d) => ({ dept: d.dept, name: d.name }))}
           onNextWeek={() => setSession(nextWeek(session))}
           onEnd={() => setSession(endGame(session))}
         />

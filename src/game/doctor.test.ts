@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   materializeRoster, walkinDept, handlingDept, doctorCaseloads, stepFatigue,
   fatigueSlowFactor, FATIGUE_MAX, FATIGUE_SLOW_FROM, FATIGUE_RED, FATIGUE_FREE_MIN, FATIGUE_REST,
+  stepSaturatedDays, RESIGN_SATURATED_DAYS, resigningDoctors, remapDoctorState, applyResignations,
 } from './doctor'
 import { createCallQueue, decide, initReceiving } from './receiving'
 import { buildHospital, DEPARTMENTS } from './setup'
@@ -230,5 +231,131 @@ describe('fatigueSlowFactor — 피로 → 진료 소요 배율(조용한 침식
     for (let f = 0; f < FATIGUE_MAX; f++) {
       expect(fatigueSlowFactor(f + 1)).toBeGreaterThanOrEqual(fatigueSlowFactor(f))
     }
+  })
+})
+
+describe('stepSaturatedDays — 포화로 마감한 날만 센다', () => {
+  it('마감 피로가 FATIGUE_MAX면 +1', () => {
+    expect(stepSaturatedDays({}, { a: FATIGUE_MAX })).toEqual({ a: 1 })
+  })
+
+  it('포화 미달은 그대로 — 리셋이 아니다', () => {
+    expect(stepSaturatedDays({ a: 3 }, { a: FATIGUE_MAX - 1 })).toEqual({ a: 3 })
+    expect(stepSaturatedDays({ a: 3 }, { a: 0 })).toEqual({ a: 3 })
+  })
+
+  it('누적한다', () => {
+    let s = stepSaturatedDays({}, { a: FATIGUE_MAX })
+    s = stepSaturatedDays(s, { a: FATIGUE_MAX })
+    expect(s.a).toBe(2)
+  })
+
+  it('임계는 1보다 크다(하루 만에 안 떠난다)', () => {
+    expect(RESIGN_SATURATED_DAYS).toBeGreaterThan(1)
+  })
+})
+
+describe('resigningDoctors — 임계를 넘긴 유닛', () => {
+  const roster = materializeRoster(
+    { hospitalName: 'h', doctors: { CARDIOLOGY: 2, AESTHETICS: 1 } }, DEPARTMENTS,
+  )
+  const cardio1 = 'doc-CARDIOLOGY-1'
+  const cardio2 = 'doc-CARDIOLOGY-2'
+
+  it('임계 미달이면 아무도 안 떠난다', () => {
+    expect(resigningDoctors(roster, { [cardio1]: RESIGN_SATURATED_DAYS - 1 })).toEqual([])
+  })
+
+  it('임계 도달 유닛만 떠난다', () => {
+    const out = resigningDoctors(roster, { [cardio1]: RESIGN_SATURATED_DAYS, [cardio2]: 1 })
+    expect(out.map((d) => d.id)).toEqual([cardio1])
+  })
+
+  it('여러 명이 동시에 떠날 수 있다', () => {
+    const out = resigningDoctors(roster, {
+      [cardio1]: RESIGN_SATURATED_DAYS, [cardio2]: RESIGN_SATURATED_DAYS + 3,
+    })
+    expect(out.map((d) => d.id).sort()).toEqual([cardio1, cardio2])
+  })
+
+  it('명단에 없는 키는 무시한다(구 상태 잔재)', () => {
+    expect(resigningDoctors(roster, { 'doc-GHOST-9': 99 })).toEqual([])
+  })
+})
+
+describe('remapDoctorState — id 재번호에도 상태가 사람을 따라간다 [R-4]', () => {
+  const before: SetupChoices = { hospitalName: 'h', doctors: { CARDIOLOGY: 2 } }
+  const after: SetupChoices = { hospitalName: 'h', doctors: { CARDIOLOGY: 1 } }
+  const oldRoster = materializeRoster(before, DEPARTMENTS)
+  const newRoster = materializeRoster(after, DEPARTMENTS)
+
+  it('1번이 떠나면 생존자(옛 2번)가 자기 값을 유지한다 — 사직자 값을 상속하지 않는다', () => {
+    const state = { 'doc-CARDIOLOGY-1': 99, 'doc-CARDIOLOGY-2': 7 }
+    const survivors = oldRoster.filter((d) => d.id !== 'doc-CARDIOLOGY-1')
+    expect(remapDoctorState(survivors, newRoster, state)).toEqual({ 'doc-CARDIOLOGY-1': 7 })
+  })
+
+  it('사직자 값은 어디에도 남지 않는다', () => {
+    const state = { 'doc-CARDIOLOGY-1': 99, 'doc-CARDIOLOGY-2': 7 }
+    const survivors = oldRoster.filter((d) => d.id !== 'doc-CARDIOLOGY-1')
+    expect(Object.values(remapDoctorState(survivors, newRoster, state))).not.toContain(99)
+  })
+
+  it('과가 여러 개면 서로 섞이지 않는다', () => {
+    const b: SetupChoices = { hospitalName: 'h', doctors: { CARDIOLOGY: 2, AESTHETICS: 2 } }
+    const a: SetupChoices = { hospitalName: 'h', doctors: { CARDIOLOGY: 1, AESTHETICS: 2 } }
+    const oldR = materializeRoster(b, DEPARTMENTS)
+    const newR = materializeRoster(a, DEPARTMENTS)
+    const state = {
+      'doc-CARDIOLOGY-1': 1, 'doc-CARDIOLOGY-2': 2,
+      'doc-AESTHETICS-1': 10, 'doc-AESTHETICS-2': 20,
+    }
+    const out = remapDoctorState(oldR.filter((d) => d.id !== 'doc-CARDIOLOGY-1'), newR, state)
+    expect(out['doc-CARDIOLOGY-1']).toBe(2)
+    expect(out['doc-AESTHETICS-1']).toBe(10)
+    expect(out['doc-AESTHETICS-2']).toBe(20)
+  })
+
+  it('빈 상태는 빈 결과', () => {
+    expect(remapDoctorState(oldRoster, newRoster, {})).toEqual({})
+  })
+})
+
+describe('applyResignations — 명단·풀 델타를 한 번에', () => {
+  const cardioCands = CANDIDATES.filter((c) => c.dept === 'CARDIOLOGY').slice(0, 2)
+  const choices: SetupChoices = {
+    hospitalName: 'h', doctors: { CARDIOLOGY: 2 }, hiredIds: cardioCands.map((c) => c.id),
+  }
+  const roster = materializeRoster(choices, DEPARTMENTS)
+
+  it('과 인원이 줄고 hiredIds에서 사직자 후보가 빠진다 [R-3]', () => {
+    const out = applyResignations(choices, [roster[0]], DEPARTMENTS)
+    expect(out.choices.doctors.CARDIOLOGY).toBe(1)
+    expect(out.choices.hiredIds).not.toContain(roster[0].candidateId)
+    expect(out.choices.hiredIds).toContain(roster[1].candidateId)
+    expect(materializeRoster(out.choices, DEPARTMENTS)).toHaveLength(1)
+  })
+
+  it('배후과 사직은 poolDelta에 실린다', () => {
+    expect(applyResignations(choices, [roster[0]], DEPARTMENTS).poolDelta).toEqual({ CARDIOLOGY: 1 })
+  })
+
+  it('수익과 사직은 poolDelta가 비어 있다(풀 개념이 없다)', () => {
+    const aes: SetupChoices = { hospitalName: 'h', doctors: { AESTHETICS: 1 } }
+    const r = materializeRoster(aes, DEPARTMENTS)
+    expect(applyResignations(aes, r, DEPARTMENTS).poolDelta).toEqual({})
+  })
+
+  it('사직자가 없으면 choices가 그대로다', () => {
+    const out = applyResignations(choices, [], DEPARTMENTS)
+    expect(out.choices.doctors.CARDIOLOGY).toBe(2)
+    expect(out.poolDelta).toEqual({})
+  })
+
+  it('같은 과 2명이 동시에 떠나면 인원이 0이 된다', () => {
+    const out = applyResignations(choices, roster, DEPARTMENTS)
+    expect(out.choices.doctors.CARDIOLOGY).toBe(0)
+    expect(out.poolDelta).toEqual({ CARDIOLOGY: 2 })
+    expect(materializeRoster(out.choices, DEPARTMENTS)).toHaveLength(0)
   })
 })

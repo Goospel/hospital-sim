@@ -13,7 +13,7 @@ import { createCallQueue, decide, isElective } from './receiving'
 import { DAYS_PER_WEEK, FIXED_BEDS, SETUP_BUDGET_MANWON } from './setup'
 import { DAY_LENGTH_MIN } from './daysim'
 import { hirablePool, POOL_INITIAL } from './system'
-import { FATIGUE_SLOW_FROM } from './doctor'
+import { FATIGUE_SLOW_FROM, RESIGN_SATURATED_DAYS } from './doctor'
 import type { IncomingCall, SetupChoices, Specialty } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
@@ -583,6 +583,65 @@ describe('피로 누적 — 표시 레이어(판정 무관)', () => {
   })
 })
 
+describe('사직 — completeWeek 통합', () => {
+  const soloCardio: SetupChoices = { hospitalName: 'h', doctors: { AESTHETICS: 1, CARDIOLOGY: 1 } }
+
+  /** 포화 일수를 직접 심어 임계를 만든다 — 여러 주를 돌리지 않고 계약만 잠근다. */
+  function seedSaturated(s: SessionState, id: string): SessionState {
+    return { ...s, saturatedDays: { ...s.saturatedDays, [id]: RESIGN_SATURATED_DAYS } }
+  }
+  const cardioIdOf = (s: SessionState) => s.hospital!.roster!.find((d) => d.dept === 'CARDIOLOGY')!.id
+
+  it('임계를 넘긴 순환기 1인이 사직하고 결산에 실린다', () => {
+    let s = runWeek(soloCardio, true)
+    s = completeWeek(seedSaturated(s, cardioIdOf(s)))
+    expect(s.weekResignations.map((r) => r.dept)).toEqual(['CARDIOLOGY'])
+    expect(s.choices.doctors.CARDIOLOGY ?? 0).toBe(0)
+  })
+
+  it('사직은 풀을 줄인다 — 되돌릴 수 없다 [R-2]', () => {
+    let s = runWeek(soloCardio, true)
+    const before = s.system.pool.CARDIOLOGY
+    s = completeWeek(seedSaturated(s, cardioIdOf(s)))
+    expect(s.system.pool.CARDIOLOGY).toBe(before - 1)
+  })
+
+  it('임계 미달이면 사직 0 — 승격 전과 동일 [R-0]', () => {
+    const s = completeWeek(runWeek(soloCardio, true))
+    expect(s.weekResignations).toEqual([])
+    expect(s.choices.doctors.CARDIOLOGY).toBe(1)
+  })
+
+  it('생존자가 사직자의 포화를 물려받지 않는다 [R-4]', () => {
+    let s = runWeek({ hospitalName: 'h', doctors: { CARDIOLOGY: 2 } }, true)
+    s = { ...s, saturatedDays: { 'doc-CARDIOLOGY-1': RESIGN_SATURATED_DAYS, 'doc-CARDIOLOGY-2': 1 } }
+    s = completeWeek(s)
+    expect(s.saturatedDays['doc-CARDIOLOGY-1']).toBe(1) // 옛 2번의 1이 새 1번으로
+  })
+
+  it('수익과만 있으면 7일을 완주해도 사직 0 [R-1]', () => {
+    expect(completeWeek(runWeek(collaborator, true)).weekResignations).toEqual([])
+  })
+
+  it('completeWeek은 병원을 재구성하지 않는다 — 그 주 숫자가 흔들리면 안 된다', () => {
+    const end = runWeek(soloCardio, true)
+    const rosterBefore = end.hospital!.roster!.length
+    // 같은 주를 사직 유무로 두 번 닫아 본다 — 이번 주 숫자는 사직과 무관해야 한다(설계 §5 시점 계약).
+    const without = completeWeek(end)
+    const withResign = completeWeek(seedSaturated(end, cardioIdOf(end)))
+    expect(withResign.weekResignations).toHaveLength(1)
+    expect(withResign.treasury).toBe(without.treasury)
+    expect(withResign.hospital!.roster!.length).toBe(rosterBefore) // 재구성은 GROWTH에서
+  })
+
+  it('nextWeek은 지난주 사직 목록을 비운다', () => {
+    let s = runWeek(soloCardio, true)
+    s = completeWeek(seedSaturated(s, cardioIdOf(s)))
+    expect(s.weekResignations).toHaveLength(1)
+    expect(nextWeek(s).weekResignations).toEqual([])
+  })
+})
+
 describe('성장 상태 — 개원 보존 + 금고', () => {
   const choices = { hospitalName: '한바다', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } } // 채용비 5,000+30,000=35,000
 
@@ -794,9 +853,10 @@ describe('폐업 판정 — insolvencyStreak (스펙 2026-07-24 §6)', () => {
  *
  * 🔴 이 블록의 몸통은 **일관성 불변식** `system.pool ≡ hirablePool(world.regions)`다.
  * 풀이 세계의 파생값이 된 뒤로 둘이 어긋나면 "돈은 있는데 왜 못 뽑나"가 설명 불가가 된다 —
- * 세계를 실어 나르는 **다섯 지점**(enterWorldEvent·beginSetup·completeSetup·nextWeek·applyGrowth)
- * 전부에서 deriveSystem을 밟는지 지점별로 못박는다. `startSession`만 예외다 — 그 자리엔 world가
- * 아직 없어 파생할 원천 자체가 없다(system.ts initSystem docstring).
+ * 세계를 실어 나르는 **여섯 지점**(enterWorldEvent·beginSetup·completeSetup·**completeWeek**·
+ * nextWeek·applyGrowth) 전부에서 deriveSystem을 밟는지 지점별로 못박는다. `startSession`만
+ * 예외다 — 그 자리엔 world가 아직 없어 파생할 원천 자체가 없다(system.ts initSystem docstring).
+ * (completeWeek이 여섯 번째로 합류한 건 머지 통합 2026-07-27 — 사직의 풀 차감이 세계 차감이 됐다.)
  */
 describe('세계 시뮬 배선 (spec §7)', () => {
   // 리터럴 재기재 대신 RegionState.doctors 키에서 파생 — 과가 늘어도 자동 포함(world.test.ts와 같은 이유).
@@ -837,6 +897,38 @@ describe('세계 시뮬 배선 (spec §7)', () => {
     const next = nextWeek(summary)
     expect(next.system.pool).toEqual(hirablePool(next.world!.regions)) // 🔴 일관성 불변식
     expect(ruralTotal(next.world!)).toBeLessThan(ruralTotal(summary.world!)) // 드리프트 1~2명
+  })
+
+  /**
+   * 🔴 **completeWeek도 세계가 변하는 지점이다**(머지 통합 2026-07-27). 사직은 원래
+   * `releaseFromPool`로 **풀을 직접** 깎았는데(main #121), 그건 파생 아키텍처에서 금지된 두 번째
+   * 쓰기 경로다 — 풀만 줄고 세계는 그대로여서 `pool ≡ hirablePool(world.regions)`가 조용히 깨진다.
+   * 지금은 `resignFromRegions`가 METRO·RURAL에서 빼고 `deriveSystem`이 풀을 따라온다.
+   *
+   * 두 단정이 각각 다른 돌연변이를 잡는다: 일관성 단정은 **deriveSystem 생략**을,
+   * `−1` 단정은 **resignFromRegions 생략**(사직해도 세계 불변)을 잡는다.
+   */
+  it('completeWeek(사직): 사직분이 world.regions에서 빠지고 pool 일관성이 유지된다', () => {
+    const soloCardio: SetupChoices = { hospitalName: 'h', doctors: { AESTHETICS: 1, CARDIOLOGY: 1 } }
+    const end = runWeek(soloCardio, true)
+    const cardioId = end.hospital!.roster!.find((d) => d.dept === 'CARDIOLOGY')!.id
+    const s = completeWeek({ ...end, saturatedDays: { [cardioId]: RESIGN_SATURATED_DAYS } })
+    expect(s.weekResignations).toHaveLength(1)
+    expect(s.system.pool).toEqual(hirablePool(s.world!.regions)) // 🔴 일관성 불변식
+    // 사직 = 소멸이라 METRO+RURAL 합이 실제로 1 줄었다(CAPITAL로 이동한 게 아니다).
+    expect(s.system.pool.CARDIOLOGY).toBe(end.system.pool.CARDIOLOGY - 1)
+    expect(regionOf(s.world!, 'CAPITAL').doctors.CARDIOLOGY)
+      .toBe(regionOf(end.world!, 'CAPITAL').doctors.CARDIOLOGY)
+    // 에필로그 "N → 잔여"의 분모는 불변 — 그래서 사직분이 잔여 쪽에서 보인다(#121 계약).
+    expect(s.system.poolInitial).toEqual(end.system.poolInitial)
+  })
+
+  it('completeWeek(사직 없음): 세계도 풀도 안 변한다', () => {
+    const end = runWeek(conscientious, essentialFirst)
+    const s = completeWeek(end)
+    expect(s.weekResignations).toEqual([])
+    expect(s.world).toEqual(end.world)
+    expect(s.system).toEqual(end.system)
   })
 
   it('applyGrowth: 배후과 채용이 world.regions에서 차감되고 pool 일관성이 유지된다', () => {
