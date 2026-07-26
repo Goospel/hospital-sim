@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, EVENT_CATALOG, OPENING_EVENT } from './world'
 import { DEPARTMENTS } from './setup'
+import { POOL_INITIAL } from './system'
 import type { DeptKey, DepartmentSpec, Specialty } from './types'
 
 // 외생 이벤트가 세계 파라미터(DEPARTMENTS 채용 경제)를 재구성하는 순수 코어.
@@ -143,9 +144,12 @@ describe('세계 이벤트 브리핑 — 실제 정책 도구(각색 억 손익 
   })
 })
 
-const SPECIALTIES: Specialty[] = [
-  'THORACIC_SURGERY', 'CARDIOLOGY', 'OBSTETRICS', 'NEUROSURGERY', 'GENERAL_SURGERY', 'INTERNAL_MEDICINE',
-]
+/**
+ * 필수과 전수 — 리터럴로 재기재하지 않고 `RegionState.doctors`의 키에서 **파생**한다.
+ * 리터럴이면 Specialty 유니온에 과가 늘어도 이 배열은 조용히 그대로여서, 새 과가 모든
+ * 지역 불변식 검사에서 미커버로 빠진다(tsc가 못 잡는 무성 실패). 파생이면 자동으로 포함된다.
+ */
+const SPECIALTIES = Object.keys(regionOf(initWorld(), 'RURAL').doctors) as Specialty[]
 
 describe('지역 세계 — 데이터 모델 (spec 2026-07-26 §2)', () => {
   it('initWorld는 CAPITAL·METRO·RURAL 3개 지역을 이 순서로 갖는다', () => {
@@ -180,35 +184,70 @@ describe('지역 세계 — 데이터 모델 (spec 2026-07-26 §2)', () => {
     expect(backupHospitals(region, 'NEUROSURGERY')).toBe(0)
   })
 
-  it('METRO+RURAL 의사 합은 기존 POOL_INITIAL(2/4/3/3/5/6)과 정확히 같다 — 기존 밸런스 보존', () => {
+  // 기대값을 리터럴로 다시 적지 않고 **실제 POOL_INITIAL과 비교**한다 — 이중 기재면 채용 풀을
+  // 튜닝했을 때 이 테스트가 옛 숫자를 지키며 통과해, 보존하려던 그 일관성을 놓친다.
+  it('METRO+RURAL 의사 합은 기존 POOL_INITIAL과 정확히 같다 — 기존 밸런스 보존', () => {
     const world = initWorld()
     const metro = regionOf(world, 'METRO')
     const rural = regionOf(world, 'RURAL')
-    const expected: Record<Specialty, number> = {
-      THORACIC_SURGERY: 2, CARDIOLOGY: 4, OBSTETRICS: 3,
-      NEUROSURGERY: 3, GENERAL_SURGERY: 5, INTERNAL_MEDICINE: 6,
-    }
     for (const s of SPECIALTIES) {
-      expect(metro.doctors[s] + rural.doctors[s]).toBe(expected[s])
+      expect(metro.doctors[s] + rural.doctors[s]).toBe(POOL_INITIAL[s])
     }
   })
 })
+
+const total = (w: ReturnType<typeof initWorld>, key: 'CAPITAL' | 'METRO' | 'RURAL') =>
+  SPECIALTIES.reduce((n, s) => n + regionOf(w, key).doctors[s], 0)
 
 describe('stepWorld — 주간 드리프트 (spec §3)', () => {
   it('결정론: 같은 (world, week)는 항상 같은 결과', () => {
     expect(stepWorld(initWorld(), 3)).toEqual(stepWorld(initWorld(), 3))
   })
 
-  it('매주 RURAL에서 1~2명이 떠나고, 떠난 만큼 CAPITAL이 받는다(전국 총원 보존)', () => {
-    const before = initWorld()
-    const after = stepWorld(before, 2)
-    const total = (w: ReturnType<typeof initWorld>, key: 'CAPITAL' | 'METRO' | 'RURAL') =>
-      SPECIALTIES.reduce((n, s) => n + regionOf(w, key).doctors[s], 0)
-    const ruralLoss = total(before, 'RURAL') - total(after, 'RURAL')
-    expect(ruralLoss).toBeGreaterThanOrEqual(1)
-    expect(ruralLoss).toBeLessThanOrEqual(2)
-    expect(total(after, 'CAPITAL') - total(before, 'CAPITAL')).toBe(ruralLoss)
-    expect(total(after, 'METRO')).toBe(total(before, 'METRO'))
+  /**
+   * 보존은 **매주** 성립해야 한다 — 한 주만 재면 후기 주차(고갈 직전, 추첨 후보가 1~2과로 좁아진
+   * 구간)에서 보존이 깨지는 걸 놓친다. 그래서 12주까지 돌며 주마다 네 불변식을 다 본다.
+   */
+  it('매주 RURAL 손실 = CAPITAL 증가, METRO 불변, 남아 있으면 1~2명 (12주 전 구간)', () => {
+    let world = initWorld()
+    for (let week = 2; week <= 12; week++) {
+      const before = world
+      world = stepWorld(before, week)
+      const ruralLoss = total(before, 'RURAL') - total(world, 'RURAL')
+      // 전국 총원 보존: RURAL이 잃은 만큼 정확히 CAPITAL이 받고, METRO는 드리프트에 안 낀다.
+      expect(total(world, 'CAPITAL') - total(before, 'CAPITAL')).toBe(ruralLoss)
+      expect(total(world, 'METRO')).toBe(total(before, 'METRO'))
+      // 페이스: 남은 사람이 있으면 반드시 1명 이상 빠지고, 한 주에 2명을 넘지 않는다.
+      if (total(before, 'RURAL') > 0) expect(ruralLoss).toBeGreaterThanOrEqual(1)
+      expect(ruralLoss).toBeLessThanOrEqual(2)
+    }
+  })
+
+  /**
+   * 특성화 테스트 — 드리프트 **페이스에 핀을 박는다**(코디네이터 수용값, 2026-07-26).
+   *
+   * RURAL 초기 13명이 10주차에 소진되고 그 뒤 stepWorld는 no-op이 된다 = 압력 포화.
+   * 이건 검증이 아니라 **현재 거동의 기록**이다: 페이스가 바뀌면(초기값·EXTRA_DRIFT_CHANCE·
+   * LAWSUIT_DRIFT_WEIGHT·시드 salt 중 무엇이든) 이 테스트가 깨져 변화를 **의도적으로 승인**하게 만든다.
+   * 실제로 salt 축을 고치자 소진이 9→10주차로 밀렸고, 핀이 없었으면 조용히 지나갔다.
+   *
+   * ⚠️ 이 숫자를 "고치는" 게 목적이면 튜닝이 아니라 여기부터 고쳐라 — 페이스는 의도된 값이다.
+   */
+  it('[특성화] RURAL은 정확히 10주차에 소진되고, 그 뒤 stepWorld는 no-op이다', () => {
+    let world = initWorld()
+    expect(total(world, 'RURAL')).toBe(13) // 초기 13명 — 소진 주차를 정하는 분자
+
+    // 🔴 **경계를 양쪽에서 잡는다.** "10주차에 0"만 재면 페이스가 **빨라져도** 통과한다
+    // (8주차에 이미 0이어도 10주차엔 여전히 0) — 실측으로 EXTRA_DRIFT_CHANCE를 0.5로 올려도
+    // 안 깨졌다. 9주차에 아직 남아 있음을 함께 못박아야 가속·감속이 둘 다 걸린다.
+    for (let week = 2; week <= 9; week++) world = stepWorld(world, week)
+    expect(total(world, 'RURAL')).toBe(1) // 9주차 끝: 아직 1명 — 여기서 0이면 페이스가 빨라진 것
+
+    world = stepWorld(world, 10)
+    expect(total(world, 'RURAL')).toBe(0) // 10주차에 소진 = 압력 포화
+
+    // 소진 후엔 뽑을 후보가 없어 입력을 그대로 반환한다(참조 동일성까지).
+    for (let week = 11; week <= 14; week++) expect(stepWorld(world, week)).toBe(world)
   })
 
   it('의사 수는 0 밑으로 내려가지 않고, hospitals는 드리프트로 변하지 않는다', () => {
@@ -221,25 +260,24 @@ describe('stepWorld — 주간 드리프트 (spec §3)', () => {
   })
 
   /**
-   * 🔴 **손실 총량을 그냥 비교하면 이 테스트는 공허하다** — 두 교란요인 때문에 가중치를 3→1로
-   * 지워도 통과한다(실측 2026-07-26, 아래 표).
+   * 🔴 **손실 총량을 그냥 비교하면 이 테스트는 공허하다** — 두 교란요인 때문에
+   * LAWSUIT_DRIFT_WEIGHT를 1로 지워도 통과한다(실측 2026-07-26).
    *
    *   ① **집단 크기**: 위험과는 5개(내과만 안전)라, 균등 추첨이어도 손실이 5배로 쏠린다.
-   *      `risky=5 / safe=1`도 `5 > 1`로 통과한다 — 가중이 아니라 과 개수를 재고 있었다.
-   *   ② **고갈**: RURAL 총원 13명이 9주차에 전멸해, 그 뒤로는 누적 손실이 가중치와 무관하게
+   *      `risky=4 / safe=1`도 `4 > 1`로 통과한다 — 가중이 아니라 과 개수를 재고 있었다.
+   *   ② **고갈**: RURAL 총원 13명이 10주차에 소진돼, 그 뒤로는 누적 손실이 가중치와 무관하게
    *      초기 인구(위험과 10 / 내과 3)로 수렴한다 — 창을 넓히면 **더** 공허해진다.
    *
-   * | 창 | 가중 3 | 가중 1 |
+   * | 창 2..6 | 가중 3(실제) | 가중 1(돌연변이) |
    * |---|---|---|
-   * | 2..6 총량 | 8 vs 1 통과 | 7 vs 2 **통과(공허)** |
-   * | 2..6 과당 | 1.6 vs 1 통과 | 1.4 vs 2 **깨짐 ✓** |
-   * | 2..9 총량 | 10 vs 3 | 10 vs 3 — 수치까지 동일 |
+   * | 총량 | 7 vs 1 통과 | 5 vs 3 **통과(공허)** |
+   * | **과당** | **1.40 vs 1.00 통과** | **1.00 vs 3.00 깨짐 ✓** |
    *
    * 그래서 **과당 손실률**로 정규화한다 — driftOnce가 가중치를 *의사 1명당*이 아니라 *과 1개당*
    * 밀어넣으므로, 과당 비율이 정확히 그 가중치를 분리하는 척도다. 창(2..6)은 고갈 전이면서
-   * 양방향 여유가 있는 지점이다(넓히면 ②로 공허, 2..4로 좁히면 가중 1에서 1.00 vs 1.00 간발).
+   * 양방향 여유가 가장 큰 지점이다(넓히면 ②로 공허, 2..4로 좁히면 1.00 vs 0.00으로 여유가 준다).
    */
-  it('lawsuitRisk 과가 지방을 먼저 떠난다 — 과당 손실률이 안전과보다 높다 (가중 3배)', () => {
+  it('lawsuitRisk 과가 지방을 먼저 떠난다 — 과당 손실률이 안전과보다 높다 (LAWSUIT_DRIFT_WEIGHT)', () => {
     let world = initWorld()
     for (let week = 2; week <= 6; week++) world = stepWorld(world, week)
     const before = regionOf(initWorld(), 'RURAL')

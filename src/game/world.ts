@@ -183,40 +183,75 @@ export function selectEvent(index: number): WorldEvent {
   return EVENT_CATALOG[index]
 }
 
-/** 지역 간 1명 이동 — 불변 갱신. from에서 빼고 to에 더한다(0 하한). */
+/** lawsuitRisk 과가 추첨에서 갖는 가중 배수 — 고위험 필수과가 지방을 먼저 떠난다. */
+const LAWSUIT_DRIFT_WEIGHT = 3
+/** 한 주에 2명째가 떠날 시드 확률 — 이탈 페이스를 주당 1~2명으로 만드는 유일한 손잡이. */
+const EXTRA_DRIFT_CHANCE = 0.3
+/** 추첨 시드의 salt 축 — index 0=1차 추첨(11), 1=2차 추첨(12). daysim.ts callSeed의 salt 레지스트리 참조. */
+const DRIFT_PICK_SALT = [11, 12] as const
+/** "2명째가 떠나는가" 여부 롤의 salt — 추첨(11·12)과 다른 축이라야 aliasing이 없다. */
+const EXTRA_DRIFT_SALT = 15
+
+/**
+ * 지역 간 1명 이동 — 불변 갱신. from에서 빼고 to에 더한다.
+ *
+ * ⚠️ 소스가 0이면 **아무것도 안 한다**(조기 반환). 옛 코드는 `Math.max(0, n-1)`로 깎았는데,
+ * 그 클램프는 도달 불가 방어인 동시에 **도달했을 때 총원 보존 위반을 숨긴다** — from은 0에
+ * 머물고 to만 +1 되어 전국 총원이 조용히 늘어난다. 조기 반환이면 보존이 구조적으로 성립한다.
+ */
 function moveDoctor(world: WorldState, s: Specialty, from: RegionKey, to: RegionKey): WorldState {
+  if (regionOf(world, from).doctors[s] <= 0) return world
   const regions = world.regions.map((r) => {
-    if (r.key === from) return { ...r, doctors: { ...r.doctors, [s]: Math.max(0, r.doctors[s] - 1) } }
+    if (r.key === from) return { ...r, doctors: { ...r.doctors, [s]: r.doctors[s] - 1 } }
     if (r.key === to) return { ...r, doctors: { ...r.doctors, [s]: r.doctors[s] + 1 } }
     return r
   })
   return { ...world, regions }
 }
 
-/** RURAL에 남은 과 중 하나를 lawsuitRisk 가중(3배) 시드 추첨으로 골라 CAPITAL로 옮긴다. 없으면 null. */
-function driftOnce(world: WorldState, week: number, salt: number): WorldState | null {
+/**
+ * RURAL에 남은 과 중 하나를 LAWSUIT_DRIFT_WEIGHT 가중 시드 추첨으로 골라 CAPITAL로 옮긴다.
+ * 남은 과가 없으면 null. attempt는 그 주의 몇 번째 이탈인가(0=1명째, 1=2명째) — 시드 축을 가른다.
+ *
+ * 가중을 **과 1개당** 밀어넣는다(의사 1명당이 아니다) — 그래서 가중 효과를 측정하는 척도도
+ * 과당 손실률이다(world.test.ts의 그 테스트가 왜 정규화하는지의 근거).
+ */
+function driftOnce(world: WorldState, week: number, attempt: 0 | 1): WorldState | null {
   const rural = regionOf(world, 'RURAL')
   const weighted: Specialty[] = []
   for (const d of world.departments) {
     if (!d.providesBackup) continue // 수익과는 지역 시뮬 밖
     if (rural.doctors[d.providesBackup] <= 0) continue
-    const w = d.lawsuitRisk ? 3 : 1
+    const w = d.lawsuitRisk ? LAWSUIT_DRIFT_WEIGHT : 1
     for (let i = 0; i < w; i++) weighted.push(d.providesBackup)
   }
   if (weighted.length === 0) return null
-  const pick = weighted[Math.floor(seededUnit(callSeed(week, 0, 0, salt)) * weighted.length)]
-  return moveDoctor(world, pick, 'RURAL', 'CAPITAL')
+  const seed = callSeed(week, 0, 0, DRIFT_PICK_SALT[attempt])
+  return moveDoctor(world, weighted[Math.floor(seededUnit(seed) * weighted.length)], 'RURAL', 'CAPITAL')
 }
 
 /**
- * 주간 드리프트 — 매주 지방 이탈 1명(+시드 30%로 1명 추가), lawsuitRisk 과 가중 3배.
- * 의사는 줄어도 환자 발생(응급 콜 수)은 안 준다 — 격차가 스스로 벌어진다("필연"의 수학적 형태).
- * hospitals는 여기서 안 변한다(이벤트 전용). 순수·결정론(week 시드).
+ * 주간 드리프트 — 매주 지방 이탈 1명(+ EXTRA_DRIFT_CHANCE 롤이 통과하면 1명 추가),
+ * lawsuitRisk 과 LAWSUIT_DRIFT_WEIGHT 가중.
+ *
+ * 핵심은 빼기만 있고 더하기가 없다는 것이다: 의사는 줄어도 환자 발생(응급 콜 수)은 안 준다 —
+ * 격차가 개입 없이 스스로 벌어진다("필연"의 수학적 형태). hospitals는 여기서 안 변한다(이벤트 전용).
+ *
+ * 📌 **페이스는 의도된 값이다**(코디네이터 수용, 2026-07-26): RURAL 초기 13명이 **10주차에 소진**되고
+ * 그 뒤 stepWorld는 no-op이 된다 = 압력 포화. 실측 발동 창(2..10주 = 9주)에서 주별 이탈은
+ * 1,2,2,2,1,2,1,1,1 — 추가 이탈 롤이 **9주 중 4주** 통과한다. 롤 임계값이 EXTRA_DRIFT_CHANCE라고
+ * 짧은 창의 빈도가 그 값인 건 아니다(해시 스트림 편차).
+ *
+ * ⚠️ 이 페이스는 시드 salt에 붙어 있다 — salt를 바꾸면 주차가 밀린다(실측: 추가 롤을 index축에서
+ * EXTRA_DRIFT_SALT로 옮기자 소진이 9→10주차, 롤 통과가 5/8→4/9로 이동). 그래서 페이스는
+ * world.test.ts의 특성화 테스트가 핀을 박는다 — 튜닝하려면 그 테스트부터 고쳐라.
+ *
+ * ⚠️ **호출은 주 경계에서 1회** — 같은 week로 두 번 부르면 두 번 빠진다(멱등 아님).
+ * 순수·결정론(week 시드 파생).
  */
 export function stepWorld(world: WorldState, week: number): WorldState {
-  const first = driftOnce(world, week, 11)
-  if (!first) return world
-  const extra = seededUnit(callSeed(week, 0, 1, 11)) < 0.3
-  if (!extra) return first
-  return driftOnce(first, week, 12) ?? first
+  const first = driftOnce(world, week, 0)
+  if (!first) return world // RURAL 고갈 — 더 빠질 사람이 없다
+  if (seededUnit(callSeed(week, 0, 0, EXTRA_DRIFT_SALT)) >= EXTRA_DRIFT_CHANCE) return first
+  return driftOnce(first, week, 1) ?? first
 }

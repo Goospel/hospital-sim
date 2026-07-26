@@ -11,7 +11,15 @@ export function seededUnit(seed: number): number {
   return (z >>> 0) / 4294967296
 }
 
-/** (주,날,콜인덱스,salt) → 안정 정수 seed. salt로 소요시간·도착시각을 서로 다른 스트림으로 가른다. */
+/**
+ * (주,날,콜인덱스,salt) → 안정 정수 seed. salt로 소요시간·도착시각을 서로 다른 스트림으로 가른다.
+ *
+ * ⚠️ **스트림을 가르는 축은 salt다 — index를 그 용도로 쓰지 않는다.** index와 salt가 같은 합에
+ * 들어가((…*101 + salt)에 index가 이미 섞여 있다) `(i=1, salt=11)`과 `(i=0, salt=112)`처럼
+ * 서로 다른 의도가 같은 시드로 앨리어싱될 수 있다. 새 무작위 축이 필요하면 **새 salt를 받는다**.
+ *
+ * salt 사용처: 1·2·3(daysim) 7(구 attrition) 11·12·15(world 드리프트) 13(채용) 17·19(콜 발신)
+ */
 export function callSeed(week: number, day: number, index: number, salt: number): number {
   return (((week * 7 + day) * 97 + index) * 101 + salt) | 0
 }
