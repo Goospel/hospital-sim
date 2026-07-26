@@ -140,13 +140,21 @@ describe('경로 무효화', () => {
     expect(w.pawns[0]).not.toMatchObject({ x: 10, y: 14 })
     expect(isWalkable(w, w.pawns[0].x, w.pawns[0].y)).toBe(true)
   })
-  it('dest가 없는 폰은 진로가 막히면 재탐색 없이 멈춘다', () => {
+  it('dest가 없는 폰은 진로가 막히면 재탐색 없이 그 자리에 멈춘다', () => {
+    // ⚠️ 단언 위치가 이 테스트의 전부다. 최종 위치만 보면 무력하다 —
+    // 재탐색을 통째로 빼도(`return p`) 폰은 벽 두 개를 밟고 지나가 방 **밖**에서 멈추고,
+    // 그 최종 타일은 통행 가능이라 통과해버린다(실측). 그래서 ① 매 틱 통행 가능 확인
+    // ② 벽 두 칸 앞 정지 지점(10,20)을 못박는다.
     let w = walker(undefined)
     w = tick(w, 2)
     w = wallAcrossPath(w)
-    w = tick(w, 20)
+    for (let i = 0; i < 20; i++) {
+      w = tick(w, 1)
+      const p = w.pawns[0]
+      expect(isWalkable(w, p.x, p.y)).toBe(true)
+    }
+    expect(w.pawns[0]).toMatchObject({ x: 10, y: 20 })
     expect(w.pawns[0].path).toEqual([])
-    expect(isWalkable(w, w.pawns[0].x, w.pawns[0].y)).toBe(true)
   })
   it('진로가 멀쩡하면 경로를 다시 계산하지 않는다 — 원래 경로를 그대로 소비한다', () => {
     // 재탐색이 무조건 돌면 findPath(최장 ~3ms)가 폰 수 × 틱 수만큼 곱해진다.

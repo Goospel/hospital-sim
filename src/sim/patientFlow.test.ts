@@ -41,6 +41,15 @@ const run = (w: SimWorld, minutes = DAY_TICKS) => {
   return w
 }
 
+/** 조건이 참이 될 때까지 1분씩 돌린다 — 전제가 성립 안 하면 조용히 통과하지 말고 터진다 */
+function until(w: SimWorld, pred: (w: SimWorld) => boolean, limit = ARRIVAL_WINDOW_MIN) {
+  for (let i = 0; i < limit; i++) {
+    if (pred(w)) return w
+    w = tick(w, 1)
+  }
+  throw new Error('전제 실패 — 기다린 상태가 오지 않았다')
+}
+
 describe('환자 흐름', () => {
   it('하루를 돌리면 환자가 도착하고, 진료가 발생해 수익이 쌓인다', () => {
     const w0 = hospitalWorld(3)
@@ -286,16 +295,63 @@ describe('시간 계약', () => {
   })
 
   it('경로가 끊긴 환자를 도착으로 오인하지 않는다 — 판정은 path가 아니라 위치다', () => {
-    let w = hospitalWorld(3)
-    while (!w.pawns.some(p => p.stage === 'ENTERING')) {
-      w = tick(w, 1)
-      if (w.minute > ARRIVAL_WINDOW_MIN) throw new Error('전제 실패 — 환자가 오지 않았다')
-    }
+    let w = until(hospitalWorld(3), x => x.pawns.some(p => p.stage === 'ENTERING'))
     const target = w.pawns.find(p => p.stage === 'ENTERING')!
+    const before = w.stats.leftCount
     w = { ...w, pawns: w.pawns.map(p => (p.id === target.id ? { ...p, path: [] } : p)) }
     w = tick(w, 1)
-    const after = w.pawns.find(p => p.id === target.id)!
-    expect(after.stage).toBe('ENTERING') // 길이 끊긴 것이지 앉은 게 아니다
-    expect(after.arrivedMin).toBeUndefined()
+    // path가 0이라고 "앉은" 게 아니다. 좌초로 처리돼 떠나거나(LEFT_WAITING) 제거될 뿐,
+    // 어떤 경로로도 WAITING이 되어선 안 된다 — 그러면 앉지도 않은 환자가 좌석을 먹는다.
+    const after = w.pawns.find(p => p.id === target.id)
+    expect(after?.stage ?? 'LEFT_WAITING').toBe('LEFT_WAITING')
+    expect(after?.arrivedMin).toBeUndefined()
+    expect(w.stats.leftCount).toBe(before + 1)
+  })
+})
+
+describe('좌초 해소', () => {
+  // 경로 무효화의 나머지 절반. tick은 갈 수 없게 된 폰의 path를 비우는 데서 멈추고,
+  // "그래서 그 폰을 어떻게 할 것인가"는 스테이지 로직 몫이다. 이 절반이 빠져 있으면
+  // 합법적인 건설 **한 번**으로 환자가 영구 정지하고, TO_EXAM이면 doctorId를 문 채라
+  // 진료실까지 같이 잠겨 이후 하루 수익이 0이 된다.
+
+  it('진료실 문이 봉인되면 가던 환자가 좌초를 벗어나고 의사도 풀린다', () => {
+    let w = until(hospitalWorld(3), x => x.pawns.some(p => p.stage === 'TO_EXAM'))
+    const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
+    const before = w.stats.leftCount
+    // EXAM(6,6,6,5)의 문은 (9,10). 그 바깥 (9,11)을 새 방의 윗벽으로 덮으면 진료실이 고립된다.
+    const sealed = placeRoom(w, { type: 'WARD', x: 6, y: 11, w: 6, h: 5 })
+    if (!sealed.ok) throw new Error('전제 실패')
+    w = tick(sealed.world, 30)
+    expect(w.stats.leftCount).toBeGreaterThan(before)
+    expect(w.pawns.some(p => p.stage === 'TO_EXAM')).toBe(false) // 영구 정지한 폰이 없다
+    expect(w.pawns.some(p => p.doctorId === doc.id)).toBe(false) // 의사 자물쇠가 풀렸다
+  })
+
+  it('대기실이 봉인되면 들어오던 환자가 해소되고 잔류 폰이 남지 않는다', () => {
+    let w = until(hospitalWorld(3), x => x.pawns.some(p => p.stage === 'ENTERING'))
+    const before = w.stats.leftCount
+    // WAITING(18,20,8,6)의 문은 (22,25). 그 바깥 (22,26)을 덮어 대기실을 고립시킨다.
+    const sealed = placeRoom(w, { type: 'WARD', x: 18, y: 26, w: 8, h: 4 })
+    if (!sealed.ok) throw new Error('전제 실패')
+    w = tick(sealed.world, 300)
+    expect(w.stats.leftCount).toBeGreaterThan(before)
+    expect(w.pawns.filter(p => p.kind === 'PATIENT')).toEqual([])
+  })
+
+  it('좌초로 풀려난 의사는 다시 환자를 받는다 — 진료가 재개된다', () => {
+    // 문을 봉인해버리면 진료실이 고립돼 "재개"를 볼 수 없다(그 방엔 아무도 못 간다).
+    // 그래서 여기선 tick의 재탐색 실패 결과(path 비움)만 손으로 만들고 방은 멀쩡히 둔다.
+    let w = until(hospitalWorld(3), x => x.pawns.some(p => p.stage === 'TO_EXAM'))
+    const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
+    const stuck = w.pawns.find(p => p.stage === 'TO_EXAM')!
+    const before = w.stats.leftCount
+    w = { ...w, pawns: w.pawns.map(p => (p.id === stuck.id ? { ...p, path: [] } : p)) }
+    w = tick(w, 1)
+    expect(w.stats.leftCount).toBe(before + 1)
+    expect(w.pawns.some(p => p.doctorId === doc.id)).toBe(false)
+    const examsAtRelease = w.stats.examsDone
+    w = run(w, 300)
+    expect(w.stats.examsDone).toBeGreaterThan(examsAtRelease) // 자물쇠가 진짜로 풀렸다
   })
 })

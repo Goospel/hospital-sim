@@ -9,6 +9,10 @@ import type { Pt } from './path'
 export const PAWN_TILES_PER_MIN = 2
 
 export type PawnKind = 'DOCTOR' | 'PATIENT'
+/** ⚠️ 'PAYING'·'GONE'은 **2주차 예약**이라 지금은 아무도 만들지 않고 아무도 읽지 않는다.
+ *  'PAYING'은 RECEPTION 경유 수납 흐름 자리, 'GONE'은 퇴장을 폰 제거가 아니라 상태로 남길 때의
+ *  자리다(1주차는 입구에 닿으면 배열에서 바로 뺀다). 미사용이지만 지우지 않는다 — 흐름의 빈칸이
+ *  타입에 보이는 편이 낫고, 2주차에 되살릴 때 이름이 흔들리지 않는다. */
 export type PatientStage =
   | 'ENTERING' | 'WAITING' | 'TO_EXAM' | 'IN_EXAM' | 'PAYING' | 'LEAVING' | 'GONE' | 'LEFT_WAITING'
 

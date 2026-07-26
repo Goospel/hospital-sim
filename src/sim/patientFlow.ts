@@ -73,6 +73,8 @@ function freeSeat(w: SimWorld, blocked: Set<number>): Pt | null {
 }
 
 function maybeArrive(w: SimWorld): SimWorld {
+  // 실효 구간은 분 1~479다 — tick이 minute을 먼저 올리고 부르므로 0분은 판정 자체가 없고,
+  // 480분은 창이 닫힌 쪽이다(경계 테스트가 이 두 끝을 잠근다).
   if (w.minute >= ARRIVAL_WINDOW_MIN) return w
   // 분마다 독립 판정 — 이래야 도착이 몰릴 때 몰리고(대기열이 생기고) 빌 때 빈다.
   if (seededUnit(w.seed * 100_000 + w.day * 1_000 + w.minute) >= ARRIVAL_PROB_PER_MIN) return w
@@ -147,9 +149,10 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
 // ─── 스테이지 전이 ────────────────────────────────────────────────────────────
 
 /** 퇴장 준비 — 입구로 향하게 한다. null이면 그 자리에서 사라진다(GONE).
- *  퇴장 경로가 끊긴 폰을 남겨두면 영원히 서서 좌석·집계를 갉아먹는다. */
+ *  퇴장 경로가 끊긴 폰을 남겨두면 영원히 서서 좌석·집계를 갉아먹는다.
+ *  이미 입구에 선 폰은 path가 빈 채로 살아 나가고 다음 틱에 제거된다 — 여기서 미리 걸러
+ *  한 틱을 아낄 수 있지만, 그 분기는 어떤 테스트로도 관측되지 않는(=사살 불가) 최적화라 두지 않는다. */
 function toExit(w: SimWorld, p: Pawn, stage: PatientStage): Pawn | null {
-  if (samePt(p, ENTRANCE)) return null
   const path = findPath(w, { x: p.x, y: p.y }, ENTRANCE)
   return path ? { ...p, stage, dest: ENTRANCE, path } : null
 }
@@ -163,9 +166,16 @@ function progressStages(w: SimWorld): SimWorld {
   for (const p of w.pawns) {
     if (p.kind !== 'PATIENT') { out.push(p); continue }
     const arrived = !!p.dest && samePt(p, p.dest)
+    // 좌초 — 목적지에 못 닿았는데 경로가 비었다. tick의 재탐색이 실패했다는 뜻이고,
+    // 스스로는 절대 못 벗어난다(경로는 목적지가 정해질 때만 계산된다). 여기서 안 풀면
+    // 그 폰은 영구 정지하고, TO_EXAM이면 doctorId를 문 채라 진료실까지 같이 잠긴다.
+    // 합법적인 건설 한 번(예: 진료실 문 앞을 막는 방)으로 병원 전체가 멎을 수 있다.
+    const stranded = !arrived && p.path.length === 0
     switch (p.stage) {
       case 'ENTERING':
-        keep(arrived ? { ...p, stage: 'WAITING', arrivedMin: w.minute } : p)
+        if (arrived) keep({ ...p, stage: 'WAITING', arrivedMin: w.minute })
+        else if (stranded) { leftCount++; keep(toExit(w, p, 'LEFT_WAITING')) }
+        else keep(p)
         break
       case 'WAITING':
         if (w.minute - (p.arrivedMin ?? w.minute) > PATIENCE_MIN) {
@@ -174,8 +184,15 @@ function progressStages(w: SimWorld): SimWorld {
         } else keep(p)
         break
       case 'TO_EXAM':
-        keep(arrived ? { ...p, stage: 'IN_EXAM', examUntilMin: w.minute + EXAM_DURATION_MIN } : p)
+        if (arrived) keep({ ...p, stage: 'IN_EXAM', examUntilMin: w.minute + EXAM_DURATION_MIN })
+        else if (stranded) {
+          leftCount++
+          const freed: Pawn = { ...p }
+          delete freed.doctorId // 의사부터 풀어준다 — 안 풀면 진료실이 통째로 잠긴다
+          keep(toExit(w, freed, 'LEFT_WAITING'))
+        } else keep(p)
         break
+      // IN_EXAM은 자리에 앉아 있어 이동하지 않는다 — 좌초할 수 없다.
       case 'IN_EXAM':
         if (w.minute >= (p.examUntilMin ?? Infinity)) {
           examsDone++

@@ -13,7 +13,8 @@ export function tick(world: SimWorld, minutes: number): SimWorld {
 }
 
 function tickOneMinute(world: SimWorld): SimWorld {
-  // 통행 판정 집합은 틱당 1회(실측 ~5μs) — 폰마다 만들면 폰 수만큼 곱해진다.
+  // 이동 단계의 통행 판정 집합은 폰 전체가 하나를 공유한다 — 폰마다 만들면 폰 수만큼 곱해진다.
+  // (틱당 총 1회는 아니다: 뒤따르는 stepPatients가 배정·퇴장 경로용으로 자기 것을 더 만든다.)
   const blocked = buildBlockedSet(world)
   const moved = world.pawns.map(p => stepMove(revalidate(world, blocked, p), 1))
   return stepPatients({ ...world, minute: world.minute + 1, pawns: moved })
