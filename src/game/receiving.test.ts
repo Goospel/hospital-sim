@@ -7,7 +7,8 @@ import {
 } from './receiving'
 import type { ReceivingState } from './receiving'
 import { buildHospital, DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
-import type { CallKind, DeptKey, Doctor, Hospital, IncomingCall, SetupChoices } from './types'
+import type { CallKind, DeptKey, Doctor, Hospital, IncomingCall, RegionKey, SetupChoices } from './types'
+import { REGION_LABELS } from './world'
 import { DAY_LENGTH_MIN, NIGHT_START_MIN, patienceMin } from './daysim'
 import { SPEED_OF_TIER } from './candidates'
 
@@ -1393,29 +1394,56 @@ describe('콜 발신 지역 — 세계가 콜 구성에 닿는다 (spec §5)', (
   })
 
   /*
-    🔴 **이 테스트는 규칙이 아니라 현재 시드 궤적을 핀한다** — salt(17·19)·밴드(0.3+0.6p, METRO 0.25)를
-    바꾸면 여기가 깨지는 게 정상이고, 의도적 튜닝이면 기대값을 갱신하라. 특히 salt를 기존
-    스트림(2 = 도착시각 arrivalMinFor)과 합치면 발신 지역이 도착시각과 상관되는 **무성 실패**가 된다
-    (daysim.ts callSeed의 salt 레지스트리 참조 — "스트림을 가르는 축은 salt다"). 위의 규칙 테스트들은
-    그 실패를 하나도 못 잡는다: 실측 2026-07-26에 salt 17→2로 바꿔도, METRO 밴드 0.25→0.5로
-    바꿔도 568개가 전부 통과했다. 지명(originLabel)까지 핀하는 건 salt 19 축도 똑같이 무방비여서다.
-    pressure 0.5를 고른 이유 — 세 지역이 모두 등장해 밴드 경계 두 개를 한 입력으로 덮는다
-    (0이면 RURAL이 드물고, 1이면 ruralShare 0.9라 CAPITAL 밴드가 거의 사라져 경계가 안 걸린다).
+    지명 축은 **규칙으로 잰다**(핀에서 뗐다) — 지명 리터럴을 기대값에 박으면 REGION_LABELS를
+    고칠 때마다 핀이 무의미하게 깨져, "튜닝 신호"여야 할 실패가 소음이 된다. 여기선 기대값을
+    REGION_LABELS에서 **파생**해 지명 변경에 면역이면서 ORIGIN_LABEL_SALT 축이 죽는 건 잡는다
+    (한 지명만 나오거나 지역과 종속되면 관측 집합이 부족해져 깨진다).
   */
-  it('시드 궤적 특성화 핀 — (day 1..7, beds 3, pressure 0.5) 응급 발신 지역·지명 시퀀스', () => {
+  it('지명은 그 지역 REGION_LABELS에서만 나오고, 한 주면 각 지역 지명이 전부 관측된다', () => {
+    const seen: Record<string, Set<string>> = { CAPITAL: new Set(), METRO: new Set(), RURAL: new Set() }
+    // pressure를 훑는다 — 한 값에 고정하면 밴드 튜닝으로 어떤 지역이 사라질 때 이 테스트도 같이
+    // 깨져 신호가 겹친다(METRO_BAND의 절벽). 지명 축만 재려면 지역 구성에서 독립해야 한다.
+    for (const pressure of [0, 0.5, 1]) {
+      for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+        for (const call of createCallQueue(day, 3, pressure)) {
+          if (!requiresBackupCare(call.kind)) continue
+          const names = REGION_LABELS[call.originRegion!]
+          expect(names).toContain(call.originLabel) // 그 지역 명단 밖의 지명은 나오지 않는다
+          seen[call.originRegion!].add(call.originLabel!)
+        }
+      }
+    }
+    for (const region of Object.keys(REGION_LABELS) as RegionKey[]) {
+      expect([...seen[region]].sort()).toEqual([...REGION_LABELS[region]].sort())
+    }
+  })
+
+  /*
+    🔴 **이 테스트는 규칙이 아니라 현재 시드 궤적을 핀한다** — ORIGIN_REGION_SALT·밴드
+    (RURAL_SHARE_BASE + RURAL_SHARE_GAIN × p, METRO_BAND)를 바꾸면 여기가 깨지는 게 정상이고,
+    의도적 튜닝이면 기대값을 갱신하라. 특히 salt를 기존 스트림(2 = 도착시각 arrivalMinFor)과
+    합치면 발신 지역이 도착시각과 상관되는 **무성 실패**가 된다(daysim.ts callSeed의 salt 레지스트리
+    참조 — "스트림을 가르는 축은 salt다"). 위의 규칙 테스트들은 그 실패를 하나도 못 잡는다:
+    실측 2026-07-26에 ORIGIN_REGION_SALT를 2로 바꿔도, METRO_BAND를 0.5로 바꿔도 568개가
+    전부 통과했다. 지명 축은 바로 위 규칙 테스트가 맡는다(핀은 지역 시퀀스만 — 좁힌 뒤 salt
+    돌연변이를 재확인해 지역 시퀀스만으로 잡히는 것을 실측했다).
+    pressure 0.5를 고른 이유 — 세 지역이 모두 등장해 밴드 경계 두 개를 한 입력으로 덮는다
+    (0이면 RURAL이 드물고, 0.75 이상이면 CAPITAL 밴드 자체가 소멸해 경계가 안 걸린다 — METRO_BAND 주석의 절벽).
+  */
+  it('시드 궤적 특성화 핀 — (day 1..7, beds 3, pressure 0.5) 응급 발신 지역 시퀀스', () => {
     const seq = Array.from({ length: DAYS_PER_WEEK }, (_, i) =>
       createCallQueue(i + 1, 3, 0.5)
         .filter((c) => requiresBackupCare(c.kind))
-        .map((c) => [c.originRegion, c.originLabel].join('/'))
+        .map((c) => c.originRegion)
         .join(' '))
     expect(seq).toEqual([
-      'METRO/늘목시 CAPITAL/가온구',
-      'RURAL/새벌군 CAPITAL/가온구',
-      'RURAL/새벌군 RURAL/먼내군 METRO/늘목시 RURAL/먼내군',
-      'CAPITAL/누리구 METRO/벼리시 RURAL/새벌군 RURAL/먼내군',
-      'RURAL/새벌군 RURAL/먼내군 RURAL/먼내군 RURAL/먼내군',
-      'RURAL/두메군 METRO/늘목시 RURAL/새벌군 RURAL/두메군',
-      'RURAL/두메군 RURAL/먼내군 RURAL/새벌군 RURAL/두메군',
+      'METRO CAPITAL',
+      'RURAL CAPITAL',
+      'RURAL RURAL METRO RURAL',
+      'CAPITAL METRO RURAL RURAL',
+      'RURAL RURAL RURAL RURAL',
+      'RURAL METRO RURAL RURAL',
+      'RURAL RURAL RURAL RURAL',
     ])
   })
 
