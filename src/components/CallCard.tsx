@@ -190,6 +190,18 @@ export default function CallCard({
       className="flex w-full max-w-md flex-col gap-3 rounded-xs border border-frame bg-desk-2 px-4 py-4 shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
     >
       {/*
+        발신 지역 — 지방 배후가 무너질수록 콜은 점점 먼 곳에서 온다(스펙 §5). 해석 0: 지명과
+        「원거리 이송」이라는 사실만 놓고, 그게 왜 나쁜지는 플레이어가 스스로 잇는다.
+        `originLabel`은 배후 진료가 필요한 응급에만 실리므로(receiving.ts) 외래·워크인 카드엔
+        이 줄이 자동으로 안 뜬다 — 여기서 콜 종류를 다시 분기하지 않는다(판정 이중 기재 금지).
+      */}
+      {call.originLabel && (
+        <p className="font-mono text-xs text-on-desk/70">
+          {call.originLabel}에서 전원 요청{call.originRegion === "RURAL" ? " — 원거리 이송" : ""}
+        </p>
+      )}
+
+      {/*
         야간 표시 — 왜 밤에만 막히는지 플레이어가 스스로 잇게 하려면 시간대가 보여야 한다.
         해석은 없다. '야간' 두 글자와, 순환기를 뽑고도 밤에 거절당하는 경험만 놓는다.
 

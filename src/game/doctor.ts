@@ -53,8 +53,12 @@ export function materializeRoster(choices: SetupChoices, departments: Department
  * `doctors` 카운트와 `hiredIds`를 **함께** 줄이는 게 정합의 핵심이다: 하나만 줄이면
  * `materializeRoster`가 남은 지원자·무명으로 빈자리를 메워 **사직이 없던 일이 된다**.
  *
- * 풀 차감은 호출부(session)가 `releaseFromPool`로 적용한다 — 이 모듈은 system.ts를 모른다
- * (순환 차단). 그래서 여기선 "어느 배후과가 몇 명 줄었나"만 낸다.
+ * 풀 차감은 호출부(session)가 적용한다 — 이 모듈은 system.ts도 world.ts도 모른다(순환 차단).
+ * 그래서 여기선 "어느 배후과가 몇 명 줄었나"(`poolDelta`)만 낸다. 그 델타를 어디에 물리는지는
+ * 호출부의 몫이고, **머지 통합 2026-07-27에 그 자리가 바뀌었다**: 옛 `releaseFromPool`(풀 직접
+ * 차감)이 아니라 `resignFromRegions`(세계에서 차감) + `deriveSystem`(풀 재파생)이다 —
+ * 풀은 `hirablePool(world.regions)`의 파생값이라 직접 쓰면 불변식을 우회한다.
+ * 이 모듈의 계약은 그 변경에 **영향받지 않는다**(경계를 지킨 값이 여기서 드러난다).
  */
 export function applyResignations(
   choices: SetupChoices,

@@ -147,9 +147,13 @@ export const RESIGN_SATURATED_DAYS = 4 // 예시값 — 아래 목표 곡선으�
 |---|---|
 | `src/game/doctor.ts` | `RESIGN_SATURATED_DAYS`·포화 카운터 스텝·사직 판정·상태 리맵(순수 함수) |
 | `src/game/session.ts` | `SessionState.saturatedDays` · `completeReceiving`에서 스텝 · `completeWeek`에서 사직 적용 · `SessionEpilogue`/요약에 사직 목록 |
-| `src/game/system.ts` | 사직분 풀 차감(기존 `hireDelta`와 대칭인 함수 하나) |
+| ~~`src/game/system.ts`~~ → `src/game/world.ts` | 사직분 **세계** 차감(`resignFromRegions`) — 아래 정정 |
 | `src/components/WeekSummary.tsx` | 사직 목록 한 줄씩(해석 카피 0) |
 | 각 `*.test.ts` | §6 TDD |
 | `claude-docs/plan.md` · `changeLog.md` | ⏸ 해제 · 완료 기록 |
+
+> 📌 **머지 통합 정정(2026-07-27)** — 이 설계는 사직분을 `system.ts`의 `releaseFromPool`(옛 `hireDelta`의 대칭)로 **풀에서 직접** 깎았다. 같은 날 병합된 지역 세계 시뮬(2026-07-26 spec)이 `SystemState.pool`을 `hirablePool(world.regions)`의 **파생값**으로 승격해, 풀을 직접 쓰는 함수는 불변식 `pool ≡ hirablePool(world.regions)`을 우회하는 **두 번째 쓰기 경로**가 됐다(그 spec §6이 같은 이유로 `hireDelta`·`backgroundAttrition`을 삭제했다).
+>
+> 그래서 차감을 `world.ts`의 `resignFromRegions(world, poolDelta, week)`로 옮기고 `completeWeek`이 `deriveSystem`으로 풀을 재파생한다. **가시 계약은 이 문서 그대로다** — 사직자는 재채용 불가(소멸)이고, `poolInitial`이 불변이라 에필로그의 "N → 잔여"가 사직분을 반영한다(실측 "전국 잔여 4→3"도 동일). 결정 A(사직 = 필수의료를 떠남)가 이제 **이름으로도** 드러난다: `hireFromRegions`는 이동, `resignFromRegions`는 소멸. 시드 salt는 채용(13)과 다른 축(23)이다 — 같은 주에 스트림을 공유하면 "그 주에 채용을 했느냐"가 사직자의 출신 지역을 바꾼다.
 
 세부 단계는 writing-plans에서 확정한다.

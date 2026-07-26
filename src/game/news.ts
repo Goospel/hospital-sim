@@ -63,8 +63,12 @@ export const FORBIDDEN_REAL_EVENT_TOKENS = [
   '10대', '70대', '33개월', '고교생', '고등학생',
 ] as const
 
-/** 가공 지역 — 실재하지 않는 이름으로 통일한다(가드 3). */
-const FICTIONAL_REGIONS = ['한내시', '서림시', '금하시', '백천시'] as const
+/**
+ * 가공 지역 — 실재하지 않는 이름으로 통일한다(가드 3).
+ * export는 **테스트 전용 노출**이다: world.ts의 REGION_LABELS가 이 목록과 이름이 겹치지 않아야 하고,
+ * 그 검사기(world.test.ts)가 목록을 복제하면 이중 기재가 된다 — 단일 출처를 유지하려고 내보낸다.
+ */
+export const FICTIONAL_REGIONS = ['한내시', '서림시', '금하시', '백천시'] as const
 
 /** 환자 지칭 — 이름 없이 나이대만. 실제 사건 프로필(10대·70대·33개월·고교생)을 피해 40~60대로 둔다(가드 1). */
 const PATIENT_PROFILES = ['40대 남성', '50대 여성', '60대 남성', '50대 남성'] as const

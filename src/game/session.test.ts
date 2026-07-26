@@ -5,14 +5,16 @@ import {
   cumulativeNetManwon, buildEpilogue, enterWorldEvent, enterGrowth, growthCostOf, canApplyGrowth,
   applyGrowth, isInsolvent, type SessionState,
 } from './session'
-import { initWorld, applyEvent, OPENING_EVENT } from './world'
-import { decide, isElective } from './receiving'
-import { DAYS_PER_WEEK, SETUP_BUDGET_MANWON } from './setup'
+import {
+  initWorld, applyEvent, stepWorld, selectEvent, transferPressure, regionOf,
+  EVENT_CATALOG, OPENING_EVENT, type WorldState,
+} from './world'
+import { createCallQueue, decide, isElective } from './receiving'
+import { DAYS_PER_WEEK, FIXED_BEDS, SETUP_BUDGET_MANWON } from './setup'
 import { DAY_LENGTH_MIN } from './daysim'
-import { initSystem, POOL_INITIAL } from './system'
-import { RESIGN_SATURATED_DAYS } from './doctor'
-import { FATIGUE_SLOW_FROM } from './doctor'
-import type { IncomingCall, SetupChoices } from './types'
+import { hirablePool, POOL_INITIAL } from './system'
+import { FATIGUE_SLOW_FROM, RESIGN_SATURATED_DAYS } from './doctor'
+import type { IncomingCall, SetupChoices, Specialty } from './types'
 
 const collaborator: SetupChoices = { hospitalName: '흑자메디컬', doctors: { AESTHETICS: 3, CHECKUP: 2 } }
 const conscientious: SetupChoices = { hospitalName: '양심병원', doctors: { AESTHETICS: 1, CARDIOLOGY: 2 } }
@@ -726,7 +728,13 @@ describe('GROWTH — 재투자 적용', () => {
     expect(beginWeek(s).phase).toBe('RECEIVING')
   })
 
-  it('nextWeek이 배경 풀 감소를 적용한다', () => {
+  /*
+    옛 제목은 "nextWeek이 배경 풀 감소를 적용한다"였다(`backgroundAttrition` 전제 — 매주 한 과 −1).
+    그 함수는 지역 드리프트에 흡수·삭제됐고(spec 2026-07-26 §3), 이제 감소분은 stepWorld가
+    RURAL→CAPITAL로 옮긴 사람 수(1~2명)다. **수치를 고정하지 않고 방향만** 잠근다 —
+    페이스에 핀을 박는 건 world.test.ts의 특성화 테스트 몫이고, 여기서 또 박으면 이중 기재다.
+  */
+  it('nextWeek이 세계 드리프트만큼 채용 풀을 줄인다(옛 배경 감소를 대체)', () => {
     let s = completeSetup({ hospitalName: '한바다', doctors: { AESTHETICS: 1 } })
     s = { ...s, phase: 'WEEK_SUMMARY' }
     const before = Object.values(s.system.pool).reduce((a, b) => a + b, 0)
@@ -837,5 +845,186 @@ describe('폐업 판정 — insolvencyStreak (스펙 2026-07-24 §6)', () => {
     expect(closed.closed).toBe(true)
     const voluntary = buildEpilogue({ ...dayEndState({ insolvencyStreak: 0 }), phase: 'EPILOGUE' })
     expect(voluntary.closed).toBe(false)
+  })
+})
+
+/**
+ * 세계 시뮬 배선 — 지역 드리프트·채용 차감이 상태기계의 어느 지점에서 도는가(spec 2026-07-26 §7).
+ *
+ * 🔴 이 블록의 몸통은 **일관성 불변식** `system.pool ≡ hirablePool(world.regions)`다.
+ * 풀이 세계의 파생값이 된 뒤로 둘이 어긋나면 "돈은 있는데 왜 못 뽑나"가 설명 불가가 된다 —
+ * 세계를 실어 나르는 **여섯 지점**(enterWorldEvent·beginSetup·completeSetup·**completeWeek**·
+ * nextWeek·applyGrowth) 전부에서 deriveSystem을 밟는지 지점별로 못박는다. `startSession`만
+ * 예외다 — 그 자리엔 world가 아직 없어 파생할 원천 자체가 없다(system.ts initSystem docstring).
+ * (completeWeek이 여섯 번째로 합류한 건 머지 통합 2026-07-27 — 사직의 풀 차감이 세계 차감이 됐다.)
+ */
+describe('세계 시뮬 배선 (spec §7)', () => {
+  // 리터럴 재기재 대신 RegionState.doctors 키에서 파생 — 과가 늘어도 자동 포함(world.test.ts와 같은 이유).
+  const SPECIALTIES = Object.keys(regionOf(initWorld(), 'RURAL').doctors) as Specialty[]
+  const ruralTotal = (w: WorldState) =>
+    SPECIALTIES.reduce((n, s) => n + regionOf(w, 'RURAL').doctors[s], 0)
+
+  /** 지역 쇼크(RURAL 산부 −1)가 든 세계 — 파생 경로와 고정 초기값 경로를 갈라놓는 리트머스. */
+  const shockedWorld = () => applyEvent(initWorld(), {
+    id: 'X', headline: 'x', direction: 'worsen', effects: [], briefing: [],
+    regionEffects: [{ region: 'RURAL', field: 'doctors', dept: 'OBSTETRICS', delta: -1 }],
+  })
+
+  /*
+    ⚠️ **이 두 단정은 현재 값으로는 판별력이 없다**(정직하게 남긴다): enterWorldEvent의 세계는 항상
+    `applyEvent(initWorld(), OPENING_EVENT)`이고 OPENING_EVENT엔 regionEffects가 없어, 파생과
+    옛 initSystem()이 **같은 값**을 낸다 — 여기에 주입 지점이 없어 리트머스를 끼울 수 없다.
+    그래도 남기는 이유는 이게 **OPENING_EVENT에 지역 효과가 붙는 날 터지는 가드**라는 것이다.
+    (판별력이 있는 쪽은 아래 beginSetup·completeSetup 두 테스트다 — 그쪽은 세계를 주입할 수 있다.)
+  */
+  it('enterWorldEvent·beginSetup도 파생 지점이다 — 다섯 지점 전부에서 일관성 불변식이 선다', () => {
+    const entered = enterWorldEvent(startSession())
+    expect(entered.system.pool).toEqual(hirablePool(entered.world!.regions))
+    const setup = beginSetup(entered)
+    expect(setup.system.pool).toEqual(hirablePool(setup.world!.regions))
+  })
+
+  it('beginSetup: 쇼크가 든 세계를 받으면 풀이 그 세계의 파생과 일치한다(판별)', () => {
+    const shocked = shockedWorld()
+    // WORLD_EVENT 상태의 world만 쇼크본으로 바꿔 넘긴다 — beginSetup이 state.world에서 파생하는지 본다.
+    const setup = beginSetup({ ...enterWorldEvent(startSession()), world: shocked })
+    expect(setup.system.pool).toEqual(hirablePool(shocked.regions))
+    expect(setup.system.pool.OBSTETRICS).toBe(POOL_INITIAL.OBSTETRICS - 1) // initSystem()이면 3으로 남는다
+  })
+
+  it('nextWeek: 드리프트가 적용되고, system.pool ≡ hirablePool(world.regions) 일관성 불변식이 선다', () => {
+    const summary = finishWeek(runWeek(conscientious, essentialFirst))
+    const next = nextWeek(summary)
+    expect(next.system.pool).toEqual(hirablePool(next.world!.regions)) // 🔴 일관성 불변식
+    expect(ruralTotal(next.world!)).toBeLessThan(ruralTotal(summary.world!)) // 드리프트 1~2명
+  })
+
+  /**
+   * 🔴 **completeWeek도 세계가 변하는 지점이다**(머지 통합 2026-07-27). 사직은 원래
+   * `releaseFromPool`로 **풀을 직접** 깎았는데(main #121), 그건 파생 아키텍처에서 금지된 두 번째
+   * 쓰기 경로다 — 풀만 줄고 세계는 그대로여서 `pool ≡ hirablePool(world.regions)`가 조용히 깨진다.
+   * 지금은 `resignFromRegions`가 METRO·RURAL에서 빼고 `deriveSystem`이 풀을 따라온다.
+   *
+   * 두 단정이 각각 다른 돌연변이를 잡는다: 일관성 단정은 **deriveSystem 생략**을,
+   * `−1` 단정은 **resignFromRegions 생략**(사직해도 세계 불변)을 잡는다.
+   */
+  it('completeWeek(사직): 사직분이 world.regions에서 빠지고 pool 일관성이 유지된다', () => {
+    const soloCardio: SetupChoices = { hospitalName: 'h', doctors: { AESTHETICS: 1, CARDIOLOGY: 1 } }
+    const end = runWeek(soloCardio, true)
+    const cardioId = end.hospital!.roster!.find((d) => d.dept === 'CARDIOLOGY')!.id
+    const s = completeWeek({ ...end, saturatedDays: { [cardioId]: RESIGN_SATURATED_DAYS } })
+    expect(s.weekResignations).toHaveLength(1)
+    expect(s.system.pool).toEqual(hirablePool(s.world!.regions)) // 🔴 일관성 불변식
+    // 사직 = 소멸이라 METRO+RURAL 합이 실제로 1 줄었다(CAPITAL로 이동한 게 아니다).
+    expect(s.system.pool.CARDIOLOGY).toBe(end.system.pool.CARDIOLOGY - 1)
+    expect(regionOf(s.world!, 'CAPITAL').doctors.CARDIOLOGY)
+      .toBe(regionOf(end.world!, 'CAPITAL').doctors.CARDIOLOGY)
+    // 에필로그 "N → 잔여"의 분모는 불변 — 그래서 사직분이 잔여 쪽에서 보인다(#121 계약).
+    expect(s.system.poolInitial).toEqual(end.system.poolInitial)
+  })
+
+  it('completeWeek(사직 없음): 세계도 풀도 안 변한다', () => {
+    const end = runWeek(conscientious, essentialFirst)
+    const s = completeWeek(end)
+    expect(s.weekResignations).toEqual([])
+    expect(s.world).toEqual(end.world)
+    expect(s.system).toEqual(end.system)
+  })
+
+  it('applyGrowth: 배후과 채용이 world.regions에서 차감되고 pool 일관성이 유지된다', () => {
+    const growth = enterGrowth(nextWeek(finishWeek(runWeek(conscientious, essentialFirst))))
+    const next: SetupChoices = { ...growth.choices,
+      doctors: { ...growth.choices.doctors, CARDIOLOGY: (growth.choices.doctors.CARDIOLOGY ?? 0) + 1 } }
+    const grown = applyGrowth({ ...growth, treasury: 100_000 }, next, growth.beds)
+    expect(grown.system.pool).toEqual(hirablePool(grown.world!.regions))
+    expect(grown.system.pool.CARDIOLOGY).toBe(growth.system.pool.CARDIOLOGY - 1)
+  })
+
+  it('주가 갈수록 transferPressure가 내려가지 않는다(단조)', () => {
+    let s = finishWeek(runWeek(conscientious, essentialFirst))
+    let prev = transferPressure(s.world!)
+    for (let i = 0; i < 3; i++) {
+      s = finishWeek(runWeekFrom(beginWeek(enterGrowth(nextWeek(s))), essentialFirst))
+      const p = transferPressure(s.world!)
+      expect(p).toBeGreaterThanOrEqual(prev)
+      prev = p
+    }
+  })
+
+  it('1주차(enterWorldEvent)는 드리프트를 밟지 않는다 — 초기 세계 = 1주차 세계 (spec §7)', () => {
+    const state = enterWorldEvent(startSession())
+    expect(regionOf(state.world!, 'RURAL').doctors).toEqual(regionOf(initWorld(), 'RURAL').doctors)
+  })
+
+  /**
+   * 🔴 **개원 시점의 파생 지점을 잠근다** — `completeSetup`이 `deriveSystem(world)`가 아니라
+   * 옛 `initSystem()`이어도 전 스위트가 통과했다(리뷰어 실측). 지금은 OPENING_EVENT에 regionEffects가
+   * 없어 두 값이 **우연히 같기** 때문이다 — 우연이 검증을 대신하고 있었다.
+   *
+   * 그래서 **지역 쇼크가 있는 세계로 개원**한다. 그러면 두 경로가 갈리고(파생 = 3−1 = 2 / 고정 = 3),
+   * 개원 이벤트에 지역 효과가 붙는 날 이 테스트가 먼저 깨진다.
+   * (world.test.ts의 `shockOf` 팩토리는 export가 아니라 여기선 `shockedWorld()`로 쓴다 — 판별
+   *  유니온이라 잘못된 조합은 그 리터럴에서도 tsc가 막는다.)
+   */
+  it('completeSetup: 지역 쇼크가 있는 세계로 개원하면 풀이 그 세계의 파생과 일치한다', () => {
+    const shocked = shockedWorld()
+    const s = completeSetup(conscientious, shocked)
+    expect(s.system.pool).toEqual(hirablePool(shocked.regions))
+    expect(s.system.pool.OBSTETRICS).toBe(POOL_INITIAL.OBSTETRICS - 1) // initSystem()이면 3으로 남는다
+  })
+
+  /**
+   * 🔴 **드리프트 → 쇼크 순서를 잠근다** — `nextWeek`을 `stepWorld(applyEvent(...))`로 뒤집어도
+   * 전 스위트가 통과했다(리뷰어 실측). 한 주만 재면 두 순서가 같은 값을 내서 안 갈린다.
+   * **3주 누적**이면 갈린다: 3주차 LITIGATION_CHILL이 RURAL 산부를 먼저 빼면 그 주 드리프트 추첨의
+   * 후보 구성이 달라져, "쇼크로 이미 떠난 사람이 또 떠나는" 실패 모드가 지역 벡터에 남는다.
+   *
+   * 기대값을 손계산 리터럴로 박지 않는다 — 같은 순수 함수를 **같은 순서로** 세션 밖에서 조립해
+   * 비교한다. 이중 기재가 없어(숫자를 어디에도 안 적는다) 페이스를 튜닝해도 이 테스트는 계속
+   * '순서'만 재고, 순서를 뒤집는 순간에만 깨진다.
+   */
+  it('nextWeek은 드리프트를 이벤트 쇼크보다 먼저 적용한다 — 3주 누적 지역 벡터가 순서를 증언한다', () => {
+    // 세션 밖 기대 세계: 1주차 개원 이벤트 → (2·3주차) 드리프트 먼저, 그 위에 그 주 쇼크.
+    let expected = applyEvent(initWorld(), OPENING_EVENT)
+    for (const wk of [2, 3]) {
+      expected = applyEvent(stepWorld(expected, wk), selectEvent((wk - 1) % EVENT_CATALOG.length))
+    }
+
+    // 실제 세션 흐름 — enterWorldEvent(개원 이벤트) → beginSetup → completeSetup으로 같은 1주차 세계에서 출발한다.
+    // 성장(applyGrowth)은 부르지 않는다: 채용이 hireFromRegions로 세계를 또 건드려 순서 검증이 흐려진다.
+    const setup = beginSetup(enterWorldEvent(startSession()))
+    let s = finishWeek(runWeekFrom(completeSetup(conscientious, setup.world), essentialFirst))
+    for (let wk = 2; wk <= 3; wk++) {
+      s = finishWeek(runWeekFrom(beginWeek(enterGrowth(nextWeek(s))), essentialFirst))
+    }
+    expect(s.week).toBe(3)
+    expect(s.world!.regions).toEqual(expected.regions)
+  })
+
+  it('세션이 만든 콜 큐에 발신 지역이 실린다 — 세계가 큐 생성에 물렸다', () => {
+    const s = completeSetup(conscientious)
+    expect(s.receiving!.queue.some((c) => c.originRegion !== undefined)).toBe(true)
+  })
+
+  /**
+   * 🔴 **세션이 pressure를 실제로 넘기는지 잠근다** — 위 테스트는 발신 지역이 *붙었는지*만 재서
+   * `weekDayQueue`의 pressure를 0으로 고정해도 통과한다(초기 세계 pressure가 0이라 판별 불가).
+   * 그래서 `completeSetup`·`beginSetup`의 리트머스와 같은 수법으로 **세계를 주입**한다:
+   * RURAL 배후를 전멸시킨 세계(pressure 1)로 개원하면 두 경로가 갈린다.
+   *
+   * 기대값을 리터럴로 안 적는다 — 같은 순수 함수를 세션 밖에서 같은 인자로 조립해 비교한다
+   * (이중 기재 없음. 페이스를 튜닝해도 이 테스트는 '전달'만 계속 잰다).
+   */
+  it('completeSetup: 지방이 무너진 세계로 개원하면 큐가 그 pressure로 만들어진다(판별)', () => {
+    const collapsed = applyEvent(initWorld(), {
+      id: 'X', headline: 'x', direction: 'worsen', effects: [], briefing: [],
+      // RURAL 필수과를 전부 0으로 — backupHospitals가 0이 되어 transferPressure = 1.
+      regionEffects: (Object.keys(regionOf(initWorld(), 'RURAL').doctors) as Specialty[])
+        .map((dept) => ({ region: 'RURAL' as const, field: 'doctors' as const, dept, delta: -9 })),
+    })
+    expect(transferPressure(collapsed)).toBe(1)
+    const queue = completeSetup(conscientious, collapsed).receiving!.queue
+    expect(queue).toEqual(createCallQueue(1, FIXED_BEDS, 1))
+    expect(queue).not.toEqual(createCallQueue(1, FIXED_BEDS, 0)) // pressure 0 고정이면 여기서 깨진다
   })
 })

@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-080](troubleshooting/T-080.md) · 속성 단정(부등호·존재성)만으로 쓴 테스트가 규칙을 구현에서 지워도 통과했다 — 대조군 없는 단정은 "규칙의 결과"가 아니라 "데이터의 초기 분포"를 재기 때문이며, 한 슬라이스에서 3회 반복해 돌연변이 확인(규칙 임시 제거)으로만 잡혔다
 - [T-079](troubleshooting/T-079.md) · 파생값의 단위를 바꾸는 변경(점유 분 → 강도 가중 표준강도분)이 그 단위를 소비하는 상수(FATIGUE_FREE_MIN=360)를 조용히 사문화시켰다 — 상수 상대값 테스트는 전부 green이라 못 잡고, 결정론 프로브(7일 시뮬 계측)만이 "피로가 영원히 0"을 드러냈다
 - [T-078](troubleshooting/T-078.md) · block-fable-implement 훅이 Opus 서브에이전트의 코드 편집을 전부 오탐 차단했다 — 서브에이전트 턴이 부모 트랜스크립트에 기록되지 않아 훅이 항상 부모 모델(fable)을 읽기 때문이며, PreToolUse 입력의 agent_id로 판별하도록 고쳐 해결했다
 - [T-077](troubleshooting/T-077.md) · 66커밋 pull 후 npm ci가 ENOTEMPTY(rmdir node_modules/caniuse-lite/...)로 실패했다 — npm ci가 node_modules를 통째로 지우는 첫 단계에서 Windows 파일 잠금과 경합하기 때문이고, 디렉터리를 직접 지운 뒤 재실행하면 통과한다

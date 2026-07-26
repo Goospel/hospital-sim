@@ -1,16 +1,27 @@
-import type { DepartmentSpec, DeptKey } from './types'
-import { DEPARTMENTS } from './setup'
+import type { DepartmentSpec, DeptKey, RegionKey, Specialty } from './types'
+import { DEPARTMENTS, ROUND_THE_CLOCK_MIN_DOCTORS } from './setup'
+import { callSeed, seededUnit } from './daysim'
 
 // 외생 이벤트가 세계 파라미터를 재구성하는 순수 코어(spec: 2026-07-18-world-event-slice).
-// 이번 슬라이스의 세계 = 채용 경제(DEPARTMENTS)뿐. 확장점: hospitals·week·appliedEvents.
+// 세계 = 채용 경제(departments) + 지역 3계층(regions). 확장점: week·appliedEvents.
 //
-// ⚠️ 헌법: 이벤트는 채용 경제(profit/hireCost)만 바꾼다. 배후진료 매핑(providesBackup)과
-// 전원 판정(adjudicate)은 한 줄도 안 건드린다 — 세계는 바꾸되 개별 생사 판정은 코드가 잠근다.
-// DeptEffect.field 타입이 두 경제 필드로 제한돼 있어, providesBackup을 건드리는 건 애초에 표현 불가.
+// ⚠️ 헌법은 동일하다: 이벤트·드리프트는 **수치만** 만진다 — 채용 경제(fixedCost/hireCost)와
+// 지역 수치(doctors/hospitals)뿐이고, 배후진료 매핑(providesBackup)과 전원 판정(adjudicate)은
+// 한 줄도 안 건드린다. 세계는 바꾸되 개별 생사 판정은 코드가 잠근다.
+// DeptEffect.field·RegionEffect.field 유니온이 만질 수 있는 필드를 열거하므로,
+// providesBackup·adjudicate를 건드리는 건 애초에 **표현 자체가 불가능**하다.
 
-/** 세계 상태 — 이번 슬라이스의 유일 필드는 departments. */
+/** 지역 하나 — 개체가 아니라 집계. doctors는 그 지역 병원들에서 일하는 필수과 의사 수. */
+export interface RegionState {
+  key: RegionKey
+  doctors: Record<Specialty, number>
+  hospitals: number // 응급 수용 병원 수 — 드리프트로는 안 변하고 이벤트로만 변동
+}
+
+/** 세계 상태 — 채용 경제(departments) + 지역 3계층(regions). */
 export interface WorldState {
   departments: DepartmentSpec[]
+  regions: RegionState[] // 항상 3개, CAPITAL·METRO·RURAL 순
 }
 
 /**
@@ -31,6 +42,20 @@ export interface DeptEffect {
   delta: number
 }
 
+/**
+ * 이벤트의 지역 델타 — field 유니온이 헌법이다: 이벤트는 지역의 '수치'만 만질 수 있고
+ * providesBackup·판정 경로는 표현 자체가 불가능하다(DeptEffect와 같은 잠금 방식).
+ *
+ * 📌 **판별 유니온인 이유**(2026-07-26 구현 중 승격): 옛 형태는 `field: 'doctors'|'hospitals'` +
+ * `dept?: Specialty`였다 — dept가 선택 필드라 `field:'doctors'`인데 dept를 빼먹어도 tsc가 통과하고,
+ * applyEvent의 `else if (e.dept)` 가드에 걸려 **조용히 no-op**이 됐다(에러도 경고도 없음).
+ * 판별 유니온이면 그 조합이 타입 수준에서 표현 불가라 무성 실패의 원천이 사라지고,
+ * applyEvent에서 조건 가드 자체가 필요 없어진다.
+ */
+export type RegionEffect =
+  | { region: RegionKey; field: 'doctors'; dept: Specialty; delta: number }
+  | { region: RegionKey; field: 'hospitals'; delta: number }
+
 /** 외생 이벤트 = 세계에 떨어지는 변경 1개. headline은 나중에 LLM이 대체할 서사 슬롯. */
 export interface WorldEvent {
   id: string
@@ -39,6 +64,8 @@ export interface WorldEvent {
   effects: DeptEffect[]
   /** 병원장이 읽는 공문 2–3줄 — 실제 정책 도구(가산·정책수가·상대가치점수)만. 각색 억 손익 금지. */
   briefing: string[]
+  /** 지역 수치 델타 — 없으면 지역 무변경. 드리프트(stepWorld)와 달리 총원 보존을 안 한다(유입/이탈). */
+  regionEffects?: RegionEffect[]
 }
 
 /**
@@ -82,6 +109,7 @@ export const EVENT_CATALOG: WorldEvent[] = [
     headline: '의료분쟁 고액 배상 판결 잇따라 — 필수과 인력 확보 비용 상승',
     direction: 'worsen',
     effects: [{ dept: 'CARDIOLOGY', field: 'hireCostManwon', delta: 3_000 }], // 15,000 → 18,000 (+20%)
+    regionEffects: [{ region: 'RURAL', field: 'doctors', dept: 'OBSTETRICS', delta: -1 }], // 배상 공포 → 지방 산부 이탈
     briefing: [
       '고액 배상 판결 잇따라 — 필수과 전문의 채용 시장 경색',
       '배후진료 인력 확보 비용 상승',
@@ -114,12 +142,61 @@ export const OPENING_EVENT: WorldEvent = {
   ],
 }
 
-/** 기본 세계 — 손대지 않은 DEPARTMENTS 복제본. */
-export function initWorld(): WorldState {
-  return { departments: DEPARTMENTS.map((d) => ({ ...d })) }
+/**
+ * 지역 초기값(각색) — 대소만 근거(수도권 집중, 흉부 희소).
+ * 🔴 불변식(world.test.ts가 가드): ① 과별로 RURAL < CAPITAL ② RURAL 배후 ≥ 1
+ * ③ METRO+RURAL 합 = 기존 POOL_INITIAL(2/4/3/3/5/6) — 채용 풀이 이 합의 파생이 되므로(Task 5)
+ * 이 합이 틀어지면 기존 채용 밸런스가 통째로 흔들린다.
+ */
+export const REGION_INITIAL: RegionState[] = [
+  { key: 'CAPITAL', hospitals: 8, doctors: {
+    THORACIC_SURGERY: 3, CARDIOLOGY: 5, OBSTETRICS: 4,
+    NEUROSURGERY: 4, GENERAL_SURGERY: 5, INTERNAL_MEDICINE: 6 } },
+  { key: 'METRO', hospitals: 3, doctors: {
+    THORACIC_SURGERY: 0, CARDIOLOGY: 2, OBSTETRICS: 1,
+    NEUROSURGERY: 1, GENERAL_SURGERY: 3, INTERNAL_MEDICINE: 3 } },
+  { key: 'RURAL', hospitals: 2, doctors: {
+    THORACIC_SURGERY: 2, CARDIOLOGY: 2, OBSTETRICS: 2,
+    NEUROSURGERY: 2, GENERAL_SURGERY: 2, INTERNAL_MEDICINE: 3 } },
+]
+
+/**
+ * 지역 배열에서 키로 찾기 — 없으면 throw. **지역 조회의 단일 이디엄**이다.
+ * `find(...)!`을 곳곳에 흩으면 non-null 단정이 늘어나 "없을 수 없다"는 근거가 호출부마다 흩어진다.
+ * regions는 항상 3개 고정이라 못 찾는 건 프로그래밍 오류지, 런타임에 처리할 상태가 아니다.
+ *
+ * 📌 **export로 승격**(2026-07-26 Task 5): system.ts의 `hirablePool`이 `WorldState` 없이
+ * `RegionState[]`만 받아 조회해야 한다. 내부 함수로 두면 그쪽이 `regions.find(...)!`를 새로 쓰게 되어
+ * "지역 조회의 단일 이디엄"이라는 이 함수의 존재 이유가 첫 외부 호출자에서 바로 깨진다.
+ */
+export function findRegion(regions: RegionState[], key: RegionKey): RegionState {
+  const found = regions.find((r) => r.key === key)
+  if (!found) throw new Error(`region not found: ${key}`)
+  return found
 }
 
-/** 이벤트를 세계에 적용 — 순수·불변. departments만 재구성한다. */
+export function regionOf(world: WorldState, key: RegionKey): RegionState {
+  return findRegion(world.regions, key)
+}
+
+/**
+ * 그 지역에서 그 과의 배후진료가 서 있는 병원 수 — **저장하지 않는 파생값**.
+ * 배후 병원 하나가 서려면 그 과 의사 2명(ROUND_THE_CLOCK_MIN_DOCTORS) — 플레이어 병원과 같은 규칙을
+ * 세계에도 적용한다. 세계의 병원들도 우리처럼 "1명으론 당직이 안 돈다".
+ */
+export function backupHospitals(region: RegionState, s: Specialty): number {
+  return Math.min(region.hospitals, Math.floor(region.doctors[s] / ROUND_THE_CLOCK_MIN_DOCTORS))
+}
+
+/** 기본 세계 — 손대지 않은 DEPARTMENTS·REGION_INITIAL 복제본. */
+export function initWorld(): WorldState {
+  return {
+    departments: DEPARTMENTS.map((d) => ({ ...d })),
+    regions: REGION_INITIAL.map((r) => ({ ...r, doctors: { ...r.doctors } })),
+  }
+}
+
+/** 이벤트를 세계에 적용 — 순수·불변. departments(비용)와 regions(수치)를 재구성한다. */
 export function applyEvent(world: WorldState, event: WorldEvent): WorldState {
   const departments = world.departments.map((dept) => {
     const effects = event.effects.filter((e) => e.dept === dept.key)
@@ -130,10 +207,245 @@ export function applyEvent(world: WorldState, event: WorldEvent): WorldState {
     }
     return next
   })
-  return { ...world, departments }
+  const regions = world.regions.map((region) => {
+    const effects = (event.regionEffects ?? []).filter((e) => e.region === region.key)
+    if (effects.length === 0) return region
+    const next = { ...region, doctors: { ...region.doctors } }
+    for (const e of effects) {
+      if (e.field === 'hospitals') next.hospitals = Math.max(0, next.hospitals + e.delta)
+      else next.doctors[e.dept] = Math.max(0, next.doctors[e.dept] + e.delta)
+    }
+    return next
+  })
+  return { ...world, departments, regions }
 }
 
 /** 카탈로그에서 결정론적으로 이벤트를 고른다. */
 export function selectEvent(index: number): WorldEvent {
   return EVENT_CATALOG[index]
+}
+
+/** lawsuitRisk 과가 추첨에서 갖는 가중 배수 — 고위험 필수과가 지방을 먼저 떠난다. */
+const LAWSUIT_DRIFT_WEIGHT = 3
+/** 한 주에 2명째가 떠날 시드 확률 — 이탈 페이스를 주당 1~2명으로 만드는 유일한 손잡이. */
+const EXTRA_DRIFT_CHANCE = 0.3
+/** 추첨 시드의 salt 축 — index 0=1차 추첨(11), 1=2차 추첨(12). daysim.ts callSeed의 salt 레지스트리 참조. */
+const DRIFT_PICK_SALT = [11, 12] as const
+/** "2명째가 떠나는가" 여부 롤의 salt — 추첨(11·12)과 다른 축이라야 aliasing이 없다. */
+const EXTRA_DRIFT_SALT = 15
+
+/**
+ * 지역 간 1명 이동 — 불변 갱신. from에서 빼고 to에 더한다.
+ *
+ * ⚠️ 소스가 0이면 **아무것도 안 한다**(조기 반환). 옛 코드는 `Math.max(0, n-1)`로 깎았는데,
+ * 그 클램프는 도달 불가 방어인 동시에 **도달했을 때 총원 보존 위반을 숨긴다** — from은 0에
+ * 머물고 to만 +1 되어 전국 총원이 조용히 늘어난다. 조기 반환이면 보존이 구조적으로 성립한다.
+ */
+function moveDoctor(world: WorldState, s: Specialty, from: RegionKey, to: RegionKey): WorldState {
+  if (regionOf(world, from).doctors[s] <= 0) return world
+  const regions = world.regions.map((r) => {
+    if (r.key === from) return { ...r, doctors: { ...r.doctors, [s]: r.doctors[s] - 1 } }
+    if (r.key === to) return { ...r, doctors: { ...r.doctors, [s]: r.doctors[s] + 1 } }
+    return r
+  })
+  return { ...world, regions }
+}
+
+/**
+ * RURAL에 남은 과 중 하나를 LAWSUIT_DRIFT_WEIGHT 가중 시드 추첨으로 골라 CAPITAL로 옮긴다.
+ * 남은 과가 없으면 null. attempt는 그 주의 몇 번째 이탈인가(0=1명째, 1=2명째) — 시드 축을 가른다.
+ *
+ * 가중을 **과 1개당** 밀어넣는다(의사 1명당이 아니다) — 그래서 가중 효과를 측정하는 척도도
+ * 과당 손실률이다(world.test.ts의 그 테스트가 왜 정규화하는지의 근거).
+ */
+function driftOnce(world: WorldState, week: number, attempt: 0 | 1): WorldState | null {
+  const rural = regionOf(world, 'RURAL')
+  const weighted: Specialty[] = []
+  for (const d of world.departments) {
+    if (!d.providesBackup) continue // 수익과는 지역 시뮬 밖
+    if (rural.doctors[d.providesBackup] <= 0) continue
+    const w = d.lawsuitRisk ? LAWSUIT_DRIFT_WEIGHT : 1
+    for (let i = 0; i < w; i++) weighted.push(d.providesBackup)
+  }
+  if (weighted.length === 0) return null
+  const seed = callSeed(week, 0, 0, DRIFT_PICK_SALT[attempt])
+  return moveDoctor(world, weighted[Math.floor(seededUnit(seed) * weighted.length)], 'RURAL', 'CAPITAL')
+}
+
+/**
+ * 주간 드리프트 — 매주 지방 이탈 1명(+ EXTRA_DRIFT_CHANCE 롤이 통과하면 1명 추가),
+ * lawsuitRisk 과 LAWSUIT_DRIFT_WEIGHT 가중.
+ *
+ * 핵심은 빼기만 있고 더하기가 없다는 것이다: 의사는 줄어도 환자 발생(응급 콜 수)은 안 준다 —
+ * 격차가 개입 없이 스스로 벌어진다("필연"의 수학적 형태). hospitals는 여기서 안 변한다(이벤트 전용).
+ *
+ * 📌 **페이스는 의도된 값이다**(코디네이터 수용, 2026-07-26): RURAL 초기 13명이 **10주차에 소진**되고
+ * 그 뒤 stepWorld는 no-op이 된다 = 압력 포화. 실측 발동 창(2..10주 = 9주)에서 주별 이탈은
+ * 1,2,2,2,1,2,1,1,1 — 추가 이탈 롤이 **9주 중 4주** 통과한다. 롤 임계값이 EXTRA_DRIFT_CHANCE라고
+ * 짧은 창의 빈도가 그 값인 건 아니다(해시 스트림 편차).
+ *
+ * ⚠️ 이 페이스는 시드 salt에 붙어 있다 — salt를 바꾸면 주차가 밀린다(실측: 추가 롤을 index축에서
+ * EXTRA_DRIFT_SALT로 옮기자 소진이 9→10주차, 롤 통과가 5/8→4/9로 이동). 그래서 페이스는
+ * world.test.ts의 특성화 테스트가 핀을 박는다 — 튜닝하려면 그 테스트부터 고쳐라.
+ *
+ * ⚠️ **호출은 주 경계에서 1회** — 같은 week로 두 번 부르면 두 번 빠진다(멱등 아님).
+ * 순수·결정론(week 시드 파생).
+ */
+export function stepWorld(world: WorldState, week: number): WorldState {
+  const first = driftOnce(world, week, 0)
+  if (!first) return world // RURAL 고갈 — 더 빠질 사람이 없다
+  if (seededUnit(callSeed(week, 0, 0, EXTRA_DRIFT_SALT)) >= EXTRA_DRIFT_CHANCE) return first
+  return driftOnce(first, week, 1) ?? first
+}
+
+/**
+ * 한 지역에서 1명 차감 — 채용 전용이라 **목적지가 없다**(그 의사는 우리 병원 명단으로 간다).
+ * 그래서 moveDoctor와 달리 전국 총원이 실제로 준다 — 내 채용은 이동이지 창출이 아니다.
+ *
+ * ⚠️ **0 클램프를 두지 않는다**(moveDoctor 주석과 같은 이유): 클램프는 도달 불가 방어인 동시에
+ * 도달했을 때 "존재하지 않는 의사를 뽑았다"를 조용히 삼킨다 — 이 기능이 막으려는 바로 그 허구다.
+ * 대신 **호출자가 ≥1을 보장**한다(hireFromRegions가 뽑는 지역은 항상 잔여 > 0 — 그 증명은 아래).
+ */
+function removeDoctor(world: WorldState, s: Specialty, from: RegionKey): WorldState {
+  const regions = world.regions.map((r) =>
+    r.key === from ? { ...r, doctors: { ...r.doctors, [s]: r.doctors[s] - 1 } } : r,
+  )
+  return { ...world, regions }
+}
+
+/** 채용 시드 salt — daysim callSeed 레지스트리에 13으로 예약된 스트림(드리프트 11·12·15와 다른 축). */
+const HIRE_SALT = 13
+/**
+ * 사직 시드 salt — 23. **채용(13)과 반드시 달라야 한다**: 같은 주에 채용(GROWTH)과 사직(주간 결산)이
+ * 한 스트림을 공유하면 두 뽑기가 서로를 밀어내, "그 주에 채용을 했느냐"가 사직자의 출신 지역을
+ * 바꾸는 숨은 결합이 된다. 두 사건은 서사적으로 무관하니 시드도 무관해야 한다
+ * (world.test.ts의 "채용과 다른 salt를 쓴다" 테스트가 그 가드).
+ */
+const RESIGN_SALT = 23
+
+/**
+ * METRO·RURAL 중 남은 수 비례 시드 추첨으로 한 명씩 세계에서 **뺀다** — `hireFromRegions`(이동)와
+ * `resignFromRegions`(소멸)의 공통 기계. 두 export가 같은 몸통을 쓰는 건 우연이 아니라 계약이다:
+ * 어느 쪽이든 "전국 채용 가능 인력 통계에서 한 명이 빠진다"의 표현이고, 갈리는 건 **의미와 시드**뿐이다.
+ * (수도권 정착 의사는 두 경우 모두 후보가 아니다 — 지방 병원에 오지도, 여기서 사직하지도 않는다.)
+ *
+ * 📌 **뽑히는 지역은 항상 잔여 ≥ 1이다**(removeDoctor의 무클램프 전제): metro+rural ≤ 0이면 break,
+ * rural이 0이면 pickMetro가 참(그때 metro > 0), metro가 0이면 pickMetro가 거짓이고 rural > 0.
+ * 순수·결정론(week 시드 파생) — 같은 (world, deltas, week, salt)는 항상 같은 결과.
+ *
+ * 📌 **음수 증분은 무시한다** — `i < n`이 애초에 안 돈다(해고도, 음수 사직도 세계로 사람을 되돌리지 않는다).
+ *
+ * ⚠️ **추첨 카운터 `draw`는 과 루프 밖에 있다** — 과별로 리셋하면 같은 주 모든 과의 첫 뽑기가
+ * 난수 **하나**를 공유해, 비례 추첨이 단일 임계 컷으로 붕괴한다(실측: week 2의 롤 0.8163이면
+ * metro 점유율이 그보다 낮은 5개 과가 **전부** RURAL로 쏠린다 — 과마다 비율이 다른 게 무의미해진다).
+ * 전역 카운터면 매 뽑기가 자기 스트림을 갖는다.
+ */
+function drawFromRegions(
+  world: WorldState, deltas: Partial<Record<Specialty, number>>, week: number, salt: number,
+): WorldState {
+  let next = world
+  let draw = 0 // 이 호출에서 몇 번째 뽑기인가 — 과 경계를 넘어 이어진다(위 ⚠️)
+  for (const s of Object.keys(deltas) as Specialty[]) {
+    const n = deltas[s] ?? 0
+    for (let i = 0; i < n; i++) {
+      const metro = findRegion(next.regions, 'METRO').doctors[s]
+      const rural = findRegion(next.regions, 'RURAL').doctors[s]
+      if (metro + rural <= 0) break // 전국에 남은 사람이 없다 — 돈이 있어도 못 뽑는 벽
+      // 뽑기 하나에 스트림 하나 — 롤을 **먼저 굳힌다**(단축평가 안에서 draw++를 굴리면 강제 선택일 때
+      // 조용히 안 오르는 숨은 부수효과가 된다). day 자리의 1은 하드코딩이다: 스트림을 가르는 축은
+      // salt라 실익은 없고, 드리프트가 쓰는 0과 눈으로 구분되는 표기일 뿐이다(callSeed 주석).
+      const roll = seededUnit(callSeed(week, 1, draw++, salt))
+      // 한쪽이 비면 남은 쪽으로 강제된다(그때 roll은 쓰이지 않는다).
+      const pickMetro = metro > 0 && (rural <= 0 || roll < metro / (metro + rural))
+      next = removeDoctor(next, s, pickMetro ? 'METRO' : 'RURAL')
+    }
+  }
+  return next
+}
+
+/**
+ * **이동** — 성장 채용이 세계에서 사람을 빼간다. 그 의사는 사라지지 않고 **우리 병원 명단으로 온다**
+ * (전국 채용 가능 풀에서만 빠진다). 내 채용이 지방·광역시의 배후를 실제로 줄인다 —
+ * 구조적 아이러니가 여기서 물리적으로 성립한다.
+ *
+ * 📌 **음수 증분(해고)은 무시한다** — 내보낸 사람은 세계로 돌아오지 않는다.
+ * 성장은 증축만이라 게이트(canApplyGrowth의 noFiring)가 이미 막지만, 계약을 여기서도 명시한다.
+ */
+export function hireFromRegions(
+  world: WorldState, deltas: Partial<Record<Specialty, number>>, week: number,
+): WorldState {
+  return drawFromRegions(world, deltas, week, HIRE_SALT)
+}
+
+/**
+ * **소멸** — 우리 병원에서 사직한 의사가 세계의 채용 가능 인력에서도 사라진다.
+ * 사직은 "다른 병원으로 감"이 아니라 **필수의료를 떠남**이라 어느 지역으로도 돌아오지 않는다
+ * (설계 2026-07-25-attrition-resignation-design.md 결정 A). 그래서 채용은 이동이지만 사직은 소멸이고,
+ * 이 비대칭이 제로섬을 실제로 조인다 — 잃은 사람은 돈으로도 못 되돌린다.
+ *
+ * 📌 **왜 세계에서 빼는가**(머지 통합 2026-07-27): 옛 구현은 `system.pool`을 직접 깎았는데(옛
+ * `releaseFromPool`), 풀은 이제 `hirablePool(world.regions)`의 **파생값**이라 그건 불변식을
+ * 우회하는 두 번째 쓰기 경로다. 지역 배분(METRO·RURAL 비례 추첨)은 "필수의료 이탈이 어느 지역
+ * 통계에서 빠지나"의 각색이다 — 옛 `backgroundAttrition`이 '다른 병원 채용·은퇴'를 시드 한 방으로
+ * 추상화했던 것과 같은 수법이고, 그 함수를 세계 시뮬이 흡수한 것도 같은 이유였다.
+ *
+ * ⚠️ **클램프 = 차감 없음**: 대상 과가 METRO+RURAL에 0명이면 세계는 안 변한다(`hireFromRegions`와
+ * 동일 계약). 사직 자체(명단 축소·weekResignations·리맵)는 **풀 상태와 무관하게 항상** 적용된다 —
+ * 우리 병원 명단과 전국 통계는 별개 장부고, 통계가 이미 0이라고 사직이 취소되지는 않는다.
+ */
+export function resignFromRegions(
+  world: WorldState, deltas: Partial<Record<Specialty, number>>, week: number,
+): WorldState {
+  return drawFromRegions(world, deltas, week, RESIGN_SALT)
+}
+
+/** RURAL 배후 총량(필수과별 배후 병원 수의 합) — transferPressure의 분모·분자. */
+function ruralBackupTotal(regions: RegionState[]): number {
+  const rural = findRegion(regions, 'RURAL')
+  return (Object.keys(rural.doctors) as Specialty[])
+    .reduce((n, s) => n + backupHospitals(rural, s), 0)
+}
+
+/**
+ * transferPressure의 분모 — 초기 RURAL 배후 총량. **모듈 상수다**(REGION_INITIAL이 상수라 불변).
+ * 상수로 뽑으면 매 호출 재계산이 사라지고, "분모는 세션 상태가 아니다"라는 전제가 코드에 드러난다.
+ * 덤으로 `initial <= 0` 같은 0 나눗셈 가드가 불필요해진다 — 값이 컴파일 시점에 고정된 6이고,
+ * REGION_INITIAL의 불변식 ②(RURAL 배후 ≥ 1, world.test.ts가 가드)가 0을 이미 막는다.
+ */
+const RURAL_BACKUP_INITIAL = ruralBackupTotal(REGION_INITIAL)
+
+/**
+ * 전원 압력 0..1 — 지방 배후가 초기 대비 얼마나 무너졌나.
+ * 0 = 온전(초기), 1 = 전멸. receiving.createCallQueue의 3번째 인자로 들어가(Task 7)
+ * 원거리(RURAL발) 응급 전원 비중을 끌어올린다. 판정에는 안 들어간다.
+ *
+ * 단조성은 우연이 아니다: stepWorld는 RURAL에서 빼기만 하고 backupHospitals는
+ * doctors에 대해 단조 증가라 — 드리프트가 도는 동안 이 값은 절대 안 내려간다.
+ * (이벤트 쇼크는 유입도 표현할 수 있어 그때는 내려갈 수 있다 — 의도된 비대칭.)
+ *
+ * ⚠️ **전제**: 분모는 세션 상태가 아니라 `REGION_INITIAL`이다 — 초기 세계가 이 상수 하나뿐이라는
+ * 전제에 의존한다. 난이도·시나리오로 초기 세계가 달라지면 재검토해야 한다(분모를 인자로 받거나
+ * 세션이 자기 초기 스냅샷을 들고 있어야 한다).
+ */
+export function transferPressure(world: WorldState): number {
+  const now = ruralBackupTotal(world.regions)
+  // 유입 쇼크로 초기보다 나아질 수 있어 하한이 필요하다(상한은 now ≥ 0이라 수학적으로 불필요).
+  return Math.max(0, 1 - now / RURAL_BACKUP_INITIAL)
+}
+
+/**
+ * 발신 지역 표시용 가공 지명 — 실존 지명·실사건 토큰 금지.
+ * ⚠️ news.ts의 FICTIONAL_REGIONS(한내시·서림시·금하시·백천시)와 **이름을 겹치지 않는다** —
+ * 겹치면 같은 가공 도시가 두 상수에 살아 이중 기재가 된다(용도가 다르다: 저긴 신문, 여긴 콜 발신지).
+ *
+ * 📌 계획서 초안(서흥구·남정구 / 한내시·금하시 / 먼내군·두밀군·자운군)에서 이름을 바꾼 사유는 둘이다:
+ *   ① **서흥구는 실존 행정구역명**이다(황해북도 서흥군) — 가공 지명 원칙 위반.
+ *   ② **한내시·금하시는 news.ts FICTIONAL_REGIONS와 완전 동일명**이다 — 바로 위 비중복 요구 위반.
+ * 그래서 순우리말 조어로 통일했다(가온·누리·늘목·벼리·먼내·두메·새벌). 이 비중복은
+ * world.test.ts의 검사기 테스트가 강제한다 — 규약만 적어두면 다음 지명 추가에서 조용히 썩는다.
+ */
+export const REGION_LABELS: Record<RegionKey, readonly string[]> = {
+  CAPITAL: ['가온구', '누리구'],
+  METRO: ['늘목시', '벼리시'],
+  RURAL: ['먼내군', '두메군', '새벌군'],
 }

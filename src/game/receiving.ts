@@ -1,11 +1,13 @@
-import type { CallKind, Doctor, Hospital, IncomingCall, Patient, RejectionReason, Specialty } from './types'
+import type { CallKind, Doctor, Hospital, IncomingCall, Patient, RegionKey, RejectionReason, Specialty } from './types'
 import { adjudicateTransfer } from './adjudicate'
 import { handlingDept } from './doctor'
 import { DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
 import {
-  arrivalMinFor, DAY_LENGTH_MIN, earliestFreeMin, freeDoctorsOfDept, NIGHT_START_MIN, occupiedUntilMin, patienceMin,
-  pickAssignee, procedureDurationMin,
+  arrivalMinFor, callSeed, DAY_LENGTH_MIN, earliestFreeMin, freeDoctorsOfDept, NIGHT_START_MIN, occupiedUntilMin,
+  patienceMin, pickAssignee, procedureDurationMin, seededUnit,
 } from './daysim'
+// 순환 아님 — world.ts는 receiving을 import하지 않는다(세계 → 콜 한 방향).
+import { REGION_LABELS } from './world'
 
 // 1막 콜 큐 — 받는 병원. 기존 adjudicateTransfer를 플레이어 손으로 돌린다(벽의 양쪽).
 // 순수·결정론·불변. 다크코미디는 대사(dialogue.ts)와 UI가, 여기선 숫자만.
@@ -417,6 +419,47 @@ export function outpatientForBeds(beds: number): number {
  */
 const ELECTIVE_EVERY = 12
 
+/** 온전한 세계(pressure 0)에서의 RURAL 발신 몫 — 세계가 멀쩡해도 전원의 3할은 지방에서 온다. */
+const RURAL_SHARE_BASE = 0.3
+/** pressure 1까지 RURAL 몫에 더해지는 증가폭 — 0.3 → 0.9. 이 채널의 유일한 세기 손잡이다. */
+const RURAL_SHARE_GAIN = 0.6
+/**
+ * RURAL 밴드 바로 위 METRO 구간의 폭 — **절대 밴드다(잔여 비율이 아니다)**.
+ *
+ * 그래서 pressure 0.75부터 `ruralShare + METRO_BAND ≥ 1`이 되어 **CAPITAL 밴드가 소멸**하고,
+ * 고압에선 사실상 전부 지방발이 된다(실측 pressure 1: RURAL 23 / METRO 1 / CAPITAL 0 · 응급 24통).
+ * **의도된 절벽이다** — "지방 배후가 무너질수록 전원은 전부 지방발이 된다"가 이 채널의 주제다(스펙 §5).
+ * 잔여 비율로 바꾸면 세 지역이 끝까지 공존해 그 주제가 흐려진다.
+ */
+const METRO_BAND = 0.25
+/** 발신 지역 롤의 salt 축 — daysim.ts callSeed 레지스트리의 17. */
+const ORIGIN_REGION_SALT = 17
+/** 발신 지명 롤의 salt 축 — 지역 롤(17)과 달라야 지명이 지역에 종속되지 않는다. */
+const ORIGIN_LABEL_SALT = 19
+/** 중증도 상한 — PATIENT_OF의 최댓값이자 RURAL 승격(+1)의 천장. */
+const SEVERITY_MAX = 5
+
+/**
+ * 응급 한 통의 발신 지역 추첨 — RURAL 몫이 pressure로 커지고(RURAL_SHARE_BASE·GAIN),
+ * 그 위 METRO_BAND만큼이 METRO, 남으면 CAPITAL이다.
+ *
+ * ORIGIN_REGION_SALT는 **이 축 전용**이다(daysim.ts callSeed의 레지스트리). 도착시각 스트림(salt 2)과
+ * 합치면 발신 지역이 도착시각과 완전 상관되는 **무성 실패**가 된다 — 규칙 테스트는 그걸 못 잡아서
+ * receiving.test.ts의 시드 궤적 특성화 핀이 그 자리를 지킨다.
+ */
+function originRegionFor(day: number, index: number, pressure: number): RegionKey {
+  // week는 1 고정 — day가 이미 전역일이다(createCallQueue 규약).
+  const roll = seededUnit(callSeed(1, day, index, ORIGIN_REGION_SALT))
+  const ruralShare = RURAL_SHARE_BASE + RURAL_SHARE_GAIN * pressure
+  return roll < ruralShare ? 'RURAL' : roll < ruralShare + METRO_BAND ? 'METRO' : 'CAPITAL'
+}
+
+/** 그 지역의 가공 지명 하나(ORIGIN_LABEL_SALT — 지역 롤과 다른 축이라야 지명이 지역에 종속되지 않는다). */
+function originLabelFor(day: number, index: number, region: RegionKey): string {
+  const names = REGION_LABELS[region]
+  return names[Math.floor(seededUnit(callSeed(1, day, index, ORIGIN_LABEL_SALT)) * names.length)]
+}
+
 /**
  * 그날의 콜 큐 — 결정론(같은 day·beds는 항상 같은 큐), 도착순 정렬.
  *
@@ -429,11 +472,13 @@ const ELECTIVE_EVERY = 12
  * **마지막에** 도착시각 오름차순으로 정렬한다(결정론·id 고유성은 정렬 전 인덱스가 지킨다).
  * nightShift는 위치가 아니라 arrivalMin(≥ NIGHT_START_MIN)에서 파생 — 정렬해도 시간대는 안 흔들린다.
  *
- * week는 1로 고정한다(createCallQueue는 (day, beds) 두 인자 유지 — session.ts weekDayQueue가 이미
- * 전역일을 day로 넘기므로 이 함수 시그니처를 더 바꾸면 그쪽이 깨진다).
+ * week는 1로 고정한다(session.ts weekDayQueue가 이미 전역일을 day로 넘긴다 — seed의 week 축을
+ * 여기서 또 쓰면 같은 날이 두 번 세어진다).
+ * 3번째 인자 pressure는 선택(기본 0 = 초기 세계 수준; 0이어도 발신 지역은 붙는다 — 세계가 온전할
+ * 때도 콜은 어딘가에서 온다). 세계 → 콜 구성 채널이라 총수는 안 건드리고 구성만 바꾼다(스펙 §5).
  * 라벨은 kind 내 등장 순번으로 고른다 — callerPleaAt(dialogue.ts)의 seed 규칙과 같아야 라벨↔대사가 맞는다(PR #29).
  */
-export function createCallQueue(day = 1, beds = FIXED_BEDS): IncomingCall[] {
+export function createCallQueue(day = 1, beds = FIXED_BEDS, pressure = 0): IncomingCall[] {
   const basePlan = DAY_PLANS[(day - 1) % DAY_PLANS.length]
 
   // ① 응급 스트림 — DAY_PLANS 그대로. 티어와 무관하게 고정이다.
@@ -460,17 +505,29 @@ export function createCallQueue(day = 1, beds = FIXED_BEDS): IncomingCall[] {
     const occurrence = seen[kind] ?? 0
     seen[kind] = occurrence + 1
     const arrivalMin = arrivalMinFor(1, day, i)
+    // 발신 지역 — 응급만(외래는 발신지가 없다: 걸어 들어온 사람이다).
+    const originRegion = requiresBackupCare(kind) ? originRegionFor(day, i, pressure) : undefined
+    const originLabel = originRegion === undefined ? undefined : originLabelFor(day, i, originRegion)
+    const basePatient = kind === 'SPECIALIST_ELECTIVE' ? electivePatientFor(dept ?? 'CARDIOLOGY') : PATIENT_OF[kind]
+    // 멀리서 온 재이송은 상태가 나쁘다 — RURAL발 응급만 중증도 +1(SEVERITY_MAX 상한).
+    // 판정 무관(표시·서사 데이터). 실제 도달 범위: 응급 4종(STEMI·산부·신경·외상)은 이미 5라 상한에
+    // 먹히고, 실질 승격은 급성복증(4→5)·고열감염(3→4) 둘 — 표시 소비자는 그룹E(CallCard)에서 붙는다.
+    const patient = originRegion === 'RURAL'
+      ? { ...basePatient, severity: Math.min(SEVERITY_MAX, basePatient.severity + 1) }
+      : basePatient
     return {
       id: `d${day}c${i + 1}`, // 순환 후 인덱스 기반 — 날짜별 고유, 정렬 위치와 무관(로그·React key 충돌 방지)
       kind,
       label: kind === 'SPECIALIST_ELECTIVE'
         ? electiveLabel(dept ?? 'CARDIOLOGY')
         : CALL_LABELS[kind][occurrence % CALL_LABELS[kind].length],
-      patient: kind === 'SPECIALIST_ELECTIVE' ? electivePatientFor(dept ?? 'CARDIOLOGY') : PATIENT_OF[kind],
+      patient,
       lawsuitRisk: carriesLawsuitRisk(kind), // 소송 노출 계열(인과 선명)만 — 고열감염은 제외(방어 성공 전형)
       nightShift: arrivalMin >= NIGHT_START_MIN,
       arrivalMin,
       durationMin: procedureDurationMin(kind, 1, day, i),
+      originRegion,
+      originLabel,
     }
   })
   return timed.sort((a, b) => a.arrivalMin - b.arrivalMin)
