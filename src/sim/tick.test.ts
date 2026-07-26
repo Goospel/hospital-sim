@@ -1,8 +1,26 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld } from './world'
+import { createWorld, isWalkable, type SimWorld } from './world'
+import { placeRoom } from './build'
 import { spawnDoctor, stepMove, PAWN_TILES_PER_MIN } from './pawn'
 import { tick } from './tick'
-import { findPath } from './path'
+import { findPath, type Pt } from './path'
+
+/** (10,28)에서 dest까지 직선 경로를 들고 선 의사 하나짜리 세계 */
+function walker(dest: Pt | undefined): SimWorld {
+  let w = createWorld(1)
+  w = spawnDoctor(w, 'INTERNAL_MEDICINE', { x: 10, y: 28 })
+  const path = findPath(w, { x: 10, y: 28 }, dest ?? { x: 10, y: 5 })!
+  return { ...w, pawns: [{ ...w.pawns[0], path, dest }] }
+}
+
+/** 진로(x=10 열)를 가로지르는 방 — 문은 (11,18)이라 열 10은 아래 벽에서 통째로 막힌다.
+ *  방 종류가 WARD인 이유: EXAM이면 patientFlow가 이 의사를 진료실에 배정해 dest를 갈아치운다
+ *  (그 자체는 정상 동작이지만, 여기서 재고 싶은 건 이동뿐이라 간섭을 피한다). */
+function wallAcrossPath(w: SimWorld): SimWorld {
+  const r = placeRoom(w, { type: 'WARD', x: 8, y: 14, w: 6, h: 5 })
+  if (!r.ok) throw new Error('전제 실패')
+  return r.world
+}
 
 describe('폰 이동', () => {
   it('경로를 분당 PAWN_TILES_PER_MIN 타일씩 소비한다', () => {
@@ -99,6 +117,46 @@ describe('시계', () => {
   })
 })
 
+describe('경로 무효화', () => {
+  // 경로는 목적지 확정 시 1회만 계산한다(성능). 그 대가로 **경로는 낡을 수 있다** —
+  // 걷는 도중 플레이어가 진로에 방을 지으면, 재검사가 없으면 폰이 새 벽을 그대로 통과한다.
+  it('걷는 도중 진로가 막히면 새 벽을 통과하지 않고 우회한다', () => {
+    let w = walker({ x: 10, y: 5 })
+    w = tick(w, 2) // (10,24)까지 전진 — 아직 벽 앞이 아니다
+    w = wallAcrossPath(w)
+    for (let i = 0; i < 40; i++) {
+      w = tick(w, 1)
+      const p = w.pawns[0]
+      expect(isWalkable(w, p.x, p.y)).toBe(true) // 어느 틱에도 막힌 타일을 밟지 않는다
+    }
+    expect(w.pawns[0]).toMatchObject({ x: 10, y: 5 }) // 문 밖으로 우회해 결국 도달한다
+  })
+  it('목적지 자체가 막히면 경로를 비우고 멈춘다 — 벽을 뚫지 않는다', () => {
+    let w = walker({ x: 10, y: 14 }) // 나중에 방의 위 벽이 될 자리
+    w = tick(w, 2)
+    w = wallAcrossPath(w)
+    w = tick(w, 20)
+    expect(w.pawns[0].path).toEqual([])
+    expect(w.pawns[0]).not.toMatchObject({ x: 10, y: 14 })
+    expect(isWalkable(w, w.pawns[0].x, w.pawns[0].y)).toBe(true)
+  })
+  it('dest가 없는 폰은 진로가 막히면 재탐색 없이 멈춘다', () => {
+    let w = walker(undefined)
+    w = tick(w, 2)
+    w = wallAcrossPath(w)
+    w = tick(w, 20)
+    expect(w.pawns[0].path).toEqual([])
+    expect(isWalkable(w, w.pawns[0].x, w.pawns[0].y)).toBe(true)
+  })
+  it('진로가 멀쩡하면 경로를 다시 계산하지 않는다 — 원래 경로를 그대로 소비한다', () => {
+    // 재탐색이 무조건 돌면 findPath(최장 ~3ms)가 폰 수 × 틱 수만큼 곱해진다.
+    // 같은 출발·목적지라도 재탐색된 경로는 현 위치에서 다시 뽑히므로, 원본의 꼬리와 어긋날 수 있다.
+    const w0 = walker({ x: 10, y: 5 })
+    const after = tick(w0, 3)
+    expect(after.pawns[0].path).toEqual(w0.pawns[0].path.slice(3 * PAWN_TILES_PER_MIN))
+  })
+})
+
 describe('결정론', () => {
   it('같은 시드·같은 분이면 tick 결과가 완전 동일하다', () => {
     const run = () => {
@@ -110,11 +168,12 @@ describe('결정론', () => {
     expect(run()).toEqual(run())
   })
   it('한 번에 60분 = 1분씩 60번 (시간 분할 불변식)', () => {
-    // ⚠️ 이 테스트는 **지금은 공허하다** — tick의 유일한 내용이 이동이고 이동은 분에 대해
-    // 선형이라(stepMove(p,60) === stepMove 60회) 배치 구현으로 바꿔도 통과한다. 실측 확인했다.
-    // 그래도 남기는 이유: Task 5가 붙일 단계 전이(대기 인내 만료·진료 종료·환자 도착)는
-    // 분마다 조건을 보므로 비선형이고, 그때 이 테스트가 배치 구현을 잡는 계측기가 된다.
-    // 배속(1x/4x/16x)이 게임 내용을 바꾸지 않는다는 계약을 미리 못박아 두는 회귀 잠금이다.
+    // 이 테스트는 Task 4 시점엔 **공허했다** — tick의 유일한 내용이 이동이고 이동은 분에 대해
+    // 선형이라(stepMove(p,60) === stepMove 60회) 배치 구현으로 바꿔도 통과했다.
+    // Task 5의 환자 흐름(분당 도착 판정·인내 만료·진료 종료)이 비선형 전이를 붙이며 살아났다 —
+    // tick을 배치 구현(stepMove(p, minutes) + stepPatients 1회)으로 변조하니 실제로 깨진다(실측).
+    // 방 하나 없는 이 세계에서도 잡히는 이유: 도착 판정이 분마다 독립이라 60분을 한 번에
+    // 처리하면 판정이 60번이 아니라 1번만 돈다. 배속이 게임 내용을 바꾸지 않는다는 계약의 잠금.
     let a = createWorld(9); let b = createWorld(9)
     a = spawnDoctor(a, 'GENERAL_SURGERY', { x: 3, y: 3 })
     b = spawnDoctor(b, 'GENERAL_SURGERY', { x: 3, y: 3 })

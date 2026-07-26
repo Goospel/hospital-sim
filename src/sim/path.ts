@@ -12,6 +12,11 @@ export function buildBlockedSet(world: SimWorld): Set<number> {
   return blocked
 }
 
+/** 사전계산한 blocked 집합으로 타일 한 칸을 조회 — 인덱스 공식(y*GRID_W+x)의 단일 출처.
+ *  호출부가 공식을 다시 쓰면 buildBlockedSet과 어긋날 때 조용히 틀린 판정이 나온다. */
+export const isBlockedTile = (blocked: Set<number>, p: Pt): boolean =>
+  blocked.has(p.y * GRID_W + p.x)
+
 const walkableAt = (blocked: Set<number>, x: number, y: number): boolean =>
   x >= 0 && y >= 0 && x < GRID_W && y < GRID_H && !blocked.has(y * GRID_W + x)
 

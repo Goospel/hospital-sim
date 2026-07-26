@@ -27,12 +27,20 @@ export interface SimWorld {
   pawns: Pawn[]
   nextId: number
   seed: number
+  /** 하루 집계 — 폰은 퇴장하면 배열에서 사라지므로, 무슨 일이 있었는지는 여기에만 남는다. */
+  stats: SimStats
+}
+
+export interface SimStats {
+  examsDone: number  // 완료된 진료 수(수익의 근거)
+  leftCount: number  // 대기 못 하고 떠난 환자 수(자리 부족 + 인내 초과)
 }
 
 export function createWorld(seed: number): SimWorld {
   return {
     minute: 0, day: 1, treasuryManwon: INITIAL_TREASURY_MANWON,
     rooms: [], furniture: [], pawns: [], nextId: 1, seed,
+    stats: { examsDone: 0, leftCount: 0 },
   }
 }
 
