@@ -300,3 +300,36 @@ describe('stepWorld — 주간 드리프트 (spec §3)', () => {
     expect(stepWorld(emptied, 5)).toEqual(emptied)
   })
 })
+
+describe('RegionEffect — 이벤트가 지역 수치를 흔든다 (spec §4)', () => {
+  it('LITIGATION_CHILL은 RURAL 산부인과 의사를 1 줄인다 (배상 판결 → 지방 이탈)', () => {
+    const event = EVENT_CATALOG.find((e) => e.id === 'LITIGATION_CHILL')!
+    const before = initWorld()
+    const after = applyEvent(before, event)
+    expect(regionOf(after, 'RURAL').doctors.OBSTETRICS)
+      .toBe(regionOf(before, 'RURAL').doctors.OBSTETRICS - 1)
+    // 기존 효과(순환기 채용비 +3000)도 그대로 동작
+    expect(after.departments.find((d) => d.key === 'CARDIOLOGY')!.hireCostManwon)
+      .toBe(before.departments.find((d) => d.key === 'CARDIOLOGY')!.hireCostManwon + 3_000)
+  })
+
+  it('regionEffects 없는 이벤트는 regions를 건드리지 않는다', () => {
+    const before = initWorld()
+    const after = applyEvent(before, selectEvent(0)) // OB_PEDS_POLICY_FEE — dept 효과만
+    expect(after.regions).toEqual(before.regions)
+  })
+
+  it('의사·병원 수는 델타로 0 밑으로 내려가지 않는다(클램프)', () => {
+    const world = initWorld()
+    const shock = { id: 'X', headline: 'x', direction: 'worsen' as const, effects: [], briefing: [],
+      regionEffects: [{ region: 'RURAL' as const, field: 'doctors' as const, dept: 'THORACIC_SURGERY' as const, delta: -99 }] }
+    expect(regionOf(applyEvent(world, shock), 'RURAL').doctors.THORACIC_SURGERY).toBe(0)
+  })
+
+  it('applyEvent는 입력 world를 변이하지 않는다(불변)', () => {
+    const world = initWorld()
+    const snapshot = JSON.parse(JSON.stringify(world))
+    applyEvent(world, EVENT_CATALOG.find((e) => e.id === 'LITIGATION_CHILL')!)
+    expect(world).toEqual(snapshot)
+  })
+})

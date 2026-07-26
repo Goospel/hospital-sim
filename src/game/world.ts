@@ -3,11 +3,13 @@ import { DEPARTMENTS, ROUND_THE_CLOCK_MIN_DOCTORS } from './setup'
 import { callSeed, seededUnit } from './daysim'
 
 // 외생 이벤트가 세계 파라미터를 재구성하는 순수 코어(spec: 2026-07-18-world-event-slice).
-// 이번 슬라이스의 세계 = 채용 경제(DEPARTMENTS)뿐. 확장점: hospitals·week·appliedEvents.
+// 세계 = 채용 경제(departments) + 지역 3계층(regions). 확장점: week·appliedEvents.
 //
-// ⚠️ 헌법: 이벤트는 채용 경제(profit/hireCost)만 바꾼다. 배후진료 매핑(providesBackup)과
-// 전원 판정(adjudicate)은 한 줄도 안 건드린다 — 세계는 바꾸되 개별 생사 판정은 코드가 잠근다.
-// DeptEffect.field 타입이 두 경제 필드로 제한돼 있어, providesBackup을 건드리는 건 애초에 표현 불가.
+// ⚠️ 헌법은 동일하다: 이벤트·드리프트는 **수치만** 만진다 — 채용 경제(fixedCost/hireCost)와
+// 지역 수치(doctors/hospitals)뿐이고, 배후진료 매핑(providesBackup)과 전원 판정(adjudicate)은
+// 한 줄도 안 건드린다. 세계는 바꾸되 개별 생사 판정은 코드가 잠근다.
+// DeptEffect.field·RegionEffect.field 유니온이 만질 수 있는 필드를 열거하므로,
+// providesBackup·adjudicate를 건드리는 건 애초에 **표현 자체가 불가능**하다.
 
 /** 지역 하나 — 개체가 아니라 집계. doctors는 그 지역 병원들에서 일하는 필수과 의사 수. */
 export interface RegionState {
@@ -40,6 +42,17 @@ export interface DeptEffect {
   delta: number
 }
 
+/**
+ * 이벤트의 지역 델타 — field 유니온이 헌법이다: 이벤트는 지역의 '수치'만 만질 수 있고
+ * providesBackup·판정 경로는 표현 자체가 불가능하다(DeptEffect와 같은 잠금 방식).
+ */
+export interface RegionEffect {
+  region: RegionKey
+  field: 'doctors' | 'hospitals'
+  dept?: Specialty // field === 'doctors'일 때 필수
+  delta: number
+}
+
 /** 외생 이벤트 = 세계에 떨어지는 변경 1개. headline은 나중에 LLM이 대체할 서사 슬롯. */
 export interface WorldEvent {
   id: string
@@ -48,6 +61,8 @@ export interface WorldEvent {
   effects: DeptEffect[]
   /** 병원장이 읽는 공문 2–3줄 — 실제 정책 도구(가산·정책수가·상대가치점수)만. 각색 억 손익 금지. */
   briefing: string[]
+  /** 지역 수치 델타 — 없으면 지역 무변경. 드리프트(stepWorld)와 달리 총원 보존을 안 한다(유입/이탈). */
+  regionEffects?: RegionEffect[]
 }
 
 /**
@@ -91,6 +106,7 @@ export const EVENT_CATALOG: WorldEvent[] = [
     headline: '의료분쟁 고액 배상 판결 잇따라 — 필수과 인력 확보 비용 상승',
     direction: 'worsen',
     effects: [{ dept: 'CARDIOLOGY', field: 'hireCostManwon', delta: 3_000 }], // 15,000 → 18,000 (+20%)
+    regionEffects: [{ region: 'RURAL', field: 'doctors', dept: 'OBSTETRICS', delta: -1 }], // 배상 공포 → 지방 산부 이탈
     briefing: [
       '고액 배상 판결 잇따라 — 필수과 전문의 채용 시장 경색',
       '배후진료 인력 확보 비용 상승',
@@ -164,7 +180,7 @@ export function initWorld(): WorldState {
   }
 }
 
-/** 이벤트를 세계에 적용 — 순수·불변. departments만 재구성한다. */
+/** 이벤트를 세계에 적용 — 순수·불변. departments(비용)와 regions(수치)를 재구성한다. */
 export function applyEvent(world: WorldState, event: WorldEvent): WorldState {
   const departments = world.departments.map((dept) => {
     const effects = event.effects.filter((e) => e.dept === dept.key)
@@ -175,7 +191,17 @@ export function applyEvent(world: WorldState, event: WorldEvent): WorldState {
     }
     return next
   })
-  return { ...world, departments }
+  const regions = world.regions.map((region) => {
+    const effects = (event.regionEffects ?? []).filter((e) => e.region === region.key)
+    if (effects.length === 0) return region
+    const next = { ...region, doctors: { ...region.doctors } }
+    for (const e of effects) {
+      if (e.field === 'hospitals') next.hospitals = Math.max(0, next.hospitals + e.delta)
+      else if (e.dept) next.doctors[e.dept] = Math.max(0, next.doctors[e.dept] + e.delta)
+    }
+    return next
+  })
+  return { ...world, departments, regions }
 }
 
 /** 카탈로그에서 결정론적으로 이벤트를 고른다. */
