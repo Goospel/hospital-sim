@@ -23,6 +23,7 @@ tags:
   ```
 - 게이트: 각 태스크 마지막에 `npx vitest run` 전체 green + `npx tsc --noEmit` 0 에러.
 - 새 md 문서를 만들면 frontmatter `tags: [type/...]` 필수(pre-commit이 거부한다).
+- **임포트 컨벤션(Task 1 리뷰에서 확정 · 2026-07-27)**: `src/sim/` → `src/game/` 임포트는 **상대 경로**(`../game/...`)로 쓴다. 이유 2가지 — ① 레이어 컨벤션: `@/` 별칭은 `src/components`·`src/app`(UI 레이어)에서만 쓰이고 코어 로직(`src/game/*.ts`)은 상대 경로 100%다. ② **vitest에 `@/` alias가 없다**(`vitest.config.ts`에 `resolve.alias` 없음, `vite-tsconfig-paths` 미설치) — `import type`은 지워져서 우연히 통과하지만 **값 임포트는 실제로 `Cannot find package '@/game/...'`로 터진다**(실측). ⚠️ 초안의 "레포에 `@/` 사용 0건"은 오검(작은따옴표 grep — 레포는 큰따옴표 59회/18파일)이었다 — 이 줄이 그 기록의 정정이다.
 
 ---
 
@@ -100,7 +101,7 @@ describe('wallTiles', () => {
 ```ts
 // src/sim/world.ts
 // 타일 세계 — 순수 데이터와 통행 판정. 렌더·React 임포트 금지.
-import type { DeptKey } from '@/game/types'
+import type { DeptKey } from '../game/types' // 상대 경로 — 공통 규약「임포트 컨벤션」참조
 
 export const GRID_W = 48
 export const GRID_H = 32
@@ -477,7 +478,7 @@ describe('결정론', () => {
 
 ```ts
 // src/sim/pawn.ts
-import type { DeptKey } from '@/game/types'
+import type { DeptKey } from '../game/types'
 import type { SimWorld } from './world'
 import type { Pt } from './path'
 
@@ -618,7 +619,7 @@ describe('환자 흐름', () => {
 ```ts
 // src/sim/patientFlow.ts
 // 환자 라이프사이클 — 도착·대기·배정·진료·이탈. tick에서 분당 1회 호출.
-import { seededUnit } from '@/game/daysim'
+import { seededUnit } from '../game/daysim'
 import { findPath, type Pt } from './path'
 import { doorTile, type SimWorld, type Room } from './world'
 import type { Pawn } from './pawn'
