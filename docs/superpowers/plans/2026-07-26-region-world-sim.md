@@ -29,6 +29,7 @@ tags:
    ```
    `Skills-used:`부터 `Co-Authored-By:`까지 **중간에 빈 줄이 하나라도 있으면 안 된다.**
 3. **md 파일을 건드리는 커밋**은 pre-commit이 frontmatter `type/*` 태그를 검사한다. 이 계획서·스펙은 이미 태그가 있다.
+4. 🧬 **통과 후 돌연변이 확인 (필수 — 각 Task의 "통과 확인" 단계에 포함)**: 테스트가 green이 된 직후, **그 테스트가 겨눈 규칙을 구현에서 임시로 제거**하고 실제로 빨개지는지 확인한 다음 되돌린다(예: 가중치 곱을 1로, `filter`를 지움, 클램프를 지움, 시드 salt를 지움). 이 슬라이스에서 **3회 반복해 밟은 함정**이라 규약으로 승격했다 — 속성 단정(부등호·존재성)은 대조군 없이 쓰면 "규칙의 결과"가 아니라 "데이터의 초기 분포"를 재서, 규칙을 지워도 통과하는 **공허 테스트**가 된다([T-080](../../../claude-docs/troubleshooting/T-080.md)). green은 판별력의 증거가 아니다.
 
 ## 파일 구조 (무엇을 어디에)
 
@@ -42,7 +43,9 @@ tags:
 | `src/components/CallCard.tsx` | 콜 카드 UI | 발신 지역 한 줄 표시 |
 | 각 `*.test.ts` | 테스트 | 태스크별 명시 |
 
-**의존 방향(순환 금지)**: `types.ts` ← `world.ts`(←`setup.ts`·`daysim.ts`) ← `system.ts`, `receiving.ts`는 world를 import하지 않는다(`pressure`는 숫자로 받는다). `types.ts`는 아무도 import하지 않는다 — 그래서 `RegionKey`는 `world.ts`가 아니라 `types.ts`에 둔다(`IncomingCall`이 참조해야 하는데 types→world는 순환이다).
+**의존 방향(순환 금지)**: `types.ts` ← `world.ts`(←`setup.ts`·`daysim.ts`) ← `system.ts`. `types.ts`는 아무도 import하지 않는다 — 그래서 `RegionKey`는 `world.ts`가 아니라 `types.ts`에 둔다(`IncomingCall`이 참조해야 하는데 types→world는 순환이다).
+
+> ✏️ **구현 중 정정**: 초안은 *"`receiving.ts`는 world를 import하지 않는다"*였다 → **한다**(`import { REGION_LABELS } from './world'`). 발신 지명(`originLabel`)을 만들려면 그 상수가 필요하고, 지명을 receiving에 복사해 두는 건 이중 기재라 import가 옳다. **순환은 아니다** — world는 receiving을 모른다. 초안의 의도(*"세계 상태가 콜 생성에 새지 않는다"*)는 그대로 지켜진다: `pressure`는 여전히 **숫자 하나로** 받고 `receiving.ts`는 `WorldState`를 읽지 않는다. (⏸ 후속: `REGION_LABELS` 의존을 한쪽으로 모으는 `region.ts` 분리 — `claude-docs/plan.md` 보류 목록.)
 
 ---
 
@@ -53,7 +56,7 @@ tags:
 - Modify: `src/game/world.ts`
 - Test: `src/game/world.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트 작성** — `world.test.ts` 끝에 추가:
+- [x] **Step 1: 실패하는 테스트 작성** — `world.test.ts` 끝에 추가:
 
 ```ts
 import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT,
@@ -112,12 +115,12 @@ describe('지역 세계 — 데이터 모델 (spec 2026-07-26 §2)', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `npx vitest run src/game/world.test.ts`
 Expected: FAIL — `REGION_INITIAL`/`regionOf`/`backupHospitals` export 없음.
 
-- [ ] **Step 3: 구현** — 먼저 `types.ts`의 `Specialty` 정의 아래에 추가:
+- [x] **Step 3: 구현** — 먼저 `types.ts`의 `Specialty` 정의 아래에 추가:
 
 ```ts
 /** 세계 지역 3계층 — 수도권 / 광역시 / 지방. world.ts의 지역 시뮬과 콜의 발신 지역이 공유한다. */
@@ -187,12 +190,12 @@ export function initWorld(): WorldState {
 
 `applyEvent`의 반환이 `{ ...world, departments }`라 regions는 자동으로 실려 간다(이 태스크에선 무변경).
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `npx vitest run src/game/world.test.ts`
 Expected: PASS (기존 world 테스트 포함 전부).
 
-- [ ] **Step 5: 전체 회귀 + 커밋**
+- [x] **Step 5: 전체 회귀 + 커밋**
 
 Run: `npx vitest run` → 전부 PASS 확인 후:
 
@@ -210,7 +213,7 @@ git add src/game/types.ts src/game/world.ts src/game/world.test.ts
 - Modify: `src/game/world.ts`
 - Test: `src/game/world.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 ```ts
 import { stepWorld } from './world' // 기존 import 줄에 합치기
@@ -267,12 +270,12 @@ describe('stepWorld — 주간 드리프트 (spec §3)', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `npx vitest run src/game/world.test.ts`
 Expected: FAIL — `stepWorld` export 없음.
 
-- [ ] **Step 3: 구현** — `world.ts`에 추가 (import에 `seededUnit`·`callSeed`를 `./daysim`에서 추가):
+- [x] **Step 3: 구현** — `world.ts`에 추가 (import에 `seededUnit`·`callSeed`를 `./daysim`에서 추가):
 
 ```ts
 /** 지역 간 1명 이동 — 불변 갱신. from에서 빼고 to에 더한다(0 하한). */
@@ -314,7 +317,7 @@ export function stepWorld(world: WorldState, week: number): WorldState {
 }
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `npx vitest run src/game/world.test.ts`
 Expected: PASS.
@@ -335,7 +338,7 @@ Expected: PASS.
 
 **통과했으면 판별력을 반드시 확인한다**: 가중치를 임시로 1(`d.lawsuitRisk ? 1 : 1`)로 바꿔 이 테스트가 **실제로 깨지는지** 보고 되돌린다. 안 깨지면 척도가 틀린 것이니 정규화를 고친다 — 창을 넓히지 않는다.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add src/game/world.ts src/game/world.test.ts
@@ -350,7 +353,7 @@ git add src/game/world.ts src/game/world.test.ts
 - Modify: `src/game/world.ts`
 - Test: `src/game/world.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 ```ts
 describe('RegionEffect — 이벤트가 지역 수치를 흔든다 (spec §4)', () => {
@@ -387,12 +390,12 @@ describe('RegionEffect — 이벤트가 지역 수치를 흔든다 (spec §4)', 
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `npx vitest run src/game/world.test.ts`
 Expected: FAIL — `regionEffects` 미지원(LITIGATION_CHILL 테스트에서 산부 수 불변).
 
-- [ ] **Step 3: 구현** — `world.ts`:
+- [x] **Step 3: 구현** — `world.ts`:
 
 ```ts
 /**
@@ -465,7 +468,7 @@ export function applyEvent(world: WorldState, event: WorldEvent): WorldState {
 
 파일 상단(4~9행) 주석의 "세계 = 채용 경제뿐"을 갱신한다: 세계 = 채용 경제 + 지역 3계층, 헌법(판정 불가침)은 동일.
 
-- [ ] **Step 4: 통과 확인 + 커밋**
+- [x] **Step 4: 통과 확인 + 커밋**
 
 Run: `npx vitest run src/game/world.test.ts` → PASS 후:
 
@@ -482,7 +485,7 @@ git add src/game/world.ts src/game/world.test.ts
 - Modify: `src/game/world.ts`
 - Test: `src/game/world.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 ```ts
 import { transferPressure, REGION_LABELS } from './world' // 기존 import 줄에 합치기
@@ -513,12 +516,12 @@ describe('transferPressure — 세계 → 콜 구성 번역 (spec §5)', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `npx vitest run src/game/world.test.ts`
 Expected: FAIL — export 없음.
 
-- [ ] **Step 3: 구현** — `world.ts`:
+- [x] **Step 3: 구현** — `world.ts`:
 
 ```ts
 /** RURAL 배후 총량(필수과별 배후 병원 수의 합) — transferPressure의 분모·분자. */
@@ -554,7 +557,7 @@ export const REGION_LABELS: Record<RegionKey, readonly string[]> = {
     .reduce((n, s) => n + backupHospitals(rural, s), 0)
 ```
 
-- [ ] **Step 4: 통과 확인 + 커밋**
+- [x] **Step 4: 통과 확인 + 커밋**
 
 Run: `npx vitest run src/game/world.test.ts` → PASS 후:
 
@@ -572,7 +575,7 @@ git add src/game/world.ts src/game/world.test.ts
 - Modify: `src/game/world.ts` (`hireFromRegions`)
 - Test: `src/game/system.test.ts`, `src/game/world.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트 작성** — `system.test.ts`에 추가:
+- [x] **Step 1: 실패하는 테스트 작성** — `system.test.ts`에 추가:
 
 ```ts
 import { initSystem, canHire, poolRemaining, POOL_INITIAL, hirablePool, deriveSystem } from './system'
@@ -621,12 +624,12 @@ describe('hireFromRegions — 채용이 세계에서 사람을 빼간다', () =>
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `npx vitest run src/game/system.test.ts`
 Expected: FAIL — `hirablePool`/`deriveSystem`/`hireFromRegions` 없음.
 
-- [ ] **Step 3: 구현** — 먼저 `world.ts`에 채용 차감을 추가:
+- [x] **Step 3: 구현** — 먼저 `world.ts`에 채용 차감을 추가:
 
 ```ts
 /** 한 지역에서 1명 차감(0 하한) — 채용 전용(목적지 없음: 우리 병원 명단으로 간다). */
@@ -710,7 +713,7 @@ export function canHire(system: SystemState, s: Specialty, count: number): boole
 
 ⚠️ `session.ts`가 아직 `backgroundAttrition`·`hireDelta`를 import한다 — 이 시점엔 컴파일이 깨진다. **Task 6에서 배선을 바꾸기 전까지 커밋하지 않는다**(Task 5·6은 한 커밋으로 묶는다). Step 4의 확인은 `system.test.ts`·`world.test.ts`만 돌린다.
 
-- [ ] **Step 4: 두 테스트 파일 통과 확인**
+- [x] **Step 4: 두 테스트 파일 통과 확인**
 
 Run: `npx vitest run src/game/system.test.ts src/game/world.test.ts`
 Expected: 새 테스트 PASS. 기존 `system.test.ts`의 `backgroundAttrition`·`hireDelta` 테스트는 컴파일 실패 — **해당 테스트 블록을 삭제**한다(기능 자체가 세계 시뮬로 흡수·대체됐다). `POOL_INITIAL` 값 검증 테스트는 값이 같으므로 그대로 통과해야 한다.
@@ -723,7 +726,7 @@ Expected: 새 테스트 PASS. 기존 `system.test.ts`의 `backgroundAttrition`·
 - Modify: `src/game/session.ts`
 - Test: `src/game/session.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트 작성** — `session.test.ts`에 추가. 기존 헬퍼를 그대로 쓴다: `runWeek(choices, accept)`가 1주차를 완주해 7일차 DAY_END를 돌려주고, `finishWeek(...)`이 `completeWeek`으로 WEEK_SUMMARY를 만든다. 픽스처 `conscientious`(순환기 포함 개원 선택)와 정책 `essentialFirst`도 파일 상단에 이미 있다 — 실제 이름이 다르면 파일 상단에서 확인해 맞춘다.
+- [x] **Step 1: 실패하는 테스트 작성** — `session.test.ts`에 추가. 기존 헬퍼를 그대로 쓴다: `runWeek(choices, accept)`가 1주차를 완주해 7일차 DAY_END를 돌려주고, `finishWeek(...)`이 `completeWeek`으로 WEEK_SUMMARY를 만든다. 픽스처 `conscientious`(순환기 포함 개원 선택)와 정책 `essentialFirst`도 파일 상단에 이미 있다 — 실제 이름이 다르면 파일 상단에서 확인해 맞춘다.
 
 ```ts
 import { initWorld, transferPressure, regionOf, type WorldState } from './world'
@@ -773,12 +776,12 @@ describe('세계 시뮬 배선 (spec §7)', () => {
 
 (applyGrowth 테스트에서 금고가 모자라면 `treasury`를 직접 불려 상태를 만든다: `{ ...growth, treasury: 100_000 }` — 기존 세션 테스트들이 쓰는 방식이다.)
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `npx vitest run src/game/session.test.ts`
 Expected: FAIL (컴파일 에러 — session.ts가 아직 옛 import를 쓴다).
 
-- [ ] **Step 3: 구현** — `session.ts` 변경 4곳 (⚠️ 콜 큐에 pressure를 넘기는 `weekDayQueue` 배선은 **Task 7**이다 — `createCallQueue`의 3번째 인자가 거기서 생기므로 여기서 먼저 넘기면 컴파일이 깨진다):
+- [x] **Step 3: 구현** — `session.ts` 변경 4곳 (⚠️ 콜 큐에 pressure를 넘기는 `weekDayQueue` 배선은 **Task 7**이다 — `createCallQueue`의 3번째 인자가 거기서 생기므로 여기서 먼저 넘기면 컴파일이 깨진다):
 
 ① import 교체:
 
@@ -840,12 +843,12 @@ export function applyGrowth(state: SessionState, next: SetupChoices, nextBeds: n
 }
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `npx vitest run src/game/session.test.ts src/game/system.test.ts src/game/world.test.ts`
 Expected: PASS. ⚠️ 기존 세션 테스트 중 "매주 풀이 1 준다"(backgroundAttrition 전제) 류가 있으면 드리프트 전제(1~2명, METRO+RURAL 합 기준)로 기대값을 고친다 — 수치가 아니라 **방향(단조 감소)** 검증으로 바꾸는 것을 권장.
 
-- [ ] **Step 5: 전체 회귀 + 커밋 (Task 5+6 묶음)**
+- [x] **Step 5: 전체 회귀 + 커밋 (Task 5+6 묶음)**
 
 Run: `npx vitest run` → 전부 PASS. `npx tsc --noEmit`도 확인.
 
@@ -864,7 +867,7 @@ git add src/game/world.ts src/game/system.ts src/game/session.ts src/game/system
 - Modify: `src/game/session.ts` (`weekDayQueue`)
 - Test: `src/game/receiving.test.ts`, `src/game/session.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트 작성** — `receiving.test.ts`에 추가:
+- [x] **Step 1: 실패하는 테스트 작성** — `receiving.test.ts`에 추가:
 
 ```ts
 import { requiresBackupCare } from './receiving' // 이미 import돼 있으면 생략
@@ -916,12 +919,12 @@ describe('콜 발신 지역 — 세계가 콜 구성에 닿는다 (spec §5)', (
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `npx vitest run src/game/receiving.test.ts`
 Expected: FAIL — `originRegion` 없음.
 
-- [ ] **Step 3: 구현** — `types.ts`의 `IncomingCall`에 필드 추가:
+- [x] **Step 3: 구현** — `types.ts`의 `IncomingCall`에 필드 추가:
 
 ```ts
   originRegion?: RegionKey // 응급 전원 콜의 발신 지역 — 표시·구성 전용, 판정(adjudicate·점유)에 안 들어간다
@@ -996,12 +999,12 @@ it('세션이 만든 콜 큐에 발신 지역이 실린다 — 세계가 큐 생
 })
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `npx vitest run src/game/receiving.test.ts src/game/session.test.ts`
 Expected: PASS. ⚠️ 큐 스냅샷을 고정한 기존 테스트가 있으면 `originRegion`/`originLabel` 필드 추가로 깨질 수 있다 — 기대 객체에 두 필드를 더해 고친다(구성·순서는 불변이어야 한다: arrivalMin·id·kind가 바뀌었다면 그건 구현 버그다).
 
-- [ ] **Step 5: 전체 회귀 + 커밋**
+- [x] **Step 5: 전체 회귀 + 커밋**
 
 Run: `npx vitest run` → PASS 후:
 
@@ -1018,7 +1021,7 @@ git add src/game/types.ts src/game/receiving.ts src/game/receiving.test.ts src/g
 - Modify: `src/components/CallCard.tsx` (200행 부근 — `call.label` 표시 지점)
 - Modify: `claude-docs/plan.md`, `claude-docs/changeLog.md`
 
-- [ ] **Step 1: CallCard에 발신 지역 한 줄** — `call.label`을 그리는 `<p>`(200행) 바로 **위**에, 파일의 기존 클래스 관례를 따라 추가:
+- [x] **Step 1: CallCard에 발신 지역 한 줄** — `call.label`을 그리는 `<p>`(200행) 바로 **위**에, 파일의 기존 클래스 관례를 따라 추가:
 
 ```tsx
         {call.originLabel && (
@@ -1028,14 +1031,14 @@ git add src/game/types.ts src/game/receiving.ts src/game/receiving.test.ts src/g
 
 (정확한 클래스는 파일 내 보조 텍스트가 쓰는 것을 따른다 — 스타일 신설 금지. 응급이 아닌 콜은 `originLabel`이 없어 자동으로 안 뜬다.)
 
-- [ ] **Step 2: 눈 확인** — `npm run dev` 후 브라우저에서 응급 콜 카드에 "○○군에서 전원 요청"이 뜨는지, 외래 카드엔 안 뜨는지 확인. (수동 확인이 어려운 환경이면 `npx vitest run` + `npx tsc --noEmit`으로 대체하고 PR 본문에 미확인을 명시.)
+- [x] **Step 2: 눈 확인** — `npm run dev` 후 브라우저에서 응급 콜 카드에 "○○군에서 전원 요청"이 뜨는지, 외래 카드엔 안 뜨는지 확인. (수동 확인이 어려운 환경이면 `npx vitest run` + `npx tsc --noEmit`으로 대체하고 PR 본문에 미확인을 명시.)
 
-- [ ] **Step 3: 문서 갱신**
+- [x] **Step 3: 문서 갱신**
   - `claude-docs/plan.md`: ⏸ "지역 집계 장부"·"지방 공간화" 항목 아래에 이번 슬라이스 완료를 반영(✅ 지역 3계층 세계 시뮬 — 콜 구성·채용 풀 채널. 지도·거리·다병원은 여전히 ⏸).
   - `claude-docs/changeLog.md` 맨 위에 항목 추가(PR 번호 적지 않기 — 프로젝트 규약): `## 2026-07-26 · 지역 세계 시뮬 최소 슬라이스 — 드리프트+이벤트 쇼크, 콜 구성·채용 풀 2채널` + 왜/무엇 2~3줄.
   - 트러블슈팅 스윕: 이번 브랜치에서 1분+ 디버깅이 있었으면(서브에이전트가 잡은 것 포함) `claude-docs/troubleshooting/T-###.md` 신설.
 
-- [ ] **Step 4: 최종 회귀 + 커밋**
+- [x] **Step 4: 최종 회귀 + 커밋**
 
 Run: `npx vitest run` (전체 PASS) + `npx tsc --noEmit` + `npm run lint`(스크립트가 있으면).
 
@@ -1048,9 +1051,9 @@ git add src/components/CallCard.tsx claude-docs/plan.md claude-docs/changeLog.md
 
 ## 완료 기준 (스펙 대조)
 
-- [ ] 세계가 매주 스스로 나빠진다: `stepWorld` 드리프트(§3) + `RegionEffect` 쇼크(§4)
-- [ ] 채널 ①: pressure에 따라 RURAL발 응급 비중·중증도 상승, 응급 총수 불변(§5)
-- [ ] 채널 ②: pool ≡ `hirablePool(world.regions)` 불변식이 nextWeek·applyGrowth 후 성립(§6)
-- [ ] `backgroundAttrition`·`hireDelta` 삭제 — 이중 기재 없음(§3)
-- [ ] `adjudicateTransfer`·`Hospital`·판정 경로 무변경(§1 헌법) — `git diff`에 `adjudicate.ts` 없음
-- [ ] `Math.random`·`Date.now` 0회 유지, 전체 테스트 PASS
+- [x] 세계가 매주 스스로 나빠진다: `stepWorld` 드리프트(§3) + `RegionEffect` 쇼크(§4)
+- [x] 채널 ①: pressure에 따라 RURAL발 응급 비중·중증도 상승, 응급 총수 불변(§5)
+- [x] 채널 ②: pool ≡ `hirablePool(world.regions)` 불변식이 nextWeek·applyGrowth 후 성립(§6)
+- [x] `backgroundAttrition`·`hireDelta` 삭제 — 이중 기재 없음(§3)
+- [x] `adjudicateTransfer`·`Hospital`·판정 경로 무변경(§1 헌법) — `git diff`에 `adjudicate.ts` 없음
+- [x] `Math.random`·`Date.now` 0회 유지, 전체 테스트 PASS

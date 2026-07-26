@@ -72,7 +72,9 @@ type RegionEffect =
 
 - 순수 파생 함수 `transferPressure(world)`가 세계 상태를 콜 생성 파라미터로 번역한다: RURAL의 `backupHospitals` 합이 줄수록 **원거리 전원 콜 비중과 중증 구성**이 올라간다.
 - `createCallQueue(day, beds)` → `createCallQueue(day, beds, pressure)`로 시그니처 확장. 응급 스트림의 **콜 총수는 고정 유지**(기존 밸런스 결정 — 늘리면 신문·소송 배수로 결말 마비). 바뀌는 것은 구성뿐: 어느 지역발(發)인지, 중증도 믹스.
-- `IncomingCall`에 `originRegion?: RegionKey` + 표시용 지역명(발신 문구는 [news.ts](../../../src/game/news.ts)의 `FICTIONAL_REGIONS` 재사용)을 추가. UI 콜 카드에 "△△군에서 전원 요청"이 뜬다 — 플레이어는 주차가 갈수록 **점점 먼 곳에서, 점점 나쁜 상태로** 오는 것을 콜 화면에서 직접 본다.
+- `IncomingCall`에 `originRegion?: RegionKey` + 표시용 `originLabel?: string`을 추가. UI 콜 카드에 "△△군에서 전원 요청"이 뜬다 — 플레이어는 주차가 갈수록 **점점 먼 곳에서, 점점 나쁜 상태로** 오는 것을 콜 화면에서 직접 본다.
+  - ✏️ **구현 중 정정 ①(발신 지명의 출처)**: 초안은 *"[news.ts](../../../src/game/news.ts)의 `FICTIONAL_REGIONS` 재사용"*이었다 → 실제로는 `world.ts`에 **`REGION_LABELS` 신설**이고, news.ts의 `FICTIONAL_REGIONS`와 **이름이 겹치지 않아야 한다**. 이유: news의 지명은 *다른 병원이 있는 도시*이고 REGION_LABELS는 *전원을 보내는 지역*이라 역할이 다른데, 같은 가공 도시가 두 상수에 살면 한쪽을 고칠 때 다른 쪽이 조용히 어긋나는 **이중 기재**다. 계획서 초안이 실제로 이 함정을 밟아(한내시·금하시 중복) 사람이 알아채 고쳤으므로, `world.test.ts`에 **비중복 검사기**를 세워 규약을 코드로 강제했다(`FICTIONAL_REGIONS`의 export는 그 테스트 전용 노출).
+  - ✏️ **구현 중 정정 ②(중증도의 실제 도달 범위)**: *"점점 나쁜 상태로"*의 데이터 층은 RURAL발 응급의 `severity + 1`이지만, **응급 4종(STEMI·산과·신경외과·중증외상)은 이미 상한(`SEVERITY_MAX` = 5)이라 승격이 먹힌다** — 실질적으로 오르는 건 급성복증(4)·고열감염(3) **2종**뿐이다. 그래서 이 슬라이스에서 플레이어에게 **UI로 도달하는 축은 중증도 수치가 아니라 발신 지역**이다: RURAL발 콜에 「원거리 이송」 표기([CallCard.tsx](../../../src/components/CallCard.tsx)). 중증도 표시는 범위 밖(§9) — 승격을 체감시키려면 응급 종류 확충이나 상한 재설계가 먼저다.
 - `originRegion`은 **표시 + 구성 결정까지만** 쓰이고 판정(`adjudicateTransfer`·`startMinFor`)에는 들어가지 않는다 — 거리·이송시간 축은 범위 밖(§9).
 
 ## 6. 채널 ② 채용 풀 — [system.ts](../../../src/game/system.ts)
