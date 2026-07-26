@@ -8,7 +8,7 @@ import { DAY_LENGTH_MIN } from './daysim'
 import { buildSessionLedger, type Ledger } from './ledger'
 import { deptDayStats, type DeptDayStats } from './deptLedger'
 import { morningNews, renderNews, type NewsItem, type TurnedAway } from './news'
-import { doctorCaseloads, stepFatigue } from './doctor'
+import { doctorCaseloads, stepFatigue, stepSaturatedDays } from './doctor'
 import { initSystem, backgroundAttrition, hireDelta, canHire, type SystemState } from './system'
 import { initialTreasury, doctorDeltaCost, withinTreasury } from './growth'
 import { SPECIALTY_LABEL } from './labels'
@@ -79,6 +79,11 @@ export interface SessionState {
    * 실려 진료 소요를 늘린다(occupiedUntilMin). 판정 우선순위·사유는 그대로다.
    */
   fatigue: Record<string, number>
+  /**
+   * 유닛별 **피로 포화로 마감한 날 수**(누적·주 간 유지·리셋 없음). 사직 판정의 유일한 입력.
+   * completeReceiving이 fatigue 스텝 직후 같은 자리에서 갱신한다.
+   */
+  saturatedDays: Record<string, number>
   choices: SetupChoices   // 현재 병원 명단(매주 성장). 1주차 이후 재투자의 시작점.
   beds: number            // 병상 티어(초기 FIXED_BEDS).
   treasury: number        // 금고 잔고(억).
@@ -93,7 +98,7 @@ export interface SessionState {
 
 export function startSession(): SessionState {
   return {
-    phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    phase: 'LANDING', week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {}, saturatedDays: {},
     choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0, system: initSystem(),
   }
 }
@@ -120,7 +125,7 @@ export function enterWorldEvent(state: SessionState): SessionState {
   const event = OPENING_EVENT
   const world = applyEvent(initWorld(), event)
   return {
-    phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    phase: 'WORLD_EVENT', world, event, week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {}, saturatedDays: {},
     choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0, system: initSystem(),
   }
 }
@@ -132,7 +137,7 @@ export function beginSetup(state: SessionState): SessionState {
   }
   return {
     phase: 'SETUP', world: state.world, event: state.event,
-    week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {},
+    week: 1, day: 1, ledgerDays: [], history: [], morningNews: [], fatigue: {}, saturatedDays: {},
     choices: { hospitalName: '', doctors: {} }, beds: FIXED_BEDS, treasury: 0, insolvencyStreak: 0, system: initSystem(),
   }
 }
@@ -150,6 +155,7 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
     history: [],
     morningNews: [], // 개원 첫날 아침엔 어제가 없다
     fatigue: {},
+    saturatedDays: {},
     choices,
     beds: FIXED_BEDS,
     treasury: initialTreasury(choices, world.departments),
@@ -216,11 +222,14 @@ export function completeReceiving(state: SessionState): SessionState {
   }
   const roster = state.hospital?.roster ?? []
   const caseloads = doctorCaseloads(roster, state.receiving)
+  const fatigue = stepFatigue(state.fatigue, caseloads)
   return {
     ...state,
     phase: 'DAY_END',
     ledgerDays: [...state.ledgerDays, recordDay(state.day, state.receiving)],
-    fatigue: stepFatigue(state.fatigue, caseloads),
+    fatigue,
+    // 포화 일수는 방금 스텝한 피로를 읽는다 — 사직 판정의 유일한 입력이 여기서 자란다.
+    saturatedDays: stepSaturatedDays(state.saturatedDays, fatigue),
   }
 }
 

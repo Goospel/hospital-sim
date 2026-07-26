@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   materializeRoster, walkinDept, handlingDept, doctorCaseloads, stepFatigue,
   fatigueSlowFactor, FATIGUE_MAX, FATIGUE_SLOW_FROM, FATIGUE_RED, FATIGUE_FREE_MIN, FATIGUE_REST,
+  stepSaturatedDays, RESIGN_SATURATED_DAYS,
 } from './doctor'
 import { createCallQueue, decide, initReceiving } from './receiving'
 import { buildHospital, DEPARTMENTS } from './setup'
@@ -230,5 +231,26 @@ describe('fatigueSlowFactor — 피로 → 진료 소요 배율(조용한 침식
     for (let f = 0; f < FATIGUE_MAX; f++) {
       expect(fatigueSlowFactor(f + 1)).toBeGreaterThanOrEqual(fatigueSlowFactor(f))
     }
+  })
+})
+
+describe('stepSaturatedDays — 포화로 마감한 날만 센다', () => {
+  it('마감 피로가 FATIGUE_MAX면 +1', () => {
+    expect(stepSaturatedDays({}, { a: FATIGUE_MAX })).toEqual({ a: 1 })
+  })
+
+  it('포화 미달은 그대로 — 리셋이 아니다', () => {
+    expect(stepSaturatedDays({ a: 3 }, { a: FATIGUE_MAX - 1 })).toEqual({ a: 3 })
+    expect(stepSaturatedDays({ a: 3 }, { a: 0 })).toEqual({ a: 3 })
+  })
+
+  it('누적한다', () => {
+    let s = stepSaturatedDays({}, { a: FATIGUE_MAX })
+    s = stepSaturatedDays(s, { a: FATIGUE_MAX })
+    expect(s.a).toBe(2)
+  })
+
+  it('임계는 1보다 크다(하루 만에 안 떠난다)', () => {
+    expect(RESIGN_SATURATED_DAYS).toBeGreaterThan(1)
   })
 })

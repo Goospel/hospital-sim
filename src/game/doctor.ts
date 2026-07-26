@@ -158,6 +158,32 @@ export function fatigueSlowFactor(fatigue: number): number {
 }
 
 /**
+ * 포화 상태로 일한 날이 이만큼 누적되면 사직한다(예시값 — 튜닝 대상).
+ * 실측 곡선(전부 수용·순환기 1인): 1주차 2일 + 2주차 3일 → 2주차 결산에서 이탈.
+ * 응급을 더 거절하면 피로가 덜 올라 시점이 미뤄진다 — 플레이어 선택이 움직인다.
+ */
+export const RESIGN_SATURATED_DAYS = 4
+
+/**
+ * 하루 마감 피로 → 포화 일수 누적. **리셋이 없다.**
+ *
+ * 포화(FATIGUE_MAX)로 마감한 날만 센다. 회복해도 그 날들은 몸에 남는다는 뜻이고, 무엇보다
+ * 완편 병원은 실측상 34조차 안 넘어 이 카운터가 **영원히 0**이다 — 구조적으로 망가진
+ * 배치에서만 돌아간다. 리셋 규칙을 두면 "며칠 쉬게 해 되돌리는" 최적화 표면이 생기는데,
+ * 대응 레버가 채용뿐이라(피로 승격 결정 B) 그 조작은 애초에 불가능하다.
+ */
+export function stepSaturatedDays(
+  prev: Record<string, number>,
+  fatigue: Record<string, number>,
+): Record<string, number> {
+  const next: Record<string, number> = { ...prev }
+  for (const [id, f] of Object.entries(fatigue)) {
+    if (f >= FATIGUE_MAX) next[id] = (next[id] ?? 0) + 1
+  }
+  return next
+}
+
+/**
  * 하루 부하 → 유닛별 피로 갱신(0~FATIGUE_MAX 클램프). 이전 값에 누적한다(주 간 유지 — 리셋은 세션이 안 한다).
  *
  * 입력이 **시간 × 강도**인 게 핵심이다. 건수는 부하의 대리물일 뿐이라 보톡스 30분과 뇌수술 180분에
