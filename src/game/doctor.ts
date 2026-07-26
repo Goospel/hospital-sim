@@ -184,6 +184,58 @@ export function stepSaturatedDays(
 }
 
 /**
+ * 임계를 넘긴 유닛 — 이번 주에 떠나는 사람들. 명단 순서를 보존한다(표시 안정).
+ * 명단에 없는 키는 무시한다(사직·재구성으로 생긴 구 상태 잔재).
+ */
+export function resigningDoctors(
+  roster: Doctor[],
+  saturatedDays: Record<string, number>,
+): Doctor[] {
+  return roster.filter((d) => (saturatedDays[d.id] ?? 0) >= RESIGN_SATURATED_DAYS)
+}
+
+/**
+ * 사직으로 id가 밀렸을 때 유닛별 상태(fatigue·saturatedDays)를 **사람을 따라** 옮긴다.
+ *
+ * ⚠️ 이게 없으면 조용한 데이터 오염이 난다: `Doctor.id`는 `doc-<dept>-<i>` 인덱스 기반이라
+ * 1번이 사직하면 옛 2번이 그 번호를 물려받고, id로 키를 잡은 상태가 **사직자의 포화를
+ * 생존자에게 상속**시킨다(방금 남은 사람이 즉시 사직 임계에 걸린다).
+ *
+ * 대응은 **과별 위치**로 한다: `materializeRoster`는 그 과의 hiredIds 지원자를 CANDIDATES
+ * 순서로 앞 슬롯부터 앉히고 나머지를 무명으로 채우므로, **사직자를 뺀 옛 명단**과 새 명단은
+ * 과별로 같은 순서다. 그래서 zip 한 번이 정확하고, 이름·후보 id 매칭보다 단순하며
+ * 무명 유닛 엣지케이스가 함께 사라진다.
+ *
+ * `survivorsInOldOrder`는 옛 명단에서 **사직자만 제거**한 것이어야 한다(순서 보존).
+ * 교차 주 상태는 fatigue·saturatedDays 둘뿐이다 — busyUntil·busyWith는 하루마다 리셋된다.
+ */
+export function remapDoctorState<T>(
+  survivorsInOldOrder: Doctor[],
+  newRoster: Doctor[],
+  state: Record<string, T>,
+): Record<string, T> {
+  const byDept = (roster: Doctor[]) => {
+    const m = new Map<DeptKey, Doctor[]>()
+    for (const d of roster) {
+      const list = m.get(d.dept) ?? []
+      list.push(d)
+      m.set(d.dept, list)
+    }
+    return m
+  }
+  const oldByDept = byDept(survivorsInOldOrder)
+  const out: Record<string, T> = {}
+  for (const [dept, newDocs] of byDept(newRoster)) {
+    const oldDocs = oldByDept.get(dept) ?? []
+    newDocs.forEach((nd, i) => {
+      const od = oldDocs[i]
+      if (od && state[od.id] !== undefined) out[nd.id] = state[od.id]
+    })
+  }
+  return out
+}
+
+/**
  * 하루 부하 → 유닛별 피로 갱신(0~FATIGUE_MAX 클램프). 이전 값에 누적한다(주 간 유지 — 리셋은 세션이 안 한다).
  *
  * 입력이 **시간 × 강도**인 게 핵심이다. 건수는 부하의 대리물일 뿐이라 보톡스 30분과 뇌수술 180분에
