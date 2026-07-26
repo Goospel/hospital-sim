@@ -42,6 +42,26 @@ export function hireDelta(system: SystemState, deltas: Partial<Record<Specialty,
   return { ...system, pool }
 }
 
+/**
+ * 사직분만큼 풀을 줄인다(0 클램프) — `hireDelta`의 대칭이되 **방향이 반대이고 되돌릴 수 없다**.
+ *
+ * 사직은 "다른 병원으로 감"이 아니라 **필수의료를 떠남**이라 풀로 돌아오지 않는다
+ * (설계 2026-07-25-attrition-resignation-design.md 결정 A). 그래서 채용은 이동이지만
+ * 사직은 소멸이고, 이 비대칭이 제로섬을 실제로 조인다.
+ * poolInitial은 표시용 초기 사본이라 불변 — 에필로그의 "N → 잔여"가 사직분을 자동 반영한다.
+ */
+export function releaseFromPool(
+  system: SystemState,
+  deltas: Partial<Record<Specialty, number>>,
+): SystemState {
+  const pool = { ...system.pool }
+  for (const key of Object.keys(deltas) as Specialty[]) {
+    const d = deltas[key] ?? 0
+    if (d > 0) pool[key] = Math.max(0, pool[key] - d)
+  }
+  return { ...system, pool }
+}
+
 /** 매주 배경 감소 — 다른 병원 채용·은퇴>배출. 주차 seed로 한 과를 골라 1 차감(0 클램프). */
 export function backgroundAttrition(system: SystemState, week: number): SystemState {
   const keys = Object.keys(POOL_INITIAL) as Specialty[]

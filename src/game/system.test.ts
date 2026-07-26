@@ -1,5 +1,28 @@
 import { describe, it, expect } from 'vitest'
-import { initSystem, poolRemaining, hireDelta, canHire, backgroundAttrition, POOL_INITIAL } from './system'
+import {
+  initSystem, poolRemaining, hireDelta, canHire, backgroundAttrition, POOL_INITIAL, releaseFromPool,
+} from './system'
+
+describe('releaseFromPool — 사직은 세상에서 사람을 지운다', () => {
+  it('배후과 사직분만큼 풀이 준다', () => {
+    const s = releaseFromPool(initSystem(), { CARDIOLOGY: 1 })
+    expect(s.pool.CARDIOLOGY).toBe(POOL_INITIAL.CARDIOLOGY - 1)
+  })
+
+  it('0 클램프 — 음수로 안 내려간다', () => {
+    const s = releaseFromPool(initSystem(), { THORACIC_SURGERY: 99 })
+    expect(s.pool.THORACIC_SURGERY).toBe(0)
+  })
+
+  it('poolInitial(표시용 초기 사본)은 안 바뀐다', () => {
+    const s = releaseFromPool(initSystem(), { CARDIOLOGY: 1 })
+    expect(s.poolInitial).toEqual(POOL_INITIAL)
+  })
+
+  it('빈 델타는 무변경', () => {
+    expect(releaseFromPool(initSystem(), {}).pool).toEqual(POOL_INITIAL)
+  })
+})
 
 describe('전국 의사 풀 — 세상에 존재하는 유한 의사 수', () => {
   it('초기 풀 = 각색 고정값, poolInitial은 표시용 사본', () => {

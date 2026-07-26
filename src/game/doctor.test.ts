@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   materializeRoster, walkinDept, handlingDept, doctorCaseloads, stepFatigue,
   fatigueSlowFactor, FATIGUE_MAX, FATIGUE_SLOW_FROM, FATIGUE_RED, FATIGUE_FREE_MIN, FATIGUE_REST,
-  stepSaturatedDays, RESIGN_SATURATED_DAYS, resigningDoctors, remapDoctorState,
+  stepSaturatedDays, RESIGN_SATURATED_DAYS, resigningDoctors, remapDoctorState, applyResignations,
 } from './doctor'
 import { createCallQueue, decide, initReceiving } from './receiving'
 import { buildHospital, DEPARTMENTS } from './setup'
@@ -318,5 +318,44 @@ describe('remapDoctorState — id 재번호에도 상태가 사람을 따라간�
 
   it('빈 상태는 빈 결과', () => {
     expect(remapDoctorState(oldRoster, newRoster, {})).toEqual({})
+  })
+})
+
+describe('applyResignations — 명단·풀 델타를 한 번에', () => {
+  const cardioCands = CANDIDATES.filter((c) => c.dept === 'CARDIOLOGY').slice(0, 2)
+  const choices: SetupChoices = {
+    hospitalName: 'h', doctors: { CARDIOLOGY: 2 }, hiredIds: cardioCands.map((c) => c.id),
+  }
+  const roster = materializeRoster(choices, DEPARTMENTS)
+
+  it('과 인원이 줄고 hiredIds에서 사직자 후보가 빠진다 [R-3]', () => {
+    const out = applyResignations(choices, [roster[0]], DEPARTMENTS)
+    expect(out.choices.doctors.CARDIOLOGY).toBe(1)
+    expect(out.choices.hiredIds).not.toContain(roster[0].candidateId)
+    expect(out.choices.hiredIds).toContain(roster[1].candidateId)
+    expect(materializeRoster(out.choices, DEPARTMENTS)).toHaveLength(1)
+  })
+
+  it('배후과 사직은 poolDelta에 실린다', () => {
+    expect(applyResignations(choices, [roster[0]], DEPARTMENTS).poolDelta).toEqual({ CARDIOLOGY: 1 })
+  })
+
+  it('수익과 사직은 poolDelta가 비어 있다(풀 개념이 없다)', () => {
+    const aes: SetupChoices = { hospitalName: 'h', doctors: { AESTHETICS: 1 } }
+    const r = materializeRoster(aes, DEPARTMENTS)
+    expect(applyResignations(aes, r, DEPARTMENTS).poolDelta).toEqual({})
+  })
+
+  it('사직자가 없으면 choices가 그대로다', () => {
+    const out = applyResignations(choices, [], DEPARTMENTS)
+    expect(out.choices.doctors.CARDIOLOGY).toBe(2)
+    expect(out.poolDelta).toEqual({})
+  })
+
+  it('같은 과 2명이 동시에 떠나면 인원이 0이 된다', () => {
+    const out = applyResignations(choices, roster, DEPARTMENTS)
+    expect(out.choices.doctors.CARDIOLOGY).toBe(0)
+    expect(out.poolDelta).toEqual({ CARDIOLOGY: 2 })
+    expect(materializeRoster(out.choices, DEPARTMENTS)).toHaveLength(0)
   })
 })

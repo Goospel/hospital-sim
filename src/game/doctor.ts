@@ -47,6 +47,35 @@ export function materializeRoster(choices: SetupChoices, departments: Department
   return roster
 }
 
+/**
+ * 사직을 명단에 반영한다 — 순수. `choices`(명단의 단일 출처)를 줄이고, 배후과 사직분을 낸다.
+ *
+ * `doctors` 카운트와 `hiredIds`를 **함께** 줄이는 게 정합의 핵심이다: 하나만 줄이면
+ * `materializeRoster`가 남은 지원자·무명으로 빈자리를 메워 **사직이 없던 일이 된다**.
+ *
+ * 풀 차감은 호출부(session)가 `releaseFromPool`로 적용한다 — 이 모듈은 system.ts를 모른다
+ * (순환 차단). 그래서 여기선 "어느 배후과가 몇 명 줄었나"만 낸다.
+ */
+export function applyResignations(
+  choices: SetupChoices,
+  resigning: Doctor[],
+  departments: DepartmentSpec[],
+): { choices: SetupChoices; poolDelta: Partial<Record<string, number>> } {
+  if (resigning.length === 0) return { choices, poolDelta: {} }
+
+  const doctors = { ...choices.doctors }
+  const poolDelta: Partial<Record<string, number>> = {}
+  for (const d of resigning) {
+    doctors[d.dept] = Math.max(0, (doctors[d.dept] ?? 0) - 1)
+    const backup = departments.find((x) => x.key === d.dept)?.providesBackup
+    if (backup) poolDelta[backup] = (poolDelta[backup] ?? 0) + 1
+  }
+
+  const gone = new Set(resigning.map((d) => d.candidateId).filter(Boolean) as string[])
+  const hiredIds = choices.hiredIds?.filter((id) => !gone.has(id))
+  return { choices: { ...choices, doctors, ...(hiredIds ? { hiredIds } : {}) }, poolDelta }
+}
+
 /** 워크인 라벨로 미용/검진 판별. receiving.ts CALL_LABELS와 커플링(표시 전용). */
 export function walkinDept(label: string): DeptKey {
   return label.includes('검진') ? 'CHECKUP' : 'AESTHETICS'
