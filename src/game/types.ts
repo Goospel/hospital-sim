@@ -9,6 +9,9 @@ export type Specialty =
   | 'CARDIOLOGY' // 순환기내과
   | 'INTERNAL_MEDICINE' // 내과 — 고열·감염·비수술 복통의 배후과
 
+/** 세계 지역 3계층 — 수도권 / 광역시 / 지방. world.ts의 지역 시뮬과 콜의 발신 지역이 공유한다. */
+export type RegionKey = 'CAPITAL' | 'METRO' | 'RURAL'
+
 /**
  * 병원 — 모든 필드가 플레이어에게 보이지 않는 "숨은 제약".
  *

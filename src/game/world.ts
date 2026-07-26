@@ -1,5 +1,5 @@
-import type { DepartmentSpec, DeptKey } from './types'
-import { DEPARTMENTS } from './setup'
+import type { DepartmentSpec, DeptKey, RegionKey, Specialty } from './types'
+import { DEPARTMENTS, ROUND_THE_CLOCK_MIN_DOCTORS } from './setup'
 
 // 외생 이벤트가 세계 파라미터를 재구성하는 순수 코어(spec: 2026-07-18-world-event-slice).
 // 이번 슬라이스의 세계 = 채용 경제(DEPARTMENTS)뿐. 확장점: hospitals·week·appliedEvents.
@@ -8,9 +8,17 @@ import { DEPARTMENTS } from './setup'
 // 전원 판정(adjudicate)은 한 줄도 안 건드린다 — 세계는 바꾸되 개별 생사 판정은 코드가 잠근다.
 // DeptEffect.field 타입이 두 경제 필드로 제한돼 있어, providesBackup을 건드리는 건 애초에 표현 불가.
 
-/** 세계 상태 — 이번 슬라이스의 유일 필드는 departments. */
+/** 지역 하나 — 개체가 아니라 집계. doctors는 그 지역 병원들에서 일하는 필수과 의사 수. */
+export interface RegionState {
+  key: RegionKey
+  doctors: Record<Specialty, number>
+  hospitals: number // 응급 수용 병원 수 — 드리프트로는 안 변하고 이벤트로만 변동
+}
+
+/** 세계 상태 — 채용 경제(departments) + 지역 3계층(regions). */
 export interface WorldState {
   departments: DepartmentSpec[]
+  regions: RegionState[] // 항상 3개, CAPITAL·METRO·RURAL 순
 }
 
 /**
@@ -114,9 +122,45 @@ export const OPENING_EVENT: WorldEvent = {
   ],
 }
 
-/** 기본 세계 — 손대지 않은 DEPARTMENTS 복제본. */
+/**
+ * 지역 초기값(각색) — 대소만 근거(수도권 집중, 흉부 희소).
+ * 🔴 불변식(world.test.ts가 가드): ① 과별로 RURAL < CAPITAL ② RURAL 배후 ≥ 1
+ * ③ METRO+RURAL 합 = 기존 POOL_INITIAL(2/4/3/3/5/6) — 채용 풀이 이 합의 파생이 되므로(Task 5)
+ * 이 합이 틀어지면 기존 채용 밸런스가 통째로 흔들린다.
+ */
+export const REGION_INITIAL: RegionState[] = [
+  { key: 'CAPITAL', hospitals: 8, doctors: {
+    THORACIC_SURGERY: 3, CARDIOLOGY: 5, OBSTETRICS: 4,
+    NEUROSURGERY: 4, GENERAL_SURGERY: 5, INTERNAL_MEDICINE: 6 } },
+  { key: 'METRO', hospitals: 3, doctors: {
+    THORACIC_SURGERY: 0, CARDIOLOGY: 2, OBSTETRICS: 1,
+    NEUROSURGERY: 1, GENERAL_SURGERY: 3, INTERNAL_MEDICINE: 3 } },
+  { key: 'RURAL', hospitals: 2, doctors: {
+    THORACIC_SURGERY: 2, CARDIOLOGY: 2, OBSTETRICS: 2,
+    NEUROSURGERY: 2, GENERAL_SURGERY: 2, INTERNAL_MEDICINE: 3 } },
+]
+
+export function regionOf(world: WorldState, key: RegionKey): RegionState {
+  const found = world.regions.find((r) => r.key === key)
+  if (!found) throw new Error(`region not found: ${key}`)
+  return found
+}
+
+/**
+ * 그 지역에서 그 과의 배후진료가 서 있는 병원 수 — **저장하지 않는 파생값**.
+ * 배후 병원 하나가 서려면 그 과 의사 2명(ROUND_THE_CLOCK_MIN_DOCTORS) — 플레이어 병원과 같은 규칙을
+ * 세계에도 적용한다. 세계의 병원들도 우리처럼 "1명으론 당직이 안 돈다".
+ */
+export function backupHospitals(region: RegionState, s: Specialty): number {
+  return Math.min(region.hospitals, Math.floor(region.doctors[s] / ROUND_THE_CLOCK_MIN_DOCTORS))
+}
+
+/** 기본 세계 — 손대지 않은 DEPARTMENTS·REGION_INITIAL 복제본. */
 export function initWorld(): WorldState {
-  return { departments: DEPARTMENTS.map((d) => ({ ...d })) }
+  return {
+    departments: DEPARTMENTS.map((d) => ({ ...d })),
+    regions: REGION_INITIAL.map((r) => ({ ...r, doctors: { ...r.doctors } })),
+  }
 }
 
 /** 이벤트를 세계에 적용 — 순수·불변. departments만 재구성한다. */

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { initWorld, applyEvent, selectEvent, EVENT_CATALOG, OPENING_EVENT } from './world'
+import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, EVENT_CATALOG, OPENING_EVENT } from './world'
 import { DEPARTMENTS } from './setup'
-import type { DeptKey, DepartmentSpec } from './types'
+import type { DeptKey, DepartmentSpec, Specialty } from './types'
 
 // 외생 이벤트가 세계 파라미터(DEPARTMENTS 채용 경제)를 재구성하는 순수 코어.
 // 헌법(spec §4): applyEvent는 채용 경제(profit/hireCost)만 만진다. 배후진료 매핑(providesBackup)과
@@ -140,5 +140,56 @@ describe('세계 이벤트 브리핑 — 실제 정책 도구(각색 억 손익 
     const general = e3.effects.find((x) => x.dept === 'GENERAL_SURGERY')!.delta
     // 비용 델타라 부호가 −다 — '더 큰 가산'은 '더 큰 절대값'으로 읽는다.
     expect(Math.abs(thoracic)).toBeGreaterThan(Math.abs(general))
+  })
+})
+
+const SPECIALTIES: Specialty[] = [
+  'THORACIC_SURGERY', 'CARDIOLOGY', 'OBSTETRICS', 'NEUROSURGERY', 'GENERAL_SURGERY', 'INTERNAL_MEDICINE',
+]
+
+describe('지역 세계 — 데이터 모델 (spec 2026-07-26 §2)', () => {
+  it('initWorld는 CAPITAL·METRO·RURAL 3개 지역을 이 순서로 갖는다', () => {
+    const world = initWorld()
+    expect(world.regions.map((r) => r.key)).toEqual(['CAPITAL', 'METRO', 'RURAL'])
+  })
+
+  it('시작 시점: RURAL의 과별 의사 수는 모든 필수과에서 CAPITAL보다 적다 (spec 불변식)', () => {
+    const world = initWorld()
+    const capital = regionOf(world, 'CAPITAL')
+    const rural = regionOf(world, 'RURAL')
+    for (const s of SPECIALTIES) {
+      expect(rural.doctors[s]).toBeLessThan(capital.doctors[s])
+    }
+  })
+
+  it('시작 시점: RURAL의 배후 가능 병원 수는 모든 필수과에서 ≥ 1 — 붕괴는 전제가 아니라 과정이다', () => {
+    const rural = regionOf(initWorld(), 'RURAL')
+    for (const s of SPECIALTIES) {
+      expect(backupHospitals(rural, s)).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  it('backupHospitals = min(hospitals, floor(doctors/2)) — 배후 병원 하나에 의사 2명(ROUND_THE_CLOCK와 동일 규칙)', () => {
+    const region = { key: 'RURAL' as const, hospitals: 2, doctors: {
+      THORACIC_SURGERY: 5, CARDIOLOGY: 3, OBSTETRICS: 1, NEUROSURGERY: 0,
+      GENERAL_SURGERY: 4, INTERNAL_MEDICINE: 2,
+    } }
+    expect(backupHospitals(region, 'THORACIC_SURGERY')).toBe(2) // floor(5/2)=2, min(2,2)=2
+    expect(backupHospitals(region, 'CARDIOLOGY')).toBe(1)
+    expect(backupHospitals(region, 'OBSTETRICS')).toBe(0) // 1명뿐 — 당직이 안 돈다
+    expect(backupHospitals(region, 'NEUROSURGERY')).toBe(0)
+  })
+
+  it('METRO+RURAL 의사 합은 기존 POOL_INITIAL(2/4/3/3/5/6)과 정확히 같다 — 기존 밸런스 보존', () => {
+    const world = initWorld()
+    const metro = regionOf(world, 'METRO')
+    const rural = regionOf(world, 'RURAL')
+    const expected: Record<Specialty, number> = {
+      THORACIC_SURGERY: 2, CARDIOLOGY: 4, OBSTETRICS: 3,
+      NEUROSURGERY: 3, GENERAL_SURGERY: 5, INTERNAL_MEDICINE: 6,
+    }
+    for (const s of SPECIALTIES) {
+      expect(metro.doctors[s] + rural.doctors[s]).toBe(expected[s])
+    }
   })
 })
