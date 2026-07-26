@@ -21,6 +21,7 @@ const key = (p: Pt) => `${p.x},${p.y}`
 export function findPath(world: SimWorld, from: Pt, to: Pt): Pt[] | null {
   if (from.x === to.x && from.y === to.y) return []
   const blocked = buildBlockedSet(world)
+  // from은 선검사하지 않는다 — 막힌 타일에 낀 폰의 탈출 경로를 허용(의도된 비대칭)
   if (!walkableAt(blocked, to.x, to.y)) return null
   const h = (p: Pt) => Math.abs(p.x - to.x) + Math.abs(p.y - to.y)
   interface Node { p: Pt; g: number; f: number; order: number }

@@ -71,6 +71,18 @@ describe('findPath', () => {
     expect(isWalkable(placed.world, wall.x, wall.y)).toBe(false)
     expect(findPath(placed.world, wall, wall)).toEqual([])
   })
+  it('막힌 타일에서 출발해도 걸어 나온다 — from은 선검사하지 않는다(의도된 비대칭)', () => {
+    // 가구·벽이 나중에 깔려 폰이 끼는 경우를 위한 탈출 경로. to만 통행 선검사하는 비대칭이 그 의도다.
+    const placed = placeRoom(createWorld(1), { type: 'EXAM', x: 10, y: 10, w: 6, h: 5 })
+    if (!placed.ok) throw new Error('전제 실패')
+    const stuck = { x: 10, y: 10 } // 방 모서리 벽 — 폰이 낀 자리
+    expect(isWalkable(placed.world, stuck.x, stuck.y)).toBe(false)
+    const out = { x: 2, y: 2 }
+    const p = findPath(placed.world, stuck, out)
+    expect(p).not.toBeNull()
+    expect(p![p!.length - 1]).toEqual(out)
+    expectWalkable(placed.world, stuck, p!) // 첫 걸음부터는 전부 통행 가능 타일
+  })
   it('결정론 — 같은 입력이면 같은 경로', () => {
     const w = createWorld(1)
     const a = findPath(w, { x: 1, y: 1 }, { x: 20, y: 20 })
