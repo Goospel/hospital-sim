@@ -80,13 +80,14 @@ type RegionEffect =
 ## 6. 채널 ② 채용 풀 — [system.ts](../../../src/game/system.ts)
 
 - `SystemState.pool`의 **원천을 세계로 승격**: 전국 채용 가능 풀 = `regions` 의사 수의 파생값(과별 합산에 채용 가능 비율을 적용한 결정론 파생). 매주 델타는 `backgroundAttrition` 대신 `stepWorld` 결과에서 나온다.
-- **인터페이스 불변**: `canHire`/`hireDelta`의 시그니처와 소비자(GROWTH 페이즈, [candidates.ts](../../../src/game/candidates.ts) 경로)는 그대로. 원천만 바뀐다.
+- **인터페이스**: `canHire`/`poolRemaining`의 시그니처와 소비자(GROWTH 페이즈, [candidates.ts](../../../src/game/candidates.ts) 경로)는 그대로. 원천만 바뀐다.
+  > 📌 **구현 중 정정**(2026-07-27): 초안은 `hireDelta`도 유지 대상으로 적었으나, 채용 차감의 원천이 세계(`hireFromRegions` + `deriveSystem` 재파생)로 넘어가면서 `hireDelta`는 **완전 삭제**됐다 — pool을 직접 깎는 함수가 남아 있으면 "pool ≡ hirablePool(regions)" 불변식을 우회하는 두 번째 쓰기 경로가 된다(이중 기재).
 - 플레이어가 채용하면 시드 추첨된 지역에서 차감된다(전국 합계·지역 합의 일관성 유지).
 - 체감: "지방이 무너질수록 나도 사람을 못 뽑는다"가 채용 화면에서 보인다.
 
 ## 7. 통합 지점 — [session.ts](../../../src/game/session.ts)
 
-- `stepWorld` 호출은 **주 경계 1회**, WORLD_EVENT 페이즈 진입 경로(`enterWorldEvent`)에서. 새 페이즈 없음. [ai-scenario-generation.md](../../concept/ai-scenario-generation.md) §5-4의 "주기 = 주 사이" 확정과 일치.
+- `stepWorld` 호출은 **주 경계 1회**, WORLD_EVENT 페이즈 진입 경로 — 구체적으로는 `nextWeek`(2주차+)에서. 1주차 진입(`enterWorldEvent`)은 아래 셋째 줄대로 드리프트를 굴리지 않는다. 새 페이즈 없음. [ai-scenario-generation.md](../../concept/ai-scenario-generation.md) §5-4의 "주기 = 주 사이" 확정과 일치.
 - 순서: `stepWorld`(드리프트) → 이벤트 추첨·`applyEvent`(쇼크) → 그 주의 `transferPressure`·채용 풀은 갱신된 세계에서 파생.
 - 1주차(첫 WORLD_EVENT)에도 드리프트를 1스텝 굴릴지는 구현 계획에서 결정하되, 기본값은 **굴리지 않음**(초기값 = 1주차 세계; 변동은 2주차부터 체감).
 
