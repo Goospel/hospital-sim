@@ -9,8 +9,8 @@ import {
   initWorld, applyEvent, stepWorld, selectEvent, transferPressure, regionOf,
   EVENT_CATALOG, OPENING_EVENT, type WorldState,
 } from './world'
-import { decide, isElective } from './receiving'
-import { DAYS_PER_WEEK, SETUP_BUDGET_MANWON } from './setup'
+import { createCallQueue, decide, isElective } from './receiving'
+import { DAYS_PER_WEEK, FIXED_BEDS, SETUP_BUDGET_MANWON } from './setup'
 import { DAY_LENGTH_MIN } from './daysim'
 import { hirablePool, POOL_INITIAL } from './system'
 import { FATIGUE_SLOW_FROM } from './doctor'
@@ -907,5 +907,32 @@ describe('세계 시뮬 배선 (spec §7)', () => {
     }
     expect(s.week).toBe(3)
     expect(s.world!.regions).toEqual(expected.regions)
+  })
+
+  it('세션이 만든 콜 큐에 발신 지역이 실린다 — 세계가 큐 생성에 물렸다', () => {
+    const s = completeSetup(conscientious)
+    expect(s.receiving!.queue.some((c) => c.originRegion !== undefined)).toBe(true)
+  })
+
+  /**
+   * 🔴 **세션이 pressure를 실제로 넘기는지 잠근다** — 위 테스트는 발신 지역이 *붙었는지*만 재서
+   * `weekDayQueue`의 pressure를 0으로 고정해도 통과한다(초기 세계 pressure가 0이라 판별 불가).
+   * 그래서 `completeSetup`·`beginSetup`의 리트머스와 같은 수법으로 **세계를 주입**한다:
+   * RURAL 배후를 전멸시킨 세계(pressure 1)로 개원하면 두 경로가 갈린다.
+   *
+   * 기대값을 리터럴로 안 적는다 — 같은 순수 함수를 세션 밖에서 같은 인자로 조립해 비교한다
+   * (이중 기재 없음. 페이스를 튜닝해도 이 테스트는 '전달'만 계속 잰다).
+   */
+  it('completeSetup: 지방이 무너진 세계로 개원하면 큐가 그 pressure로 만들어진다(판별)', () => {
+    const collapsed = applyEvent(initWorld(), {
+      id: 'X', headline: 'x', direction: 'worsen', effects: [], briefing: [],
+      // RURAL 필수과를 전부 0으로 — backupHospitals가 0이 되어 transferPressure = 1.
+      regionEffects: (Object.keys(regionOf(initWorld(), 'RURAL').doctors) as Specialty[])
+        .map((dept) => ({ region: 'RURAL' as const, field: 'doctors' as const, dept, delta: -9 })),
+    })
+    expect(transferPressure(collapsed)).toBe(1)
+    const queue = completeSetup(conscientious, collapsed).receiving!.queue
+    expect(queue).toEqual(createCallQueue(1, FIXED_BEDS, 1))
+    expect(queue).not.toEqual(createCallQueue(1, FIXED_BEDS, 0)) // pressure 0 고정이면 여기서 깨진다
   })
 })

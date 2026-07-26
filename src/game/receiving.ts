@@ -3,9 +3,11 @@ import { adjudicateTransfer } from './adjudicate'
 import { handlingDept } from './doctor'
 import { DAYS_PER_WEEK, DEPARTMENTS, FIXED_BEDS } from './setup'
 import {
-  arrivalMinFor, DAY_LENGTH_MIN, earliestFreeMin, freeDoctorsOfDept, NIGHT_START_MIN, occupiedUntilMin, patienceMin,
-  pickAssignee, procedureDurationMin,
+  arrivalMinFor, callSeed, DAY_LENGTH_MIN, earliestFreeMin, freeDoctorsOfDept, NIGHT_START_MIN, occupiedUntilMin,
+  patienceMin, pickAssignee, procedureDurationMin, seededUnit,
 } from './daysim'
+// 순환 아님 — world.ts는 receiving을 import하지 않는다(세계 → 콜 한 방향).
+import { REGION_LABELS } from './world'
 
 // 1막 콜 큐 — 받는 병원. 기존 adjudicateTransfer를 플레이어 손으로 돌린다(벽의 양쪽).
 // 순수·결정론·불변. 다크코미디는 대사(dialogue.ts)와 UI가, 여기선 숫자만.
@@ -429,11 +431,13 @@ const ELECTIVE_EVERY = 12
  * **마지막에** 도착시각 오름차순으로 정렬한다(결정론·id 고유성은 정렬 전 인덱스가 지킨다).
  * nightShift는 위치가 아니라 arrivalMin(≥ NIGHT_START_MIN)에서 파생 — 정렬해도 시간대는 안 흔들린다.
  *
- * week는 1로 고정한다(createCallQueue는 (day, beds) 두 인자 유지 — session.ts weekDayQueue가 이미
- * 전역일을 day로 넘기므로 이 함수 시그니처를 더 바꾸면 그쪽이 깨진다).
+ * week는 1로 고정한다(session.ts weekDayQueue가 이미 전역일을 day로 넘긴다 — seed의 week 축을
+ * 여기서 또 쓰면 같은 날이 두 번 세어진다).
+ * 3번째 인자 pressure는 선택(기본 0 = 초기 세계 수준; 0이어도 발신 지역은 붙는다 — 세계가 온전할
+ * 때도 콜은 어딘가에서 온다). 세계 → 콜 구성 채널이라 총수는 안 건드리고 구성만 바꾼다(스펙 §5).
  * 라벨은 kind 내 등장 순번으로 고른다 — callerPleaAt(dialogue.ts)의 seed 규칙과 같아야 라벨↔대사가 맞는다(PR #29).
  */
-export function createCallQueue(day = 1, beds = FIXED_BEDS): IncomingCall[] {
+export function createCallQueue(day = 1, beds = FIXED_BEDS, pressure = 0): IncomingCall[] {
   const basePlan = DAY_PLANS[(day - 1) % DAY_PLANS.length]
 
   // ① 응급 스트림 — DAY_PLANS 그대로. 티어와 무관하게 고정이다.
@@ -460,17 +464,35 @@ export function createCallQueue(day = 1, beds = FIXED_BEDS): IncomingCall[] {
     const occurrence = seen[kind] ?? 0
     seen[kind] = occurrence + 1
     const arrivalMin = arrivalMinFor(1, day, i)
+    // 발신 지역 — 응급만. RURAL 몫이 pressure로 커진다(0.3 → 0.9). 시드 콜별 독립(salt 17·19).
+    const emergency = requiresBackupCare(kind)
+    const originRoll = seededUnit(callSeed(1, day, i, 17))
+    const ruralShare = 0.3 + 0.6 * pressure
+    const originRegion = !emergency ? undefined
+      : originRoll < ruralShare ? ('RURAL' as const)
+      : originRoll < ruralShare + 0.25 ? ('METRO' as const)
+      : ('CAPITAL' as const)
+    const originLabel = originRegion === undefined ? undefined
+      : REGION_LABELS[originRegion][
+          Math.floor(seededUnit(callSeed(1, day, i, 19)) * REGION_LABELS[originRegion].length)]
+    const basePatient = kind === 'SPECIALIST_ELECTIVE' ? electivePatientFor(dept ?? 'CARDIOLOGY') : PATIENT_OF[kind]
+    // 멀리서 온 재이송은 상태가 나쁘다 — RURAL발 응급만 중증도 +1(5 상한). 판정 무관(표시·서사 데이터).
+    const patient = originRegion === 'RURAL'
+      ? { ...basePatient, severity: Math.min(5, basePatient.severity + 1) }
+      : basePatient
     return {
       id: `d${day}c${i + 1}`, // 순환 후 인덱스 기반 — 날짜별 고유, 정렬 위치와 무관(로그·React key 충돌 방지)
       kind,
       label: kind === 'SPECIALIST_ELECTIVE'
         ? electiveLabel(dept ?? 'CARDIOLOGY')
         : CALL_LABELS[kind][occurrence % CALL_LABELS[kind].length],
-      patient: kind === 'SPECIALIST_ELECTIVE' ? electivePatientFor(dept ?? 'CARDIOLOGY') : PATIENT_OF[kind],
+      patient,
       lawsuitRisk: carriesLawsuitRisk(kind), // 소송 노출 계열(인과 선명)만 — 고열감염은 제외(방어 성공 전형)
       nightShift: arrivalMin >= NIGHT_START_MIN,
       arrivalMin,
       durationMin: procedureDurationMin(kind, 1, day, i),
+      originRegion,
+      originLabel,
     }
   })
   return timed.sort((a, b) => a.arrivalMin - b.arrivalMin)

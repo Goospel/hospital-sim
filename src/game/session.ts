@@ -1,7 +1,7 @@
 import type { Hospital, SetupChoices, Specialty } from './types'
 import { buildHospital, bedExpansionCost, withinDeptCaps, DEPARTMENTS, DAYS_PER_WEEK, FIXED_BEDS } from './setup'
 import {
-  initWorld, applyEvent, selectEvent, stepWorld, hireFromRegions,
+  initWorld, applyEvent, selectEvent, stepWorld, hireFromRegions, transferPressure,
   EVENT_CATALOG, OPENING_EVENT, type WorldState, type WorldEvent,
 } from './world'
 import {
@@ -107,9 +107,12 @@ export function startSession(): SessionState {
  * DAY_PLANS는 (전역일−1)%7로 순환하므로 콜 구성은 주마다 같지만, id는 d8·d9…로 고유해져
  * 누적 신문(결말)의 React 키 충돌을 구조적으로 막는다.
  * beds를 그대로 createCallQueue에 넘겨 병상 티어가 클수록 콜 볼륨도 는다(Task 6).
+ * world가 있으면 transferPressure를 파생해 넘긴다 — 지방 배후가 무너질수록 원거리·중증 전원이
+ * 늘어난다(스펙 §5). world 없는 경로(구 테스트·부분 상태)는 0 = 온전한 세계로 폴백한다.
  */
-function weekDayQueue(week: number, day: number, beds: number) {
-  return createCallQueue((week - 1) * DAYS_PER_WEEK + day, beds)
+function weekDayQueue(week: number, day: number, beds: number, world?: WorldState) {
+  const pressure = world ? transferPressure(world) : 0
+  return createCallQueue((week - 1) * DAYS_PER_WEEK + day, beds, pressure)
 }
 
 /**
@@ -148,7 +151,7 @@ export function completeSetup(choices: SetupChoices, world: WorldState = initWor
   return {
     phase: 'RECEIVING',
     hospital,
-    receiving: initReceiving(hospital, weekDayQueue(1, 1, FIXED_BEDS)),
+    receiving: initReceiving(hospital, weekDayQueue(1, 1, FIXED_BEDS, world)),
     world,
     week: 1,
     day: 1,
@@ -252,7 +255,8 @@ export function advanceDay(state: SessionState): SessionState {
     phase: 'RECEIVING',
     day,
     receiving: initReceiving(
-      state.hospital!, weekDayQueue(state.week, day, state.beds), boardedBusyUntilFrom(state.receiving), state.fatigue,
+      state.hospital!, weekDayQueue(state.week, day, state.beds, state.world),
+      boardedBusyUntilFrom(state.receiving), state.fatigue,
     ),
     morningNews: morningNews(day, yesterday?.turnedAway ?? []),
   }
@@ -445,7 +449,7 @@ export function beginWeek(state: SessionState): SessionState {
     phase: 'RECEIVING',
     day: 1,
     ledgerDays: [],
-    receiving: initReceiving(state.hospital, weekDayQueue(state.week, 1, state.beds), {}, state.fatigue),
+    receiving: initReceiving(state.hospital, weekDayQueue(state.week, 1, state.beds, state.world), {}, state.fatigue),
     morningNews: [],
   }
 }

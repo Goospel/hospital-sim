@@ -1322,3 +1322,77 @@ describe('로그의 실제 배정 기록 + 하루 피로 스냅샷 (스펙 2026-
     expect(after.log[1].endMin).toBe(160) // 60 + 100
   })
 })
+
+/*
+  세계(지방 배후 붕괴)가 콜 **구성**에 닿는 지점. 총수는 안 바뀌고 구성만 바뀐다 —
+  응급 통수를 늘리면 신문·소송이 배수로 늘어 결말이 마비된다(기존 밸런스 결정).
+  (스펙: docs/superpowers/specs/2026-07-26-region-world-sim-design.md §5)
+*/
+describe('콜 발신 지역 — 세계가 콜 구성에 닿는다 (spec §5)', () => {
+  it('응급 콜에만 originRegion·originLabel이 붙고 외래(워크인·예약)에는 없다', () => {
+    const queue = createCallQueue(1, 3, 0)
+    for (const call of queue) {
+      if (requiresBackupCare(call.kind)) {
+        expect(call.originRegion).toBeDefined()
+        expect(call.originLabel).toBeTruthy()
+      } else {
+        expect(call.originRegion).toBeUndefined()
+      }
+    }
+  })
+
+  it('결정론: 같은 (day, beds, pressure)는 같은 큐', () => {
+    expect(createCallQueue(4, 5, 0.5)).toEqual(createCallQueue(4, 5, 0.5))
+  })
+
+  /*
+    🔴 **주 합계의 엄격 증가가 이 테스트의 판별력이다.** 날짜별 `≥`만 재면 `ruralShare`를 상수로
+    바꿔(pressure를 통째로 무시) 압력 채널을 끊어도 전 스위트가 통과한다 — 같으면 `≥`가 참이라
+    돌연변이가 살아남는다(실측 2026-07-26: 567개 전부 통과). 주 합계는 실제로 늘어야 하므로
+    (실측 9 → 23 / 응급 24통) 채널이 끊기는 순간 여기서 먼저 깨진다.
+  */
+  it('pressure가 오르면 RURAL발 응급 수가 줄지 않는다(콜별 단조) — 총 응급 수는 불변', () => {
+    const ruralCount = (q: ReturnType<typeof createCallQueue>) =>
+      q.filter((c) => c.originRegion === 'RURAL').length
+    const emergencyCount = (q: ReturnType<typeof createCallQueue>) =>
+      q.filter((c) => requiresBackupCare(c.kind)).length
+    let weekLow = 0
+    let weekHigh = 0
+    for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+      const low = createCallQueue(day, 3, 0)
+      const high = createCallQueue(day, 3, 1)
+      expect(ruralCount(high)).toBeGreaterThanOrEqual(ruralCount(low))
+      expect(emergencyCount(high)).toBe(emergencyCount(low)) // 응급 총수 고정(기존 밸런스 결정)
+      weekLow += ruralCount(low)
+      weekHigh += ruralCount(high)
+    }
+    expect(weekHigh).toBeGreaterThan(weekLow) // 주 합계는 **엄격히** 늘어난다 — 압력이 실제로 먹는다
+  })
+
+  /*
+    같은 (day, i) 콜은 pressure와 무관하게 같은 시드 스트림(salt 2·3·17·19)을 타므로 **id로 짝지어**
+    비교한다. 계획서 초안은 "같은 kind의 타 지역발"을 찾아 `if (other)`로 감쌌는데, 그 짝이 없으면
+    단정이 통째로 건너뛰어져 **중증도 +1을 지워도 통과했다**(돌연변이 실측 2026-07-26: 568개 전부
+    통과). 아래는 짝이 실제로 관측됐음(`compared > 0`)까지 단정해 그 구멍을 막는다.
+  */
+  it('RURAL발 응급은 같은 콜의 타 지역발보다 중증도가 1 높다(5 상한)', () => {
+    let compared = 0
+    for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+      const low = new Map(createCallQueue(day, 3, 0).map((c) => [c.id, c]))
+      for (const high of createCallQueue(day, 3, 1)) {
+        if (!requiresBackupCare(high.kind)) continue
+        const base = low.get(high.id)!
+        expect(high.kind).toBe(base.kind) // 구성만 바뀐다 — 콜 종류는 pressure와 무관
+        const promoted = high.originRegion === 'RURAL' && base.originRegion !== 'RURAL'
+        expect(high.patient.severity).toBe(
+          promoted ? Math.min(5, base.patient.severity + 1) : base.patient.severity)
+        if (promoted && base.patient.severity < 5) compared++
+      }
+    }
+    expect(compared).toBeGreaterThan(0) // 판별력 보장 — +1이 실제로 관측된 짝이 있다
+  })
+
+  it('pressure 없이 부르면(기존 시그니처) 이전과 동일하게 동작한다 — 하위호환', () => {
+    expect(createCallQueue(1, 3)).toEqual(createCallQueue(1, 3, 0))
+  })
+})

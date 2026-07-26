@@ -168,6 +168,8 @@ export interface IncomingCall {
   nightShift: boolean // 야간 콜 — 배후과 의사 1명뿐이면 당직이 비어 못 받는다(roundTheClockBackup)
   arrivalMin?: number // 그날 도착 시각(분, 0..DAY_LENGTH_MIN) — 결정론 seed 파생(createCallQueue가 Task 4에서 채움)
   durationMin?: number // 수용 시 담당 의사 점유 시간(분) — 결정론 seed 파생(createCallQueue가 Task 4에서 채움)
+  originRegion?: RegionKey // 응급 전원 콜의 발신 지역 — 표시·구성 전용, 판정(adjudicate·점유)에 안 들어간다
+  originLabel?: string // 발신 가공 지명("먼내군") — REGION_LABELS(world.ts) 파생
 }
 
 /**
