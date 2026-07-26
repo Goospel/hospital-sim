@@ -55,19 +55,40 @@ const insideRoom = (r: Room, p: { x: number; y: number }) =>
 
 // ─── 도착 ────────────────────────────────────────────────────────────────────
 
-/** 대기실 의자 중 아무도 노리지 않는 자리의 "앞 타일". 좌석 점유는 환자의 dest로 표현된다 —
- *  별도 점유 테이블을 두면 폰 제거·이동과 어긋날 수 있고, dest는 어차피 재탐색용으로 이미 있다. */
-function freeSeat(w: SimWorld, blocked: Set<number>): Pt | null {
+/** 대기실 좌석 = 의자 앞에 설 수 있는 타일들. **의자 하나당 좌석 하나**가 이 함수의 계약이고,
+ *  그게 화면(그려진 의자)과 수용 용량을 같게 만든다 — build의 autoFurniture가 앞 타일이 겹치는
+ *  의자를 애초에 놓지 않아 성립한다. 여기 dedupe는 그 계약이 깨졌을 때 두 환자가 한 타일에
+ *  겹쳐 앉는 것만은 막는 안전망이다(용량이 줄지언정 겹치지는 않는다). */
+export function waitingSeats(w: SimWorld, blocked: Set<number> = buildBlockedSet(w)): Pt[] {
+  const waitingRooms = new Set(w.rooms.filter(r => r.type === 'WAITING').map(r => r.id))
+  const seen = new Set<string>()
+  const out: Pt[] = []
+  for (const f of w.furniture) {
+    if (f.kind !== 'CHAIR' || !waitingRooms.has(f.roomId)) continue
+    const spot = frontTile(blocked, f)
+    if (!spot || seen.has(ptKey(spot))) continue
+    seen.add(ptKey(spot))
+    out.push(spot)
+  }
+  return out
+}
+
+/** 비어 있고 **입구에서 닿을 수 있는** 첫 좌석과 거기까지의 경로.
+ *  좌석 점유는 환자의 dest로 표현된다 — 별도 점유 테이블을 두면 폰 제거·이동과 어긋날 수 있고,
+ *  dest는 어차피 재탐색용으로 이미 있다. */
+function freeSeat(w: SimWorld, blocked: Set<number>): { spot: Pt; path: Pt[] } | null {
   const taken = new Set(
     w.pawns
       .filter(p => (p.stage === 'ENTERING' || p.stage === 'WAITING') && p.dest)
       .map(p => ptKey(p.dest!)),
   )
-  const waitingRooms = new Set(w.rooms.filter(r => r.type === 'WAITING').map(r => r.id))
-  for (const f of w.furniture) {
-    if (f.kind !== 'CHAIR' || !waitingRooms.has(f.roomId)) continue
-    const spot = frontTile(blocked, f)
-    if (spot && !taken.has(ptKey(spot))) return spot
+  // 첫 후보가 도달 불가라고 여기서 끝내면 안 된다 — 봉인된 대기실의 의자 하나가 멀쩡한
+  // 다른 대기실 전체를 가려 신규 도착이 영원히 0이 된다(철거가 없어 세션 내 비가역).
+  // 정상 상황에선 첫 후보가 곧바로 닿아 findPath 호출 수가 지금까지와 같다 — 성능 계약 유지.
+  for (const spot of waitingSeats(w, blocked)) {
+    if (taken.has(ptKey(spot))) continue
+    const path = findPath(w, ENTRANCE, spot)
+    if (path) return { spot, path }
   }
   return null
 }
@@ -78,14 +99,12 @@ function maybeArrive(w: SimWorld): SimWorld {
   if (w.minute >= ARRIVAL_WINDOW_MIN) return w
   // 분마다 독립 판정 — 이래야 도착이 몰릴 때 몰리고(대기열이 생기고) 빌 때 빈다.
   if (seededUnit(w.seed * 100_000 + w.day * 1_000 + w.minute) >= ARRIVAL_PROB_PER_MIN) return w
-  const blocked = buildBlockedSet(w)
-  const seat = freeSeat(w, blocked)
-  const path = seat ? findPath(w, ENTRANCE, seat) : null
+  const seat = freeSeat(w, buildBlockedSet(w))
   // 앉을 데가 없거나 거기까지 갈 수 없으면 문간에서 발길을 돌린다 — 폰을 만들지도 않는다.
-  if (!seat || !path) return { ...w, stats: { ...w.stats, leftCount: w.stats.leftCount + 1 } }
+  if (!seat) return { ...w, stats: { ...w.stats, leftCount: w.stats.leftCount + 1 } }
   const patient: Pawn = {
     id: `pat-${w.nextId}`, kind: 'PATIENT',
-    x: ENTRANCE.x, y: ENTRANCE.y, path, dest: seat, stage: 'ENTERING',
+    x: ENTRANCE.x, y: ENTRANCE.y, path: seat.path, dest: seat.spot, stage: 'ENTERING',
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, patient] }
 }
@@ -138,7 +157,10 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
     const doc = idle[d]
     const spot = furnitureSpot(w, blocked, doc.roomId!, 'CHAIR')
     const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
-    d++ // 갈 수 없는 방이면 그 의사를 건너뛴다(환자를 바꿔도 같은 방이라 결과가 같다)
+    // 갈 수 없으면 그 의사를 건너뛴다. ⚠️ 도달 가능성은 **환자 위치에도** 달렸으므로 다른
+    // 환자라면 갈 수 있었을 수 있다 — 즉 이건 공평한 판정이 아니라 재시도 폭주를 막는 절충이다.
+    // 밀린 환자는 다음 분에 다시 후보가 되고, 계속 못 가면 PATIENCE_MIN이 상한을 쳐 준다.
+    d++
     if (!spot || !path) continue
     updates.set(i, { ...p, stage: 'TO_EXAM', doctorId: doc.id, dest: spot, path })
   }

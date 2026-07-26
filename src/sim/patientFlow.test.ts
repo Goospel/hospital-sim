@@ -6,7 +6,7 @@ import { spawnDoctor } from './pawn'
 import { tick } from './tick'
 import {
   ENTRANCE, EXAM_DURATION_MIN, EXAM_REVENUE_MANWON, PATIENCE_MIN,
-  ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN,
+  ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats,
 } from './patientFlow'
 import { seededUnit } from '../game/daysim'
 
@@ -27,6 +27,23 @@ function waitingOnlyWorld(seed: number) {
   const r = placeRoom(createWorld(seed), { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
   if (!r.ok) throw new Error('전제 실패')
   return r.world
+}
+
+/** 대기실 둘(A는 봉인 대상 · B는 끝까지 멀쩡) + 진료실 + 의사.
+ *  A를 먼저 놓아 가구 배열에서 A의 의자가 좌석 후보로 **먼저** 잡히게 한다. */
+function twoWaitingWorld(seed: number) {
+  let w: SimWorld = createWorld(seed)
+  const specs = [
+    { type: 'WAITING' as const, x: 18, y: 20, w: 8, h: 6 },
+    { type: 'WAITING' as const, x: 30, y: 20, w: 8, h: 6 },
+    { type: 'EXAM' as const, x: 6, y: 6, w: 6, h: 5 },
+  ]
+  for (const spec of specs) {
+    const r = placeRoom(w, spec)
+    if (!r.ok) throw new Error('전제 실패')
+    w = r.world
+  }
+  return spawnDoctor(w, 'INTERNAL_MEDICINE', { x: 8, y: 8 })
 }
 
 /** 좌석 45개 대기실 — 자리 부족이 구조적으로 일어나지 않는 세계(이탈 원인을 인내로 고정) */
@@ -138,6 +155,38 @@ describe('환자 흐름', () => {
 })
 
 describe('대기실 좌석', () => {
+  it('그려진 의자 수 == 앉을 수 있는 좌석 수 (홀수 내부 폭 포함)', () => {
+    // 화면이 곧 수용 용량이라는 등식. 벽에 딱 붙은 의자는 앞 타일이 "오른쪽"이 아니라
+    // "아래"로 떨어지는데, 그 타일은 아랫줄 의자가 "위"로 쓰는 자리라 둘이 좌석 하나를
+    // 나눠 갖는다 — 의자는 두 개인데 앉는 사람은 하나. 짝수 폭만 재면 안 보인다.
+    for (const [rw, rh] of [[8, 6], [11, 7], [7, 5], [9, 6], [4, 4], [10, 9]]) {
+      const r = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w: rw, h: rh })
+      if (!r.ok) throw new Error(`전제 실패: ${rw}x${rh}`)
+      const chairs = r.world.furniture.filter(f => f.kind === 'CHAIR').length
+      expect(chairs).toBeGreaterThan(0)
+      expect(waitingSeats(r.world).length).toBe(chairs)
+    }
+  })
+
+  it('앞 타일이 겹치는 의자는 좌석 하나로 친다 — 두 환자가 한 타일에 겹쳐 앉지 않는다', () => {
+    // 겹치는 의자를 안 놓는 1차 방어는 build.autoFurniture에 있다. 이건 **모듈 경계를 넘는
+    // 안전망**이라 별도로 잠근다 — 그쪽 간격 규칙이 바뀌거나(2주차 가구 배치 UI 포함) 가구가
+    // 다른 경로로 심어지면 좌석이 겹치고, 그때 조용히 두 환자가 한 타일에 포개진다.
+    // 그래서 여기서만 "의자 수 == 좌석 수" 등식이 의도적으로 깨진 입력을 쓴다.
+    const r = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w: 8, h: 6 })
+    if (!r.ok) throw new Error('전제 실패')
+    const roomId = r.world.rooms[0].id
+    // (10,5)는 위·오른쪽이 벽이라 앞이 (10,6)으로 떨어지고, (10,7)은 위가 곧 (10,6)이다.
+    const collided = {
+      ...r.world,
+      furniture: [
+        { kind: 'CHAIR' as const, x: 10, y: 5, roomId },
+        { kind: 'CHAIR' as const, x: 10, y: 7, roomId },
+      ],
+    }
+    expect(waitingSeats(collided)).toEqual([{ x: 10, y: 6 }])
+  })
+
   it('환자는 의자 타일이 아니라 그 앞 통행 타일에 선다', () => {
     let w = hospitalWorld(3)
     for (let i = 0; i < 120; i++) {
@@ -337,6 +386,25 @@ describe('좌초 해소', () => {
     w = tick(sealed.world, 300)
     expect(w.stats.leftCount).toBeGreaterThan(before)
     expect(w.pawns.filter(p => p.kind === 'PATIENT')).toEqual([])
+  })
+
+  it('대기실 하나가 봉인돼도 다른 대기실로 계속 받는다 — 도달 불가 좌석이 병원을 잠그지 않는다', () => {
+    // 가구 순서상 A의 의자가 좌석 후보로 먼저 잡힌다. 후보 하나가 도달 불가라고 거기서
+    // 문전박대로 끝내면, B의 빈 의자 6개가 전부 멀쩡한데도 신규 도착이 영원히 0이 된다.
+    // 철거가 없으니 세션 내 비가역 소프트락 — 좌초 교착과 같은 병의 '도착 경로' 쌍둥이다.
+    let w = until(twoWaitingWorld(3), x => x.pawns.some(p => p.stage === 'WAITING'))
+    const sealed = placeRoom(w, { type: 'WARD', x: 18, y: 26, w: 8, h: 4 }) // A의 문(22,25) 봉인
+    if (!sealed.ok) throw new Error('전제 실패')
+    w = sealed.world
+    const idAfterSeal = w.nextId
+    const examsAfterSeal = w.stats.examsDone
+    w = run(w, 300)
+    expect(w.nextId).toBeGreaterThan(idAfterSeal) // 신규 도착이 이어진다
+    const b = w.rooms[1]
+    const inB = w.pawns.filter(p => p.stage === 'WAITING'
+      && p.x >= b.x && p.x < b.x + b.w && p.y >= b.y && p.y < b.y + b.h)
+    expect(inB.length).toBeGreaterThan(0)                      // B에 실제로 앉는다
+    expect(w.stats.examsDone).toBeGreaterThan(examsAfterSeal)  // 진료도 계속 돈다
   })
 
   it('좌초로 풀려난 의사는 다시 환자를 받는다 — 진료가 재개된다', () => {
