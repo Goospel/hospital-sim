@@ -53,6 +53,13 @@ describe('isWalkable', () => {
   })
 })
 
+describe('doorTile', () => {
+  it('홀수 폭 방의 문은 정중앙 타일이다 (floor)', () => {
+    const d = doorTile(room({ w: 5 }))
+    expect(d).toEqual({ x: 4 + 2, y: 8 }) // floor(5/2)=2 — ceil이면 x:7로 어긋난다
+  })
+})
+
 describe('wallTiles', () => {
   it('둘레 타일 전부에서 문 하나를 뺀다', () => {
     const tiles = wallTiles(room())
