@@ -1,5 +1,6 @@
 // 타일 세계 — 순수 데이터와 통행 판정. 렌더·React 임포트 금지.
 import type { DeptKey } from '../game/types'
+import type { Pawn } from './pawn' // 타입 전용 임포트 — pawn.ts가 world를 되받아도 순환 무해
 
 export const GRID_W = 48
 export const GRID_H = 32
@@ -23,7 +24,7 @@ export interface SimWorld {
   treasuryManwon: number
   rooms: Room[]
   furniture: Furniture[]
-  pawns: unknown[]  // Task 4에서 Pawn[]로 교체 예정 — 지금은 unknown[]
+  pawns: Pawn[]
   nextId: number
   seed: number
 }
