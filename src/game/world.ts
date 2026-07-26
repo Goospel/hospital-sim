@@ -45,13 +45,16 @@ export interface DeptEffect {
 /**
  * 이벤트의 지역 델타 — field 유니온이 헌법이다: 이벤트는 지역의 '수치'만 만질 수 있고
  * providesBackup·판정 경로는 표현 자체가 불가능하다(DeptEffect와 같은 잠금 방식).
+ *
+ * 📌 **판별 유니온인 이유**(2026-07-26 구현 중 승격): 옛 형태는 `field: 'doctors'|'hospitals'` +
+ * `dept?: Specialty`였다 — dept가 선택 필드라 `field:'doctors'`인데 dept를 빼먹어도 tsc가 통과하고,
+ * applyEvent의 `else if (e.dept)` 가드에 걸려 **조용히 no-op**이 됐다(에러도 경고도 없음).
+ * 판별 유니온이면 그 조합이 타입 수준에서 표현 불가라 무성 실패의 원천이 사라지고,
+ * applyEvent에서 조건 가드 자체가 필요 없어진다.
  */
-export interface RegionEffect {
-  region: RegionKey
-  field: 'doctors' | 'hospitals'
-  dept?: Specialty // field === 'doctors'일 때 필수
-  delta: number
-}
+export type RegionEffect =
+  | { region: RegionKey; field: 'doctors'; dept: Specialty; delta: number }
+  | { region: RegionKey; field: 'hospitals'; delta: number }
 
 /** 외생 이벤트 = 세계에 떨어지는 변경 1개. headline은 나중에 LLM이 대체할 서사 슬롯. */
 export interface WorldEvent {
@@ -197,7 +200,7 @@ export function applyEvent(world: WorldState, event: WorldEvent): WorldState {
     const next = { ...region, doctors: { ...region.doctors } }
     for (const e of effects) {
       if (e.field === 'hospitals') next.hospitals = Math.max(0, next.hospitals + e.delta)
-      else if (e.dept) next.doctors[e.dept] = Math.max(0, next.doctors[e.dept] + e.delta)
+      else next.doctors[e.dept] = Math.max(0, next.doctors[e.dept] + e.delta)
     }
     return next
   })
@@ -310,8 +313,11 @@ export function transferPressure(world: WorldState): number {
  * ⚠️ news.ts의 FICTIONAL_REGIONS(한내시·서림시·금하시·백천시)와 **이름을 겹치지 않는다** —
  * 겹치면 같은 가공 도시가 두 상수에 살아 이중 기재가 된다(용도가 다르다: 저긴 신문, 여긴 콜 발신지).
  *
- * 📌 계획서 초안의 서흥구·청단시는 **실존 행정구역명**이라 버렸다(서흥군·청단군 — 황해도).
- * 남은 이름은 전부 순우리말 조어라 실존 대조가 불필요하다: 가온·누리·늘목·벼리·먼내·두메·새벌.
+ * 📌 계획서 초안(서흥구·남정구 / 한내시·금하시 / 먼내군·두밀군·자운군)에서 이름을 바꾼 사유는 둘이다:
+ *   ① **서흥구는 실존 행정구역명**이다(황해북도 서흥군) — 가공 지명 원칙 위반.
+ *   ② **한내시·금하시는 news.ts FICTIONAL_REGIONS와 완전 동일명**이다 — 바로 위 비중복 요구 위반.
+ * 그래서 순우리말 조어로 통일했다(가온·누리·늘목·벼리·먼내·두메·새벌). 이 비중복은
+ * world.test.ts의 검사기 테스트가 강제한다 — 규약만 적어두면 다음 지명 추가에서 조용히 썩는다.
  */
 export const REGION_LABELS: Record<RegionKey, readonly string[]> = {
   CAPITAL: ['가온구', '누리구'],

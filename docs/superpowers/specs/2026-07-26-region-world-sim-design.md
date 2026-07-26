@@ -57,13 +57,13 @@ interface WorldState {
 - 기존 `DeptEffect`(비용 델타)에 더해 **`RegionEffect`** 를 추가한다:
 
 ```ts
-interface RegionEffect {
-  region: RegionKey
-  field: 'doctors' | 'hospitals'      // 유니온으로 잠금 — 판정 경로 침범 불가
-  dept?: Specialty                     // field === 'doctors'일 때 필수
-  delta: number
-}
+// 판별 유니온 — field가 태그다. 유니온으로 잠금: 판정 경로 침범 불가.
+type RegionEffect =
+  | { region: RegionKey; field: 'doctors'; dept: Specialty; delta: number }
+  | { region: RegionKey; field: 'hospitals'; delta: number }
 ```
+
+> 📌 **판별 유니온으로 승격**(2026-07-26 구현 중): 초안은 `field: 'doctors' | 'hospitals'` + `dept?: Specialty`("field가 doctors일 때 필수")였다. 그 조건부 필수성은 타입으로 강제되지 않아, `field:'doctors'`인데 `dept`를 빼먹으면 tsc가 통과하고 `applyEvent`의 `else if (e.dept)` 가드에 걸려 **조용히 no-op**이 된다(에러·경고 없음). 판별 유니온이면 그 조합이 표현 불가라 무성 실패의 원천이 사라지고, `applyEvent`의 조건 가드도 불필요해진다.
 
 - 기존 세계 이벤트 카탈로그([world.ts](../../../src/game/world.ts))에 지역 효과를 가진 이벤트를 소수 추가한다(예: "○○도 거점병원 응급실 축소" → RURAL hospitals −1).
 - **헌법 유지**: 이벤트가 만질 수 있는 것은 `departments` 비용 필드 + `regions` 수치뿐. `adjudicateTransfer`·`Hospital`·`providesBackup`은 여전히 타입 수준 불가침.
