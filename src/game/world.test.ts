@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, transferPressure, EVENT_CATALOG, OPENING_EVENT, REGION_LABELS } from './world'
+import { initWorld, applyEvent, selectEvent, regionOf, backupHospitals, stepWorld, transferPressure, EVENT_CATALOG, OPENING_EVENT, REGION_LABELS, type RegionEffect, type WorldEvent } from './world'
 import { DEPARTMENTS } from './setup'
 import { POOL_INITIAL } from './system'
 // 지명 비중복 검사기의 단일 출처 — 목록을 복제하지 않고 news.ts에서 그대로 가져온다.
@@ -303,6 +303,14 @@ describe('stepWorld — 주간 드리프트 (spec §3)', () => {
   })
 })
 
+/**
+ * 지역 쇼크 이벤트 팩토리 — 테스트가 신경 쓰는 건 `regionEffects` 하나뿐이라, 나머지 필드는
+ * 여기서 한 번만 채운다. `RegionEffect`가 export 타입이라 호출부의 `as const` 사슬이 전부 사라진다
+ * (판별 유니온이라 잘못된 조합은 여기서 tsc가 거부한다 — 테스트 리터럴도 같은 잠금을 받는다).
+ */
+const shockOf = (regionEffects: RegionEffect[], direction: 'improve' | 'worsen' = 'worsen'): WorldEvent =>
+  ({ id: 'SHOCK', headline: 'x', direction, effects: [], briefing: [], regionEffects })
+
 describe('RegionEffect — 이벤트가 지역 수치를 흔든다 (spec §4)', () => {
   it('LITIGATION_CHILL은 RURAL 산부인과 의사를 1 줄인다 (배상 판결 → 지방 이탈)', () => {
     const event = EVENT_CATALOG.find((e) => e.id === 'LITIGATION_CHILL')!
@@ -326,11 +334,11 @@ describe('RegionEffect — 이벤트가 지역 수치를 흔든다 (spec §4)', 
     expect(after.regions).toEqual(before.regions)
   })
 
-  it('의사·병원 수는 델타로 0 밑으로 내려가지 않는다(클램프)', () => {
-    const world = initWorld()
-    const shock = { id: 'X', headline: 'x', direction: 'worsen' as const, effects: [], briefing: [],
-      regionEffects: [{ region: 'RURAL' as const, field: 'doctors' as const, dept: 'THORACIC_SURGERY' as const, delta: -99 }] }
-    expect(regionOf(applyEvent(world, shock), 'RURAL').doctors.THORACIC_SURGERY).toBe(0)
+  // 제목이 'doctors'로 한정된 게 중요하다 — 옛 제목("의사·병원 수는…")은 hospitals까지 커버하는
+  // 것처럼 읽혀서, 그 분기가 실제로 무검증인 걸 가렸다(직전 검증 공백의 원인). hospitals는 아래 별도 테스트.
+  it('의사 수는 델타로 0 밑으로 내려가지 않는다(클램프)', () => {
+    const shock = shockOf([{ region: 'RURAL', field: 'doctors', dept: 'THORACIC_SURGERY', delta: -99 }])
+    expect(regionOf(applyEvent(initWorld(), shock), 'RURAL').doctors.THORACIC_SURGERY).toBe(0)
   })
 
   /**
@@ -340,10 +348,7 @@ describe('RegionEffect — 이벤트가 지역 수치를 흔든다 (spec §4)', 
    */
   it('hospitals 쇼크는 그 지역 병원 수만 줄인다 — RURAL 2 → 1, doctors·타 지역 불변', () => {
     const before = initWorld()
-    const shock = { id: 'ER_DOWNSIZE', headline: '거점병원 응급실 축소', direction: 'worsen' as const,
-      effects: [], briefing: [],
-      regionEffects: [{ region: 'RURAL' as const, field: 'hospitals' as const, delta: -1 }] }
-    const after = applyEvent(before, shock)
+    const after = applyEvent(before, shockOf([{ region: 'RURAL', field: 'hospitals', delta: -1 }]))
     expect(regionOf(after, 'RURAL').hospitals).toBe(regionOf(before, 'RURAL').hospitals - 1) // 2 → 1
     // 병원 수만 움직인다 — 의사 수는 hospitals 델타에 안 딸려간다(field 유니온이 가른 두 축).
     expect(regionOf(after, 'RURAL').doctors).toEqual(regionOf(before, 'RURAL').doctors)
@@ -352,10 +357,8 @@ describe('RegionEffect — 이벤트가 지역 수치를 흔든다 (spec §4)', 
   })
 
   it('hospitals도 0 밑으로 내려가지 않는다(클램프)', () => {
-    const world = initWorld()
-    const shock = { id: 'X', headline: 'x', direction: 'worsen' as const, effects: [], briefing: [],
-      regionEffects: [{ region: 'RURAL' as const, field: 'hospitals' as const, delta: -99 }] }
-    expect(regionOf(applyEvent(world, shock), 'RURAL').hospitals).toBe(0)
+    const shock = shockOf([{ region: 'RURAL', field: 'hospitals', delta: -99 }])
+    expect(regionOf(applyEvent(initWorld(), shock), 'RURAL').hospitals).toBe(0)
   })
 
   it('applyEvent는 입력 world를 변이하지 않는다(불변)', () => {
@@ -381,22 +384,34 @@ describe('transferPressure — 세계 → 콜 구성 번역 (spec §5)', () => {
       expect(p).toBeLessThanOrEqual(1)
       prev = p
     }
-    expect(prev).toBeGreaterThan(0) // 30주면 반드시 올라 있다
+    // 포화 핀 — 30주면 RURAL이 비어 압력이 **정확히 1**이다. `> 0`이면 0.17만 올라도 통과해
+    // 포화를 놓친다. 그룹A의 '10주차 소진' 특성화 테스트와 한 쌍으로, 같은 사실을 압력 축에서 못박는다.
+    expect(prev).toBe(1)
   })
 
-  it('REGION_LABELS는 세 지역 모두 1개 이상의 가공 지명을 갖는다', () => {
-    for (const key of ['CAPITAL', 'METRO', 'RURAL'] as const) {
-      expect(REGION_LABELS[key].length).toBeGreaterThanOrEqual(1)
-    }
+  /**
+   * 하한(`Math.max(0, ...)`)이 죽은 코드가 아님을 증명한다 — 상한 `Math.min(1, ...)`은 now ≥ 0이라
+   * 수학적으로 도달 불가여서 제거했지만, 하한은 **유입 쇼크로 실제로 도달한다**.
+   * 이 테스트가 없으면 `Math.max(0,`를 지워도 전 스위트가 통과하고, 압력이 음수로 새어
+   * createCallQueue(Task 7)에 음수 비중이 들어간다.
+   */
+  it('유입 쇼크로 초기보다 배후가 늘면 압력은 음수가 아니라 0이다(하한)', () => {
+    const inflow = shockOf([{ region: 'RURAL', field: 'doctors', dept: 'CARDIOLOGY', delta: 99 }], 'improve')
+    expect(transferPressure(applyEvent(initWorld(), inflow))).toBe(0)
   })
 })
 
 /**
  * 지명 비중복 **검사기** — 이 저장소 원칙("검사기 없는 규약은 죽는 게 아니라 썩는다")의 적용.
  *
- * REGION_LABELS의 비중복·비실존 요구는 world.ts 주석에만 있던 소프트 규약이었다. 실제로
- * 계획서 초안이 그걸 두 번 밟았다(서흥구=실존, 한내시·금하시=FICTIONAL_REGIONS와 동일명) —
- * 구현 중에 사람이 알아채서 고쳤을 뿐이고, 다음 지명 추가에서 같은 실수가 조용히 통과했을 것이다.
+ * REGION_LABELS의 비중복 요구는 world.ts 주석에만 있던 소프트 규약이었고, 계획서 초안이
+ * 실제로 밟았다(한내시·금하시 = FICTIONAL_REGIONS와 동일명). 사람이 알아채서 고쳤을 뿐이라,
+ * 다음 지명 추가에서 같은 실수가 조용히 통과했을 것이다.
+ *
+ * ⚠️ **이 검사기가 잡는 것은 셋뿐이다**: 자체 중복 · news.ts 목록과의 동일명/부분문자열 ·
+ * 실사건 토큰. **실존 행정구역명 여부는 잡지 못한다** — 행정구역 사전이 없고 넣을 계획도 없다
+ * (초안의 '서흥구'가 실존[황해북도 서흥군]인 건 사람이 알아본 것이고, 이 테스트는 그걸 통과시킨다).
+ * 👉 **지명을 추가할 때 사람이 확인할 항목: 그 이름이 실존 행정구역이 아닌가.**
  *
  * ⚠️ **두 목록을 여기에 복제하지 않는다** — news.ts에서 import 해 단일 출처를 유지한다.
  * 복제하면 news.ts가 지명을 추가할 때 이 검사기가 옛 목록을 지키며 통과해, 막으려던 그 충돌을 놓친다
@@ -404,6 +419,12 @@ describe('transferPressure — 세계 → 콜 구성 번역 (spec §5)', () => {
  */
 describe('REGION_LABELS 비중복 검사기 — news.ts 상수와 이름이 겹치지 않는다', () => {
   const allLabels = (['CAPITAL', 'METRO', 'RURAL'] as const).flatMap((k) => [...REGION_LABELS[k]])
+
+  it('세 지역 모두 1개 이상의 가공 지명을 갖는다', () => {
+    for (const key of ['CAPITAL', 'METRO', 'RURAL'] as const) {
+      expect(REGION_LABELS[key].length).toBeGreaterThanOrEqual(1)
+    }
+  })
 
   it('중복 없는 이름들이다 (REGION_LABELS 내부 자체 충돌)', () => {
     expect(new Set(allLabels).size).toBe(allLabels.length)

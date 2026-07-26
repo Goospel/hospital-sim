@@ -160,10 +160,19 @@ export const REGION_INITIAL: RegionState[] = [
     NEUROSURGERY: 2, GENERAL_SURGERY: 2, INTERNAL_MEDICINE: 3 } },
 ]
 
-export function regionOf(world: WorldState, key: RegionKey): RegionState {
-  const found = world.regions.find((r) => r.key === key)
+/**
+ * 지역 배열에서 키로 찾기 — 없으면 throw. **지역 조회의 단일 이디엄**이다.
+ * `find(...)!`을 곳곳에 흩으면 non-null 단정이 늘어나 "없을 수 없다"는 근거가 호출부마다 흩어진다.
+ * regions는 항상 3개 고정이라 못 찾는 건 프로그래밍 오류지, 런타임에 처리할 상태가 아니다.
+ */
+function findRegion(regions: RegionState[], key: RegionKey): RegionState {
+  const found = regions.find((r) => r.key === key)
   if (!found) throw new Error(`region not found: ${key}`)
   return found
+}
+
+export function regionOf(world: WorldState, key: RegionKey): RegionState {
+  return findRegion(world.regions, key)
 }
 
 /**
@@ -287,10 +296,18 @@ export function stepWorld(world: WorldState, week: number): WorldState {
 
 /** RURAL 배후 총량(필수과별 배후 병원 수의 합) — transferPressure의 분모·분자. */
 function ruralBackupTotal(regions: RegionState[]): number {
-  const rural = regions.find((r) => r.key === 'RURAL')!
+  const rural = findRegion(regions, 'RURAL')
   return (Object.keys(rural.doctors) as Specialty[])
     .reduce((n, s) => n + backupHospitals(rural, s), 0)
 }
+
+/**
+ * transferPressure의 분모 — 초기 RURAL 배후 총량. **모듈 상수다**(REGION_INITIAL이 상수라 불변).
+ * 상수로 뽑으면 매 호출 재계산이 사라지고, "분모는 세션 상태가 아니다"라는 전제가 코드에 드러난다.
+ * 덤으로 `initial <= 0` 같은 0 나눗셈 가드가 불필요해진다 — 값이 컴파일 시점에 고정된 6이고,
+ * REGION_INITIAL의 불변식 ②(RURAL 배후 ≥ 1, world.test.ts가 가드)가 0을 이미 막는다.
+ */
+const RURAL_BACKUP_INITIAL = ruralBackupTotal(REGION_INITIAL)
 
 /**
  * 전원 압력 0..1 — 지방 배후가 초기 대비 얼마나 무너졌나.
@@ -300,12 +317,15 @@ function ruralBackupTotal(regions: RegionState[]): number {
  * 단조성은 우연이 아니다: stepWorld는 RURAL에서 빼기만 하고 backupHospitals는
  * doctors에 대해 단조 증가라 — 드리프트가 도는 동안 이 값은 절대 안 내려간다.
  * (이벤트 쇼크는 유입도 표현할 수 있어 그때는 내려갈 수 있다 — 의도된 비대칭.)
+ *
+ * ⚠️ **전제**: 분모는 세션 상태가 아니라 `REGION_INITIAL`이다 — 초기 세계가 이 상수 하나뿐이라는
+ * 전제에 의존한다. 난이도·시나리오로 초기 세계가 달라지면 재검토해야 한다(분모를 인자로 받거나
+ * 세션이 자기 초기 스냅샷을 들고 있어야 한다).
  */
 export function transferPressure(world: WorldState): number {
-  const initial = ruralBackupTotal(REGION_INITIAL)
-  if (initial <= 0) return 0
   const now = ruralBackupTotal(world.regions)
-  return Math.min(1, Math.max(0, 1 - now / initial))
+  // 유입 쇼크로 초기보다 나아질 수 있어 하한이 필요하다(상한은 now ≥ 0이라 수학적으로 불필요).
+  return Math.max(0, 1 - now / RURAL_BACKUP_INITIAL)
 }
 
 /**
