@@ -585,6 +585,10 @@ function tickOneMinute(world: SimWorld): SimWorld {
 - Modify: `src/sim/tick.ts`
 - Test: `src/sim/patientFlow.test.ts`
 
+**선결 2건(Task 4 리뷰 · 2026-07-27)**:
+- **경로 무효화(Important)** — 계획의 경로 캐싱 설계에 무효화가 없어, 걷는 도중 `placeRoom`으로 경로가 막히면 폰이 새 벽을 통과한다(리뷰 프로브 재현). 처방: `Pawn`에 `dest?: Pt`를 추가하고 경로는 dest 확정 시 1회 계산. `tickOneMinute`이 이동 전 `buildBlockedSet`(틱당 1회 — 실측 ~5μs라 비용 무시 가능)으로 **다음 타일**을 검사, 막혔으면 dest로 재탐색(도달 불가면 path를 비우고 스테이지 로직이 처리 — 도착 판정은 `path.length===0`이 아니라 **위치 = 목표 타일**로). 테스트: 걷는 폰의 경로를 가로질러 방을 지으면 문으로 우회하고, 어느 틱에도 막힌 타일을 밟지 않는다.
+- **배치 돌연변이 재실측(공허 계측기 소생 확인)** — Task 4의 「한 번에 60분 = 1분씩 60번」은 현재 공허하다(이동이 선형이라 배치 구현도 통과 — 구현자 자백·리뷰 재현). Task 5의 비선형 전이(도착 확률·인내 만료·진료 종료)가 붙은 뒤 `tick`을 배치 구현으로 변조해 **이 테스트가 실제로 깨지는지** 실측하라. 안 깨지면 비선형 전이가 분 단위로 일어나지 않는다는 뜻이니 구현을 의심하라.
+
 동작 정의(1주차 절단): 환자는 입구(그리드 아래 중앙 `ENTRANCE = {x: 24, y: 31}`)에서 스폰 → 대기실 빈 의자로 걸음(`WAITING`) → 빈 진료실+유휴 의사가 있으면 배정돼 진료실로(`TO_EXAM`→`IN_EXAM`, `EXAM_DURATION_MIN = 20`분) → 끝나면 수납 없이 바로 퇴장(`LEAVING`, 수납은 RECEPTION 방이 있으면 경유 — 없으면 생략) → 입구 타일 도달 시 `GONE`(배열에서 제거). 진료 종료 시 `treasuryManwon += EXAM_REVENUE_MANWON(30)`. 대기 `PATIENCE_MIN = 90`분 초과 시 `LEFT_WAITING`으로 퇴장(수익 0, `world.leftCount` 증가). 도착 생성은 `seededUnit`(기존 `src/game/daysim.ts` 재사용)으로 분당 확률 판정 — 주간(0..480분)에 평균 8분당 1명.
 
 - [ ] **Step 1: 실패하는 테스트 작성**
