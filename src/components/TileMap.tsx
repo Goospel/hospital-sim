@@ -76,7 +76,10 @@ export interface TileMapProps {
   stepMs: number;
   onTileDown?: (t: { x: number; y: number }) => void;
   onTileMove?: (t: { x: number; y: number }) => void;
+  /** 손을 뗐다 — **확정**. 여기서만 건설이 일어난다. */
   onTileUp?: (t: { x: number; y: number }) => void;
+  /** 포인터가 취소됐다 — **파기**. 타일 좌표를 넘기지 않는 것이 계약이다(확정과 섞이지 않게). */
+  onTileCancel?: () => void;
 }
 
 /** 포인터 위치 → 타일 좌표. 격자 밖으로 나가도 부지 안으로 물린다(드래그가 밖에서 끝나도 사각형이 성립). */
@@ -89,9 +92,17 @@ function tileOf(e: ReactPointerEvent<HTMLDivElement>): { x: number; y: number } 
   };
 }
 
-export default function TileMap({ world, preview, stepMs, onTileDown, onTileMove, onTileUp }: TileMapProps) {
+export default function TileMap({
+  world,
+  preview,
+  stepMs,
+  onTileDown,
+  onTileMove,
+  onTileUp,
+  onTileCancel,
+}: TileMapProps) {
   // 진료 중인 의사 — 환자의 doctorId가 "바쁨"의 단일 출처다(patientFlow와 같은 규칙).
-  const busyDoctors = new Set(world.pawns.map((p) => p.doctorId).filter(Boolean));
+  const busyDoctors = new Set(world.pawns.map((p) => p.doctorId).filter((id): id is string => !!id));
 
   return (
     <div className="overflow-x-auto">
@@ -119,7 +130,10 @@ export default function TileMap({ world, preview, stepMs, onTileDown, onTileMove
         }}
         onPointerMove={(e) => onTileMove?.(tileOf(e))}
         onPointerUp={(e) => onTileUp?.(tileOf(e))}
-        onPointerCancel={(e) => onTileUp?.(tileOf(e))}
+        // 취소는 **확정과 다른 경로**여야 한다. 한때 이 자리에서 onTileUp을 불렀는데,
+        // 그러면 브라우저가 드래그를 가로챌 때(스크롤 제스처·포인터 강제 해제 등)
+        // 손을 떼지도 않은 사각형이 그대로 지어진다 — 철거 수단이 없어 비가역이다.
+        onPointerCancel={() => onTileCancel?.()}
       >
         {/* 방 — 벽은 **테두리 한 타일 전체**다(blockedPerimeter). 얇은 선으로 그리면 안쪽이 실제보다
             넓어 보여, 왜 여기 못 서는지 설명이 안 된다. inset 그림자로 타일 두께 그대로 두른다. */}

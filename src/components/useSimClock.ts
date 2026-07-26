@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 // ⚠️ 상대 경로 임포트 — 이 파일은 vitest(별칭 미설정)로도 돌기 때문에 `@/`를 쓸 수 없다.
 import { MS_PER_GAME_MIN } from "../game/hospitalMap";
 import { tick } from "../sim/tick";
@@ -39,6 +39,12 @@ export function minutesToTick(elapsedMs: number, speed: number): { minutes: numb
 const MAX_FRAME_MS = 250;
 
 /**
+ * 서버엔 레이아웃 단계가 없어 useLayoutEffect가 경고를 낸다(정적 프리렌더 대상이라 실제로 탄다).
+ * 클라이언트에서만 레이아웃 효과를 쓰는 표준 우회 — 분기는 환경당 한 번 정해지므로 훅 순서는 불변이다.
+ */
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+/**
  * 실시간 → 게임 시간. requestAnimationFrame 루프가 경과분만큼 world를 전진시킨다.
  *
  * speed를 ref로 읽는 이유: 배속이 바뀔 때마다 effect를 재시작하면 그 순간 rAF가 끊겨
@@ -49,9 +55,16 @@ export function useSimClock(speed: SimSpeed, setWorld: (fn: (w: SimWorld) => Sim
   const speedRef = useRef(speed);
   const setWorldRef = useRef(setWorld);
 
-  // 렌더 중이 아니라 커밋 후에 갱신한다(react-hooks/refs). rAF 콜백은 페인트 뒤에 도니
-  // 루프가 읽는 값은 언제나 최신이다 — 배속 변경이 한 프레임 늦을 일도 없다.
-  useEffect(() => {
+  /*
+    갱신 시점이 정확도의 일부다 — **레이아웃 효과**여야 한다.
+
+    useEffect(passive)는 페인트 *뒤에* 스케줄러가 흘린다. 그런데 rAF 콜백은 페인트 *앞에*
+    돈다 — 즉 배속을 바꾼 커밋과 그 값이 ref에 닿는 시점 사이에 프레임 하나가 낄 수 있고,
+    그 프레임은 옛 배속으로 계산된다(3×·프레임 정체가 겹치면 최대 15게임분이 샌다).
+    레이아웃 효과는 커밋 직후 **같은 태스크에서 동기로** 돌아 그 틈이 아예 없다.
+    (렌더 중 직접 대입은 react-hooks/refs가 막는다 — 그래서 이 자리다.)
+  */
+  useIsomorphicLayoutEffect(() => {
     speedRef.current = speed;
     setWorldRef.current = setWorld;
   });

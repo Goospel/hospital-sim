@@ -36,7 +36,14 @@ const SPEEDS: Array<{ value: SimSpeed; label: string; title: string }> = [
   { value: 3, label: "3×", title: "3배속" },
 ];
 
-/** 개원 시점의 세계 — 빈 부지 + 의사 2명. 의사는 입구 앞 통행 타일에 선다(방은 여기 못 짓는다). */
+/**
+ * 개원 시점의 세계 — 빈 부지 + 의사 2명. 의사는 입구 앞 통행 타일에 세운다.
+ *
+ * ⚠️ y=30은 **영구 보장이 아니다** — placeRoom의 경계는 `y + h <= GRID_H - 1`이라 y=30까지
+ * 방을 지을 수 있고, 그러면 의사가 선 자리가 벽이 될 수 있다(폰은 막힌 타일에서도 빠져나온다 —
+ * findPath가 출발점을 선검사하지 않는 의도된 비대칭). 영구 통행이 보장되는 건 **y=31 행뿐**이고,
+ * 그게 정문(ENTRANCE)이 거기 있는 이유다.
+ */
 function initialWorld(): SimWorld {
   let w = createWorld(1);
   w = spawnDoctor(w, "INTERNAL_MEDICINE", { x: 22, y: 30 });
@@ -67,9 +74,10 @@ export default function SimPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   /*
-    건설 중 자동 일시정지 — 드래그 시작부터 확정까지 세계가 멈춘다.
+    건설 중 자동 일시정지 — 드래그 시작부터 확정·파기까지 세계가 멈춘다.
     speed를 0으로 **덮어쓰지 않고** 파생값으로 두는 게 핵심이다: 저장·복원을 하면
-    드래그가 취소(pointercancel)되거나 중간에 언마운트될 때 배속이 0에 갇힌다.
+    드래그가 취소되거나 중간에 언마운트될 때 배속이 0에 갇힌다. drag를 비우는 것이
+    곧 시계 재개라, 확정 경로와 파기 경로가 재개를 각자 기억할 필요가 없다.
   */
   const running: SimSpeed = drag ? 0 : speed;
   useSimClock(running, setWorld);
@@ -150,6 +158,8 @@ export default function SimPage() {
           if (drag) commit({ ...drag, cur: t });
           setDrag(null);
         }}
+        // 취소는 아무것도 짓지 않고 사각형만 버린다(시계는 drag가 비면 저절로 재개된다).
+        onTileCancel={() => setDrag(null)}
       />
 
       {/* ── 하단 바 — 방 타입 선택. 고른 뒤 부지를 드래그하면 그 사각형이 방이 된다. ── */}
