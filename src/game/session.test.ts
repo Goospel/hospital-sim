@@ -5,7 +5,10 @@ import {
   cumulativeNetManwon, buildEpilogue, enterWorldEvent, enterGrowth, growthCostOf, canApplyGrowth,
   applyGrowth, isInsolvent, type SessionState,
 } from './session'
-import { initWorld, applyEvent, transferPressure, regionOf, OPENING_EVENT, type WorldState } from './world'
+import {
+  initWorld, applyEvent, stepWorld, selectEvent, transferPressure, regionOf,
+  EVENT_CATALOG, OPENING_EVENT, type WorldState,
+} from './world'
 import { decide, isElective } from './receiving'
 import { DAYS_PER_WEEK, SETUP_BUDGET_MANWON } from './setup'
 import { DAY_LENGTH_MIN } from './daysim'
@@ -829,5 +832,53 @@ describe('세계 시뮬 배선 (spec §7)', () => {
   it('1주차(enterWorldEvent)는 드리프트를 밟지 않는다 — 초기 세계 = 1주차 세계 (spec §7)', () => {
     const state = enterWorldEvent(startSession())
     expect(regionOf(state.world!, 'RURAL').doctors).toEqual(regionOf(initWorld(), 'RURAL').doctors)
+  })
+
+  /**
+   * 🔴 **개원 시점의 파생 지점을 잠근다** — `completeSetup`이 `deriveSystem(world)`가 아니라
+   * 옛 `initSystem()`이어도 전 스위트가 통과했다(리뷰어 실측). 지금은 OPENING_EVENT에 regionEffects가
+   * 없어 두 값이 **우연히 같기** 때문이다 — 우연이 검증을 대신하고 있었다.
+   *
+   * 그래서 **지역 쇼크가 있는 세계로 개원**한다. 그러면 두 경로가 갈리고(파생 = 3−1 = 2 / 고정 = 3),
+   * 개원 이벤트에 지역 효과가 붙는 날 이 테스트가 먼저 깨진다.
+   * (world.test.ts의 `shockOf` 팩토리는 export가 아니라 여기선 리터럴로 쓴다 — 판별 유니온이라
+   *  잘못된 조합은 이 리터럴에서도 tsc가 막는다.)
+   */
+  it('completeSetup: 지역 쇼크가 있는 세계로 개원하면 풀이 그 세계의 파생과 일치한다', () => {
+    const shocked = applyEvent(initWorld(), {
+      id: 'X', headline: 'x', direction: 'worsen', effects: [], briefing: [],
+      regionEffects: [{ region: 'RURAL', field: 'doctors', dept: 'OBSTETRICS', delta: -1 }],
+    })
+    const s = completeSetup(conscientious, shocked)
+    expect(s.system.pool).toEqual(hirablePool(shocked.regions))
+    expect(s.system.pool.OBSTETRICS).toBe(POOL_INITIAL.OBSTETRICS - 1) // initSystem()이면 3으로 남는다
+  })
+
+  /**
+   * 🔴 **드리프트 → 쇼크 순서를 잠근다** — `nextWeek`을 `stepWorld(applyEvent(...))`로 뒤집어도
+   * 전 스위트가 통과했다(리뷰어 실측). 한 주만 재면 두 순서가 같은 값을 내서 안 갈린다.
+   * **3주 누적**이면 갈린다: 3주차 LITIGATION_CHILL이 RURAL 산부를 먼저 빼면 그 주 드리프트 추첨의
+   * 후보 구성이 달라져, "쇼크로 이미 떠난 사람이 또 떠나는" 실패 모드가 지역 벡터에 남는다.
+   *
+   * 기대값을 손계산 리터럴로 박지 않는다 — 같은 순수 함수를 **같은 순서로** 세션 밖에서 조립해
+   * 비교한다. 이중 기재가 없어(숫자를 어디에도 안 적는다) 페이스를 튜닝해도 이 테스트는 계속
+   * '순서'만 재고, 순서를 뒤집는 순간에만 깨진다.
+   */
+  it('nextWeek은 드리프트를 이벤트 쇼크보다 먼저 적용한다 — 3주 누적 지역 벡터가 순서를 증언한다', () => {
+    // 세션 밖 기대 세계: 1주차 개원 이벤트 → (2·3주차) 드리프트 먼저, 그 위에 그 주 쇼크.
+    let expected = applyEvent(initWorld(), OPENING_EVENT)
+    for (const wk of [2, 3]) {
+      expected = applyEvent(stepWorld(expected, wk), selectEvent((wk - 1) % EVENT_CATALOG.length))
+    }
+
+    // 실제 세션 흐름 — enterWorldEvent(개원 이벤트) → beginSetup → completeSetup으로 같은 1주차 세계에서 출발한다.
+    // 성장(applyGrowth)은 부르지 않는다: 채용이 hireFromRegions로 세계를 또 건드려 순서 검증이 흐려진다.
+    const setup = beginSetup(enterWorldEvent(startSession()))
+    let s = finishWeek(runWeekFrom(completeSetup(conscientious, setup.world), essentialFirst))
+    for (let wk = 2; wk <= 3; wk++) {
+      s = finishWeek(runWeekFrom(beginWeek(enterGrowth(nextWeek(s))), essentialFirst))
+    }
+    expect(s.week).toBe(3)
+    expect(s.world!.regions).toEqual(expected.regions)
   })
 })
