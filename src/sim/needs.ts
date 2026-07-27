@@ -32,7 +32,7 @@ import { FATIGUE_RED } from '../game/doctor'
 import { buildBlockedSet, findPath } from './path'
 import type { FurnitureKind, RoomType, SimWorld } from './world'
 import type { Pawn } from './pawn'
-import { fatigueOf } from './fatigue'
+import { fatigueOf, slowedDurationMin } from './fatigue'
 import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
 
 /** 휴식 한 블록의 길이(분) — 각색·튜닝값. 왕복 보행 시간과 합쳐 "휴게실 하나가 의사를 얼마나
@@ -112,6 +112,28 @@ export function starvedSlowFactor(p: Pawn | undefined): number {
   return p && wantsMealNow(p) ? STARVED_SLOW : 1
 }
 
+/**
+ * 이 의사가 지금 시작하는 작업의 **확정 소요**(분) — 외래 진료와 응급 처치의 **단일 출처**다.
+ *
+ * 두 감속이 **곱**으로 얹히고 각 단계마다 정수로 접힌다(`round(round(base × 피로) × 허기)`).
+ * 한 번에 곱해 마지막에만 반올림하면 피로 감속의 반올림 계약(fatigue.slowedDurationMin)이
+ * 우회돼, 같은 피로가 허기 유무에 따라 다른 기준선에서 출발한다.
+ *
+ * 식이 두 호출부에 복제돼 있으면 한쪽만 고쳐도 에러가 안 난다 — 같은 상태의 의사가 진료와
+ * 처치에서 다른 배율을 받고, 그 차이는 하루 총 진료 수에만 나타나 추적이 어렵다.
+ *
+ * ⚠️ **곱 순서를 잠그는 것은 응급 경로 하나뿐**이다(실측): base 90·피로 67이면 순서를 뒤집어
+ * 130 → 129로 갈리지만, 외래 20분은 같은 피로에서 양쪽 다 29라 판별되지 않는다(전수 확인 —
+ * 피로 0..100 중 갈리는 값 21개에 FATIGUE_RED는 없다). 두 호출부가 이 한 함수를 쓰게 된
+ * 지금은 그 계측 하나(needs.test.ts 「곱이 쌓인다 — 응급」)가 **두 경로를 동시에** 덮는다.
+ *
+ * 인자가 `Pawn | undefined`인 이유는 `fatigueOf`·`starvedSlowFactor`와 같다: 담당 의사
+ * 조회(`pawns.find`)가 손세계 폰에서 빌 수 있고, 그때 던지느니 "감속 없음"으로 접는 편이 안전하다.
+ */
+export function workDurationMin(baseMin: number, doc: Pawn | undefined): number {
+  return Math.round(slowedDurationMin(baseMin, fatigueOf(doc)) * starvedSlowFactor(doc))
+}
+
 /** 욕구 한 갈래의 정의 — 개시·전이·종료가 읽는 여섯 칸. 갈래가 늘어도 기계는 하나다. */
 interface BreakDef {
   /** 자리로 **걸어가는 중**인 상태 이름 */
@@ -125,7 +147,10 @@ interface BreakDef {
   /** 지금 나설 마음이 있는가(임계) */
   wants(p: Pawn): boolean
   /** 블록이 **끝날 때 한 번에** 일어나는 일 — 회복·리셋이 여기 한 줄로 모인다.
-   *  분마다 나눠 주면 정수 산술이 깨져 같은 블록이 쪼개는 방식에 따라 다른 값을 낳는다. */
+   *  분마다 나눠 주면 정수 산술이 깨져 같은 블록이 쪼개는 방식에 따라 다른 값을 낳는다.
+   *  ⚠️ **순서 계약**: `clearActivity` **뒤에** 불린다(stepDoctor의 종료 분기) — 그래서 이
+   *  함수에 들어온 폰은 `activity`·`activityUntilMin`이 이미 지워져 있고, 그 값을 볼 수 없다.
+   *  갈래를 더할 때 "무엇으로 쉬고 있었나"에 기대는 정산을 여기 적으면 조용히 undefined를 읽는다. */
   onEnd(p: Pawn): Pawn
 }
 
@@ -207,17 +232,22 @@ export function stepDoctors(world: SimWorld): SimWorld {
   // ⓪ 허기는 **매 분** 오른다 — 일하든 쉬든 먹든 가리지 않는다(식사 중에도 오르고, 리셋은
   //    블록이 끝날 때 한 번이다: BREAKS의 onEnd). 이 줄이 아래 조기 반환보다 **앞**인 것이
   //    계약이다: 뒤에 두면 아무도 임계에 못 닿아 식사가 통째로 죽는다(에러 0의 무성 실패).
-  const hasDoctor = world.pawns.some(p => p.kind === 'DOCTOR')
-  const w = hasDoctor
-    ? {
-        ...world,
-        pawns: world.pawns.map(p => (p.kind === 'DOCTOR' ? { ...p, hungerMin: hungerOf(p) + 1 } : p)),
-      }
-    : world
+  // ⓘ 여기 "의사가 하나도 없으면 통째로 건너뛴다"는 가드가 있었는데 **지웠다**: 단독 실측
+  //    (2026-07-27)에서 그 조건을 항상 참으로 바꿔도 894건이 전부 통과했다. 의사 없는 세계에서
+  //    그것이 아끼는 것은 얕은 복사 하나뿐이고 어떤 불변식도 지지하지 않는다 — patientFlow.toExit이
+  //    세운 잣대("사살 불가 최적화는 두지 않는다")를 여기에도 적용한다. 아래 `relevant` 가드는
+  //    남는다: 그쪽이 건너뛰는 것은 복사가 아니라 통행 집합 계산(buildBlockedSet)이다.
+  const w: SimWorld = {
+    ...world,
+    pawns: world.pawns.map(p => (p.kind === 'DOCTOR' ? { ...p, hungerMin: hungerOf(p) + 1 } : p)),
+  }
 
   // 욕구 행동 중인 의사도 없고 임계에 닿은 의사도 없으면 나머지는 통째로 건너뛴다 — 좌석·통행
   // 집합 계산은 그때만 값을 한다(분당 1회 지나는 길목이다). 행동이 같은 조기 반환이라
   // 관측되지 않는다(patientFlow·emergency의 앞머리 가드와 같은 형태).
+  // ⚠️ **"드물게 열린다"가 아니다**: 식당 없는 병원의 의사는 `HUNGRY_AFTER_MIN`(300분)을 넘긴
+  //    뒤로 매 분 임계에 닿아 있으므로, 그런 세계에서 이 가드는 오후 내내 **상시 통과**한다.
+  //    실제로 값을 하는 구간은 개장 직후와 식당이 있는 병원의 배부른 시간대다.
   const relevant = w.pawns.some(
     p => p.kind === 'DOCTOR' && (p.activity !== undefined || wantsAnyBreak(p)),
   )

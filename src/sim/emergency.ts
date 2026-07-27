@@ -16,8 +16,8 @@ import type { Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
 import { ARRIVAL_WINDOW_MIN, minuteStreamSeed, toExit } from './patientFlow'
 import { furnitureSpots, ptKey, samePt } from './spots'
-import { interruptActivity, starvedSlowFactor } from './needs'
-import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
+import { interruptActivity, workDurationMin } from './needs'
+import { applyWorkLoads } from './fatigue'
 
 /** 응급 도착 스트림 전용 salt — `daysim.callSeed` 주석의 **레지스트리에 등재된 값**이다.
  *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23·29·31, 이 파일에서 37·41.) */
@@ -319,12 +319,12 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
     if (doc.activity) interrupted.set(doc.id, interruptActivity(doc))
     // 외래와 같은 계약: 소요는 **시작하는 순간** 그 의사의 피로·허기로 확정된다. 지치거나 굶은
     // 의사의 PCI는 90분이 아니라 그보다 길고, 그동안 그 과의 외래·다음 응급이 함께 밀린다.
-    // 곱하는 순서·정수화도 외래와 같다(patientFlow의 TO_EXAM 주석) — 갈리면 같은 상태의 의사가
-    // 진료와 처치에서 다른 배율을 받는다. ⓘ **곱 순서의 계측점이 여기다**: 90분 base는 순서를
-    // 뒤집으면 피로 67에서 130 → 129로 갈리는데, 외래 20분은 같은 피로에서 29로 일치해 못 잡는다.
-    const workMin = Math.round(
-      slowedDurationMin(spec.durationMin, fatigueOf(doc)) * starvedSlowFactor(doc),
-    )
+    // 곱하는 순서·정수화가 외래와 같은 것은 이제 성질이 아니라 **같은 함수**다
+    // (`needs.workDurationMin` — 갈릴 여지 자체를 없앴다).
+    // ⓘ **곱 순서의 계측점이 이 경로다**: 90분 base는 순서를 뒤집으면 피로 67에서 130 → 129로
+    //   갈리는데, 외래 20분은 같은 피로에서 29로 일치해 못 잡는다. 함수가 하나가 된 지금 그
+    //   계측은 외래 경로까지 함께 잠근다.
+    const workMin = workDurationMin(spec.durationMin, doc)
     updates.set(i, {
       ...p, stage: 'IN_TREATMENT', doctorId: doc.id, treatUntilMin: w.minute + workMin, workMin,
     })

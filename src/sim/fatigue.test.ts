@@ -177,6 +177,9 @@ describe('축적 — 표준강도분', () => {
     // 이후 굶은 채로 일한다(needs.starvedSlowFactor). 그 뒤 시작한 외래는 20분이 아니라 23분이라,
     // 건별 소요가 20과 `round(20 × STARVED_SLOW)` 사이에서 갈린다 — 몇 건이 어느 쪽인지는
     // 도착 시드가 정하므로 여기서 세지 않고 양쪽 끝만 잠근다. 무풍이라는 주장(피로 0)은 그대로다.
+    // ⓘ 상한을 느슨하게 둔 대가는 **다른 파일이 치른다**: 굶주림 감속 자체(1.15배)는
+    //    needs.test.ts 「굶은 의사의 외래는 1.15배 길다」가 단일 건으로 정확히 잡는다. 여기서
+    //    구간이 넓다고 그 축이 무계측인 것은 아니다 — 이 테스트가 지는 몫은 **강도 곱**뿐이다.
     const base = w.stats.examsDone * simDept('AESTHETICS').intensity
     expect(d.loadMinToday!).toBeGreaterThanOrEqual(base * EXAM_DURATION_MIN)
     expect(d.loadMinToday!).toBeLessThanOrEqual(base * Math.round(EXAM_DURATION_MIN * STARVED_SLOW))

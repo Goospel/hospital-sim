@@ -15,10 +15,10 @@ import { ENTRANCE, type Room, type SimWorld } from './world'
 import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
 import type { Pawn, PatientStage } from './pawn'
 import { simDept, addExamToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
-import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
-// 굶주림 감속은 needs.ts가 **단일 출처**다(응급도 같은 함수를 부른다) — 여기서 임계를 다시
-// 적으면 진료만 느려지고 처치는 그대로인 병원이 조용히 생긴다.
-import { starvedSlowFactor } from './needs'
+import { applyWorkLoads } from './fatigue'
+// 작업 소요식(피로 × 허기 감속)은 needs.ts가 **단일 출처**다(응급도 같은 함수를 부른다) —
+// 여기서 식을 다시 적으면 진료만 느려지고 처치는 그대로인 병원이 조용히 생긴다.
+import { workDurationMin } from './needs'
 
 export const EXAM_DURATION_MIN = 20
 /** 대기 인내 — 이만큼 앉아 있었는데 안 불리면 떠난다(수익 0). */
@@ -310,18 +310,16 @@ function progressStages(w: SimWorld): SimWorld {
           // 하지 않는다). 그 의사는 이 환자를 문 채라 진료가 끝날 때까지 다른 일을 못 하므로,
           // 이번 분 안에서 그의 상태가 바뀔 길도 없다.
           //
-          // 두 감속은 **곱**으로 얹히고 각 단계마다 정수로 접는다(`round(round(base×피로)×허기)`).
-          // 한 번에 곱해 마지막에만 반올림하면 피로 감속의 반올림 계약(fatigue.slowedDurationMin)이
-          // 우회돼, 같은 피로가 허기 유무에 따라 다른 기준선에서 출발한다.
-          // ⚠️ **곱 순서는 여기서 계측되지 않는다**(등가 돌연변이): 외래 20분은 순서를 뒤집어도
-          //    같은 값을 내는 피로 구간이 넓어 FATIGUE_RED에서 29분으로 일치한다(전수 실측 —
-          //    피로 0..100 중 갈리는 값 21개뿐). 순서 계약을 잠그는 것은 **응급 90분 경로**이고
-          //    (needs.test.ts 「곱이 쌓인다 — 응급」이 130 vs 129로 잡는다), 두 자리가 같은 모양을
-          //    유지하는 한 그 하나로 족하다. 모양이 갈리면 그 계측도 함께 무의미해진다.
+          // 감속식(곱 순서·이중 반올림)은 `needs.workDurationMin`이 **단일 출처**다 — 응급
+          // 처치(emergency.assignEmergencyDoctors)가 부르는 그 함수다. 식을 여기 다시 적으면
+          // 같은 상태의 의사가 진료와 처치에서 다른 배율을 받는다.
+          // ⚠️ **곱 순서는 외래에서 계측되지 않는다**(등가 돌연변이): 20분은 순서를 뒤집어도
+          //    FATIGUE_RED에서 29분으로 일치한다(전수 실측 — 피로 0..100 중 갈리는 값 21개뿐).
+          //    그 계약을 잠그는 것은 응급 90분 경로다(needs.test.ts 「곱이 쌓인다 — 응급」이
+          //    130 vs 129로 잡는다) — 두 자리가 **한 함수를 공유하게 된 지금** 그 계측 하나가
+          //    이 경로까지 함께 덮는다.
           const doc = w.pawns.find(d => d.id === p.doctorId)
-          const workMin = Math.round(
-            slowedDurationMin(EXAM_DURATION_MIN, fatigueOf(doc)) * starvedSlowFactor(doc),
-          )
+          const workMin = workDurationMin(EXAM_DURATION_MIN, doc)
           keep({ ...p, stage: 'IN_EXAM', examUntilMin: w.minute + workMin, workMin })
         } else if (stranded) {
           leftCount++
