@@ -43,9 +43,13 @@ export default function WeekEndOverlay({
       role="dialog"
       aria-modal="true"
       aria-label={`${week}주차 결산`}
-      className="fixed inset-0 z-20 flex items-center justify-center overflow-y-auto bg-desk/85 p-4"
+      /* 세로 가운데는 `items-center`가 아니라 **아이의 `my-auto`**로 잡는다. 스크롤 컨테이너에서
+         items-center는 내용이 뷰포트보다 길어지는 순간 아이의 top을 음수로 밀어내는데, 넘친
+         위쪽은 **스크롤해도 닿을 수 없다**(실측: 900px 아이의 top이 −434px). 7일 표가 든 이
+         화면은 창이 낮으면 바로 그 상태가 된다 — 마진 오토는 자리가 남을 때만 가운데로 민다. */
+      className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-desk/85 p-4"
     >
-      <div className="flex w-full max-w-sm flex-col gap-4">
+      <div className="my-auto flex w-full max-w-sm flex-col gap-4">
         <section className="paper-card flex flex-col gap-5 px-6 py-6">
           <span className="text-center text-xs font-medium uppercase tracking-[0.3em] text-ink-2">
             {week}주차 결산

@@ -37,9 +37,12 @@ export default function DayEndOverlay({
       role="dialog"
       aria-modal="true"
       aria-label={`${week}주 ${day}일차 마감`}
-      className="fixed inset-0 z-20 flex items-center justify-center bg-desk/85 p-4"
+      /* 세로 가운데는 아이의 `my-auto`로 잡는다 — 스크롤 컨테이너에서 items-center는 내용이
+         뷰포트보다 길어지면 아이의 top을 음수로 밀어내고, 그 위쪽은 스크롤해도 닿을 수 없다.
+         주간 결산(WeekEndOverlay)과 같은 구조를 쓴다. */
+      className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-desk/85 p-4"
     >
-      <div className="flex w-full max-w-sm flex-col gap-4">
+      <div className="my-auto flex w-full max-w-sm flex-col gap-4">
         <section className="paper-card flex flex-col gap-5 px-6 py-6">
           <span className="text-center text-xs font-medium uppercase tracking-[0.3em] text-ink-2">
             {week}주 {day}일차 마감
