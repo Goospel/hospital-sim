@@ -26,12 +26,13 @@ const day = (n: number, exams: number, dept: SimDeptKey = 'INTERNAL_MEDICINE'): 
   dayOf(n, { [dept]: { patients: exams, revenueManwon: exams * FIXTURE_RATE } })
 
 /** 픽스처 의사 — **과가 반드시 있다**. 고정비가 과별로 갈린 뒤로 과 없는 의사는 값을 매길 수
- *  없어 결산이 던진다(week.doctorDeptOf). */
+ *  없어 결산이 던진다(pawn.doctorDeptOf). */
 const doctor = (id: string, x: number, dept: SimDeptKey): Pawn =>
   ({ id, kind: 'DOCTOR', x, y: 8, path: [], dept })
 
-/** 기본 픽스처의 두 의사는 **일부러 다른 과**다(내과 3,000 · 미용 800 따위) — 같은 과 둘이면
- *  "의사 수 × 균일 상수"로 회귀해도 값이 같아 과별 합산이 통째로 관측되지 않는다. */
+/** 기본 픽스처의 두 의사는 **일부러 다른 과**다 — 같은 과 둘이면 "의사 수 × 균일 상수"로
+ *  회귀해도 값이 같아 과별 합산이 통째로 관측되지 않는다. 두 과의 주급이 얼마인지는 여기
+ *  적지 않는다(단일 출처는 `simDept` — 카탈로그를 튜닝할 때 이 주석이 조용히 낡는다). */
 const FIXTURE_DEPTS: SimDeptKey[] = ['INTERNAL_MEDICINE', 'AESTHETICS']
 const FIXTURE_FIXED_COST =
   FIXTURE_DEPTS.reduce((sum, d) => sum + simDept(d).weeklyCostManwon, 0)
@@ -51,7 +52,7 @@ function weekEndWorld(over: Partial<SimWorld> = {}): SimWorld {
 }
 
 describe('주간 요약', () => {
-  it('요약: 수익 합 = 7일 revenue 합, 고정비 = 의사 수 × 상수, 순이익 = 수익 − 고정비', () => {
+  it('요약: 수익 합 = 7일 revenue 합, 고정비 = 과별 주급의 합, 순이익 = 수익 − 고정비', () => {
     // 3주차로 잰다 — 1주차로 재면 week 필드를 상수 1로 굳혀도 안 걸린다(초기값과 구별 불가).
     const w = weekEndWorld({ week: 3 })
     const s = weekSummary(w)
@@ -201,7 +202,14 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
       if (w.phase === 'DAY_END') w = startNextDay(w)
     }
     if (w.phase !== 'WEEK_END') throw new Error(`전제 실패 — 주말에 닿지 못했다(${w.phase})`)
-    return weekSummary(w)
+    const s = weekSummary(w)
+    // Σ 불변식을 **자연 경로에서도** 잠근다. 손픽스처 한 건만으로는 "손으로 세운 DayRecord를
+    // 잘 더한다"까지만 재고, 하루 정산이 실제로 만든 기록(외래 + 응급 + 마감에 인정한 건)이
+    // 과별 표에 온전히 실리는지는 재지 못한다 — 여기가 그 자리이고, 아래 세 테스트가 부르는
+    // 모든 시드·과에 함께 걸린다.
+    const byDeptSum = Object.values(s.byDept).reduce((a, l) => a + l.revenueManwon, 0)
+    expect(byDeptSum).toBe(s.revenueManwon)
+    return s
   }
 
   it('ⓐ 미용 1명 병원의 주 순익 > 순환기 1명 병원의 주 순익', () => {
