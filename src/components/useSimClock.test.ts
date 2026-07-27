@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { minutesToTick } from './useSimClock'
+import { minutesToTick, effectiveSpeed, type SimSpeed } from './useSimClock'
 import { MS_PER_GAME_MIN } from '../game/hospitalMap'
+import type { SimPhase } from '../sim/world'
 
 describe('minutesToTick', () => {
   it('1×: 50ms당 1분, 나머지는 이월', () => {
@@ -57,6 +58,38 @@ describe('minutesToTick', () => {
       for (const speed of [0, 1, 3]) {
         expect(Number.isInteger(minutesToTick(ms, speed).minutes)).toBe(true)
       }
+    }
+  })
+})
+
+describe('effectiveSpeed', () => {
+  const SPEEDS: SimSpeed[] = [0, 1, 3]
+
+  /* Record<SimPhase, …>라 **새 국면이 생기면 tsc가 이 표를 못 채웠다고 막는다** — 배열로 적으면
+     새 phase가 조용히 미검사로 남고, 기본값(계속 흐름)이 하필 위험한 쪽이다. */
+  const RUNS: Record<SimPhase, boolean> = {
+    RUNNING: true,
+    DAY_END: false,
+    WEEK_END: false,
+    CLOSED: false,
+  }
+
+  it('RUNNING이면 플레이어가 고른 배속을 그대로 쓴다', () => {
+    for (const s of SPEEDS) expect(effectiveSpeed('RUNNING', s)).toBe(s)
+  })
+
+  it('RUNNING이 아닌 모든 국면은 배속과 무관하게 0이다 — 오버레이 뒤에서 세계가 흐르지 않게', () => {
+    for (const phase of Object.keys(RUNS) as SimPhase[]) {
+      if (RUNS[phase]) continue
+      for (const s of SPEEDS) {
+        expect(`${phase} ${s}× → ${effectiveSpeed(phase, s)}`).toBe(`${phase} ${s}× → 0`)
+      }
+    }
+  })
+
+  it('반환값은 배속 선택지 안에 있다 — 그대로 시계·전환 시간에 쓰이므로', () => {
+    for (const phase of Object.keys(RUNS) as SimPhase[]) {
+      for (const s of SPEEDS) expect(SPEEDS).toContain(effectiveSpeed(phase, s))
     }
   })
 })

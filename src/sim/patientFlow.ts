@@ -5,7 +5,7 @@
 //  ① RNG 0 — 도착 판정은 seed 해시(seededUnit)뿐이다. Math.random·Date.now 금지(결정론).
 //  ② 도착 판정은 **위치 == dest**다. `path.length === 0`은 "길이 끊겨 비워진 폰"과 구별되지 않는다.
 //  ③ 경로는 목적지가 정해질 때 1회만 계산한다. 매 분 재탐색하면 findPath(~3ms)가 인원수만큼 곱해진다.
-import { seededUnit } from '../game/daysim'
+import { seededUnit, callSeed } from '../game/daysim'
 import { buildBlockedSet, findPath, isBlockedTile, type Pt } from './path'
 import { GRID_W, GRID_H, type Room, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
@@ -18,6 +18,34 @@ export const EXAM_REVENUE_MANWON = 30
 export const PATIENCE_MIN = 90
 export const ARRIVAL_WINDOW_MIN = 480     // 주간(09:00~17:00)에만 도착
 export const ARRIVAL_PROB_PER_MIN = 1 / 8 // 평균 8분에 한 명
+
+/** 도착 스트림 전용 salt — daysim.callSeed 주석의 레지스트리에 없는 값이라야 한다
+ *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23). 새 무작위 축은 새 salt를 받는다. */
+const ARRIVAL_SALT = 29
+
+/** 도착 판정 시드 — **날 키(주,날)를 먼저 해시해 하루의 기점을 잡고, 분은 그 위에 더한다.**
+ *  분마다 독립 판정이라 (주,날,분) 조합마다 서로 다른 시드가 필요하다.
+ *
+ *  ⚠️ 분을 callSeed의 index 슬롯에 넣으면 안 된다 — 그 슬롯 폭은 97인데(`(…*97 + index)*101`)
+ *  분은 0..479라, day+1이 index+97과 **정확히 같은 시드**가 된다. 그러면 매일이 전날의 97분
+ *  시프트 재방송이다(실측: 인접 날 겹침 383/383, 전수 26,880 튜플 중 고유값 5,815). 에러 없이
+ *  게임만 죽는 종류이고, daysim의 callSeed 독스트링이 "index를 스트림 축으로 쓰지 마라"고
+ *  경고한 바로 그 함정이다. 그래서 index에는 0을 넣어 **날 키 전용**으로만 쓴다.
+ *
+ *  week가 들어가는 것도 같은 이유로 핵심이다: startNextWeek이 day를 1로 되돌리므로 week가
+ *  빠지면 2주차가 1주차의 재방송이 된다. 즉석 폴딩(week * 7_000 따위)을 새로 만들지 않는
+ *  이유는 슬롯 폭을 또 계산해야 하고 그 계산이 틀리면 먼 주차에서 조용히 충돌하기 때문이다.
+ *
+ *  world.seed(어느 판인가)는 callSeed에 슬롯이 없어 XOR로 얹는다. 덧셈이 아닌 이유: 슬롯
+ *  산술이 `index * 101 + salt`라 세계 시드를 더하면 seed 101이 옆 슬롯으로 미끄러진다.
+ *  자기 해시(seededUnit)를 통과시켜 32비트에 고루 퍼뜨린 뒤 XOR하면 슬롯을 안 건드린다.
+ *  이 함수가 도착 시드의 **단일 출처**다 — 테스트가 공식을 손으로 다시 쓰면(예전 경계
+ *  테스트가 그랬다) 한쪽이 조용히 낡는다. */
+export function arrivalSeed(w: SimWorld): number {
+  const worldMix = (seededUnit(w.seed) * 2 ** 32) | 0
+  const dayBase = (seededUnit(callSeed(w.week, w.day, 0, ARRIVAL_SALT) ^ worldMix) * 2 ** 32) | 0
+  return (dayBase + w.minute) | 0
+}
 
 const samePt = (a: { x: number; y: number }, b: Pt) => a.x === b.x && a.y === b.y
 const ptKey = (p: Pt) => `${p.x},${p.y}`
@@ -45,7 +73,12 @@ function frontTile(blocked: Set<number>, at: Pt): Pt | null {
   return null
 }
 
-function furnitureSpot(w: SimWorld, blocked: Set<number>, roomId: string, kind: 'DESK' | 'CHAIR'): Pt | null {
+/** 방 안 가구 앞에 설 자리 — 의사의 정위치(책상 앞)와 진료 좌석(의자 앞)의 **단일 출처**다.
+ *  하루를 넘길 때(day.startNextDay) 의사를 제자리로 되돌리는 것도 여기를 본다 — 파생식을
+ *  복제하면 "책상 앞"이 배정과 복귀에서 갈라져 의사가 어제와 다른 칸에 선다. */
+export function furnitureSpot(
+  w: SimWorld, roomId: string, kind: 'DESK' | 'CHAIR', blocked: Set<number>,
+): Pt | null {
   const f = w.furniture.find(x => x.roomId === roomId && x.kind === kind)
   return f ? frontTile(blocked, f) : null
 }
@@ -98,7 +131,7 @@ function maybeArrive(w: SimWorld): SimWorld {
   // 480분은 창이 닫힌 쪽이다(경계 테스트가 이 두 끝을 잠근다).
   if (w.minute >= ARRIVAL_WINDOW_MIN) return w
   // 분마다 독립 판정 — 이래야 도착이 몰릴 때 몰리고(대기열이 생기고) 빌 때 빈다.
-  if (seededUnit(w.seed * 100_000 + w.day * 1_000 + w.minute) >= ARRIVAL_PROB_PER_MIN) return w
+  if (seededUnit(arrivalSeed(w)) >= ARRIVAL_PROB_PER_MIN) return w
   const seat = freeSeat(w, buildBlockedSet(w))
   // 앉을 데가 없거나 거기까지 갈 수 없으면 문간에서 발길을 돌린다 — 폰을 만들지도 않는다.
   if (!seat) return { ...w, stats: { ...w.stats, leftCount: w.stats.leftCount + 1 } }
@@ -122,7 +155,7 @@ function assignDoctorRooms(w: SimWorld): SimWorld {
     if (p.kind !== 'DOCTOR' || p.roomId) return p
     for (const room of examRooms) {
       if (taken.has(room.id)) continue
-      const spot = furnitureSpot(w, blocked, room.id, 'DESK')
+      const spot = furnitureSpot(w, room.id, 'DESK', blocked)
       if (!spot) continue
       const path = findPath(w, { x: p.x, y: p.y }, spot)
       if (!path) continue // 못 가는 방은 다른 방을 본다 — 배정은 다음 분에 다시 시도된다
@@ -155,7 +188,7 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
   for (const { p, i } of waiting) {
     if (d >= idle.length) break
     const doc = idle[d]
-    const spot = furnitureSpot(w, blocked, doc.roomId!, 'CHAIR')
+    const spot = furnitureSpot(w, doc.roomId!, 'CHAIR', blocked)
     const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
     // 갈 수 없으면 그 의사를 건너뛴다. ⚠️ 도달 가능성은 **환자 위치에도** 달렸으므로 다른
     // 환자라면 갈 수 있었을 수 있다 — 즉 이건 공평한 판정이 아니라 재시도 폭주를 막는 절충이다.

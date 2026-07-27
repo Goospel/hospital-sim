@@ -1,0 +1,88 @@
+// 하루의 마디 — 마감 정산(settleDay)과 다음 날 시작(startNextDay).
+// 마감은 tick이 부르고(600분), 다음 날은 **플레이어가** 부른다 — 시계가 하루를 넘기면 결산을
+// 읽을 틈이 없다. 7일차 밤은 다음 날이 아니라 주간 결산(WEEK_END)으로 간다.
+import type { SimWorld } from './world'
+import type { Pawn, PatientStage } from './pawn'
+import { buildBlockedSet } from './path'
+import { EXAM_REVENUE_MANWON, furnitureSpot } from './patientFlow'
+
+export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
+export const DAYS_PER_WEEK = 7
+
+/** 마감 시점에 "진료를 못 받고 돌아간" 것으로 세는 스테이지 — **명시 목록(inclusion)**이다.
+ *  denylist(`stage !== 'LEAVING' && ...`)로 쓰면 새 스테이지가 생기는 순간 자동으로 이탈이 된다:
+ *  예약된 'PAYING'(수납 대기)·'GONE'(퇴장 표현) 흐름이 붙으면 수납 걷던 환자가 조용히 이탈로
+ *  세져 leftCount와 DayRecord·주간 결산까지 함께 틀어진다 — 에러 없이 숫자만 틀리는 무성 실패다.
+ *  집계의 의미(무엇을 이탈로 볼 것인가)는 정산 소관이라 여기(day.ts)가 소유한다. */
+export const COUNTS_AS_TURNED_AWAY: readonly PatientStage[] = ['ENTERING', 'WAITING', 'TO_EXAM']
+
+export interface DayRecord {
+  day: number
+  examsDone: number
+  leftCount: number
+  revenueManwon: number
+}
+
+/** 운영 마감 정산 — RUNNING 세계에만 허용(이중 정산 방지).
+ *  진행 중 진료(IN_EXAM)는 완료 인정(각색: 야근 연장은 범위 밖), 아직 진료를 못 받은 환자
+ *  (`COUNTS_AS_TURNED_AWAY`)는 이탈 집계. 환자는 스테이지와 무관하게 전원 세계에서 빠진다.
+ *  ⚠️ 이미 집계가 끝난 환자(LEAVING = 진료 완료 / LEFT_WAITING = 이탈)는 다시 세지 않는다 —
+ *  세면 그 하루의 leftCount가 실제 인원보다 부풀어 DayRecord와 주간 결산까지 함께 틀어진다. */
+export function settleDay(world: SimWorld): SimWorld {
+  if (world.phase !== 'RUNNING') throw new Error(`settleDay: RUNNING이 아닌 세계(${world.phase})`)
+  let exams = world.stats.examsDone
+  let left = world.stats.leftCount
+  for (const p of world.pawns) {
+    if (p.kind !== 'PATIENT') continue
+    if (p.stage === 'IN_EXAM') exams += 1
+    else if (p.stage && COUNTS_AS_TURNED_AWAY.includes(p.stage)) left += 1
+  }
+  const doctors = world.pawns.filter(p => p.kind === 'DOCTOR')
+  const examsDelta = exams - world.stats.examsDone
+  const record: DayRecord = {
+    day: world.day,
+    examsDone: exams,
+    leftCount: left,
+    revenueManwon: exams * EXAM_REVENUE_MANWON,
+  }
+  const days = [...world.days, record]
+  return {
+    ...world,
+    // 주의 마지막 날은 하루가 아니라 **주**가 끝난다 — 그날 밤엔 다음 날이 아니라 주간 결산이 온다.
+    // 판정을 정산 안에 두는 이유: days를 늘리는 곳과 "몇 일째인가"를 읽는 곳이 갈리면
+    // 7일차 밤에 DAY_END와 WEEK_END가 서로 다른 근거로 갈릴 수 있다(단일 출처).
+    // `>=`인 이유: 등호는 기록이 하나라도 더 붙은 세계에서 WEEK_END를 **말없이** 건너뛴다 —
+    // 결산이 안 열리면 고정비도 폐업도 오지 않아 하루가 영원히 이어진다(에러 없는 실패).
+    // 정상 흐름에선 startNextWeek이 days를 비워 7에서 딱 걸리므로 지금은 등가다.
+    phase: days.length >= DAYS_PER_WEEK ? 'WEEK_END' : 'DAY_END',
+    pawns: doctors,
+    treasuryManwon: world.treasuryManwon + examsDelta * EXAM_REVENUE_MANWON,
+    stats: { examsDone: exams, leftCount: left },
+    days,
+  }
+}
+
+/** 새 아침의 공통 초기화 — 분 0·당일 집계 0·의사는 자기 진료실 책상 앞에서 다시 시작.
+ *  하루를 넘길 때(startNextDay)와 주를 넘길 때(week.startNextWeek)가 **같은 아침**을 열어야 한다.
+ *  7일차 밤엔 startNextDay가 없어서, 여기가 갈리면 주의 첫날만 지난주 stats를 들고 시작해
+ *  그날 DayRecord가 지난주 진료까지 다시 센다(에러 없이 숫자만 틀린다).
+ *  의사가 어제 걷던 경로·목적지를 버리는 이유: dest가 남으면 첫 틱의 도착 판정(위치 == dest)이
+ *  어제 목적지를 보고 흔들린다. phase·day·week는 부르는 쪽이 정한다. */
+export function freshMorning(world: SimWorld): SimWorld {
+  const blocked = buildBlockedSet(world)
+  const pawns = world.pawns.map(p => {
+    const next: Pawn = { ...p, path: [] }
+    delete next.dest
+    // 방을 못 찾거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
+    const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null
+    return spot ? { ...next, x: spot.x, y: spot.y } : next
+  })
+  return { ...world, minute: 0, pawns, stats: { examsDone: 0, leftCount: 0 } }
+}
+
+/** 하루 넘기기 — DAY_END에서만(시계가 아니라 플레이어가 부른다).
+ *  하루 집계(stats)는 비우고 주간 기록(days)은 남긴다 — 주간 결산이 그 배열을 합산한다. */
+export function startNextDay(world: SimWorld): SimWorld {
+  if (world.phase !== 'DAY_END') throw new Error(`startNextDay: DAY_END가 아닌 세계(${world.phase})`)
+  return { ...freshMorning(world), phase: 'RUNNING', day: world.day + 1 }
+}

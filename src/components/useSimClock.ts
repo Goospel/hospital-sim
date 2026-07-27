@@ -4,10 +4,26 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 // ⚠️ 상대 경로 임포트 — 이 파일은 vitest(별칭 미설정)로도 돌기 때문에 `@/`를 쓸 수 없다.
 import { MS_PER_GAME_MIN } from "../game/hospitalMap";
 import { tick } from "../sim/tick";
-import type { SimWorld } from "../sim/world";
+import type { SimPhase, SimWorld } from "../sim/world";
 
 /** 배속 — 0은 일시정지. 시간 조작 UI가 고르는 값의 전부다(1주차). */
 export type SimSpeed = 0 | 1 | 3;
+
+/**
+ * 실제로 흐르는 배속 — 마감·결산 국면에서는 플레이어가 고른 배속과 **무관하게** 0이다.
+ *
+ * tick도 비RUNNING 세계를 그대로 돌려주므로 세계는 코어 수준에서 이미 안전하다. 그런데도
+ * 여기서 한 번 더 세우는 이유는 화면 쪽 계약이 두 개 더 걸려 있어서다: 오버레이가 떠 있는
+ * 동안 rAF가 매 프레임 setWorld를 부르는 낭비를 없애고, 같은 값이 TileMap의 폰 전환 시간
+ * (stepMs)으로도 흘러 결산 화면 뒤에서 폰이 미끄러지지 않게 한다.
+ *
+ * 배속 선택(speed)을 0으로 **덮어쓰지 않고** 파생값으로 두는 건 건설 중 자동 일시정지와 같은
+ * 이유다 — 상태를 저장·복원하면 국면이 바뀌는 순간 배속이 0에 갇힌다. 다음 날로 넘어가면
+ * phase가 RUNNING으로 돌아오는 것만으로 원래 배속이 되살아난다.
+ */
+export function effectiveSpeed(phase: SimPhase, speed: SimSpeed): SimSpeed {
+  return phase === "RUNNING" ? speed : 0;
+}
 
 /**
  * 프레임이 아무리 잘거나 굵어도 게임 시간이 새지 않게 — 흘러간 실시간을 **정수 분 + 이월 ms**로 쪼갠다.

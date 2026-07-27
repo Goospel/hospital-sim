@@ -6,11 +6,12 @@ import { spawnDoctor } from './pawn'
 import { tick } from './tick'
 import {
   ENTRANCE, EXAM_DURATION_MIN, EXAM_REVENUE_MANWON, PATIENCE_MIN,
-  ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats,
+  ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats, arrivalSeed,
 } from './patientFlow'
 import { seededUnit } from '../game/daysim'
+import { DAY_END_MIN, DAYS_PER_WEEK } from './day'
 
-const DAY_TICKS = 600 // 도착 창(480분) + 뒷정리 여유
+const DAY_TICKS = 600 // 도착 창(480분) + 뒷정리 여유 — 마감(DAY_END_MIN)과 같은 지점이다
 
 /** 대기실 + 진료실 + 의사 1명 — 진료가 실제로 돌아가는 최소 병원 */
 function hospitalWorld(seed: number) {
@@ -81,10 +82,17 @@ describe('환자 흐름', () => {
   })
 
   it('대기실이 없으면 환자가 들어오자마자 이탈로 집계된다', () => {
-    const w = run(createWorld(3))
+    // 마감 직전까지만 돌린다 — 정산(600분)이 어차피 환자를 전부 쓸어가므로 600분을 넘겨 재면
+    // 아래 `pawns === []`가 항진명제가 된다("아무도 안 남았다"를 더는 관측하지 못한다).
+    const w0 = createWorld(3)
+    const w = run(w0, DAY_END_MIN - 1)
+    expect(w.phase).toBe('RUNNING')
     expect(w.stats.examsDone).toBe(0)
     expect(w.stats.leftCount).toBeGreaterThan(0)
-    expect(w.pawns).toEqual([]) // 발길을 돌린 환자는 폰으로 만들지도 않는다
+    expect(w.pawns).toEqual([])
+    // "폰으로 만들지도 않았다"는 nextId로만 관측된다 — pawns는 퇴장 기계가 어차피 비워주므로
+    // 문간 환자를 폰으로 만들었다가 곧바로 내보내도 []로 보인다(같은 항진명제의 다른 얼굴).
+    expect(w.nextId).toBe(w0.nextId)
   })
 
   it(`인내 ${PATIENCE_MIN}분 초과 대기자는 LEFT_WAITING으로 떠난다`, () => {
@@ -100,9 +108,12 @@ describe('환자 흐름', () => {
   it('자리가 넉넉해도 의사가 없으면 결국 전원이 인내 초과로 떠난다', () => {
     // leftCount의 두 원인(자리 없음 / 인내 초과)을 가르는 계측기.
     // 좌석 45개짜리 대기실이면 자리 부족은 0건이라, 남는 이탈은 전부 인내 초과다.
+    // 마감 직전까지만 돌린다 — 정산(600분)이 잔류 환자를 이탈로 집계하므로 600분을 넘겨 재면
+    // "인내가 원인"이라는 이 테스트의 구분이 정산에 가려진다(셋째 원인이 섞인다).
     const w0 = roomySeatsWorld(3)
-    const w = run(w0, 900)
+    const w = run(w0, DAY_END_MIN - 1)
     const arrived = w.nextId - w0.nextId
+    expect(w.phase).toBe('RUNNING')
     expect(arrived).toBeGreaterThan(0)
     expect(w.stats.leftCount).toBe(arrived)
     expect(w.pawns).toEqual([])
@@ -140,14 +151,71 @@ describe('환자 흐름', () => {
     expect(arrivals(3)).not.toEqual(arrivals(4))
   })
 
+  it('주가 다르면 하루가 다르다 — 2주차는 1주차의 재방송이 아니다', () => {
+    // startNextWeek이 day를 1로 되돌리므로, 도착 시드에 week가 없으면 2주차 1일차가 1주차
+    // 1일차와 **완전히 동일**해진다(같은 분에 같은 환자). 에러는 안 나고 게임만 죽는다.
+    // 주 말고 다른 변수는 전부 같게 두고 week만 바꿔 그 축 하나를 겨눈다.
+    const dayOf = (week: number) => {
+      let w = { ...hospitalWorld(3), week }
+      for (let i = 0; i < DAY_END_MIN; i++) w = tick(w, 1)
+      return w.days[0]
+    }
+    const week1 = dayOf(1)
+    const week2 = dayOf(2)
+    expect(week1.examsDone).toBeGreaterThan(0) // 계측기가 0으로 헛돌지 않았다
+    expect(week2.examsDone).toBeGreaterThan(0)
+    expect(week1.day).toBe(week2.day)          // 같은 '1일차'인데
+    expect(week2).not.toEqual(week1)           // 하루의 내용은 다르다
+  })
+
+  it('날이 바뀌면 스트림이 통째로 갈린다 — 분을 callSeed의 index 슬롯에 넣지 않는다', () => {
+    // callSeed의 슬롯 산술은 (((week*7 + day)*97 + index)*101 + salt)라 **index 폭이 97**이다.
+    // 분(0..479)을 그 슬롯에 넣으면 day+1이 index+97과 **같은 시드**가 되어, 매일이 전날의
+    // 97분 시프트 재방송이 된다(실측: 인접 날 겹침 383/383 — 하루의 80%). daysim 독스트링이
+    // "index를 스트림 축으로 쓰지 마라"고 경고한 바로 그 함정이라, 날 키를 먼저 해시한다.
+    const w = createWorld(7)
+    expect(arrivalSeed({ ...w, day: 1, minute: 97 })).not.toBe(arrivalSeed({ ...w, day: 2, minute: 0 }))
+  })
+
+  it('주·날·분 전 조합에서 도착 시드가 겹치지 않는다', () => {
+    // 위 한 점만 잠그면 "그 한 쌍만 피하는" 폴딩도 통과한다 — 겹침은 스트림 전체의 성질이라
+    // 전수로 잰다(8주 × 7일 × 도착 창 = 26,880 튜플, 순수 산술이라 값싸다).
+    const w = createWorld(7)
+    const seen = new Set<number>()
+    let count = 0
+    for (let week = 1; week <= 8; week++) {
+      for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+        for (let minute = 0; minute < ARRIVAL_WINDOW_MIN; minute++) {
+          seen.add(arrivalSeed({ ...w, week, day, minute }))
+          count++
+        }
+      }
+    }
+    expect(count).toBe(8 * DAYS_PER_WEEK * ARRIVAL_WINDOW_MIN)
+    expect(seen.size).toBe(count) // 중복 0
+  })
+
+  it('결정론은 유지된다 — 같은 시드·같은 주면 하루가 완전히 같다', () => {
+    // week를 시드에 넣었다고 무작위가 새로 생기면 안 된다(재현 불가 = 디버깅 불가).
+    const dayOf = () => {
+      let w = { ...hospitalWorld(3), week: 4 }
+      for (let i = 0; i < DAY_END_MIN; i++) w = tick(w, 1)
+      return w
+    }
+    expect(dayOf()).toEqual(dayOf())
+  })
+
   it(`도착 창이 닫히면 새 환자가 오지 않는다 — 경계 분(${ARRIVAL_WINDOW_MIN})은 닫힌 쪽이다`, () => {
-    // 시드 13은 **480분에 도착 판정이 통과하는** 시드다(아래 전제로 못박음). 좌석은 45개라
+    // 시드 5는 **480분에 도착 판정이 통과하는** 시드다(아래 전제로 못박음). 좌석은 45개라
     // 자리 부족으로 반려될 일도 없다 — 그래서 경계를 `>`로 잘못 쓰면 여기서 한 명이 더 들어온다.
     // 아무 시드나 쓰면 그 분에 판정이 애초에 실패해 경계 오류가 조용히 통과한다.
-    expect(seededUnit(13 * 100_000 + 1 * 1_000 + ARRIVAL_WINDOW_MIN)).toBeLessThan(ARRIVAL_PROB_PER_MIN)
+    // 전제는 **arrivalSeed를 불러서** 세운다 — 공식을 여기 손으로 다시 쓰면(예전에 그랬다)
+    // 도착 시드가 바뀌는 날 이 전제만 조용히 낡아 "통과하는 시드"가 아니게 된다.
+    const w0 = roomySeatsWorld(5)
+    expect(seededUnit(arrivalSeed({ ...w0, minute: ARRIVAL_WINDOW_MIN }))).toBeLessThan(ARRIVAL_PROB_PER_MIN)
     // 경계 분(480)을 **캡처 뒤에** 두는 게 핵심이다. 480분까지 돌린 뒤 세면 그 분의 도착이
     // 이미 기준값에 섞여 들어가, 경계를 틀려도 차이가 안 보인다(실측으로 이 함정을 밟았다).
-    let w = tick(roomySeatsWorld(13), ARRIVAL_WINDOW_MIN - 1)
+    let w = tick(w0, ARRIVAL_WINDOW_MIN - 1)
     const idBeforeDusk = w.nextId
     w = tick(w, 200) // 480분이 이 구간의 첫 분이다
     expect(w.nextId).toBe(idBeforeDusk)
@@ -308,11 +376,22 @@ describe('진료 배정', () => {
 
 describe('퇴장', () => {
   it('입구에 닿은 환자는 배열에서 사라진다 — 폰이 무한히 쌓이지 않는다', () => {
-    // 900분: 마지막 도착(479분)이 대기·진료·퇴장을 다 마치고도 남는 여유.
-    // 600분으로 끊으면 마지막 한 명이 입구 한 칸 앞에서 걸어가는 중이라 정상인데도 실패한다.
-    const w = run(hospitalWorld(3), 900)
-    expect(w.pawns.filter(p => p.kind === 'PATIENT')).toEqual([])
-    expect(w.pawns).toHaveLength(1) // 의사만 남는다
+    // ⚠️ 예전엔 900분까지 돌려 "환자가 하나도 안 남았다"로 쟀지만, 마감 정산(600분)이 남은
+    // 환자를 통째로 쓸어가면서 그 계측기가 무력해졌다 — 퇴장 제거를 통째로 없애도 정산만으로
+    // 통과한다. 그래서 ① 특정 퇴장 환자가 **하루 안에**(RUNNING) 사라지는지 ② 정산 직전까지
+    // 폰이 쌓이지 않는지를 직접 잰다.
+    let w = until(hospitalWorld(3), x => x.pawns.some(p => p.stage === 'LEAVING'))
+    const leavingId = w.pawns.find(p => p.stage === 'LEAVING')!.id
+    for (let i = 0; i < 60 && w.pawns.some(p => p.id === leavingId); i++) w = tick(w, 1)
+    expect(w.pawns.some(p => p.id === leavingId)).toBe(false)
+    expect(w.phase).toBe('RUNNING') // 정산이 치운 게 아니라 제 발로 걸어 나갔다
+
+    const w0 = hospitalWorld(3)
+    const eod = run(w0, DAY_END_MIN - 1) // 마감 직전 — 아직 정산이 없는 시점
+    expect(eod.nextId - w0.nextId).toBeGreaterThan(10)                 // 하루 종일 사람이 오갔는데
+    expect(eod.pawns.filter(p => p.kind === 'PATIENT').length)
+      .toBeLessThanOrEqual(1)                                          // 남은 건 걸어 나가는 중인 한 명뿐
+    expect(eod.pawns.filter(p => p.kind === 'DOCTOR')).toHaveLength(1)
   })
 
   it('떠나는 환자는 입구를 향한다', () => {
