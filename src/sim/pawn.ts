@@ -35,7 +35,17 @@ export function priorityOf(p: Pawn, kind: PriorityKind): Priority {
   return p.priorities?.[kind] ?? DEFAULT_PRIORITY
 }
 
-/** 채용·스폰의 초기값 — 세 축 전부 보통. */
+/**
+ * 채용·스폰의 초기값 — 세 축 전부 보통.
+ *
+ * ⚠️ 초기값이 `DEFAULT_PRIORITY`(= 조회 폴백)와 **같은 상수를 쓰는 것은 의도한 등식**이다:
+ * "새로 뽑은 의사"와 "필드가 아예 없는 폰"이 **같게 읽힌다**. 등식이 깨지면 저장된 옛 세계를
+ * 불러온 병원이 새 병원과 다르게 굴러가는데, 그 차이는 어느 화면에도 안 뜬다.
+ *
+ * 초기값 디자인이 갈리는 날(예: 새 의사는 응급을 꺼 둔 채 온다)은 **그때 상수를 분리한다** —
+ * 그리고 그때도 **폴백은 2로 남긴다**: 폴백은 "이 의사가 어떻게 시작했나"가 아니라 "값이 없을 때
+ * 무엇으로 읽나"라, 초기값을 따라 움직이면 옛 세계의 의사들이 소급해서 성격이 바뀐다.
+ */
 const freshPriorities = (): NonNullable<Pawn['priorities']> => ({
   exam: DEFAULT_PRIORITY, emergency: DEFAULT_PRIORITY, rest: DEFAULT_PRIORITY,
 })
@@ -49,6 +59,8 @@ const freshPriorities = (): NonNullable<Pawn['priorities']> => ({
  *
  * 미지정 폰에 이 함수를 쓰면 나머지 두 축이 **기본값으로 실린다** — 한 축을 건드렸다고 다른 축이
  * undefined로 남으면 이후 조회가 폴백에 의존해, "필드에 있는 값"과 "읽히는 값"이 갈린다.
+ * 그 채움을 `freshPriorities()` 위에 얹는 형태로 적는 이유는 **축이 늘 때 고칠 자리를 하나로**
+ * 두기 위해서다: 축을 손으로 나열하면 새 축이 여기서만 빠져 조용히 undefined로 남는다.
  */
 export function setDoctorPriority(
   w: SimWorld, doctorId: string, kind: PriorityKind, value: Priority,
@@ -61,12 +73,7 @@ export function setDoctorPriority(
   if (target.kind !== 'DOCTOR') {
     throw new Error(`setDoctorPriority: 의사가 아닌 폰(${doctorId}) — 우선순위는 의사만 갖는다`)
   }
-  const priorities = {
-    exam: priorityOf(target, 'exam'),
-    emergency: priorityOf(target, 'emergency'),
-    rest: priorityOf(target, 'rest'),
-    [kind]: value,
-  }
+  const priorities = { ...freshPriorities(), ...target.priorities, [kind]: value }
   return { ...w, pawns: w.pawns.map(p => (p.id === doctorId ? { ...p, priorities } : p)) }
 }
 /** ⚠️ 'PAYING'·'GONE'은 **2주차 예약**이라 지금은 아무도 만들지 않고 아무도 읽지 않는다.

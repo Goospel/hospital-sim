@@ -51,7 +51,9 @@ export interface EmergencyTurnAway { kind: EmergencyKind; reason: TurnAwayReason
 export interface EmergencySpec {
   kind: EmergencyKind
   label: string
-  /** 이 응급을 받을 수 있는 **배후과**. 이 과 의사가 0명이면 하드락이다. */
+  /** 이 응급을 받을 수 있는 **배후과**. 이 과에서 **응급을 켠**(`priorityOf(p,'emergency') > 0`)
+   *  의사가 0명이면 하드락이다 — 뽑지 않은 것과 뽑아 두고 끈 것이 같은 판정을 받는다(PR C의
+   *  정의 확장 · 파일 머리말). */
   dept: SimDeptKey
   /** 처치 한 건의 수익(만원). 외래 수가와 **다른 축**이다 — 응급은 한 건이 그 과 외래 수십
    *  건을 넘지만, 받으려면 24시간 대기(주 고정비)와 침대를 먼저 사야 한다. */
@@ -323,6 +325,10 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
    * 세어 놓고 배정에서는 집으면, 그 과 의사를 다 끈 병원이 응급을 되돌려 보내면서 동시에 그
    * 의사를 처치에 묶는 모순이 생긴다. 인터럽트도 배정의 부수효과라, 여기서 빠지면 쉬던 의사가
    * 낚아채이는 일도 함께 사라진다(끈다는 말의 뜻이 세 자리에서 같아진다).
+   *
+   * ⓘ **과 축은 이 정렬에 없다** — 배후과 일치는 아래 `find`가 환자마다 따로 본다. 정렬은
+   *   "누가 먼저 불려 나오나"의 순서일 뿐이고, 과가 다른 의사는 순서와 무관하게 그 환자를
+   *   못 받는다. 정렬 키에 과를 섞으면 STEMI 한 명 때문에 급성복증 줄까지 재배열된다.
    */
   const candidates = w.pawns
     .map((p, i) => ({ p, i }))

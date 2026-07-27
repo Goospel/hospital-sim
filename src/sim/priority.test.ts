@@ -14,7 +14,8 @@ import {
 import { tick } from './tick'
 import { ARRIVAL_WINDOW_MIN, PATIENCE_MIN } from './patientFlow'
 import { EMERGENCY_WINDOW_MIN, emergencyArrivalAt, wardBeds, type EmergencyKind } from './emergency'
-import { FATIGUE_RED } from '../game/doctor'
+import { freshMorning } from './day'
+import { FATIGUE_RED, FATIGUE_REST } from '../game/doctor'
 
 /** 순환기 진료실 둘 — 같은 과 의사 두 명이 **각자 방을 받아야** 외래 줄 정렬이 관측된다
  *  (방 없는 의사는 배정 후보에서 이미 빠져 정렬이 헛돈다). */
@@ -145,6 +146,12 @@ describe('setDoctorPriority — 손잡이 자체의 계약', () => {
     for (const kind of ['exam', 'emergency', 'rest'] as const) {
       expect(priorityOf(handmade, kind)).toBe(2)
     }
+    // 미지정 폰에 손잡이를 쓰면 **세 축이 전부 필드로 실린다**. 조회는 폴백이 가려 주므로 이건
+    // `priorityOf`로 못 잰다 — 필드를 직접 본다. 안 채우면 "필드에 있는 값"과 "읽히는 값"이
+    // 갈려, 저장·UI가 폴백에 기대게 되고 그 의존은 폴백을 바꾸는 날 한꺼번에 드러난다.
+    const handWorld: SimWorld = { ...createWorld(1), pawns: [handmade] }
+    expect(setDoctorPriority(handWorld, 'doc-hand', 'rest', 3).pawns[0].priorities)
+      .toEqual({ exam: 2, emergency: 2, rest: 3 })
   })
 
   it('priorities 없는 손세계 의사도 응급 판정·배정을 통과한다 — 기본 2가 라우팅까지 닿는다', () => {
@@ -276,6 +283,44 @@ describe('휴식 토글 — 끄기와 선제 이탈', () => {
     expect(docOf(w).activity).toBe('TO_LOUNGE')
     expect(pawnById(w, 'pat-wait')).toMatchObject({ stage: 'WAITING' })
     expect(pawnById(w, 'pat-wait')!.doctorId).toBeUndefined()
+  })
+
+  it('쉴 자리가 없는데 rest > exam이면 그 의사는 진료도 휴식도 없이 논다 — 각색이다', () => {
+    // ⚠️ 이건 **의도한 각색**이고, 그래서 계약이다(주석만 두면 다음 사람이 버그로 보고 "고친다").
+    //    쉬라고 지시해 놓고 쉴 곳을 안 지은 병원이 치르는 대가다 — 휴게실이 **없으므로**
+    //    유휴 풀에서는 빠지는데(prefersRestOverExam) 욕구 기계는 보낼 자리를 못 찾는다.
+    //    Task 2의 「휴게실이 없으면 밥이라도 먹으러 간다」와 다른 판정인 이유: 그쪽은 **다른
+    //    욕구의 자리가 있는데** 못 가게 막는 것이었고, 이쪽은 그 욕구의 자리 자체가 없다.
+    let w = withPriority(tired(deskWorld(), FATIGUE_RED), 'rest', 3) // rooms 기본값 = 휴게실 없음
+    expect(w.stats.examsDone).toBe(0)      // 전제: 이 세계는 아직 아무도 진료하지 않았다
+    w = { ...w, pawns: [...w.pawns, waitingPatient('pat-idle', OPEN_TILE, w.minute)] }
+    const leftBefore = w.stats.leftCount
+    for (let i = 0; i < PATIENCE_MIN + 2; i++) {
+      w = tick(w, 1)
+      expect(pawnById(w, 'pat-idle')?.doctorId).toBeUndefined()
+    }
+    const doc = docOf(w)
+    expect(doc.activity).toBeUndefined()   // 쉬러 가지도 않았다 — 갈 자리가 없다
+    expect(doc.fatigue).toBe(FATIGUE_RED)  // 그래서 회복도 없다
+    expect(w.stats.examsDone).toBe(0)      // 진료도 없다 — 그 분들은 통째로 놀았다
+    expect(w.stats.leftCount).toBe(leftBefore + 1) // 환자는 인내를 넘겨 떠났다
+  })
+
+  it('그 태업은 비가역이 아니다 — 밤 회복이 임계 아래로 내리면 이튿날 다시 환자를 본다', () => {
+    // 위 각색이 **영구 정지**였다면 각색이 아니라 버그다(합법적인 지시 하나로 의사가 세션 내내
+    // 죽는다). 풀리는 근거가 피로라는 것까지 잰다 — 토글은 밤새 그대로다.
+    const stuck = withPriority(tired(deskWorld(), FATIGUE_RED), 'rest', 3)
+    expect(docOf(tick(stuck, 1)).activity).toBeUndefined() // 전제: 오늘은 논다
+
+    const morning = freshMorning(stuck)
+    expect(docOf(morning).fatigue).toBe(FATIGUE_RED - FATIGUE_REST) // 임계 아래로 내려왔다
+    // 플레이어의 지시는 밤새 풀리지 않는다 — 풀린 것은 피로뿐이다(손잡이가 아침마다
+    // 초기화되면 그건 손잡이가 아니다: Pawn.priorities 독스트링의 계약).
+    expect(priorityOf(docOf(morning), 'rest')).toBe(3)
+
+    let next = { ...morning, minute: ARRIVAL_WINDOW_MIN }
+    next = tick({ ...next, pawns: [...next.pawns, waitingPatient('pat-next', OPEN_TILE, next.minute)] }, 1)
+    expect(pawnById(next, 'pat-next')).toMatchObject({ stage: 'TO_EXAM', doctorId: docOf(next).id })
   })
 
   it('rest <= exam이면 대기 환자가 있는 한 붙잡힌다 — 쉬는 건 유휴일 때뿐', () => {

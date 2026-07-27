@@ -234,13 +234,27 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
     // `exam === 0`은 **금지**다 — 이 의사는 대기 환자를 영원히 안 받는다(그 과에 다른 의사가
     // 없으면 그 환자들은 인내를 넘겨 떠난다). 플레이어가 고른 대가이고, 장부에 그대로 실린다.
     if (priorityOf(p, 'exam') === 0) continue
-    // 휴식을 진료보다 높게 매긴 지친 의사는 **환자가 줄 서 있어도** 유휴 풀에서 빠진다 —
-    // 그래야 그 분의 stepDoctors가 그를 휴게실로 보낸다(needs.prefersRestOverExam이 단일
-    // 출처다. 식을 여기 복제하면 욕구 기계의 판정과 갈려, 안 쉬는데 환자도 안 받는 구간이 생긴다).
-    if (prefersRestOverExam(p)) continue
     const room = w.rooms.find(r => r.id === p.roomId)
     if (!room || !insideRoom(room, p)) continue // 아직 방으로 걸어가는 중이면 진료를 못 받는다
     if (room.dept !== p.dept) continue          // 삼중 일치의 방 축
+    // 휴식을 진료보다 높게 매긴 지친 의사는 **환자가 줄 서 있어도** 유휴 풀에서 빠진다.
+    // (`needs.prefersRestOverExam`이 단일 출처다 — 식을 여기 복제하면 욕구 기계의 판정과 갈려,
+    //  안 쉬는데 환자도 안 받는 구간이 생긴다. 순서상 삼중 일치 뒤에 두어 "라우팅이 성립하는가"와
+    //  "그럼에도 안 받는가"를 갈라 놓는다 — 술어가 순수해 어느 자리든 결과는 같다.)
+    //
+    // ⚠️ 여기서 빠진 의사가 **반드시 쉬러 가는 것은 아니다.** 그 분의 stepDoctors는 빈 휴게실
+    //    좌석을 찾지 못하면 아무 데도 안 보내고, 그러면 그 의사는 진료도 휴식도 없이 **논다**
+    //    (피로 그대로 · 대기 환자는 인내를 넘겨 떠난다 · 에러 0).
+    //
+    //    이것은 버그가 아니라 **각색**이다: 쉬라고 지시해 놓고 쉴 곳을 안 지은 병원이 치르는
+    //    대가이고, 플레이어가 명시로 고른 구성(rest > exam)에서만 온다. 비가역도 아니다 —
+    //    밤 회복(FATIGUE_REST)이 피로를 임계 아래로 내리면 이튿날 저절로 풀리고, 토글을
+    //    되돌리거나 휴게실을 지어도 풀린다. 세 갈래 다 needs.test·priority.test가 잠근다.
+    //
+    //    ⓘ Task 2의 「휴게실이 없으면 밥이라도 먹으러 간다」와 **다른 판정인 이유**: 그쪽은
+    //      다른 욕구(식사)의 **자리가 있는데** 못 가게 막는 것이라 벌이 아니라 버그였다.
+    //      이쪽은 그 욕구의 자리 **자체가 없다** — 갈 곳이 없는 것을 기계가 만들어낼 수는 없다.
+    if (prefersRestOverExam(p)) continue
     const queue = idleByDept.get(p.dept)
     if (queue) queue.push({ doc: p, i })
     else idleByDept.set(p.dept, [{ doc: p, i }])
