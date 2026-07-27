@@ -127,7 +127,11 @@ export function simDept(key: SimDeptKey): SimDeptSpec {
  *  담당 과(handlingDept)로 접고, 여기는 완료된 외래를 환자의 희망 과로 접는다. 모양을 맞춰 둔
  *  이유는 결산 표(계획 Task 5·6)가 두 층에서 같은 읽기 코드를 쓸 수 있어야 하기 때문이다.
  *  다른 점은 키를 `SimDeptKey`로 좁힌 것뿐 — 이 층엔 2주차 절단 과가 아예 없다.
- *  **부분 기록(Partial)인 것도 계승이다**: 오늘 아무도 안 온 과는 0줄이 아니라 줄이 없다. */
+ *  **부분 기록(Partial)인 것도 계승이다**: 오늘 아무도 안 온 과는 0줄이 아니라 줄이 없다.
+ *  ⚠️ `patients`는 **그 과가 돈을 받고 본 사람 전부**다 — 외래 + 응급 처치. 그래서
+ *  `revenueManwon === patients × examRevenueManwon`은 **응급이 없는 세계에서만** 성립한다
+ *  (응급 수가는 외래의 수십 배라 섞이면 그 등식이 깨진다). 외래 건수는 `stats.examsDone`,
+ *  응급 건수는 `stats.emergencyAccepted`가 따로 센다. */
 export type SimDeptStats = Partial<Record<SimDeptKey, { patients: number; revenueManwon: number }>>
 
 /** 과별 수익의 합 — 불변식 "Σ byDept.revenueManwon == 총수익"의 **단일 출처**다
@@ -136,16 +140,22 @@ export function deptRevenueSum(byDept: SimDeptStats): number {
   return Object.values(byDept).reduce((sum, s) => sum + (s?.revenueManwon ?? 0), 0)
 }
 
-/** 완료된 외래 한 건을 과별 집계에 더한 **새 객체**를 돌려준다(입력 불변 — tick의 순수성 계약).
- *  수가 조회를 여기 한 곳에 모아 둔다: 환자 수만 늘리고 수익을 안 더하거나 다른 과 수가를
- *  쓰는 어긋남이 호출부마다 따로 생길 수 없다. */
-export function addExamToDeptStats(byDept: SimDeptStats, dept: SimDeptKey): SimDeptStats {
+/** 환자 한 명분의 수익을 과별 집계에 더한 **새 객체**를 돌려준다(입력 불변 — tick의 순수성 계약).
+ *  금액을 인자로 받는 이유: 이 층에는 수가가 **두 종류**다 — 외래는 카탈로그의 `examRevenueManwon`,
+ *  응급은 `emergency.ts`의 처치 수가(카탈로그에 없다 — 응급은 도착·판정·소요까지 한 덩어리라
+ *  그쪽이 단일 출처다). 집계를 더하는 **기계**만 여기 하나로 두면, 환자 수만 늘리고 수익을 안
+ *  더하는 어긋남이 호출부마다 따로 생길 수 없다. */
+export function addRevenueToDeptStats(
+  byDept: SimDeptStats, dept: SimDeptKey, revenueManwon: number,
+): SimDeptStats {
   const cur = byDept[dept] ?? { patients: 0, revenueManwon: 0 }
   return {
     ...byDept,
-    [dept]: {
-      patients: cur.patients + 1,
-      revenueManwon: cur.revenueManwon + simDept(dept).examRevenueManwon,
-    },
+    [dept]: { patients: cur.patients + 1, revenueManwon: cur.revenueManwon + revenueManwon },
   }
+}
+
+/** 완료된 **외래** 한 건 — 수가 조회를 여기 한 곳에 모아 호출부가 다른 과 수가를 쓸 수 없게 한다. */
+export function addExamToDeptStats(byDept: SimDeptStats, dept: SimDeptKey): SimDeptStats {
+  return addRevenueToDeptStats(byDept, dept, simDept(dept).examRevenueManwon)
 }

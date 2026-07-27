@@ -1,5 +1,6 @@
 // 타일 세계 — 순수 데이터와 통행 판정. 렌더·React 임포트 금지.
 import type { SimDeptKey, SimDeptStats } from './dept' // 타입 전용 — dept.ts는 world를 모른다
+import type { EmergencyTurnAway } from './emergency' // 타입 전용 — emergency.ts가 world를 되받아도 런타임 순환 없음
 import type { Pawn } from './pawn' // 타입 전용 임포트 — pawn.ts가 world를 되받아도 순환 무해
 import type { DayRecord } from './day' // 타입 전용 — day.ts가 SimWorld를 되받아도 런타임 순환 없음
 import type { Pt } from './path' // 타입 전용 — path.ts가 world의 격자 상수를 되받아도 런타임 순환 없음
@@ -64,12 +65,19 @@ export interface SimStats {
   /** 과별 진료·수익 — 수가가 과마다 달라진 뒤로 **총수익을 여기서 유도한다**(Σ revenueManwon).
    *  총액을 따로 들고 있으면 과별 합과 어긋나도 아무도 모른다(deptLedger 불변식 I-A 계승). */
   byDept: SimDeptStats
+  /** 수용한 응급 건수 — **도착 즉시 판정** 기준이라 처치 완료가 아니라 받아들인 시점에 센다.
+   *  (완료 기준으로 세면 마감에 걸린 처치가 사라져 "받았는데 안 센" 건이 생긴다.) */
+  emergencyAccepted: number
+  /** 되돌아간 응급 — 카운터가 아니라 **내역**이다. 몇 건인지보다 *왜*가 중요하다:
+   *  `NO_SPECIALIST`는 그 과를 안 뽑아서고 `NO_BED`는 병동이 모자라서라, 플레이어가 할 일이
+   *  다르다(계획 Task 6이 이 사유를 그대로 토스트로 보여준다). */
+  emergencyTurnedAway: EmergencyTurnAway[]
 }
 
 /** 하루 집계의 영점 — `createWorld`와 `freshMorning`(day.ts)이 **같은 모양**을 써야 한다.
  *  한쪽만 새 필드를 빠뜨리면 그날 집계가 undefined로 시작해 조용히 무너진다. */
 export function freshStats(): SimStats {
-  return { examsDone: 0, leftCount: 0, byDept: {} }
+  return { examsDone: 0, leftCount: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [] }
 }
 
 export function createWorld(seed: number): SimWorld {

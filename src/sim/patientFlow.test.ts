@@ -751,6 +751,10 @@ describe('과별 수익', () => {
 
   it('불변식: Σ byDept.patients == examsDone, 과별 수익 == 환자 수 × 그 과 수가', () => {
     const w = run(fourDeptWorld(3), DAY_END_MIN - 1)
+    // ⚠️ 이 등식은 **외래만 도는 세계**의 성질이다 — byDept는 응급 처치도 같은 줄에 접는데
+    // 응급 수가는 외래의 수십 배라(emergency.ts) 한 건만 섞여도 등식이 깨진다. 이 병원엔
+    // 병동이 없어 응급이 전부 되돌아가므로 성립하고, 그 전제를 우연이 아니라 단언으로 둔다.
+    expect(w.stats.emergencyAccepted).toBe(0)
     expect(w.stats.examsDone).toBeGreaterThan(0)
     expect(patientsOf(w.stats.byDept)).toBe(w.stats.examsDone)
     for (const [key, stat] of Object.entries(w.stats.byDept) as [SimDeptKey, { patients: number; revenueManwon: number }][]) {
@@ -761,6 +765,7 @@ describe('과별 수익', () => {
   it('금고 불변식: 금고 = 초기 − 건설비 + Σ(과별 환자 × 과 수가)', () => {
     const w0 = fourDeptWorld(3)
     const w = run(w0, DAY_END_MIN - 1)
+    expect(w.stats.emergencyAccepted).toBe(0) // 전제: 병동이 없어 응급 수익이 섞이지 않았다
     const expected = HIRABLE_DEPTS.reduce(
       (sum, d) => sum + (w.stats.byDept[d]?.patients ?? 0) * simDept(d).examRevenueManwon, 0)
     expect(expected).toBeGreaterThan(0) // 계측기가 0으로 헛돌지 않았다

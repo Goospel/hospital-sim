@@ -3,6 +3,7 @@
 // (findPath는 최장 경로 ~3ms라 매 틱 재탐색하면 폰 수만큼 곱해져 프레임을 먹는다).
 import { GRID_W, GRID_H, ENTRANCE, isWalkable, type SimWorld } from './world'
 import type { SimDeptKey } from './dept'
+import type { EmergencyKind } from './emergency' // 타입 전용 — emergency.ts가 pawn을 되받아도 순환 무해
 import type { Pt } from './path'
 
 /** 폰의 이동 속도 — 게임 분당 타일 수. 시간 분할 불변식이 성립하려면 정수여야 한다. */
@@ -13,8 +14,14 @@ export type PawnKind = 'DOCTOR' | 'PATIENT'
  *  'PAYING'은 RECEPTION 경유 수납 흐름 자리, 'GONE'은 퇴장을 폰 제거가 아니라 상태로 남길 때의
  *  자리다(1주차는 입구에 닿으면 배열에서 바로 뺀다). 미사용이지만 지우지 않는다 — 흐름의 빈칸이
  *  타입에 보이는 편이 낫고, 2주차에 되살릴 때 이름이 흔들리지 않는다. */
+/** ⚠️ 응급 3종('TO_BED'·'IN_BED'·'IN_TREATMENT')은 **응급 환자만** 거치는 갈래다(emergency.ts).
+ *  외래가 대기실 의자를 거쳐 진료실로 가듯, 응급은 병동 침대로 곧장 가서 처치를 받는다.
+ *  'IN_BED'가 따로 있는 이유: 침대에 누웠지만 아직 그 과 의사가 외래 중이라 처치가 시작되지
+ *  않은 구간이 실재한다 — 이 구간을 'IN_TREATMENT'와 합치면 소요 90분이 의사가 오기 전부터
+ *  흐르기 시작해, 바쁜 병원일수록 처치가 공짜로 빨라진다(에러 없이 숫자만 틀린다). */
 export type PatientStage =
   | 'ENTERING' | 'WAITING' | 'TO_EXAM' | 'IN_EXAM' | 'PAYING' | 'LEAVING' | 'GONE' | 'LEFT_WAITING'
+  | 'TO_BED' | 'IN_BED' | 'IN_TREATMENT'
 
 export interface Pawn {
   id: string
@@ -40,6 +47,12 @@ export interface Pawn {
   arrivedMin?: number      // 대기 시작 시각(인내 계산)
   examUntilMin?: number
   doctorId?: string
+  /** 응급 환자라는 표시이자 그 종류 — 없으면 외래다(emergency.ts가 유일한 생성자).
+   *  종류가 배후과·수가·소요를 전부 결정하므로 이 한 필드가 응급의 신원이다. */
+  emergency?: EmergencyKind
+  /** 응급 처치 종료 시각 — `examUntilMin`과 **다른 필드**다. 겸하면 마감 정산이 외래 수가로
+   *  응급을 계산하고(IN_EXAM 분기와 구별 불가) 850만원짜리 처치가 25만원으로 접힌다. */
+  treatUntilMin?: number
 }
 
 export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {

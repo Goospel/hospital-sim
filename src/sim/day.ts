@@ -5,7 +5,10 @@ import { freshStats, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { buildBlockedSet } from './path'
 import { furnitureSpot, wantsDeptOf } from './patientFlow'
-import { simDept, addExamToDeptStats, deptRevenueSum, type SimDeptStats } from './dept'
+import {
+  simDept, addExamToDeptStats, addRevenueToDeptStats, deptRevenueSum, type SimDeptStats,
+} from './dept'
+import { emergencySpec, emergencyKindOf } from './emergency'
 
 export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
 export const DAYS_PER_WEEK = 7
@@ -15,7 +18,8 @@ export const DAYS_PER_WEEK = 7
  *  예약된 'PAYING'(수납 대기)·'GONE'(퇴장 표현) 흐름이 붙으면 수납 걷던 환자가 조용히 이탈로
  *  세져 leftCount와 DayRecord·주간 결산까지 함께 틀어진다 — 에러 없이 숫자만 틀리는 무성 실패다.
  *  집계의 의미(무엇을 이탈로 볼 것인가)는 정산 소관이라 여기(day.ts)가 소유한다. */
-export const COUNTS_AS_TURNED_AWAY: readonly PatientStage[] = ['ENTERING', 'WAITING', 'TO_EXAM']
+export const COUNTS_AS_TURNED_AWAY: readonly PatientStage[] =
+  ['ENTERING', 'WAITING', 'TO_EXAM', 'TO_BED', 'IN_BED']
 
 export interface DayRecord {
   day: number
@@ -27,6 +31,9 @@ export interface DayRecord {
   /** 그날 과별 진료·수익 — 결산 과별 표(계획 Task 5·6)의 입력. 기존 `DayRecord.deptStats`
    *  (src/game/session.ts)와 같은 자리의 같은 개념이다. */
   byDept: SimDeptStats
+  /** 그날 응급 — 수용 몇 건, 되돌아간 몇 건. **사유별 내역은 여기 없다**(stats 쪽에 있다):
+   *  하루 기록은 주간 결산이 합산하는 숫자판이고, 사유는 그날 그 순간의 메시지라 수명이 다르다. */
+  emergencies: { accepted: number; turnedAway: number }
 }
 
 /** 운영 마감 정산 — RUNNING 세계에만 허용(이중 정산 방지).
@@ -50,6 +57,13 @@ export function settleDay(world: SimWorld): SimWorld {
       exams += 1
       lateRevenueManwon += simDept(dept).examRevenueManwon
       byDept = addExamToDeptStats(byDept, dept)
+    } else if (p.stage === 'IN_TREATMENT') {
+      // 진행 중 **응급 처치**도 완료 인정 — 외래(IN_EXAM)와 같은 각색이다(야근 연장은 범위 밖).
+      // 수가는 반드시 응급 카탈로그에서 온다: 외래 수가로 접으면 850만원짜리 처치가 25만원이
+      // 되고, 그 차이는 장부 총액에만 나타나 추적이 어렵다.
+      const spec = emergencySpec(emergencyKindOf(p))
+      lateRevenueManwon += spec.revenueManwon
+      byDept = addRevenueToDeptStats(byDept, spec.dept, spec.revenueManwon)
     } else if (p.stage && COUNTS_AS_TURNED_AWAY.includes(p.stage)) left += 1
   }
   const doctors = world.pawns.filter(p => p.kind === 'DOCTOR')
@@ -59,6 +73,10 @@ export function settleDay(world: SimWorld): SimWorld {
     leftCount: left,
     revenueManwon: deptRevenueSum(byDept),
     byDept,
+    emergencies: {
+      accepted: world.stats.emergencyAccepted,
+      turnedAway: world.stats.emergencyTurnedAway.length,
+    },
   }
   const days = [...world.days, record]
   return {
@@ -72,7 +90,9 @@ export function settleDay(world: SimWorld): SimWorld {
     phase: days.length >= DAYS_PER_WEEK ? 'WEEK_END' : 'DAY_END',
     pawns: doctors,
     treasuryManwon: world.treasuryManwon + lateRevenueManwon,
-    stats: { examsDone: exams, leftCount: left, byDept },
+    // 응급 집계는 마감이 손대지 않는다 — 수용·회차는 이미 도착 시점에 확정된 값이라,
+    // 여기서 다시 세면 그날 숫자가 두 번 더해진다(외래의 leftCount 이중 집계와 같은 병).
+    stats: { ...world.stats, examsDone: exams, leftCount: left, byDept },
     days,
   }
 }

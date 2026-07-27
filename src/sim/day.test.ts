@@ -144,7 +144,10 @@ describe('다음 날', () => {
     expect(next.phase).toBe('RUNNING')
     expect(next.day).toBe(2)
     expect(next.minute).toBe(0)
-    expect(next.stats).toEqual({ examsDone: 0, leftCount: 0, byDept: {} })
+    // 응급 집계도 아침에 비운다 — 안 비우면 2일차 DayRecord가 어제 수용·회차를 다시 싣는다.
+    expect(next.stats).toEqual({
+      examsDone: 0, leftCount: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [],
+    })
     expect(next.days).toHaveLength(1) // 기록은 보존
     expect(next.pawns.some(p => p.kind === 'PATIENT')).toBe(false)
     const doc = next.pawns.find(p => p.kind === 'DOCTOR')!
@@ -214,7 +217,8 @@ describe('다음 날', () => {
     // 이어 돌리는 경로가 생기면) 등호는 WEEK_END를 **말없이** 건너뛰고 하루가 영원히 이어진다.
     // 결산이 안 열리면 고정비도 폐업도 오지 않는다 — 게임이 멈추는 게 아니라 끝나지 않는다.
     const w = hospitalWorld(3)
-    const overrun = { ...w, days: [1, 2, 3, 4, 5, 6, 7].map(n => ({ day: n, examsDone: 0, leftCount: 0, revenueManwon: 0, byDept: {} })) }
+    const overrun = { ...w, days: [1, 2, 3, 4, 5, 6, 7].map(n =>
+      ({ day: n, examsDone: 0, leftCount: 0, revenueManwon: 0, byDept: {}, emergencies: { accepted: 0, turnedAway: 0 } })) }
     const settled = settleDay(overrun)
     expect(settled.days).toHaveLength(DAYS_PER_WEEK + 1)
     expect(settled.phase).toBe('WEEK_END')
