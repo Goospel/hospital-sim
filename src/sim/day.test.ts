@@ -62,10 +62,13 @@ describe('하루 마감', () => {
     // 손으로 세운 세계로 잠근다(아니면 정산 분기가 통째로 관측되지 않는다).
     const w = tick(hospitalWorld(3), 5) // 의사가 진료실에 자리잡은 뒤
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
-    // 정산은 방이 아니라 **그 환자의 과**로 수가를 매긴다 — IN_EXAM 환자만 미용으로 두면
-    // 상수(옛 30)로 되돌아가도 값이 같아 안 걸리므로, 아래 단언은 미용 수가를 직접 부른다.
+    // 정산은 방이 아니라 **그 환자의 과**로 수가를 매긴다.
+    // ⚠️ 과는 **수가가 30이 아닌** 것을 골라야 한다 — 미용은 하필 수가가 정확히 30이라(은퇴한
+    // 옛 상수 EXAM_REVENUE_MANWON과 같은 값) 마감 정산이 `+= 30`으로 회귀해도 값이 구별되지
+    // 않는다. 이 자리는 자연 흐름으로도 안 잡힌다(두 표준 세계 모두 600분에 IN_EXAM 0명)이라,
+    // 여기서 놓치면 마감 수가에 계측기가 아예 없다. 순환기(25)면 회귀가 곧바로 드러난다.
     const patient = (id: string, stage: PatientStage): Pawn =>
-      ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage, wantsDept: 'AESTHETICS' })
+      ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage, wantsDept: 'CARDIOLOGY' })
     const staged = {
       ...w,
       pawns: [
@@ -81,10 +84,10 @@ describe('하루 마감', () => {
     const s = settleDay(staged)
     expect(s.stats.examsDone).toBe(w.stats.examsDone + 1)  // IN_EXAM 1명만
     expect(s.stats.leftCount).toBe(w.stats.leftCount + 3)  // ENTERING·WAITING·TO_EXAM
-    const cosmeticRate = simDept('AESTHETICS').examRevenueManwon
-    expect(s.treasuryManwon).toBe(w.treasuryManwon + cosmeticRate)
-    expect(s.stats.byDept).toEqual({ AESTHETICS: { patients: 1, revenueManwon: cosmeticRate } })
-    expect(s.days[0].revenueManwon).toBe(cosmeticRate) // Σ byDept == 그날 총수익
+    const rate = simDept('CARDIOLOGY').examRevenueManwon
+    expect(s.treasuryManwon).toBe(w.treasuryManwon + rate)
+    expect(s.stats.byDept).toEqual({ CARDIOLOGY: { patients: 1, revenueManwon: rate } })
+    expect(s.days[0].revenueManwon).toBe(rate) // Σ byDept == 그날 총수익
     expect(s.pawns).toEqual([doc]) // 환자는 전부 세계에서 빠지고 의사만 남는다
   })
 
