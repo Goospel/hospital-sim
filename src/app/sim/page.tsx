@@ -4,18 +4,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import TileMap, { type BuildPreview } from "@/components/TileMap";
 import DayEndOverlay from "@/components/DayEndOverlay";
 import HirePanel from "@/components/HirePanel";
+import PriorityPanel from "@/components/PriorityPanel";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
-import { ROOM_LABEL, turnAwayBatchText } from "@/components/simHud";
+import { ROOM_LABEL, resigningDeptLabels, turnAwayBatchText } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, type SimSpeed } from "@/components/useSimClock";
 import { MS_PER_GAME_MIN } from "@/game/hospitalMap";
 import { formatClockFromOpen } from "@/game/daysim";
 import { createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { placeRoom, roomCostManwon, COST_PER_TILE_MANWON, MIN_ROOM_W, MIN_ROOM_H, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
-import { hireDoctor, type HireResult } from "@/sim/pawn";
+import { hireDoctor, setDoctorPriority, type HireResult, type Priority, type PriorityKind } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
 import { startNextDay } from "@/sim/day";
-import { settleWeek, startNextWeek, weekSummary } from "@/sim/week";
+import { resigningSimDoctors, settleWeek, startNextWeek, weekSummary } from "@/sim/week";
 
 /**
  * /sim — 타일 병원의 첫 화면. 시뮬 코어(src/sim)를 **읽고 그리기만** 한다.
@@ -28,7 +29,10 @@ import { settleWeek, startNextWeek, weekSummary } from "@/sim/week";
  * 기존 게임(/)과 공존한다. 이 라우트는 서버 기능을 쓰지 않아 Pages 정적 export에 그대로 실린다.
  */
 
-const ROOM_TYPES: RoomType[] = ["EXAM", "WAITING", "WARD", "RECEPTION", "LOUNGE"];
+/** 지을 수 있는 방 — **식당(CAFETERIA)이 여기 없으면 그 방은 존재하지 않는 것과 같다**.
+ *  코어는 이미 식당을 알고(build·needs) 굶주림 감속도 돌지만, 이 배열에 줄이 없으면 플레이어는
+ *  영영 못 짓는다 — 그러면 "밥을 못 먹어 오후가 느려진다"가 규칙이 아니라 버그로 보인다. */
+const ROOM_TYPES: RoomType[] = ["EXAM", "WAITING", "WARD", "RECEPTION", "LOUNGE", "CAFETERIA"];
 
 const REASON_TEXT: Record<Exclude<PlaceResult, { ok: true }>["reason"], string> = {
   TOO_SMALL: `너무 좁습니다 — 최소 ${MIN_ROOM_W}×${MIN_ROOM_H}`,
@@ -85,6 +89,7 @@ export default function SimPage() {
   const [examDept, setExamDept] = useState<SimDeptKey | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [hireOpen, setHireOpen] = useState(false);
+  const [priorityOpen, setPriorityOpen] = useState(false);
   /* 토스트에 key를 함께 두는 이유: 같은 문구가 잇달아 뜰 수 있다(순환기 없는 병원의 STEMI
      회차는 늘 같은 말이다). 문자열만 상태로 두면 두 번째부터 값이 안 바뀌어 React가 렌더를
      건너뛰고, 그러면 **첫 토스트의 타이머**가 그대로 흘러 두 번째 알림이 곧바로 사라진다. */
@@ -97,8 +102,10 @@ export default function SimPage() {
     드래그가 취소되거나 중간에 언마운트될 때 배속이 0에 갇힌다. drag/hireOpen을 비우는 것이
     곧 시계 재개라, 확정 경로와 파기 경로가 재개를 각자 기억할 필요가 없다.
     채용이 같은 식에 합류하는 것도 그래서다 — 정지 상태를 하나 더 만들면 둘이 어긋날 수 있다.
+    인사 패널도 같은 자리에 합류한다: 우선순위를 고르는 동안 세계가 흐르면 표에서 읽은 피로와
+    누른 결과가 어긋나고, 무엇보다 **떠나는 사람을 보면서 손을 쓸 시간**이 없어진다.
   */
-  const paused = drag !== null || hireOpen;
+  const paused = drag !== null || hireOpen || priorityOpen;
   const running: SimSpeed = effectiveSpeed(world.phase, paused ? 0 : speed);
   useSimClock(running, setWorld);
 
@@ -192,11 +199,26 @@ export default function SimPage() {
   const hire = (dept: SimDeptKey) => {
     // 채용도 건설(commit)과 같은 모양으로 실패한다 — 전국에 그 과 사람이 남지 않았으면 거부되고
     // 세계는 그대로다. 여기서 조용히 삼키면 버튼이 먹통인 것과 구별되지 않는다.
-    // ⓘ 지금은 **최소 배선**이다: 남은 인원 표시·풀 0인 과의 버튼 비활성은 계획 Task 5가 붙인다.
+    // ⚠️ 패널이 풀 0인 과의 버튼을 비활성으로 잠그는 지금도 **이 거부 경로는 남긴다** — 이중
+    // 벨트다: 화면 쪽 판정이 어긋나 버튼이 열려도 세계는 안 바뀌고, 그 사실이 토스트로 말해진다.
     const res = hireDoctor(world, dept);
     if (res.ok) setWorld(res.world);
     else showToast(HIRE_REASON_TEXT[res.reason]);
   };
+
+  /** 우선순위 한 칸 — 채용·건설과 달리 **업데이터 안**에서 확정한다.
+   *  두 번 불려도(StrictMode) 같은 축에 같은 값을 두 번 쓸 뿐이라 결과가 같고, 그 대신 렌더
+   *  스냅샷이 아니라 최신 세계 위에서 갈아 끼워진다. 값은 `nextPriority`가 만든 0~3이라
+   *  코어의 범위 throw는 도달 불가다(simHud.nextPriority 주석). */
+  const setPriority = (doctorId: string, kind: PriorityKind, value: Priority) =>
+    setWorld((w) => setDoctorPriority(w, doctorId, kind, value));
+
+  /* 이번 주말에 떠나는 사람들 — **코어가 단일 출처**다(week.resigningSimDoctors). 주중에도
+     계산되므로 인사 패널의 「이번 주말 떠남」 배지와 결산의 통지 줄이 **같은 명단**을 읽고,
+     `startNextWeek`이 지우는 명단도 그것이다. 화면이 임계를 따로 적으면 안 떠난 사람이
+     통지되거나 통지 없이 사람이 사라진다. */
+  const resigning = resigningSimDoctors(world);
+  const resigningIds = new Set(resigning.map((p) => p.id));
 
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 
@@ -233,15 +255,29 @@ export default function SimPage() {
         <div className="ml-auto flex items-center gap-1">
           {paused && (
             <span className="mr-2 text-xs text-on-desk-muted">
-              {drag ? "건설 중 — 일시정지" : "채용 중 — 일시정지"}
+              {drag ? "건설 중 — 일시정지" : hireOpen ? "채용 중 — 일시정지" : "인사 중 — 일시정지"}
             </span>
           )}
           <button
             type="button"
             onClick={() => setHireOpen(true)}
-            className="mr-2 border border-frame px-2 py-1 text-xs text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk"
+            className="border border-frame px-2 py-1 text-xs text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk"
           >
             채용
+          </button>
+          {/* [인사] — 채용 옆에 나란히. 채용이 "사람을 들이는" 버튼이면 이쪽은 **들인 사람이
+              무엇을 할지** 정하는 버튼이다. 떠날 사람이 있으면 붉게 — 주말 통지를 기다리지
+              않고 주중에 눈에 띄어야 대응할 시간이 생긴다. */}
+          <button
+            type="button"
+            onClick={() => setPriorityOpen(true)}
+            className={`mr-2 border px-2 py-1 text-xs transition-colors ${
+              resigning.length > 0
+                ? "border-alarm text-alarm hover:bg-alarm/10"
+                : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+            }`}
+          >
+            인사{resigning.length > 0 ? ` · 이탈 ${resigning.length}` : ""}
           </button>
           {SPEEDS.map((s) => (
             <button
@@ -361,9 +397,20 @@ export default function SimPage() {
       {hireOpen && (
         <HirePanel
           pawns={world.pawns}
+          hirePool={world.hirePool}
           treasuryManwon={world.treasuryManwon}
           onHire={hire}
           onClose={() => setHireOpen(false)}
+        />
+      )}
+
+      {/* 인사 패널 — 채용 패널과 같은 층·같은 규칙(국면과 무관하게 뜨고, 열려 있는 동안 시계가 선다). */}
+      {priorityOpen && (
+        <PriorityPanel
+          pawns={world.pawns}
+          resigningIds={resigningIds}
+          onSetPriority={setPriority}
+          onClose={() => setPriorityOpen(false)}
         />
       )}
 
@@ -384,6 +431,8 @@ export default function SimPage() {
           week={world.week}
           days={world.days}
           summary={weekSummary(world)}
+          // 명단도 과 이름 파생도 여기서 끝낸다 — 오버레이는 세계를 통째로 받지 않는다(summary와 같은 관례).
+          leavingDepts={resigningDeptLabels(resigning)}
           treasuryManwon={world.treasuryManwon}
           insolvencyStreak={world.insolvencyStreak}
           closed={world.phase === "CLOSED"}

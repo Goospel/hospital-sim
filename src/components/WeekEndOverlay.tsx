@@ -22,6 +22,7 @@ export default function WeekEndOverlay({
   week,
   days,
   summary,
+  leavingDepts,
   treasuryManwon,
   insolvencyStreak,
   closed,
@@ -30,6 +31,11 @@ export default function WeekEndOverlay({
   week: number;
   days: DayRecord[];
   summary: WeekSummary;
+  /** 이번 주말에 떠나는 의사들의 **과 이름**(사람 수만큼 줄이 선다). 명단도 과 이름 파생도
+   *  화면 밖에서 끝난다 — 여기는 세계를 통째로 받지 않는다(summary를 받는 관례 그대로).
+   *  ⚠️ 과 없는 폰은 파생 단계(simHud.resigningDeptLabels)에서 **건너뛴다**: `doctorDeptOf`로
+   *  읽으면 그런 폰 하나에 이 오버레이가 통째로 죽어 결산 화면이 흰 화면이 된다. */
+  leavingDepts: string[];
   treasuryManwon: number;
   /** 금고가 음수로 끝난 주의 **연속** 횟수 — 1이면 은행 경고, 문턱을 채우면 폐업(closed). */
   insolvencyStreak: number;
@@ -156,6 +162,26 @@ export default function WeekEndOverlay({
               </dd>
             </div>
           </dl>
+          {/* 사직 통지 — 이 게임에서 **장부가 아닌 대가**가 청구되는 유일한 자리다.
+              숫자 아래 종이 안에 두는 이유: 순이익·금고와 같은 층에 있어야 "무엇을 얻고 무엇을
+              잃었는가"가 한 장에서 읽힌다(은행 통지처럼 밖으로 빼면 사고 알림이 된다).
+              톤 가드레일 — 사실만 쓴다. "갈아 넣었습니다"·"관리 실패" 같은 말이 붙는 순간
+              구조의 결과가 플레이어의 실수로 미끄러진다(§톤 · turnAwayText와 같은 규칙). */}
+          {leavingDepts.length > 0 && (
+            <div className="flex flex-col gap-1.5 border-t border-rule pt-3">
+              <span className="font-sans text-xs text-ink-2">이번 주말</span>
+              <ul className="flex flex-col gap-1">
+                {leavingDepts.map((label, i) => (
+                  // 같은 과가 둘이면 두 줄이다 — 떠나는 것은 과가 아니라 사람이라 접지 않는다.
+                  // key에 index를 쓰는 것도 그래서다(과 이름은 유일하지 않다).
+                  <li key={`${label}-${i}`} className="text-sm font-medium text-stamp-ink">
+                    {label} 의사가 병원을 떠납니다
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-ink-2">전국 풀로 돌아가지 않습니다.</p>
+            </div>
+          )}
         </section>
 
         {(warning || closed) && (
