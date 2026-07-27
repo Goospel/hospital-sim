@@ -4,7 +4,14 @@ import { placeRoom } from './build'
 import { spawnDoctor, type Pawn, type PatientStage } from './pawn'
 import { tick } from './tick'
 import { DAY_END_MIN, DAYS_PER_WEEK, settleDay, startNextDay } from './day'
-import { EXAM_REVENUE_MANWON } from './patientFlow'
+import { simDept, deptRevenueSum } from './dept'
+import { EMERGENCY_INTENSITY } from './emergency'
+import { fatigueGain } from './fatigue'
+import { FATIGUE_FREE_MIN } from '../game/doctor'
+
+/** 진료 수익은 건당 상수가 아니라 **과별 수가**다(계획 Task 2) — 아래 단언들은 상수 × 건수가
+ *  아니라 과별 집계에서 총액을 유도한다. hospitalWorld는 내과 진료실뿐이라 내과만 돈다. */
+const INTERNAL_RATE = simDept('INTERNAL_MEDICINE').examRevenueManwon
 
 function hospitalWorld(seed: number) {
   const w = createWorld(seed)
@@ -48,8 +55,9 @@ describe('하루 마감', () => {
     expect(built).toBeGreaterThan(0)
     const w = runToDayEnd(3)
     expect(w.pawns.every(p => p.kind === 'DOCTOR')).toBe(true)
-    // 금고 불변식은 정산을 통과해도 유지된다 — 금고 = 초기 − 건설비 + 진료×30
-    expect(w.treasuryManwon).toBe(INITIAL_TREASURY_MANWON - built + w.stats.examsDone * EXAM_REVENUE_MANWON)
+    // 금고 불변식은 정산을 통과해도 유지된다 — 금고 = 초기 − 건설비 + Σ(과별 환자 × 과 수가)
+    expect(w.stats.byDept).toEqual({ INTERNAL_MEDICINE: { patients: w.stats.examsDone, revenueManwon: w.stats.examsDone * INTERNAL_RATE } })
+    expect(w.treasuryManwon).toBe(INITIAL_TREASURY_MANWON - built + deptRevenueSum(w.stats.byDept))
   })
 
   it('정산은 IN_EXAM만 진료로 인정하고, 이미 집계된 퇴장 환자를 다시 세지 않는다', () => {
@@ -57,8 +65,13 @@ describe('하루 마감', () => {
     // 손으로 세운 세계로 잠근다(아니면 정산 분기가 통째로 관측되지 않는다).
     const w = tick(hospitalWorld(3), 5) // 의사가 진료실에 자리잡은 뒤
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
+    // 정산은 방이 아니라 **그 환자의 과**로 수가를 매긴다.
+    // ⚠️ 과는 **수가가 30이 아닌** 것을 골라야 한다 — 미용은 하필 수가가 정확히 30이라(은퇴한
+    // 옛 상수 EXAM_REVENUE_MANWON과 같은 값) 마감 정산이 `+= 30`으로 회귀해도 값이 구별되지
+    // 않는다. 이 자리는 자연 흐름으로도 안 잡힌다(두 표준 세계 모두 600분에 IN_EXAM 0명)이라,
+    // 여기서 놓치면 마감 수가에 계측기가 아예 없다. 순환기(25)면 회귀가 곧바로 드러난다.
     const patient = (id: string, stage: PatientStage): Pawn =>
-      ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage })
+      ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage, wantsDept: 'CARDIOLOGY' })
     const staged = {
       ...w,
       pawns: [
@@ -74,7 +87,10 @@ describe('하루 마감', () => {
     const s = settleDay(staged)
     expect(s.stats.examsDone).toBe(w.stats.examsDone + 1)  // IN_EXAM 1명만
     expect(s.stats.leftCount).toBe(w.stats.leftCount + 3)  // ENTERING·WAITING·TO_EXAM
-    expect(s.treasuryManwon).toBe(w.treasuryManwon + EXAM_REVENUE_MANWON)
+    const rate = simDept('CARDIOLOGY').examRevenueManwon
+    expect(s.treasuryManwon).toBe(w.treasuryManwon + rate)
+    expect(s.stats.byDept).toEqual({ CARDIOLOGY: { patients: 1, revenueManwon: rate } })
+    expect(s.days[0].revenueManwon).toBe(rate) // Σ byDept == 그날 총수익
     expect(s.pawns).toEqual([doc]) // 환자는 전부 세계에서 빠지고 의사만 남는다
   })
 
@@ -93,6 +109,59 @@ describe('하루 마감', () => {
     expect(s.stats.leftCount).toBe(w.stats.leftCount + 1) // WAITING 한 명만
   })
 
+  // ─── 마감이 인정한 노동의 피로 ────────────────────────────────────────────
+  // 마감은 진행 중 진료·처치를 **완료로 인정해 수익을 준다**. 그런데 부하는 작업이 끝날 때만
+  // 쌓이므로(patientFlow·emergency), 마감으로 끝난 건은 수익만 들어오고 피로는 빠져나간다 —
+  // 하루 상한이 통째로 어긋나는 무성 실패다(의사 1인당 최대 204 표준강도분 = 피로 51점 과소).
+  // 아래 셋이 그 비대칭을 잠근다.
+
+  /** 마감 시점의 세계를 손으로 세운다 — 자연 흐름의 600분엔 IN_EXAM·IN_TREATMENT가 남을지가
+   *  시드에 달려 이 분기가 통째로 관측되지 않는다(위 스테이지 계약 테스트와 같은 이유). */
+  function atDusk(patient: Pawn, docOver: Partial<Pawn> = {}) {
+    const w = tick(hospitalWorld(3), 5)
+    // 문턱(FATIGUE_FREE_MIN) **위**에서 잰다 — 아래면 어떤 부하를 얹어도 gain이 0이라
+    // 계측기가 통째로 공허해진다(T-085 — 경계 앞에서 기준을 캡처한다).
+    const loadBefore = FATIGUE_FREE_MIN + 40
+    const doc: Pawn = {
+      ...w.pawns.find(p => p.kind === 'DOCTOR')!, fatigue: 0, loadMinToday: loadBefore, ...docOver,
+    }
+    const settled = settleDay({ ...w, pawns: [doc, { ...patient, doctorId: patient.doctorId && doc.id }] })
+    return { loadBefore, doc, after: settled.pawns.find(p => p.id === doc.id)!, settled }
+  }
+
+  const duskExam = (over: Partial<Pawn> = {}): Pawn => ({
+    id: 'in-exam', kind: 'PATIENT', x: 20, y: 21, path: [], stage: 'IN_EXAM',
+    wantsDept: 'CARDIOLOGY', doctorId: 'doc', workMin: 30, ...over,
+  })
+
+  it('마감이 완료로 인정한 진료의 부하도 그 의사에게 쌓인다 — 수익만 받고 피로는 안 받지 않는다', () => {
+    const { loadBefore, after } = atDusk(duskExam())
+    // 표준강도분 = 확정 소요 × **그 과의** 강도(순환기 1.2) — 소요만 세면 30이라 여기서 갈린다.
+    const load = 30 * simDept('CARDIOLOGY').intensity
+    expect(after.loadMinToday).toBe(loadBefore + load)
+    expect(after.fatigue).toBe(fatigueGain(loadBefore + load) - fatigueGain(loadBefore))
+    expect(after.fatigue).toBeGreaterThan(0) // 계측기가 0으로 헛돌지 않았다
+  })
+
+  it('마감이 완료로 인정한 **응급 처치**의 부하는 응급 강도로 쌓인다(과 강도로 접히지 않는다)', () => {
+    const treat = duskExam({
+      id: 'in-treat', stage: 'IN_TREATMENT', emergency: 'STEMI', workMin: 90,
+    })
+    const { loadBefore, after } = atDusk(treat)
+    const load = 90 * EMERGENCY_INTENSITY
+    // 과 강도(1.2)로 접으면 108, 응급 강도(2.0)면 180 — 두 값이 갈려 회귀가 곧바로 드러난다.
+    expect(after.loadMinToday).toBe(loadBefore + load)
+    expect(after.fatigue).toBe(fatigueGain(loadBefore + load) - fatigueGain(loadBefore))
+    expect(after.fatigue).toBeGreaterThan(0)
+  })
+
+  it('담당 의사가 없는 진행 중 진료(손세계 폰)는 아무에게도 부하를 얹지 않는다', () => {
+    const orphan = duskExam({ doctorId: undefined })
+    const { loadBefore, after } = atDusk(orphan)
+    expect(after.loadMinToday).toBe(loadBefore)
+    expect(after.fatigue).toBe(0)
+  })
+
   it('settleDay는 입력 세계를 변형하지 않는다 (순수)', () => {
     const w = tick(hospitalWorld(3), 120)
     const snapshot = structuredClone(w)
@@ -107,7 +176,9 @@ describe('하루 마감', () => {
     expect(d.day).toBe(1)
     expect(d.examsDone).toBe(w.stats.examsDone)
     expect(d.leftCount).toBe(w.stats.leftCount)
-    expect(d.revenueManwon).toBe(w.stats.examsDone * EXAM_REVENUE_MANWON)
+    // 내과 진료실뿐인 병원이라 그날 장부는 내과 한 줄이고, 총액은 그 줄에서 유도된다.
+    expect(d.byDept).toEqual({ INTERNAL_MEDICINE: { patients: d.examsDone, revenueManwon: d.examsDone * INTERNAL_RATE } })
+    expect(d.revenueManwon).toBe(d.examsDone * INTERNAL_RATE)
     expect(d.examsDone).toBeGreaterThan(0) // 계측기가 0으로 헛돌지 않았다
   })
 
@@ -129,7 +200,10 @@ describe('다음 날', () => {
     expect(next.phase).toBe('RUNNING')
     expect(next.day).toBe(2)
     expect(next.minute).toBe(0)
-    expect(next.stats).toEqual({ examsDone: 0, leftCount: 0 })
+    // 응급 집계도 아침에 비운다 — 안 비우면 2일차 DayRecord가 어제 수용·회차를 다시 싣는다.
+    expect(next.stats).toEqual({
+      examsDone: 0, leftCount: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [],
+    })
     expect(next.days).toHaveLength(1) // 기록은 보존
     expect(next.pawns.some(p => p.kind === 'PATIENT')).toBe(false)
     const doc = next.pawns.find(p => p.kind === 'DOCTOR')!
@@ -199,7 +273,8 @@ describe('다음 날', () => {
     // 이어 돌리는 경로가 생기면) 등호는 WEEK_END를 **말없이** 건너뛰고 하루가 영원히 이어진다.
     // 결산이 안 열리면 고정비도 폐업도 오지 않는다 — 게임이 멈추는 게 아니라 끝나지 않는다.
     const w = hospitalWorld(3)
-    const overrun = { ...w, days: [1, 2, 3, 4, 5, 6, 7].map(n => ({ day: n, examsDone: 0, leftCount: 0, revenueManwon: 0 })) }
+    const overrun = { ...w, days: [1, 2, 3, 4, 5, 6, 7].map(n =>
+      ({ day: n, examsDone: 0, leftCount: 0, revenueManwon: 0, byDept: {}, emergencies: { accepted: 0, turnedAway: 0 } })) }
     const settled = settleDay(overrun)
     expect(settled.days).toHaveLength(DAYS_PER_WEEK + 1)
     expect(settled.phase).toBe('WEEK_END')

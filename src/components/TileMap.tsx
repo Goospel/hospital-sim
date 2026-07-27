@@ -1,8 +1,10 @@
 "use client";
 
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { FATIGUE_MAX } from "@/game/doctor";
 import { GRID_W, GRID_H, doorTile, type RoomType, type SimWorld } from "@/sim/world";
-import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, PatientSprite } from "./PixelSprite";
+import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, PatientSprite } from "./PixelSprite";
+import { fatigueTone, roomLabel } from "./simHud";
 
 /**
  * 타일 병원 맵 — SimWorld를 그대로 그리는 순수 표시층. 세계를 만들지도 고치지도 않는다.
@@ -21,14 +23,6 @@ import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, PatientSprite } from 
 
 /** 타일 한 칸의 화면 크기(px). 맵 크기(768×512)가 여기서 파생된다. */
 export const TILE = 16;
-
-export const ROOM_LABEL: Record<RoomType, string> = {
-  EXAM: "진료실",
-  WARD: "병동",
-  WAITING: "대기실",
-  LOUNGE: "휴게실",
-  RECEPTION: "접수처",
-};
 
 /**
  * 방 타입별 바닥·벽 색. 지면(desk) 팔레트에서 파생한 어두운 계열 — 사람(스프라이트)이
@@ -55,6 +49,28 @@ function CounterSprite() {
       <rect x="1" y="4" width="2" height="1" fill="#d8d3c0" />
       <rect x="5" y="4" width="2" height="1" fill="#d8d3c0" />
     </svg>
+  );
+}
+
+/** 피로 단계별 색 — 기존 게임 FatigueBar와 같은 3단(회백 → 밝음 → 적).
+ *  경계 숫자는 여기 없다: 단계 판정은 simHud.fatigueTone이 doctor.ts 상수로 하고 여기선 칠만 한다. */
+const FATIGUE_COLOR: Record<ReturnType<typeof fatigueTone>, string> = {
+  CALM: "var(--on-desk-muted)",
+  SLOW: "var(--on-desk)",
+  RED: "var(--alarm)",
+};
+
+/** 의사 아바타 위 피로 막대(타일 폭). 0이어도 트랙을 남긴다 — 눈금이 있어야 "아직 0"이 읽힌다. */
+function FatigueBar({ fatigue }: { fatigue: number }) {
+  const ratio = Math.max(0, Math.min(1, fatigue / FATIGUE_MAX));
+  return (
+    <div
+      className="absolute left-0.5 right-0.5 -top-1 h-[2px] overflow-hidden"
+      style={{ backgroundColor: "rgba(216,207,175,0.18)" }}
+      aria-hidden
+    >
+      <div className="h-full" style={{ width: `${ratio * 100}%`, backgroundColor: FATIGUE_COLOR[fatigueTone(fatigue)] }} />
+    </div>
   );
 }
 
@@ -165,11 +181,29 @@ export default function TileMap({
                   boxShadow: `inset 0 -2px 0 ${style.wall}`,
                 }}
               />
+              {/* 과 표시 — 진료실만. 바닥에 과 색을 옅게 깔아 **어느 방이 무슨 과인지 한눈에**
+                  갈리게 한다(환자는 자기 과 진료실에만 들어간다 — 그 규칙이 안 보이면 이탈이
+                  설명되지 않는다). 색만으로는 판정을 지지 않는다: 아래 라벨이 과 이름을 함께 쓴다
+                  (색 단독 신호 금지 — 기존 게임의 관통 규칙). */}
+              {r.type === "EXAM" && r.dept && (
+                <div
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: (r.x + 1) * TILE,
+                    top: (r.y + 1) * TILE,
+                    width: (r.w - 2) * TILE,
+                    height: (r.h - 2) * TILE,
+                    backgroundColor: DEPT_COLOR[r.dept],
+                    opacity: 0.14,
+                  }}
+                  aria-hidden
+                />
+              )}
               <span
                 className="pointer-events-none absolute font-mono text-[9px] leading-none text-on-desk/45"
                 style={{ left: r.x * TILE + TILE + 1, top: r.y * TILE + TILE + 1 }}
               >
-                {ROOM_LABEL[r.type]}
+                {roomLabel(r)}
               </span>
             </div>
           );
@@ -209,11 +243,24 @@ export default function TileMap({
               zIndex: 2,
             }}
           >
+            {/* 응급 환자 — 붉은 링. 스프라이트는 익명 회색 하나뿐이라(character-design.md: 환자에
+                개인 서사를 붙이지 않는다) 링만으로 "지금 병원 안에 응급이 있다"를 나른다. */}
+            {p.emergency && (
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{ boxShadow: "inset 0 0 0 1.5px var(--alarm)" }}
+                aria-hidden
+              />
+            )}
             {p.kind === "DOCTOR" && p.dept ? (
               <DoctorSprite dept={p.dept} busy={busyDoctors.has(p.id)} variantKey={p.id} />
             ) : (
               <PatientSprite />
             )}
+            {/* 피로 막대 — 의사 머리 위. 기존 게임 FatigueBar의 표현 계승(저=회백 / 중=밝음 /
+                고=적)이고 경계 판정은 simHud.fatigueTone 하나가 진다. 색이 아니라 **길이**가
+                판정을 나르는 것도 그대로다 — 흑백으로 찍어도 읽힌다. */}
+            {p.kind === "DOCTOR" && <FatigueBar fatigue={p.fatigue ?? 0} />}
           </div>
         ))}
 

@@ -2,7 +2,8 @@
 
 import { formatManwon, formatSignedManwon } from "@/game/labels";
 import type { DayRecord } from "@/sim/day";
-import type { WeekSummary } from "@/sim/week";
+import { simDept, type SimDeptKey } from "@/sim/dept";
+import type { WeekDeptLine, WeekSummary } from "@/sim/week";
 
 /**
  * 주간 결산 오버레이 — 7일이 끝나고 **비용이 청구되는** 자리.
@@ -94,6 +95,35 @@ export default function WeekEndOverlay({
             </tbody>
           </table>
 
+          {/* 과별 표 — 이 화면의 논지가 여기 있다. 필수과는 수익보다 고정비가 커서 순익이
+              음수로 서고, 미용만 흑자가 된다. 해석 카피는 없다(§show don't tell): 부호가
+              나란히 놓일 뿐이고, "옳은 의료를 할수록 장부가 나빠진다"는 플레이어가 읽는다.
+              줄 순서·줄이 서는 조건은 코어(weekSummary.byDept)가 정한다 — 화면은 그대로 놓는다. */}
+          <table className="w-full border-t border-rule pt-3 font-mono text-xs tabular-nums">
+            <thead>
+              <tr className="text-ink-2">
+                <th scope="col" className="py-1 text-left font-sans font-normal">과</th>
+                <th scope="col" className="py-1 text-right font-sans font-normal">인원</th>
+                <th scope="col" className="py-1 text-right font-sans font-normal">수익</th>
+                <th scope="col" className="py-1 text-right font-sans font-normal">고정비</th>
+                <th scope="col" className="py-1 text-right font-sans font-normal">순익</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(Object.entries(summary.byDept) as [SimDeptKey, WeekDeptLine][]).map(([key, line]) => (
+                <tr key={key} className="border-t border-rule/40 text-ink">
+                  <td className="py-1 font-sans">{simDept(key).label}</td>
+                  <td className="py-1 text-right">{line.doctors}</td>
+                  <td className="py-1 text-right">{formatManwon(line.revenueManwon)}</td>
+                  <td className="py-1 text-right text-stamp-ink">−{formatManwon(line.fixedCostManwon)}</td>
+                  <td className={`py-1 text-right ${line.netManwon < 0 ? "text-stamp-ink" : "text-ink"}`}>
+                    {formatSignedManwon(line.netManwon)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
           <dl className="flex flex-col gap-1.5 border-t border-rule pt-3 font-mono text-sm tabular-nums">
             <div className="flex items-baseline justify-between">
               <dt className="font-sans text-xs text-ink-2">진료 수익</dt>
@@ -103,6 +133,21 @@ export default function WeekEndOverlay({
               {/* 고정비는 주에 한 번 — 하루 마감엔 없던 항목이라 이름을 그대로 쓴다(월급). */}
               <dt className="font-sans text-xs text-ink-2">고정비 (의사 월급)</dt>
               <dd className="text-stamp-ink">−{formatManwon(summary.fixedCostManwon)}</dd>
+            </div>
+            {/* 응급 줄 — **문앞 판정** 기준이다. 수용은 "받아들인 시점"에 세므로, 처치까지 못
+                간 채 마감을 맞은 건은 여기 수용에 들어 있으면서 위 과별 표의 수익에는 없다.
+                라벨이 그 사실을 직접 말한다(숫자만 놓으면 표와 어긋나 보인다).
+                ⚠️ 사유별 내역(의사 없음/병상 없음)은 **하루 마감**에만 있다 — 코어의 주간 기록
+                (DayRecord.emergencies)이 건수만 들고 사유는 그날의 stats에만 남기 때문이다. */}
+            <div className="flex items-baseline justify-between">
+              <dt className="font-sans text-xs text-ink-2">응급 (문앞 판정)</dt>
+              <dd className="text-ink">
+                수용 {summary.emergencies.accepted}
+                <span className="text-ink-2"> · 회차 </span>
+                <span className={summary.emergencies.turnedAway > 0 ? "text-stamp-ink" : "text-ink"}>
+                  {summary.emergencies.turnedAway}
+                </span>
+              </dd>
             </div>
             <div className="flex items-baseline justify-between border-t border-rule pt-2">
               <dt className="font-sans text-xs font-semibold text-ink">금고</dt>

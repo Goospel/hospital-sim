@@ -5,6 +5,7 @@ import { type SimWorld } from './world'
 import { stepMove, PAWN_TILES_PER_MIN, type Pawn } from './pawn'
 import { buildBlockedSet, findPath, isBlockedTile } from './path'
 import { stepPatients } from './patientFlow'
+import { stepEmergencies } from './emergency'
 import { DAY_END_MIN, settleDay } from './day'
 
 export function tick(world: SimWorld, minutes: number): SimWorld {
@@ -22,7 +23,14 @@ function tickOneMinute(world: SimWorld): SimWorld {
   // (틱당 총 1회는 아니다: 뒤따르는 stepPatients가 배정·퇴장 경로용으로 자기 것을 더 만든다.)
   const blocked = buildBlockedSet(world)
   const moved = world.pawns.map(p => stepMove(revalidate(world, blocked, p), 1))
-  const stepped = stepPatients({ ...world, minute: world.minute + 1, pawns: moved })
+  // 응급은 환자 흐름 **뒤**다. 두 가지가 이 순서에 걸려 있다:
+  //  ① **응급 우선순위** — 외래 진료가 끝나 의사가 풀리는 것은 stepPatients의 마지막
+  //     단계(progressStages)인데, 대기 외래를 짝짓는 단계는 이미 그 앞에서 지나갔다. 그래서
+  //     방금 풀린 의사를 그 분에 집는 것은 응급뿐이고, 줄 서 있던 외래는 다음 분에야 후보가
+  //     된다("현재 외래는 마치고 오되, 대기 환자보다는 먼저").
+  //  ② **결정론** — 두 단계 다 (판·주·날·분)의 순수 함수라 순서가 시드를 흔들지 않는다.
+  //     응급 도착이 좌석을 쓰지 않고 외래 도착이 침대를 쓰지 않아, 자원 경합도 없다.
+  const stepped = stepEmergencies(stepPatients({ ...world, minute: world.minute + 1, pawns: moved }))
   // 운영 마감에 **도달하는 그 분**에 정산한다 — 그 분의 환자 흐름까지 끝난 뒤가 기준이다.
   return stepped.minute === DAY_END_MIN ? settleDay(stepped) : stepped
 }

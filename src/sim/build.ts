@@ -1,5 +1,6 @@
 // 방 단위 건설 — 검증·비용·가구 자동 배치. 전부 순수 함수.
 import { GRID_W, GRID_H, doorTile, type Room, type RoomType, type SimWorld, type Furniture } from './world'
+import { DEFAULT_EXAM_DEPT } from './dept'
 
 export const MIN_ROOM_W = 4
 export const MIN_ROOM_H = 4
@@ -64,7 +65,20 @@ export function placeRoom(world: SimWorld, spec: { type: RoomType; dept?: Room['
   if (world.rooms.some(r => overlaps(r, spec))) return { ok: false, reason: 'OVERLAP' }
   const cost = roomCostManwon(spec.w, spec.h)
   if (cost > world.treasuryManwon) return { ok: false, reason: 'NO_MONEY' }
-  const room: Room = { id: `room-${world.nextId}`, ...spec }
+  // 진료실은 **반드시 과를 갖는다** — 과 없는 EXAM이 남으면 라우팅(계획 Task 2)이 "아무 환자나
+  // 받는 방"으로 새고, 그건 이 슬라이스의 논지(과가 없으면 그 환자를 놓친다)를 통째로 무력화한다.
+  // 미지정은 내과로 접는다: **1주차 테스트·저장 세계용 마이그레이션 절단**이고, UI(Task 6)는 건설 시
+  // 과를 반드시 고르게 하므로 플레이 중에는 도달하지 않는다.
+  //
+  // 반대로 **EXAM이 아닌 방은 과를 떨군다**(그대로 싣지 않는다). 대기실·병동에는 과 개념이 없어서,
+  // 실려 온 dept는 읽는 쪽에서 뜻을 만들어낸다 — 예컨대 라우팅이 방 종류를 안 보고 dept만 보면
+  // "순환기 대기실"이 진료실 행세를 한다. 무의미한 값을 보존하느니 없애는 편이 안전하다.
+  const { dept: specDept, ...geometry } = spec
+  const room: Room = {
+    id: `room-${world.nextId}`,
+    ...geometry,
+    ...(spec.type === 'EXAM' ? { dept: specDept ?? DEFAULT_EXAM_DEPT } : {}),
+  }
   return {
     ok: true,
     world: {

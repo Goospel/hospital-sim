@@ -1,10 +1,15 @@
 // 하루의 마디 — 마감 정산(settleDay)과 다음 날 시작(startNextDay).
 // 마감은 tick이 부르고(600분), 다음 날은 **플레이어가** 부른다 — 시계가 하루를 넘기면 결산을
 // 읽을 틈이 없다. 7일차 밤은 다음 날이 아니라 주간 결산(WEEK_END)으로 간다.
-import type { SimWorld } from './world'
+import { freshStats, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { buildBlockedSet } from './path'
-import { EXAM_REVENUE_MANWON, furnitureSpot } from './patientFlow'
+import { examLoadMin, furnitureSpot, wantsDeptOf } from './patientFlow'
+import {
+  simDept, addExamToDeptStats, addRevenueToDeptStats, deptRevenueSum, type SimDeptStats,
+} from './dept'
+import { emergencyLoadMin, emergencySpec, emergencyKindOf } from './emergency'
+import { applyWorkLoads, restOvernight } from './fatigue'
 
 export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
 export const DAYS_PER_WEEK = 7
@@ -14,17 +19,27 @@ export const DAYS_PER_WEEK = 7
  *  예약된 'PAYING'(수납 대기)·'GONE'(퇴장 표현) 흐름이 붙으면 수납 걷던 환자가 조용히 이탈로
  *  세져 leftCount와 DayRecord·주간 결산까지 함께 틀어진다 — 에러 없이 숫자만 틀리는 무성 실패다.
  *  집계의 의미(무엇을 이탈로 볼 것인가)는 정산 소관이라 여기(day.ts)가 소유한다. */
-export const COUNTS_AS_TURNED_AWAY: readonly PatientStage[] = ['ENTERING', 'WAITING', 'TO_EXAM']
+export const COUNTS_AS_TURNED_AWAY: readonly PatientStage[] =
+  ['ENTERING', 'WAITING', 'TO_EXAM', 'TO_BED', 'IN_BED']
 
 export interface DayRecord {
   day: number
   examsDone: number
   leftCount: number
+  /** 그날 진료 수익의 총액 — **`byDept`에서 유도한다**(Σ revenueManwon). 따로 세면 두 숫자가
+   *  어긋날 수 있고, 어긋나도 화면엔 둘 중 하나만 보여서 아무도 모른다. */
   revenueManwon: number
+  /** 그날 과별 진료·수익 — 결산 과별 표(계획 Task 5·6)의 입력. 기존 `DayRecord.deptStats`
+   *  (src/game/session.ts)와 같은 자리의 같은 개념이다. */
+  byDept: SimDeptStats
+  /** 그날 응급 — 수용 몇 건, 되돌아간 몇 건. **사유별 내역은 여기 없다**(stats 쪽에 있다):
+   *  하루 기록은 주간 결산이 합산하는 숫자판이고, 사유는 그날 그 순간의 메시지라 수명이 다르다. */
+  emergencies: { accepted: number; turnedAway: number }
 }
 
 /** 운영 마감 정산 — RUNNING 세계에만 허용(이중 정산 방지).
- *  진행 중 진료(IN_EXAM)는 완료 인정(각색: 야근 연장은 범위 밖), 아직 진료를 못 받은 환자
+ *  진행 중 진료(IN_EXAM)는 완료 인정(각색: 야근 연장은 범위 밖) — **수익과 피로를 함께** 인정한다.
+ *  둘 중 수익만 주면 그 노동은 장부에는 있고 의사 몸에는 없는 것이 된다. 아직 진료를 못 받은 환자
  *  (`COUNTS_AS_TURNED_AWAY`)는 이탈 집계. 환자는 스테이지와 무관하게 전원 세계에서 빠진다.
  *  ⚠️ 이미 집계가 끝난 환자(LEAVING = 진료 완료 / LEFT_WAITING = 이탈)는 다시 세지 않는다 —
  *  세면 그 하루의 leftCount가 실제 인원보다 부풀어 DayRecord와 주간 결산까지 함께 틀어진다. */
@@ -32,18 +47,51 @@ export function settleDay(world: SimWorld): SimWorld {
   if (world.phase !== 'RUNNING') throw new Error(`settleDay: RUNNING이 아닌 세계(${world.phase})`)
   let exams = world.stats.examsDone
   let left = world.stats.leftCount
+  let byDept: SimDeptStats = world.stats.byDept
+  // 마감에 인정한 진료의 수익만 따로 센다 — 하루 중에 끝난 건은 그때 이미 금고에 들어갔다.
+  let lateRevenueManwon = 0
+  /** 마감이 **완료로 인정한** 작업의 표준강도분 — 진료 중 끝난 건과 똑같이 의사에게 얹는다.
+   *  수익만 인정하고 부하를 빼면 하루 상한이 통째로 어긋난다: 의사 한 명이 마감에 물고 있을 수
+   *  있는 최대 노동(외래 20분 + 응급 90분 아님 — 각각 한 건씩)이 매일 공짜가 되고, 그만큼
+   *  피로가 과소 계상돼 "갈려나간다"가 늦게 온다(에러 없이 곡선만 완만해진다). */
+  const loadByDoctor = new Map<string, number>()
+  const addLoad = (doctorId: string | undefined, load: number) => {
+    if (!doctorId) return // 손세계 폰 — 담당 의사가 없으면 얹을 데도 없다
+    loadByDoctor.set(doctorId, (loadByDoctor.get(doctorId) ?? 0) + load)
+  }
   for (const p of world.pawns) {
     if (p.kind !== 'PATIENT') continue
-    if (p.stage === 'IN_EXAM') exams += 1
-    else if (p.stage && COUNTS_AS_TURNED_AWAY.includes(p.stage)) left += 1
+    if (p.stage === 'IN_EXAM') {
+      // 마감 시점의 진행 중 진료도 **그 환자의 과 수가**로 계산한다 — 여기만 상수로 두면
+      // 하루의 마지막 몇 건이 다른 값으로 매겨지고, 그 차이는 장부 총액에만 나타나 추적이 어렵다.
+      const dept = wantsDeptOf(p)
+      exams += 1
+      lateRevenueManwon += simDept(dept).examRevenueManwon
+      byDept = addExamToDeptStats(byDept, dept)
+      addLoad(p.doctorId, examLoadMin(p, dept))
+    } else if (p.stage === 'IN_TREATMENT') {
+      // 진행 중 **응급 처치**도 완료 인정 — 외래(IN_EXAM)와 같은 각색이다(야근 연장은 범위 밖).
+      // 수가는 반드시 응급 카탈로그에서 온다: 외래 수가로 접으면 850만원짜리 처치가 25만원이
+      // 되고, 그 차이는 장부 총액에만 나타나 추적이 어렵다.
+      const spec = emergencySpec(emergencyKindOf(p))
+      lateRevenueManwon += spec.revenueManwon
+      byDept = addRevenueToDeptStats(byDept, spec.dept, spec.revenueManwon)
+      addLoad(p.doctorId, emergencyLoadMin(p, spec))
+    } else if (p.stage && COUNTS_AS_TURNED_AWAY.includes(p.stage)) left += 1
   }
-  const doctors = world.pawns.filter(p => p.kind === 'DOCTOR')
-  const examsDelta = exams - world.stats.examsDone
+  // 부하는 환자를 다 훑은 **뒤** 한 번에 얹는다 — 같은 의사가 외래와 응급을 동시에 물고 있을
+  // 수는 없지만(doctorId는 하나), 모아서 얹는 계약을 진료 중 축적(applyWorkLoads)과 같게 둔다.
+  const doctors = applyWorkLoads(world.pawns.filter(p => p.kind === 'DOCTOR'), loadByDoctor)
   const record: DayRecord = {
     day: world.day,
     examsDone: exams,
     leftCount: left,
-    revenueManwon: exams * EXAM_REVENUE_MANWON,
+    revenueManwon: deptRevenueSum(byDept),
+    byDept,
+    emergencies: {
+      accepted: world.stats.emergencyAccepted,
+      turnedAway: world.stats.emergencyTurnedAway.length,
+    },
   }
   const days = [...world.days, record]
   return {
@@ -56,13 +104,15 @@ export function settleDay(world: SimWorld): SimWorld {
     // 정상 흐름에선 startNextWeek이 days를 비워 7에서 딱 걸리므로 지금은 등가다.
     phase: days.length >= DAYS_PER_WEEK ? 'WEEK_END' : 'DAY_END',
     pawns: doctors,
-    treasuryManwon: world.treasuryManwon + examsDelta * EXAM_REVENUE_MANWON,
-    stats: { examsDone: exams, leftCount: left },
+    treasuryManwon: world.treasuryManwon + lateRevenueManwon,
+    // 응급 집계는 마감이 손대지 않는다 — 수용·회차는 이미 도착 시점에 확정된 값이라,
+    // 여기서 다시 세면 그날 숫자가 두 번 더해진다(외래의 leftCount 이중 집계와 같은 병).
+    stats: { ...world.stats, examsDone: exams, leftCount: left, byDept },
     days,
   }
 }
 
-/** 새 아침의 공통 초기화 — 분 0·당일 집계 0·의사는 자기 진료실 책상 앞에서 다시 시작.
+/** 새 아침의 공통 초기화 — 분 0·당일 집계 0·**하룻밤 회복**·의사는 자기 진료실 책상 앞에서 다시 시작.
  *  하루를 넘길 때(startNextDay)와 주를 넘길 때(week.startNextWeek)가 **같은 아침**을 열어야 한다.
  *  7일차 밤엔 startNextDay가 없어서, 여기가 갈리면 주의 첫날만 지난주 stats를 들고 시작해
  *  그날 DayRecord가 지난주 진료까지 다시 센다(에러 없이 숫자만 틀린다).
@@ -71,13 +121,15 @@ export function settleDay(world: SimWorld): SimWorld {
 export function freshMorning(world: SimWorld): SimWorld {
   const blocked = buildBlockedSet(world)
   const pawns = world.pawns.map(p => {
-    const next: Pawn = { ...p, path: [] }
+    // 하룻밤 회복도 여기 있어야 한다 — 7일차 밤엔 startNextDay가 없어서, 회복을 그쪽에 달면
+    // **주의 첫날만** 지친 채로 시작한다(stats 리셋이 여기 있는 것과 같은 이유).
+    const next: Pawn = { ...restOvernight(p), path: [] }
     delete next.dest
     // 방을 못 찾거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
     const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null
     return spot ? { ...next, x: spot.x, y: spot.y } : next
   })
-  return { ...world, minute: 0, pawns, stats: { examsDone: 0, leftCount: 0 } }
+  return { ...world, minute: 0, pawns, stats: freshStats() }
 }
 
 /** 하루 넘기기 — DAY_END에서만(시계가 아니라 플레이어가 부른다).

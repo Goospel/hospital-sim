@@ -2,6 +2,8 @@
 
 import { formatManwon } from "@/game/labels";
 import type { DayRecord } from "@/sim/day";
+import type { EmergencyTurnAway } from "@/sim/emergency";
+import { turnAwayBreakdownText } from "./simHud";
 
 /**
  * 하루 마감 오버레이 — 19:00에 세계가 멈추고 그날의 종이 한 장이 올라온다.
@@ -20,14 +22,20 @@ export default function DayEndOverlay({
   week,
   day,
   days,
+  turnedAway,
   onNextDay,
 }: {
   week: number;
   day: number;
   days: DayRecord[];
+  /** 오늘 되돌아간 응급의 **사유 내역**(world.stats). 건수는 DayRecord가 들고 있지만 사유는
+   *  그날 그 순간의 메시지라 stats 쪽에만 남는다 — 그래서 프롭이 둘로 갈린다. */
+  turnedAway: EmergencyTurnAway[];
   onNextDay: () => void;
 }) {
   const today = days.find((d) => d.day === day);
+  const emergencies = today?.emergencies ?? { accepted: 0, turnedAway: 0 };
+  const reasons = turnAwayBreakdownText(turnedAway);
   const examsDone = days.reduce((n, d) => n + d.examsDone, 0);
   const leftCount = days.reduce((n, d) => n + d.leftCount, 0);
   const revenueManwon = days.reduce((n, d) => n + d.revenueManwon, 0);
@@ -63,6 +71,20 @@ export default function DayEndOverlay({
               {/* 색 단독 신호 금지 — 0이면 잉크색이고, 있을 때만 붉어진다(숫자가 함께 판정을 진다). */}
               <dd className={`font-semibold ${(today?.leftCount ?? 0) > 0 ? "text-stamp-ink" : "text-ink"}`}>
                 {today?.leftCount ?? 0}
+              </dd>
+            </div>
+            {/* 응급 — **문앞 판정** 기준의 수용/회차다(도착 즉시 결정된다). 처치까지 못 간 채
+                마감을 맞은 환자는 수용에 들어 있으면서 이탈로도 세지므로, 이 줄의 수용 건수와
+                과별 수익의 처치 건수는 다를 수 있다. 그 사실을 라벨이 직접 말한다. */}
+            <div className="flex items-baseline justify-between">
+              <dt className="font-sans text-xs text-ink-2">응급 (문앞 판정)</dt>
+              <dd className="text-ink">
+                수용 {emergencies.accepted}
+                <span className="text-ink-2"> · 회차 </span>
+                <span className={emergencies.turnedAway > 0 ? "text-stamp-ink" : "text-ink"}>
+                  {emergencies.turnedAway}
+                </span>
+                {reasons && <span className="text-ink-2"> ({reasons})</span>}
               </dd>
             </div>
           </dl>
