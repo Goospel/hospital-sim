@@ -7,11 +7,11 @@
 //  ③ 경로는 목적지가 정해질 때 1회만 계산한다. 매 분 재탐색하면 findPath(~3ms)가 인원수만큼 곱해진다.
 import { seededUnit, callSeed } from '../game/daysim'
 import { buildBlockedSet, findPath, isBlockedTile, type Pt } from './path'
-import { GRID_W, GRID_H, type Room, type SimWorld } from './world'
+// ENTRANCE(정문)는 world가 단일 출처다 — 격자에서 파생하는 상수이고, 의사의 출근(pawn.hireDoctor)도
+// 같은 문을 쓴다. 여기 두면 하위 모듈인 pawn이 이 파일을 값으로 당겨 레이어가 뒤집힌다.
+import { GRID_W, GRID_H, ENTRANCE, type Room, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 
-/** 정문 — 그리드 아래 변 중앙. 방은 y=GRID_H-1에 지을 수 없어(placeRoom 경계) 항상 통행 가능하다. */
-export const ENTRANCE: Pt = { x: 24, y: GRID_H - 1 }
 export const EXAM_DURATION_MIN = 20
 export const EXAM_REVENUE_MANWON = 30
 /** 대기 인내 — 이만큼 앉아 있었는데 안 불리면 떠난다(수익 0). */

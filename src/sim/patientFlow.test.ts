@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, isWalkable, type SimWorld } from './world'
+import { createWorld, isWalkable, ENTRANCE, type SimWorld } from './world'
 import { placeRoom } from './build'
 import type { Pt } from './path'
 import { spawnDoctor } from './pawn'
 import { tick } from './tick'
 import {
-  ENTRANCE, EXAM_DURATION_MIN, EXAM_REVENUE_MANWON, PATIENCE_MIN,
+  EXAM_DURATION_MIN, EXAM_REVENUE_MANWON, PATIENCE_MIN,
   ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats, arrivalSeed,
 } from './patientFlow'
 import { seededUnit } from '../game/daysim'

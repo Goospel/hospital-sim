@@ -49,7 +49,8 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
     key: 'AESTHETICS',
     label: '미용·피부',
     // 30 = `src/game/receiving.ts` CALL_ECONOMICS.COSMETIC_WALKIN.revenueManwon **그대로**.
-    // 비급여라 병원이 가격을 정하는 유일한 과라 옛 층과 스케일이 같다(보톡스 한 건 30만원).
+    // **이 카탈로그 4과 중 유일하게** 비급여라 병원이 값을 정한다(옛 층엔 검진도 비급여로 있었지만
+    // 2주차 절단이다) — 수가가 정책이 아니라 시장에서 오는 과라 옛 층과 스케일이 같다(보톡스 한 건 30만원).
     examRevenueManwon: 30,
     // 2,500 ← `src/game/types.ts` DEPARTMENTS.AESTHETICS.fixedCostPerDoctorManwon(560)에서 **대소만**
     // 계승했다(모든 과 중 가장 가볍다 — 24시간 대기가 없다). 절대액은 새 스케일로 재조정:
@@ -89,9 +90,14 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
     // 25 ← 외과와 같은 급여 외래 밴드(SPECIALIST_ELECTIVE 26). 순환기의 흑자는 외래가 아니라
     // 시술에서 나오므로(옛 층의 검사 160.5% 논지) 외래 수가로 보상하지 않는다.
     examRevenueManwon: 25,
-    // 5,000 ← DEPARTMENTS.CARDIOLOGY(1190) — **모든 과 중 가장 무겁다**(24시간 심장중재팀 대기).
-    // 옛 층에서도 필수과 최고가였고, 그 대소가 "순환기를 뽑을수록 장부가 나빠진다"의 근거다.
+    // 5,000 ← DEPARTMENTS.CARDIOLOGY(1190) — 24시간 심장중재팀 대기가 붙어 무겁다.
+    // ⚠️ 옛 층에서 순환기는 **필수과 6개 중 3위**다(흉부외과 1400·신경외과 1260이 위). 그 둘이
+    // 2주차 절단이라 **이 4과 안에서만** 최고가인 것이지, "가장 무거운 과"가 아니다 — 값을 조정할 때
+    // 이 자리를 옛 층의 천장으로 착각하면 표 밖으로 올라간다. 이 4과 안의 대소가
+    // "순환기를 뽑을수록 장부가 나빠진다"의 근거다.
     weeklyCostManwon: 5_000,
+    // 1.2 = 외과와 같은 근거(필수과 외래 — 기준선 1.0과 응급 1.5~2.0 사이). 두 과의 외래는
+    // 의사에게 같은 무게라고 본다 — 갈리는 차이는 강도가 아니라 응급(Task 4의 ×2.0)에서 온다.
     intensity: 1.2,
   },
 }

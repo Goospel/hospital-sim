@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { SIM_DEPTS, simDept, HIRABLE_DEPTS, DEFAULT_EXAM_DEPT, type SimDeptKey } from './dept'
-import { createWorld, isWalkable } from './world'
+import { createWorld, isWalkable, ENTRANCE } from './world'
 import { placeRoom } from './build'
 import { hireDoctor } from './pawn'
-import { ENTRANCE } from './patientFlow'
 
 const manhattan = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y)

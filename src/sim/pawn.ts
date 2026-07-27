@@ -2,10 +2,7 @@
 // 경로는 목적지가 정해질 때 findPath로 1회 계산해 path에 저장하고, 틱은 소비만 한다
 // (findPath는 최장 경로 ~3ms라 매 틱 재탐색하면 폰 수만큼 곱해져 프레임을 먹는다).
 import type { DeptKey } from '../game/types'
-import { GRID_W, GRID_H, isWalkable, type SimWorld } from './world'
-// ENTRANCE는 patientFlow가 단일 출처다(환자가 들어오는 문과 의사가 출근하는 문은 같은 문이다).
-// patientFlow → pawn 방향은 타입 전용 임포트라 런타임 순환이 생기지 않는다.
-import { ENTRANCE } from './patientFlow'
+import { GRID_W, GRID_H, ENTRANCE, isWalkable, type SimWorld } from './world'
 import type { SimDeptKey } from './dept'
 import type { Pt } from './path'
 
@@ -45,6 +42,9 @@ export function spawnDoctor(w: SimWorld, dept: DeptKey, at: Pt): SimWorld {
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
 }
 
+/** 스폰 탐색의 4방향 순서 — findPath의 DIRS와 같은 (위·우·아래·좌). 이 순서가 동률 타이브레이크다. */
+const SPAWN_DIRS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
+
 /** 정문에서 가까운 순서로 통행 가능한 첫 타일 — 채용한 의사가 설 자리.
  *  BFS라 거리순이 보장되고, 방향 순서(위·우·아래·좌)가 findPath와 같아 동률도 결정론이다.
  *  ⚠️ 정문 자체는 방을 지을 수 없는 마지막 줄이라(placeRoom 경계) 보통 여기서 곧바로 끝난다 —
@@ -68,8 +68,6 @@ function spawnSpotNear(w: SimWorld, from: Pt): Pt {
   // 막힌 칸에 낀 폰도 findPath가 출발지를 선검사하지 않아 스스로 걸어 나올 수 있다(의도된 비대칭).
   return from
 }
-
-const SPAWN_DIRS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
 
 /** 채용 — 그 과 의사 한 명이 정문으로 걸어 들어온다.
  *  **일시금이 없다**(금고 무변): 기존 게임의 계약금(DEPARTMENTS.hireCostManwon)은 PR C/D 절단이고,
