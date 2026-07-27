@@ -623,13 +623,33 @@ describe('욕구 우선순위 — 표 순서가 계약이다', () => {
     expect(doctorOf(onlyHungry).activity).toBe('TO_MEAL')
     expect(doctorOf(onlyHungry).dest).toEqual(mealSeat)
   })
+
+  it('휴게실이 없으면 지치고 배고픈 의사는 밥이라도 먹으러 간다 — 순서는 우선순위이지 배타가 아니다', () => {
+    // ⚠️ 위 테스트는 **두 자리가 다 있는** 세계라 이 축을 못 본다: 첫 갈래가 늘 자리를 찾으니
+    //    "자리를 못 찾으면 다음 갈래로 넘어간다"는 폴백이 한 번도 실행되지 않는다. 리뷰 실측 —
+    //    maybeStartBreak를 배타로 바꿔도(첫 임계 갈래에서 자리 못 찾으면 return p) 891건 전부
+    //    통과했다. Task 1의 backToDesk 폴백과 같은 형태의 무계측이라 여기서 봉합한다(T-089).
+    //
+    //    이 갈래를 배타로 두면 **휴게실 없는 병원의 지친 의사는 밥까지 굶는다** — 못 쉬는 벌로
+    //    감속까지 얹히는 셈이라, 식당을 지어도 아무 일이 안 일어난다(에러 0).
+    const w = hungryFor(
+      tired(restWorld({ rooms: [CAFETERIA_1] }), FATIGUE_RED), // 휴게실이 **없다**
+      HUNGRY_AFTER_MIN,
+    )
+    expect(loungeSeats(w)).toHaveLength(0) // 전제: 쉴 자리가 아예 없다
+    expect(mealSeats(w)).toHaveLength(1)   // 전제: 먹을 자리는 있다
+
+    const after = tick(w, 1)
+    expect(doctorOf(after).activity).toBe('TO_MEAL')
+    expect(doctorOf(after).dest).toEqual(mealSeats(w)[0])
+  })
 })
 
 describe('굶주림 감속 — 작업 시작 시점에 확정된다', () => {
-  /** 같은 병원·같은 시드에서 허기만 갈아 끼우고 외래 한 건의 **확정 소요**를 잰다.
-   *  식당이 없어 굶은 의사는 굶은 채로 진료에 들어간다(대조가 성립하는 조건). */
-  function examWorkMin(hungerMin: number): number {
-    let w = hungryFor(restWorld({ rooms: [] }), hungerMin)
+  /** 같은 병원·같은 시드에서 허기·피로만 갈아 끼우고 외래 한 건의 **확정 소요**를 잰다.
+   *  휴게실도 식당도 없어 굶고 지친 의사가 그대로 진료에 들어간다(대조가 성립하는 조건). */
+  function examWorkMin(hungerMin: number, fatigue = 0): number {
+    let w = hungryFor(tired(restWorld({ rooms: [] }), fatigue), hungerMin)
     w = { ...w, pawns: [...w.pawns, waitingPatient('pat-slow', { x: 20, y: 20 }, w.minute)] }
     w = until(w, x => x.pawns.find(p => p.id === 'pat-slow')?.stage === 'IN_EXAM')
     const workMin = w.pawns.find(p => p.id === 'pat-slow')!.workMin
@@ -647,8 +667,8 @@ describe('굶주림 감속 — 작업 시작 시점에 확정된다', () => {
   })
 
   /** 응급판 — 침대에 누운 응급에 의사가 붙는 그 분의 확정 소요. */
-  function treatWorkMin(hungerMin: number): number {
-    const w0 = hungryFor(place(restWorld({ rooms: [] }), WARD_1BED), hungerMin)
+  function treatWorkMin(hungerMin: number, fatigue = 0): number {
+    const w0 = hungryFor(tired(place(restWorld({ rooms: [] }), WARD_1BED), fatigue), hungerMin)
     const bed = wardBeds(w0)[0]
     const w = tick({ ...w0, pawns: [...w0.pawns, inBed('emg-slow', bed)] }, 1)
     const patient = w.pawns.find(p => p.id === 'emg-slow')!
@@ -660,6 +680,37 @@ describe('굶주림 감속 — 작업 시작 시점에 확정된다', () => {
     const base = emergencySpec('STEMI').durationMin
     expect(treatWorkMin(0)).toBe(base)
     expect(treatWorkMin(HUNGRY_AFTER_MIN)).toBe(Math.round(base * STARVED_SLOW))
+  })
+
+  /** 두 감속이 **겹쳤을 때**의 확정 소요 — 곱 순서와 이중 반올림까지 포함한 계약식.
+   *  식을 리터럴로 복제하지 않고 소스 함수(`fatigueSlowFactor`)와 상수(`STARVED_SLOW`)로
+   *  구성한다 — 곡선이 튜닝되면 기대값도 같이 따라와야 계측기가 안 낡는다. */
+  const bothSlowed = (base: number, fatigue: number) =>
+    Math.round(Math.round(base * fatigueSlowFactor(fatigue)) * STARVED_SLOW)
+
+  it('피로와 허기가 겹치면 곱이 쌓인다 — 외래(단계마다 정수화)', () => {
+    // 기존 두 테스트는 **둘 다 피로 0**에서 재서 겹친 구간을 한 번도 안 봤다(리뷰 지적).
+    const both = examWorkMin(HUNGRY_AFTER_MIN, FATIGUE_RED)
+    expect(both).toBe(bothSlowed(EXAM_DURATION_MIN, FATIGUE_RED))
+    // 두 축이 **둘 다 살아 있다** — 어느 하나를 지우면 아래 두 부등식 중 하나가 죽는다.
+    expect(both).toBeGreaterThan(examWorkMin(0, FATIGUE_RED))          // 허기 축
+    expect(both).toBeGreaterThan(examWorkMin(HUNGRY_AFTER_MIN, 0))     // 피로 축
+    //
+    // ⚠️ **등가 돌연변이·사살 불가 인지(T-089 갈래②)**: 곱 순서를 뒤집은 변조
+    //    (`round(round(base × 허기) × 피로)`)는 이 지점에서 **판별되지 않는다** — 실측:
+    //    피로 67·외래 20분이면 두 순서가 똑같이 29분을 낸다. 전수 확인(피로 0..100 × 외래 20분)
+    //    결과 갈리는 피로값은 21개뿐이고 FATIGUE_RED는 거기 없다. 순서 계약은 **아래 응급판이**
+    //    잠근다(같은 피로 67에서 130 vs 129로 갈린다) — 이 테스트가 지는 몫은 "곱이 쌓인다"까지다.
+  })
+
+  it('피로와 허기가 겹치면 곱이 쌓인다 — 응급(곱 순서까지 잠근다)', () => {
+    const base = emergencySpec('STEMI').durationMin
+    const both = treatWorkMin(HUNGRY_AFTER_MIN, FATIGUE_RED)
+    // ⚠️ 여기가 **곱 순서의 유일한 계측점**이다: base 90·피로 67에서 현행 순서는 130,
+    //    뒤집으면 129다(외래 20분은 29로 같아 못 잡는다 — 위 테스트 주석의 실측).
+    expect(both).toBe(bothSlowed(base, FATIGUE_RED))
+    expect(both).toBeGreaterThan(treatWorkMin(0, FATIGUE_RED))
+    expect(both).toBeGreaterThan(treatWorkMin(HUNGRY_AFTER_MIN, 0))
   })
 })
 

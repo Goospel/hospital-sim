@@ -323,7 +323,8 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
     // 외래와 같은 계약: 소요는 **시작하는 순간** 그 의사의 피로·허기로 확정된다. 지치거나 굶은
     // 의사의 PCI는 90분이 아니라 그보다 길고, 그동안 그 과의 외래·다음 응급이 함께 밀린다.
     // 곱하는 순서·정수화도 외래와 같다(patientFlow의 TO_EXAM 주석) — 갈리면 같은 상태의 의사가
-    // 진료와 처치에서 다른 배율을 받는다.
+    // 진료와 처치에서 다른 배율을 받는다. ⓘ **곱 순서의 계측점이 여기다**: 90분 base는 순서를
+    // 뒤집으면 피로 67에서 130 → 129로 갈리는데, 외래 20분은 같은 피로에서 29로 일치해 못 잡는다.
     const workMin = Math.round(
       slowedDurationMin(spec.durationMin, fatigueOf(doc)) * starvedSlowFactor(doc),
     )

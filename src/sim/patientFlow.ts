@@ -363,6 +363,11 @@ function progressStages(w: SimWorld): SimWorld {
           // 두 감속은 **곱**으로 얹히고 각 단계마다 정수로 접는다(`round(round(base×피로)×허기)`).
           // 한 번에 곱해 마지막에만 반올림하면 피로 감속의 반올림 계약(fatigue.slowedDurationMin)이
           // 우회돼, 같은 피로가 허기 유무에 따라 다른 기준선에서 출발한다.
+          // ⚠️ **곱 순서는 여기서 계측되지 않는다**(등가 돌연변이): 외래 20분은 순서를 뒤집어도
+          //    같은 값을 내는 피로 구간이 넓어 FATIGUE_RED에서 29분으로 일치한다(전수 실측 —
+          //    피로 0..100 중 갈리는 값 21개뿐). 순서 계약을 잠그는 것은 **응급 90분 경로**이고
+          //    (needs.test.ts 「곱이 쌓인다 — 응급」이 130 vs 129로 잡는다), 두 자리가 같은 모양을
+          //    유지하는 한 그 하나로 족하다. 모양이 갈리면 그 계측도 함께 무의미해진다.
           const doc = w.pawns.find(d => d.id === p.doctorId)
           const workMin = Math.round(
             slowedDurationMin(EXAM_DURATION_MIN, fatigueOf(doc)) * starvedSlowFactor(doc),
