@@ -5,7 +5,7 @@
 //  ① RNG 0 — 도착 판정은 seed 해시(seededUnit)뿐이다. Math.random·Date.now 금지(결정론).
 //  ② 도착 판정은 **위치 == dest**다. `path.length === 0`은 "길이 끊겨 비워진 폰"과 구별되지 않는다.
 //  ③ 경로는 목적지가 정해질 때 1회만 계산한다. 매 분 재탐색하면 findPath(~3ms)가 인원수만큼 곱해진다.
-import { seededUnit } from '../game/daysim'
+import { seededUnit, callSeed } from '../game/daysim'
 import { buildBlockedSet, findPath, isBlockedTile, type Pt } from './path'
 import { GRID_W, GRID_H, type Room, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
@@ -18,6 +18,26 @@ export const EXAM_REVENUE_MANWON = 30
 export const PATIENCE_MIN = 90
 export const ARRIVAL_WINDOW_MIN = 480     // 주간(09:00~17:00)에만 도착
 export const ARRIVAL_PROB_PER_MIN = 1 / 8 // 평균 8분에 한 명
+
+/** 도착 스트림 전용 salt — daysim.callSeed 주석의 레지스트리에 없는 값이라야 한다
+ *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23). 새 무작위 축은 새 salt를 받는다. */
+const ARRIVAL_SALT = 29
+
+/** 도착 판정 시드 — (주,날,분)은 기존 게임의 검증된 폴딩(callSeed)으로 접는다.
+ *  **week가 들어가는 게 핵심이다**: startNextWeek이 day를 1로 되돌리므로, week가 빠지면
+ *  2주차가 1주차의 재방송이 된다(같은 분에 같은 환자가 온다 — 에러 없이 게임만 죽는다).
+ *  즉석 폴딩(week * 7_000 따위)을 새로 만들지 않는 이유는 슬롯 폭을 또 계산해야 하고
+ *  그 계산이 틀리면 먼 주차에서 조용히 충돌하기 때문이다 — callSeed가 이미 푼 문제다.
+ *
+ *  world.seed(어느 판인가)는 callSeed에 슬롯이 없어 XOR로 얹는다. 덧셈이 아닌 이유:
+ *  callSeed의 슬롯 산술은 `index * 101 + salt`라, 세계 시드를 더하면 seed 101이 분+1과
+ *  같은 스트림으로 미끄러진다. 자기 해시(seededUnit)를 통과시켜 32비트에 고루 퍼뜨린 뒤
+ *  XOR하면 슬롯 산술을 건드리지 않는다. 이 함수가 도착 시드의 **단일 출처**다 —
+ *  테스트가 공식을 손으로 다시 쓰면(예전 경계 테스트가 그랬다) 한쪽이 조용히 낡는다. */
+export function arrivalSeed(w: SimWorld): number {
+  const worldMix = (seededUnit(w.seed) * 2 ** 32) | 0
+  return callSeed(w.week, w.day, w.minute, ARRIVAL_SALT) ^ worldMix
+}
 
 const samePt = (a: { x: number; y: number }, b: Pt) => a.x === b.x && a.y === b.y
 const ptKey = (p: Pt) => `${p.x},${p.y}`
@@ -103,7 +123,7 @@ function maybeArrive(w: SimWorld): SimWorld {
   // 480분은 창이 닫힌 쪽이다(경계 테스트가 이 두 끝을 잠근다).
   if (w.minute >= ARRIVAL_WINDOW_MIN) return w
   // 분마다 독립 판정 — 이래야 도착이 몰릴 때 몰리고(대기열이 생기고) 빌 때 빈다.
-  if (seededUnit(w.seed * 100_000 + w.day * 1_000 + w.minute) >= ARRIVAL_PROB_PER_MIN) return w
+  if (seededUnit(arrivalSeed(w)) >= ARRIVAL_PROB_PER_MIN) return w
   const seat = freeSeat(w, buildBlockedSet(w))
   // 앉을 데가 없거나 거기까지 갈 수 없으면 문간에서 발길을 돌린다 — 폰을 만들지도 않는다.
   if (!seat) return { ...w, stats: { ...w.stats, leftCount: w.stats.leftCount + 1 } }

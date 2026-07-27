@@ -4,7 +4,7 @@ import {
   WEEKLY_DOCTOR_COST_MANWON, INSOLVENCY_WEEKS_TO_CLOSE,
   weekSummary, settleWeek, startNextWeek,
 } from './week'
-import type { DayRecord } from './day'
+import { DAYS_PER_WEEK, type DayRecord } from './day'
 import type { Pawn } from './pawn'
 
 const day = (n: number, exams: number): DayRecord =>
@@ -17,6 +17,9 @@ function weekEndWorld(over: Partial<SimWorld> = {}): SimWorld {
   return {
     ...base,
     phase: 'WEEK_END' as const,
+    // 주말 밤의 세계는 7일차다 — createWorld의 day: 1을 물려받으면 startNextWeek의 `day: 1`
+    // 단언이 항진명제가 된다(`day: w.day`로 바꿔도 안 죽는다). week: 3과 같은 함정의 day 축.
+    day: DAYS_PER_WEEK,
     days: [1, 2, 3, 4, 5, 6, 7].map(n => day(n, 10)),
     pawns: [doctor('doc-1', 8), doctor('doc-2', 9)],
     ...over,
@@ -140,6 +143,13 @@ describe('다음 주', () => {
     const doc = next.pawns[0]
     expect(doc.path).toEqual([])
     expect(doc.dest).toBeUndefined()
+  })
+
+  it('startNextWeek는 입력 세계를 변형하지 않는다 (순수)', () => {
+    const settled = settleWeek(weekEndWorld({ treasuryManwon: 100_000 }))
+    const snapshot = structuredClone(settled)
+    startNextWeek(settled)
+    expect(settled).toEqual(snapshot)
   })
 
   it('다음 주도 결산할 수 있다 — 결산 완료 표시가 주와 함께 넘어가지 않는다', () => {

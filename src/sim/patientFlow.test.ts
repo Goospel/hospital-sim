@@ -6,7 +6,7 @@ import { spawnDoctor } from './pawn'
 import { tick } from './tick'
 import {
   ENTRANCE, EXAM_DURATION_MIN, EXAM_REVENUE_MANWON, PATIENCE_MIN,
-  ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats,
+  ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats, arrivalSeed,
 } from './patientFlow'
 import { seededUnit } from '../game/daysim'
 import { DAY_END_MIN } from './day'
@@ -151,14 +151,44 @@ describe('환자 흐름', () => {
     expect(arrivals(3)).not.toEqual(arrivals(4))
   })
 
+  it('주가 다르면 하루가 다르다 — 2주차는 1주차의 재방송이 아니다', () => {
+    // startNextWeek이 day를 1로 되돌리므로, 도착 시드에 week가 없으면 2주차 1일차가 1주차
+    // 1일차와 **완전히 동일**해진다(같은 분에 같은 환자). 에러는 안 나고 게임만 죽는다.
+    // 주 말고 다른 변수는 전부 같게 두고 week만 바꿔 그 축 하나를 겨눈다.
+    const dayOf = (week: number) => {
+      let w = { ...hospitalWorld(3), week }
+      for (let i = 0; i < DAY_END_MIN; i++) w = tick(w, 1)
+      return w.days[0]
+    }
+    const week1 = dayOf(1)
+    const week2 = dayOf(2)
+    expect(week1.examsDone).toBeGreaterThan(0) // 계측기가 0으로 헛돌지 않았다
+    expect(week2.examsDone).toBeGreaterThan(0)
+    expect(week1.day).toBe(week2.day)          // 같은 '1일차'인데
+    expect(week2).not.toEqual(week1)           // 하루의 내용은 다르다
+  })
+
+  it('결정론은 유지된다 — 같은 시드·같은 주면 하루가 완전히 같다', () => {
+    // week를 시드에 넣었다고 무작위가 새로 생기면 안 된다(재현 불가 = 디버깅 불가).
+    const dayOf = () => {
+      let w = { ...hospitalWorld(3), week: 4 }
+      for (let i = 0; i < DAY_END_MIN; i++) w = tick(w, 1)
+      return w
+    }
+    expect(dayOf()).toEqual(dayOf())
+  })
+
   it(`도착 창이 닫히면 새 환자가 오지 않는다 — 경계 분(${ARRIVAL_WINDOW_MIN})은 닫힌 쪽이다`, () => {
-    // 시드 13은 **480분에 도착 판정이 통과하는** 시드다(아래 전제로 못박음). 좌석은 45개라
+    // 시드 3은 **480분에 도착 판정이 통과하는** 시드다(아래 전제로 못박음). 좌석은 45개라
     // 자리 부족으로 반려될 일도 없다 — 그래서 경계를 `>`로 잘못 쓰면 여기서 한 명이 더 들어온다.
     // 아무 시드나 쓰면 그 분에 판정이 애초에 실패해 경계 오류가 조용히 통과한다.
-    expect(seededUnit(13 * 100_000 + 1 * 1_000 + ARRIVAL_WINDOW_MIN)).toBeLessThan(ARRIVAL_PROB_PER_MIN)
+    // 전제는 **arrivalSeed를 불러서** 세운다 — 공식을 여기 손으로 다시 쓰면(예전에 그랬다)
+    // 도착 시드가 바뀌는 날 이 전제만 조용히 낡아 "통과하는 시드"가 아니게 된다.
+    const w0 = roomySeatsWorld(3)
+    expect(seededUnit(arrivalSeed({ ...w0, minute: ARRIVAL_WINDOW_MIN }))).toBeLessThan(ARRIVAL_PROB_PER_MIN)
     // 경계 분(480)을 **캡처 뒤에** 두는 게 핵심이다. 480분까지 돌린 뒤 세면 그 분의 도착이
     // 이미 기준값에 섞여 들어가, 경계를 틀려도 차이가 안 보인다(실측으로 이 함정을 밟았다).
-    let w = tick(roomySeatsWorld(13), ARRIVAL_WINDOW_MIN - 1)
+    let w = tick(w0, ARRIVAL_WINDOW_MIN - 1)
     const idBeforeDusk = w.nextId
     w = tick(w, 200) // 480분이 이 구간의 첫 분이다
     expect(w.nextId).toBe(idBeforeDusk)
