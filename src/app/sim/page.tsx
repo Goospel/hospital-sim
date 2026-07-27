@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import TileMap, { ROOM_LABEL, type BuildPreview } from "@/components/TileMap";
+import TileMap, { type BuildPreview } from "@/components/TileMap";
 import DayEndOverlay from "@/components/DayEndOverlay";
+import HirePanel from "@/components/HirePanel";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
+import { ROOM_LABEL, turnAwayText } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, type SimSpeed } from "@/components/useSimClock";
 import { MS_PER_GAME_MIN } from "@/game/hospitalMap";
 import { formatClockFromOpen } from "@/game/daysim";
 import { createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { placeRoom, roomCostManwon, COST_PER_TILE_MANWON, MIN_ROOM_W, MIN_ROOM_H, type PlaceResult } from "@/sim/build";
-import { spawnDoctor } from "@/sim/pawn";
+import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
+import { hireDoctor } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
 import { startNextDay } from "@/sim/day";
 import { settleWeek, startNextWeek, weekSummary } from "@/sim/week";
@@ -41,18 +44,15 @@ const SPEEDS: Array<{ value: SimSpeed; label: string; title: string }> = [
 ];
 
 /**
- * 개원 시점의 세계 — 빈 부지 + 의사 2명. 의사는 입구 앞 통행 타일에 세운다.
+ * 개원 시점의 세계 — 빈 부지, **의사 0명**.
  *
- * ⚠️ y=30은 **영구 보장이 아니다** — placeRoom의 경계는 `y + h <= GRID_H - 1`이라 y=30까지
- * 방을 지을 수 있고, 그러면 의사가 선 자리가 벽이 될 수 있다(폰은 막힌 타일에서도 빠져나온다 —
- * findPath가 출발점을 선검사하지 않는 의도된 비대칭). 영구 통행이 보장되는 건 **y=31 행뿐**이고,
- * 그게 정문(ENTRANCE)이 거기 있는 이유다.
+ * 1주차엔 내과·외과 의사 두 명을 하드코딩해 세워 두었다. 과와 채용이 생긴 지금 그 두 줄은
+ * 지운다: 의사가 미리 서 있으면 "무슨 과를 뽑을 것인가"라는 이 슬라이스의 **첫 결정**이
+ * 이미 내려진 채로 판이 시작되고, 그 결정이 만드는 주급도 플레이어가 고른 것이 아니게 된다.
+ * 이제 채용은 입구 앞 통행 타일 탐색까지 코어(hireDoctor)가 한다 — 화면이 좌표를 정하지 않는다.
  */
 function initialWorld(): SimWorld {
-  let w = createWorld(1);
-  w = spawnDoctor(w, "INTERNAL_MEDICINE", { x: 22, y: 30 });
-  w = spawnDoctor(w, "GENERAL_SURGERY", { x: 26, y: 30 });
-  return w;
+  return createWorld(1);
 }
 
 interface Drag {
@@ -74,16 +74,27 @@ export default function SimPage() {
   const [world, setWorld] = useState<SimWorld>(initialWorld);
   const [speed, setSpeed] = useState<SimSpeed>(1);
   const [selected, setSelected] = useState<RoomType | null>(null);
+  /** 지을 진료실의 과 — EXAM을 고른 뒤 **한 번 더** 고르게 한다(과 없는 진료실은 못 짓는다).
+   *  EXAM 선택을 풀면 같이 비운다: 다음에 다시 고를 때 지난 선택이 몰래 남아 있으면
+   *  "과를 골랐다"는 사실 없이 드래그가 열린다. */
+  const [examDept, setExamDept] = useState<SimDeptKey | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [hireOpen, setHireOpen] = useState(false);
+  /* 토스트에 key를 함께 두는 이유: 같은 문구가 잇달아 뜰 수 있다(순환기 없는 병원의 STEMI
+     회차는 늘 같은 말이다). 문자열만 상태로 두면 두 번째부터 값이 안 바뀌어 React가 렌더를
+     건너뛰고, 그러면 **첫 토스트의 타이머**가 그대로 흘러 두 번째 알림이 곧바로 사라진다. */
+  const [toast, setToast] = useState<{ text: string; key: number } | null>(null);
+  const showToast = (text: string) => setToast((t) => ({ text, key: (t?.key ?? 0) + 1 }));
 
   /*
-    건설 중 자동 일시정지 — 드래그 시작부터 확정·파기까지 세계가 멈춘다.
-    speed를 0으로 **덮어쓰지 않고** 파생값으로 두는 게 핵심이다: 저장·복원을 하면
-    드래그가 취소되거나 중간에 언마운트될 때 배속이 0에 갇힌다. drag를 비우는 것이
+    건설·채용 중 자동 일시정지 — 드래그 시작부터 확정·파기까지, 그리고 채용 패널이 떠 있는 동안
+    세계가 멈춘다. speed를 0으로 **덮어쓰지 않고** 파생값으로 두는 게 핵심이다: 저장·복원을 하면
+    드래그가 취소되거나 중간에 언마운트될 때 배속이 0에 갇힌다. drag/hireOpen을 비우는 것이
     곧 시계 재개라, 확정 경로와 파기 경로가 재개를 각자 기억할 필요가 없다.
+    채용이 같은 식에 합류하는 것도 그래서다 — 정지 상태를 하나 더 만들면 둘이 어긋날 수 있다.
   */
-  const running: SimSpeed = effectiveSpeed(world.phase, drag ? 0 : speed);
+  const paused = drag !== null || hireOpen;
+  const running: SimSpeed = effectiveSpeed(world.phase, paused ? 0 : speed);
   useSimClock(running, setWorld);
 
   useEffect(() => {
@@ -91,6 +102,24 @@ export default function SimPage() {
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  /*
+    되돌아간 응급 알림 — 폰이 만들어지지 않는 사건이라(문전 판정) 화면에 아무 흔적이 없다.
+    그래서 **상태의 변화**를 본다: stats.emergencyTurnedAway가 길어졌으면 방금 한 건이 붙은
+    것이고, 마지막 항목이 그 사유다. 이벤트 큐를 세계에 두지 않는 이유는 그러면 코어가
+    "누가 읽었는가"를 기억해야 하기 때문이다(순수 세계에 UI 수명이 섞인다).
+
+    ⚠️ 세는 자리는 ref다 — 상태로 두면 이 효과가 자기 자신을 다시 부른다. 하루가 바뀌면
+    배열이 [] 로 리셋되므로(freshStats) 길이가 줄고, 그때는 알리지 않고 기준만 되돌린다.
+  */
+  const turnedAway = world.stats.emergencyTurnedAway;
+  const seenTurnAwayRef = useRef(0);
+  useEffect(() => {
+    if (turnedAway.length > seenTurnAwayRef.current) {
+      showToast(turnAwayText(turnedAway[turnedAway.length - 1]));
+    }
+    seenTurnAwayRef.current = turnedAway.length;
+  }, [turnedAway]);
 
   /*
     주간 결산 자동 1회 — 7일차 밤에 세계가 WEEK_END로 들어오면 여기서 고정비를 뺀다.
@@ -121,21 +150,33 @@ export default function SimPage() {
     setWorld((w) => (w.phase === "WEEK_END" && !w.weekSettled ? settleWeek(w) : w));
   }, [world.phase, world.weekSettled]);
 
+  /** 지금 드래그를 시작할 수 있는가 — 진료실은 **과까지 골라야** 열린다.
+   *  코어(placeRoom)는 과 없는 EXAM을 내과로 접지만(마이그레이션 절단), 그 기본값이 화면에서
+   *  도달 가능해지면 플레이어는 고르지도 않은 과의 진료실을 짓게 된다. */
+  const ready = selected !== null && (selected !== "EXAM" || examDept !== null);
+  /** 이번 건설의 과 — 진료실이 아니면 없다(placeRoom이 어차피 떨군다). */
+  const buildDept = selected === "EXAM" && examDept ? examDept : undefined;
+
   const preview: BuildPreview | null = useMemo(() => {
     if (!drag || !selected) return null;
     const rect = rectOf(drag);
     // 판정을 베끼지 않고 실제 placeRoom을 돌려 본다 — 결과 세계는 버린다(순수 함수라 안전).
-    const res = placeRoom(world, { type: selected, ...rect });
+    const res = placeRoom(world, { type: selected, dept: buildDept, ...rect });
     return { ...rect, type: selected, ok: res.ok, costManwon: roomCostManwon(rect.w, rect.h) };
-  }, [drag, selected, world]);
+  }, [drag, selected, buildDept, world]);
 
   const commit = (d: Drag) => {
     if (!selected) return;
-    const res = placeRoom(world, { type: selected, ...rectOf(d) });
-    // EXAM의 dept는 1주차엔 지정하지 않는다 — 과 배정은 2주차 몫이다.
+    // 진료실은 고른 과를 그대로 싣는다 — 여기서 기본값으로 접으면 화면이 고른 것과 세계가 갈린다.
+    const res = placeRoom(world, { type: selected, dept: buildDept, ...rectOf(d) });
     if (res.ok) setWorld(res.world);
-    else setToast(REASON_TEXT[res.reason]);
+    else showToast(REASON_TEXT[res.reason]);
   };
+
+  /** 채용 — 확정은 setState **바깥**에서 한다(건설 commit과 같은 이유: 업데이터 안에서 부르면
+   *  StrictMode의 이중 호출이 두 명을 뽑는다). 패널이 떠 있는 동안 시계가 멈춰 있어 이 world가
+   *  낡을 일도 없다. */
+  const hire = (dept: SimDeptKey) => setWorld(hireDoctor(world, dept));
 
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 
@@ -160,9 +201,28 @@ export default function SimPage() {
           <span className="text-on-desk-muted">이탈 </span>
           <span className={world.stats.leftCount > 0 ? "text-alarm" : undefined}>{world.stats.leftCount}</span>
         </span>
+        {/* 응급 — 받은 건수와 되돌아간 건수를 나란히. 회차는 폰이 만들어지지 않아 화면에
+            흔적이 없으므로(문전 판정) 이 숫자가 유일한 기록이다. */}
+        <span>
+          <span className="text-on-desk-muted">응급 </span>
+          {world.stats.emergencyAccepted}
+          <span className="text-on-desk-muted"> · 회차 </span>
+          <span className={turnedAway.length > 0 ? "text-alarm" : undefined}>{turnedAway.length}</span>
+        </span>
         {closed && <span className="text-on-desk-muted">접수 마감</span>}
         <div className="ml-auto flex items-center gap-1">
-          {drag && <span className="mr-2 text-xs text-on-desk-muted">건설 중 — 일시정지</span>}
+          {paused && (
+            <span className="mr-2 text-xs text-on-desk-muted">
+              {drag ? "건설 중 — 일시정지" : "채용 중 — 일시정지"}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setHireOpen(true)}
+            className="mr-2 border border-frame px-2 py-1 text-xs text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk"
+          >
+            채용
+          </button>
           {SPEEDS.map((s) => (
             <button
               key={s.value}
@@ -187,7 +247,7 @@ export default function SimPage() {
         preview={preview}
         // 폰은 게임 1분마다 2타일을 건너뛴다 — 그 1분의 실시간 길이가 곧 전환 시간이다.
         stepMs={running > 0 ? MS_PER_GAME_MIN / running : 0}
-        onTileDown={(t) => selected && setDrag({ start: t, cur: t })}
+        onTileDown={(t) => ready && setDrag({ start: t, cur: t })}
         onTileMove={(t) => setDrag((d) => (d ? { ...d, cur: t } : d))}
         onTileUp={(t) => {
           // 확정은 setState **바깥**에서 한다 — 업데이터 안에서 건설하면 StrictMode가
@@ -207,7 +267,12 @@ export default function SimPage() {
               key={t}
               type="button"
               aria-pressed={selected === t}
-              onClick={() => setSelected((cur) => (cur === t ? null : t))}
+              onClick={() => {
+                setSelected((cur) => (cur === t ? null : t));
+                // 방 타입을 바꾸거나 선택을 풀면 과 선택도 함께 비운다 — 남겨 두면 다음에 EXAM을
+                // 고르는 순간 고르지도 않은 과로 드래그가 열린다.
+                setExamDept(null);
+              }}
               className={`border px-3 py-1.5 text-sm transition-colors ${
                 selected === t
                   ? "border-on-desk-muted bg-frame text-on-desk"
@@ -221,16 +286,43 @@ export default function SimPage() {
             타일당 {COST_PER_TILE_MANWON}만원 · 최소 {MIN_ROOM_W}×{MIN_ROOM_H}
           </span>
         </div>
+
+        {/* 진료실의 과 — EXAM을 고르면 한 줄이 더 열린다. 진료가 성립하려면 환자·진료실·의사의
+            과가 셋 다 같아야 하므로(코어의 삼중 일치), 무슨 과로 짓는지가 건설의 절반이다. */}
+        {selected === "EXAM" && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-frame pt-2">
+            <span className="text-xs text-on-desk-muted">과</span>
+            {HIRABLE_DEPTS.map((d) => (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={examDept === d}
+                onClick={() => setExamDept((cur) => (cur === d ? null : d))}
+                className={`border px-2.5 py-1 text-xs transition-colors ${
+                  examDept === d
+                    ? "border-on-desk-muted bg-frame text-on-desk"
+                    : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+                }`}
+              >
+                {simDept(d).label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <p className="min-h-5 text-xs">
           {toast ? (
-            <span className="text-alarm">{toast}</span>
-          ) : selected ? (
+            <span className="text-alarm">{toast.text}</span>
+          ) : ready && selected ? (
             <span className="text-on-desk-muted">
-              {ROOM_LABEL[selected]} — 부지를 드래그해 크기를 정하세요. 건설하는 동안 시간이 멈춥니다.
+              {selected === "EXAM" && examDept ? `${ROOM_LABEL[selected]} · ${simDept(examDept).label}` : ROOM_LABEL[selected]}
+              {" — 부지를 드래그해 크기를 정하세요. 건설하는 동안 시간이 멈춥니다."}
             </span>
+          ) : selected === "EXAM" ? (
+            <span className="text-on-desk-muted">진료실은 과를 골라야 지을 수 있습니다.</span>
           ) : (
             <span className="text-on-desk-muted">
-              방 타입을 고르면 건설할 수 있습니다. 환자는 대기실 의자에 앉고, 진료실의 의사가 차례로 부릅니다.
+              방 타입을 고르면 건설할 수 있습니다. 환자는 대기실 의자에 앉고, 자기 과 진료실의 의사가 차례로 부릅니다.
             </span>
           )}
         </p>
@@ -244,11 +336,23 @@ export default function SimPage() {
         startNextWeek은 국면이 어긋나면 throw이므로, 버튼을 두 번 눌러 두 갱신이 줄 서면
         두 번째가 크래시가 된다 — 화면이 사라진 뒤의 클릭은 조용히 버리는 게 맞다.
       */}
+      {/* 채용 패널 — 결산 오버레이와 **같은 층**에 뜨지만 국면과 무관하다(운영 중에도 뽑는다).
+          시계는 phase가 아니라 hireOpen이 세운다(위 paused 파생). */}
+      {hireOpen && (
+        <HirePanel
+          pawns={world.pawns}
+          treasuryManwon={world.treasuryManwon}
+          onHire={hire}
+          onClose={() => setHireOpen(false)}
+        />
+      )}
+
       {world.phase === "DAY_END" && (
         <DayEndOverlay
           week={world.week}
           day={world.day}
           days={world.days}
+          turnedAway={turnedAway}
           onNextDay={() => setWorld((w) => (w.phase === "DAY_END" ? startNextDay(w) : w))}
         />
       )}
