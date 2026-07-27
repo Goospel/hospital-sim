@@ -3,7 +3,7 @@ import { createWorld, INITIAL_TREASURY_MANWON } from './world'
 import { placeRoom } from './build'
 import { spawnDoctor, type Pawn, type PatientStage } from './pawn'
 import { tick } from './tick'
-import { DAY_END_MIN, settleDay } from './day'
+import { DAY_END_MIN, DAYS_PER_WEEK, settleDay, startNextDay } from './day'
 import { EXAM_REVENUE_MANWON } from './patientFlow'
 
 function hospitalWorld(seed: number) {
@@ -119,5 +119,81 @@ describe('하루 마감', () => {
   it('settleDay는 RUNNING이 아닌 세계를 거부한다(이중 정산 방지)', () => {
     const w = runToDayEnd(3)
     expect(() => settleDay(w)).toThrow()
+  })
+})
+
+describe('다음 날', () => {
+  it('DAY_END에서 startNextDay — day+1·분 0·당일 stats 리셋·의사는 자기 진료실 책상 앞·환자 0', () => {
+    const w = runToDayEnd(3)
+    const next = startNextDay(w)
+    expect(next.phase).toBe('RUNNING')
+    expect(next.day).toBe(2)
+    expect(next.minute).toBe(0)
+    expect(next.stats).toEqual({ examsDone: 0, leftCount: 0 })
+    expect(next.days).toHaveLength(1) // 기록은 보존
+    expect(next.pawns.some(p => p.kind === 'PATIENT')).toBe(false)
+    const doc = next.pawns.find(p => p.kind === 'DOCTOR')!
+    expect(doc.path).toEqual([])
+    expect(doc.roomId).toBeDefined()
+    // "책상 앞"을 파생식이 아니라 눈에 보이는 관계로 잰다 — 책상과 맞닿아 있고 제 방 안이다.
+    const desk = next.furniture.find(f => f.roomId === doc.roomId && f.kind === 'DESK')!
+    expect(Math.abs(doc.x - desk.x) + Math.abs(doc.y - desk.y)).toBe(1)
+    const room = next.rooms.find(r => r.id === doc.roomId)!
+    expect(doc.x >= room.x && doc.x < room.x + room.w).toBe(true)
+    expect(doc.y >= room.y && doc.y < room.y + room.h).toBe(true)
+    // dest가 남아 있으면 다음 날 첫 틱의 도착 판정(위치 == dest)이 어제 목적지를 보고 흔들린다.
+    expect(doc.dest).toBeUndefined()
+  })
+
+  it('걷던 중에 하루가 끝나도 다음 날 의사는 책상 앞에서 시작한다', () => {
+    // 자연 흐름의 마감 시점엔 의사가 이미 책상 앞에 앉아 있어(path 빈 채) 위치 복귀·경로 초기화가
+    // 통째로 관측되지 않는다 — 걷는 도중에 하루를 끝내야 그 두 규칙이 계측기에 걸린다.
+    const walking = tick(hospitalWorld(3), 1)
+    const before = walking.pawns.find(p => p.kind === 'DOCTOR')!
+    expect(before.path.length).toBeGreaterThan(0) // 전제: 아직 책상으로 가는 중
+    const desk = walking.furniture.find(f => f.roomId === before.roomId && f.kind === 'DESK')!
+    expect(Math.abs(before.x - desk.x) + Math.abs(before.y - desk.y)).toBeGreaterThan(1) // 전제: 책상 앞이 아니다
+
+    const doc = startNextDay(settleDay(walking)).pawns.find(p => p.kind === 'DOCTOR')!
+    expect(doc.path).toEqual([]) // 어제 경로를 그대로 들고 있으면 첫 틱에 어제 목적지로 걷는다
+    expect(Math.abs(doc.x - desk.x) + Math.abs(doc.y - desk.y)).toBe(1)
+  })
+
+  it('startNextDay는 입력 세계를 변형하지 않는다 (순수)', () => {
+    const w = runToDayEnd(3)
+    const snapshot = structuredClone(w)
+    startNextDay(w)
+    expect(w).toEqual(snapshot)
+  })
+
+  it('2일차도 환자가 오고 진료가 돈다(도착 시드가 day로 갈린다)', () => {
+    let w = runToDayEnd(3)
+    const day1 = w.days[0]
+    w = startNextDay(w)
+    for (let i = 0; i < DAY_END_MIN; i++) w = tick(w, 1)
+    expect(w.days).toHaveLength(2)
+    expect(w.days[1].day).toBe(2)
+    expect(w.days[1].examsDone).toBeGreaterThan(0)
+    // 같은 시드라도 day가 달라 하루 궤적이 다르다(도착 seed에 day가 들어감)
+    expect(w.days[1]).not.toEqual({ ...day1, day: 2 })
+  })
+
+  it('7일차 마감 뒤 startNextDay가 아니라 WEEK_END로 간다 — 6일차 밤까지는 DAY_END다', () => {
+    // 루프를 DAYS_PER_WEEK로 돌면 상수를 바꿔도 테스트가 같이 따라가 **주기 값 자체는 아무것도
+    // 잠기지 않는다**. 그래서 여기서는 날짜를 손으로 세고, 매일 밤의 phase를 통째로 대조한다.
+    let w = hospitalWorld(3)
+    const nights: string[] = []
+    for (let d = 0; d < 7; d++) {
+      for (let i = 0; i < DAY_END_MIN; i++) w = tick(w, 1)
+      nights.push(w.phase)
+      if (w.phase === 'DAY_END') w = startNextDay(w)
+    }
+    expect(nights).toEqual(['DAY_END', 'DAY_END', 'DAY_END', 'DAY_END', 'DAY_END', 'DAY_END', 'WEEK_END'])
+    expect(w.days).toHaveLength(DAYS_PER_WEEK) // 한 주 기록이 통째로 남는다(주간 결산의 입력)
+    expect(w.phase).toBe('WEEK_END')
+  })
+
+  it('startNextDay는 DAY_END가 아닌 세계를 거부한다', () => {
+    expect(() => startNextDay(hospitalWorld(3))).toThrow() // RUNNING
   })
 })

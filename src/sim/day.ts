@@ -1,7 +1,10 @@
-// 하루의 끝 — 정산과 기록. 전이는 tick이 부르고, 다음 날 시작은 UI가 부른다(Task 2).
+// 하루의 마디 — 마감 정산(settleDay)과 다음 날 시작(startNextDay).
+// 마감은 tick이 부르고(600분), 다음 날은 **플레이어가** 부른다 — 시계가 하루를 넘기면 결산을
+// 읽을 틈이 없다. 7일차 밤은 다음 날이 아니라 주간 결산(WEEK_END)으로 간다.
 import type { SimWorld } from './world'
-import type { PatientStage } from './pawn'
-import { EXAM_REVENUE_MANWON } from './patientFlow'
+import type { Pawn, PatientStage } from './pawn'
+import { buildBlockedSet } from './path'
+import { EXAM_REVENUE_MANWON, furnitureSpot } from './patientFlow'
 
 export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
 export const DAYS_PER_WEEK = 7
@@ -42,12 +45,40 @@ export function settleDay(world: SimWorld): SimWorld {
     leftCount: left,
     revenueManwon: exams * EXAM_REVENUE_MANWON,
   }
+  const days = [...world.days, record]
   return {
     ...world,
-    phase: 'DAY_END',
+    // 주의 마지막 날은 하루가 아니라 **주**가 끝난다 — 그날 밤엔 다음 날이 아니라 주간 결산이 온다.
+    // 판정을 정산 안에 두는 이유: days를 늘리는 곳과 "몇 일째인가"를 읽는 곳이 갈리면
+    // 7일차 밤에 DAY_END와 WEEK_END가 서로 다른 근거로 갈릴 수 있다(단일 출처).
+    phase: days.length === DAYS_PER_WEEK ? 'WEEK_END' : 'DAY_END',
     pawns: doctors,
     treasuryManwon: world.treasuryManwon + examsDelta * EXAM_REVENUE_MANWON,
     stats: { examsDone: exams, leftCount: left },
-    days: [...world.days, record],
+    days,
+  }
+}
+
+/** 하루 넘기기 — DAY_END에서만(시계가 아니라 플레이어가 부른다).
+ *  하루 집계(stats)는 비우고 주간 기록(days)은 남긴다 — 주간 결산이 그 배열을 합산한다.
+ *  의사는 어제 걷던 경로·목적지를 버리고 자기 진료실 책상 앞에서 다시 시작한다: dest가 남으면
+ *  다음 날 첫 틱의 도착 판정(위치 == dest)이 어제 목적지를 보고 흔들린다. */
+export function startNextDay(world: SimWorld): SimWorld {
+  if (world.phase !== 'DAY_END') throw new Error(`startNextDay: DAY_END가 아닌 세계(${world.phase})`)
+  const blocked = buildBlockedSet(world)
+  const pawns = world.pawns.map(p => {
+    const next: Pawn = { ...p, path: [] }
+    delete next.dest
+    // 방을 못 찾거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
+    const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null
+    return spot ? { ...next, x: spot.x, y: spot.y } : next
+  })
+  return {
+    ...world,
+    phase: 'RUNNING',
+    day: world.day + 1,
+    minute: 0,
+    pawns,
+    stats: { examsDone: 0, leftCount: 0 },
   }
 }

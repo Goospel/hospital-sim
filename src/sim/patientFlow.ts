@@ -45,7 +45,12 @@ function frontTile(blocked: Set<number>, at: Pt): Pt | null {
   return null
 }
 
-function furnitureSpot(w: SimWorld, blocked: Set<number>, roomId: string, kind: 'DESK' | 'CHAIR'): Pt | null {
+/** 방 안 가구 앞에 설 자리 — 의사의 정위치(책상 앞)와 진료 좌석(의자 앞)의 **단일 출처**다.
+ *  하루를 넘길 때(day.startNextDay) 의사를 제자리로 되돌리는 것도 여기를 본다 — 파생식을
+ *  복제하면 "책상 앞"이 배정과 복귀에서 갈라져 의사가 어제와 다른 칸에 선다. */
+export function furnitureSpot(
+  w: SimWorld, roomId: string, kind: 'DESK' | 'CHAIR', blocked: Set<number> = buildBlockedSet(w),
+): Pt | null {
   const f = w.furniture.find(x => x.roomId === roomId && x.kind === kind)
   return f ? frontTile(blocked, f) : null
 }
@@ -122,7 +127,7 @@ function assignDoctorRooms(w: SimWorld): SimWorld {
     if (p.kind !== 'DOCTOR' || p.roomId) return p
     for (const room of examRooms) {
       if (taken.has(room.id)) continue
-      const spot = furnitureSpot(w, blocked, room.id, 'DESK')
+      const spot = furnitureSpot(w, room.id, 'DESK', blocked)
       if (!spot) continue
       const path = findPath(w, { x: p.x, y: p.y }, spot)
       if (!path) continue // 못 가는 방은 다른 방을 본다 — 배정은 다음 분에 다시 시도된다
@@ -155,7 +160,7 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
   for (const { p, i } of waiting) {
     if (d >= idle.length) break
     const doc = idle[d]
-    const spot = furnitureSpot(w, blocked, doc.roomId!, 'CHAIR')
+    const spot = furnitureSpot(w, doc.roomId!, 'CHAIR', blocked)
     const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
     // 갈 수 없으면 그 의사를 건너뛴다. ⚠️ 도달 가능성은 **환자 위치에도** 달렸으므로 다른
     // 환자라면 갈 수 있었을 수 있다 — 즉 이건 공평한 판정이 아니라 재시도 폭주를 막는 절충이다.
