@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { createWorld, isWalkable, ENTRANCE, type SimWorld } from './world'
 import { placeRoom } from './build'
 import type { Pt } from './path'
-import { spawnDoctor, hireDoctor, type Pawn } from './pawn'
+import { spawnDoctor, type Pawn } from './pawn'
+import { hire } from './testHelpers'
 import { tick } from './tick'
 import {
   EXAM_DURATION_MIN, PATIENCE_MIN,
@@ -74,14 +75,6 @@ function fourDeptWorld(seed: number) {
   })
   for (const dept of [...HIRABLE_DEPTS].reverse()) w = hire(w, dept)
   return w
-}
-
-/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
- *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
-function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
-  const r = hireDoctor(w, dept)
-  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
-  return r.world
 }
 
 /** 진료실 하나 + 그 과 의사 하나. **대기실이 없어 자연 도착이 폰을 만들지 않는다** —

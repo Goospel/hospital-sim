@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, ENTRANCE, INITIAL_TREASURY_MANWON, type SimWorld } from './world'
 import { placeRoom } from './build'
-import { hireDoctor, type Pawn } from './pawn'
+import { type Pawn } from './pawn'
+import { hire } from './testHelpers'
 import { buildBlockedSet } from './path'
 import { tick } from './tick'
 import { DAY_END_MIN, DAYS_PER_WEEK, settleDay } from './day'
@@ -35,14 +36,6 @@ const WARD_1BED = { type: 'WARD' as const, x: 30, y: 20, w: 4, h: 4 }
 function place(w: SimWorld, spec: Parameters<typeof placeRoom>[1]): SimWorld {
   const r = placeRoom(w, spec)
   if (!r.ok) throw new Error(`전제 실패 — 건설 거부(${r.reason})`)
-  return r.world
-}
-
-/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
- *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
-function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
-  const r = hireDoctor(w, dept)
-  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
   return r.world
 }
 

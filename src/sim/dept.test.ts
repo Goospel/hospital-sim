@@ -1,16 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { SIM_DEPTS, simDept, HIRABLE_DEPTS, DEFAULT_EXAM_DEPT, type SimDeptKey } from './dept'
-import { createWorld, isWalkable, ENTRANCE, type SimWorld } from './world'
+import { createWorld, isWalkable, ENTRANCE } from './world'
 import { placeRoom } from './build'
 import { hireDoctor } from './pawn'
-
-/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
- *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
-function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
-  const r = hireDoctor(w, dept)
-  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
-  return r.world
-}
+import { hire } from './testHelpers'
 
 const manhattan = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
@@ -157,6 +150,9 @@ describe('hireDoctor', () => {
   })
 
   it('결정론 — 같은 세계에서 같은 결과', () => {
-    expect(hireDoctor(createWorld(3), 'CARDIOLOGY')).toEqual(hireDoctor(createWorld(3), 'CARDIOLOGY'))
+    // ⚠️ **성공을 먼저 못박는다.** 결과끼리만 비교하면 두 호출이 나란히 거부됐을 때도
+    //    `{ok:false, reason:'NO_POOL'}` 둘이 같아서 통과한다 — 채용이 통째로 막힌 세계에서도
+    //    green인 공허한 계측이 된다. `hire`(언랩)가 거부를 던지므로 이 줄이 그 경로를 봉한다.
+    expect(hire(createWorld(3), 'CARDIOLOGY')).toEqual(hire(createWorld(3), 'CARDIOLOGY'))
   })
 })

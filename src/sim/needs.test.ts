@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, type SimWorld } from './world'
 import { FURNITURE_OF, placeRoom } from './build'
-import { hireDoctor, PAWN_TILES_PER_MIN, type Pawn } from './pawn'
-import type { SimDeptKey } from './dept'
+import { PAWN_TILES_PER_MIN, type Pawn } from './pawn'
+import { hire } from './testHelpers'
 import { buildBlockedSet, findPath } from './path'
 import { tick } from './tick'
 import { freshMorning } from './day'
@@ -11,14 +11,6 @@ import { furnitureSpot, furnitureSpots } from './spots'
 import { emergencySpec, wardBeds } from './emergency'
 import { FATIGUE_MAX, FATIGUE_RED, FATIGUE_REST, fatigueSlowFactor } from '../game/doctor'
 import { HUNGRY_AFTER_MIN, MEAL_MIN, REST_BREAK_MIN, REST_BREAK_RECOVER, STARVED_SLOW } from './needs'
-
-/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
- *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
-function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
-  const r = hireDoctor(w, dept)
-  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
-  return r.world
-}
 
 /** 순환기 진료실 — 8×8이라 의사가 책상에서 문까지 **여러 분** 방 안에 머문다.
  *  그 구간이 있어야 "방 안에 있는데도 외래 배정에서 빠진다"(activity 제외)가 관측된다:

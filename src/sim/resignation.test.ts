@@ -9,18 +9,14 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, type SimWorld } from './world'
 import { hireDoctor, DEFAULT_PRIORITY, setDoctorPriority, priorityOf, type Pawn } from './pawn'
+import { hire } from './testHelpers'
 import { DAYS_PER_WEEK, settleDay, startNextDay, type DayRecord } from './day'
 import { resigningSimDoctors, settleWeek, startNextWeek, weekSummary } from './week'
 import { HIRABLE_DEPTS, simDept, deptRevenueSum, type SimDeptKey, type SimDeptStats } from './dept'
 import { restOvernight } from './fatigue'
 import { FATIGUE_MAX, FATIGUE_REST, RESIGN_SATURATED_DAYS } from '../game/doctor'
 
-/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈은 아래 「전국 풀」 절이 따로 잰다. */
-function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
-  const r = hireDoctor(w, dept)
-  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
-  return r.world
-}
+// 채용 언랩(`hire`)은 공용 헬퍼다 — 풀 고갈은 아래 「전국 풀」 절이 `hireDoctor`를 직접 불러 잰다.
 
 const docs = (w: SimWorld) => w.pawns.filter(p => p.kind === 'DOCTOR')
 const doc = (w: SimWorld, i = 0) => docs(w)[i]

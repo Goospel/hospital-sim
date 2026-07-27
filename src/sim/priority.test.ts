@@ -8,12 +8,12 @@ import { describe, it, expect } from 'vitest'
 import { createWorld, ENTRANCE, type SimWorld } from './world'
 import { placeRoom } from './build'
 import {
-  hireDoctor, priorityOf, setDoctorPriority, spawnDoctor,
+  priorityOf, setDoctorPriority, spawnDoctor,
   type Pawn, type Priority, type PriorityKind,
 } from './pawn'
+import { hire } from './testHelpers'
 import { tick } from './tick'
 import { ARRIVAL_WINDOW_MIN, PATIENCE_MIN } from './patientFlow'
-import type { SimDeptKey } from './dept'
 import { EMERGENCY_WINDOW_MIN, emergencyArrivalAt, wardBeds, type EmergencyKind } from './emergency'
 import { freshMorning } from './day'
 import { FATIGUE_RED, FATIGUE_REST } from '../game/doctor'
@@ -53,16 +53,15 @@ const docs = (w: SimWorld) => w.pawns.filter(p => p.kind === 'DOCTOR')
 const docOf = (w: SimWorld, i = 0) => docs(w)[i]
 const pawnById = (w: SimWorld, id: string) => w.pawns.find(p => p.id === id)
 
-/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
- *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
-function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
-  const r = hireDoctor(w, dept)
-  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
-  return r.world
-}
-
 /** 순환기 의사 N명이 각자 책상 앞에 자리잡은 병원. 도착 창이 닫힌 뒤로 시계를 옮겨
- *  자연 도착(외래·응급)이 끼어들지 않게 한다 — 관측되는 건 손으로 세운 상황뿐이다. */
+ *  자연 도착(외래·응급)이 끼어들지 않게 한다 — 관측되는 건 손으로 세운 상황뿐이다.
+ *
+ *  ⚠️ **이 픽스처의 과(순환기)는 전국 풀 여유가 0이다** — `nationalPool`이 2명뿐이라(dept.ts)
+ *  `doctors: 2`가 풀을 정확히 비운다. 셋째를 뽑는 순간 `hire`가 NO_POOL로 **던진다**(그게
+ *  계약이다 — 조용히 1명짜리 병원으로 접히면 뒤의 단언이 헛돈다). 3인 이상이 필요한 계측을
+ *  더할 땐 두 길 중 하나를 쓴다: ⓐ `spawnDoctor`로 손세계 폰을 세운다(채용 경로를 안 지나
+ *  풀을 안 먹는다) ⓑ 픽스처 세계의 `hirePool.CARDIOLOGY`를 직접 올린다. 과를 바꾸는 셋째
+ *  길은 **권하지 않는다** — 응급 배후과(STEMI)가 순환기라 이 파일의 응급 계측이 통째로 죽는다. */
 function deskWorld(
   { rooms = [] as Array<Parameters<typeof placeRoom>[1]>, doctors = 1, seed = 3 } = {},
 ): SimWorld {

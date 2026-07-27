@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { createWorld, INITIAL_TREASURY_MANWON, type SimWorld } from './world'
 import { placeRoom } from './build'
-import { hireDoctor, type Pawn } from './pawn'
+import { type Pawn } from './pawn'
+import { hire } from './testHelpers'
 import { tick } from './tick'
 import { DAY_END_MIN, startNextDay } from './day'
 import { startNextWeek } from './week'
@@ -40,14 +41,6 @@ function until(w: SimWorld, pred: (w: SimWorld) => boolean, limit = 200) {
     w = tick(w, 1)
   }
   throw new Error('전제 실패 — 기다린 상태가 오지 않았다')
-}
-
-/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
- *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
-function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
-  const r = hireDoctor(w, dept)
-  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
-  return r.world
 }
 
 const theDoctor = (w: SimWorld) => w.pawns.find(p => p.kind === 'DOCTOR')!

@@ -127,6 +127,11 @@ export function settleWeek(w: SimWorld): SimWorld {
  *
  * 의사만 본다 — 포화는 의사만 갖는 상태이고(pawn.saturatedDays), 마감을 넘긴 환자가 pawns에
  * 섞여 있을 수 있다(weekDeptTable의 `kind` 검사와 같은 이유).
+ *
+ * ⓘ **주말이 아니어도 계산된다** — 국면을 안 보고 `saturatedDays`만 읽으므로, 임계에 닿은 그
+ *   순간부터(주 3일차 저녁이든) 참이다. 그래서 화면은 이 함수로 "다음 주에 떠날 사람"을 주중에도
+ *   미리 보여줄 수 있다(PriorityPanel의 「이번 주말 떠남」 배지). 집행은 여전히 `startNextWeek`
+ *   한 곳뿐이라, 미리 읽는다고 사람이 일찍 사라지지는 않는다.
  */
 export function resigningSimDoctors(w: SimWorld): Pawn[] {
   return w.pawns.filter(
@@ -143,6 +148,10 @@ export function startNextWeek(w: SimWorld): SimWorld {
   // 사직은 **여기서만** 일어난다. 그래서 고정비(settleWeek)는 자동으로 **사직 전** 명단으로
   // 청구된다 — 그 주를 일한 사람의 주급은 나간다. 순서를 뒤집으면 갈려 나간 사람의 마지막 주가
   // 공짜 노동이 되고, 그건 이 게임이 하려는 말의 정반대다.
+  // 명단을 `freshMorning` **전**에 뽑아도 결과는 같다 — 아침 리셋이 건드리는 것은 피로·부하·
+  // 허기이고 `saturatedDays`에는 **리셋이 없다**(pawn.saturatedDays 주석). 순서가 무관하다는
+  // 사실을 여기 적어 두는 이유는, 무관하지 않게 되는 날(포화 일수에 회복 규칙이 붙는 날)
+  // 이 두 줄의 순서가 조용히 명단을 바꾸기 때문이다.
   const leaving = new Set(resigningSimDoctors(w).map(p => p.id))
   const morning = freshMorning(w)
   return {
