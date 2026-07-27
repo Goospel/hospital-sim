@@ -42,6 +42,8 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-088](troubleshooting/T-088.md) · 스크롤 컨테이너(overflow-y-auto)에 flex items-center로 자식을 세로 중앙 정렬하면, 자식이 뷰포트보다 길 때 위쪽이 음수 top으로 밀려 스크롤로도 영영 닿을 수 없다 — 해법은 items-start + 자식 my-auto
+- [T-087](troubleshooting/T-087.md) · 검증된 시드 폴딩(callSeed)을 재사용하며 index 슬롯 폭(97)을 넣는 인자 범위(minute 0..479)와 대조하지 않아, 매일의 도착 스트림이 전날의 97분 시프트(하루의 80%가 재방송)가 됐다 — 독스트링 경고를 밟았고 그 사실을 경계하는 주석을 단 커밋에서 밟았다
 - [T-086](troubleshooting/T-086.md) · Browser pane이 화면에 표시되지 않으면 페이지가 컴포지팅을 멈춰 requestAnimationFrame이 0프레임이 된다 — rAF 기반 게임 시계가 통째로 정지해 실시간 동작 검증·스크린샷이 에러 없이 전부 불가
 - [T-085](troubleshooting/T-085.md) · 경계 오프바이원 돌연변이(`>=`→`>`)가 두 번 살아남았다 — 시드가 경계 분에 이벤트를 안 만들거나, 기준값을 경계 뒤에서 캡처하면 경계 분 발생분이 기준값에 섞여 테스트가 green인 채 계측력 0이 된다
 - [T-084](troubleshooting/T-084.md) · 1회 관측으로 "~할 방법이 없다"는 부정 결론을 내려 한 세션에서 3번 틀렸고 그중 하나는 CLAUDE.md에 박혀 다음 세션의 탐색을 차단할 뻔했다 — 부정 결론은 관측 부재이지 부재의 관측이 아니다
