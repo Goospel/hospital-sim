@@ -5,6 +5,7 @@ import { type SimWorld } from './world'
 import { stepMove, PAWN_TILES_PER_MIN, type Pawn } from './pawn'
 import { buildBlockedSet, findPath, isBlockedTile } from './path'
 import { stepPatients } from './patientFlow'
+import { DAY_END_MIN, settleDay } from './day'
 
 export function tick(world: SimWorld, minutes: number): SimWorld {
   let w = world
@@ -13,11 +14,17 @@ export function tick(world: SimWorld, minutes: number): SimWorld {
 }
 
 function tickOneMinute(world: SimWorld): SimWorld {
+  // 마감·결산 중인 세계는 흐르지 않는다 — 같은 세계를 그대로 돌려주므로 tick(w, n)이 통째로 동결된다.
+  // 이 가드가 없으면 마감 화면 뒤에서 시계가 계속 돌아 플레이어가 읽는 숫자와 세계가 어긋나고,
+  // 600분을 지나며 정산이 매 분 다시 걸린다.
+  if (world.phase !== 'RUNNING') return world
   // 이동 단계의 통행 판정 집합은 폰 전체가 하나를 공유한다 — 폰마다 만들면 폰 수만큼 곱해진다.
   // (틱당 총 1회는 아니다: 뒤따르는 stepPatients가 배정·퇴장 경로용으로 자기 것을 더 만든다.)
   const blocked = buildBlockedSet(world)
   const moved = world.pawns.map(p => stepMove(revalidate(world, blocked, p), 1))
-  return stepPatients({ ...world, minute: world.minute + 1, pawns: moved })
+  const stepped = stepPatients({ ...world, minute: world.minute + 1, pawns: moved })
+  // 운영 마감에 **도달하는 그 분**에 정산한다 — 그 분의 환자 흐름까지 끝난 뒤가 기준이다.
+  return stepped.minute === DAY_END_MIN ? settleDay(stepped) : stepped
 }
 
 /** 낡은 경로를 걷기 직전에 검사한다 — 이번 분에 지나갈 타일이 하나라도 막혔으면 dest로 재탐색.

@@ -9,8 +9,9 @@ import {
   ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats,
 } from './patientFlow'
 import { seededUnit } from '../game/daysim'
+import { DAY_END_MIN } from './day'
 
-const DAY_TICKS = 600 // 도착 창(480분) + 뒷정리 여유
+const DAY_TICKS = 600 // 도착 창(480분) + 뒷정리 여유 — 마감(DAY_END_MIN)과 같은 지점이다
 
 /** 대기실 + 진료실 + 의사 1명 — 진료가 실제로 돌아가는 최소 병원 */
 function hospitalWorld(seed: number) {
@@ -100,9 +101,12 @@ describe('환자 흐름', () => {
   it('자리가 넉넉해도 의사가 없으면 결국 전원이 인내 초과로 떠난다', () => {
     // leftCount의 두 원인(자리 없음 / 인내 초과)을 가르는 계측기.
     // 좌석 45개짜리 대기실이면 자리 부족은 0건이라, 남는 이탈은 전부 인내 초과다.
+    // 마감 직전까지만 돌린다 — 정산(600분)이 잔류 환자를 이탈로 집계하므로 600분을 넘겨 재면
+    // "인내가 원인"이라는 이 테스트의 구분이 정산에 가려진다(셋째 원인이 섞인다).
     const w0 = roomySeatsWorld(3)
-    const w = run(w0, 900)
+    const w = run(w0, DAY_END_MIN - 1)
     const arrived = w.nextId - w0.nextId
+    expect(w.phase).toBe('RUNNING')
     expect(arrived).toBeGreaterThan(0)
     expect(w.stats.leftCount).toBe(arrived)
     expect(w.pawns).toEqual([])
@@ -308,11 +312,22 @@ describe('진료 배정', () => {
 
 describe('퇴장', () => {
   it('입구에 닿은 환자는 배열에서 사라진다 — 폰이 무한히 쌓이지 않는다', () => {
-    // 900분: 마지막 도착(479분)이 대기·진료·퇴장을 다 마치고도 남는 여유.
-    // 600분으로 끊으면 마지막 한 명이 입구 한 칸 앞에서 걸어가는 중이라 정상인데도 실패한다.
-    const w = run(hospitalWorld(3), 900)
-    expect(w.pawns.filter(p => p.kind === 'PATIENT')).toEqual([])
-    expect(w.pawns).toHaveLength(1) // 의사만 남는다
+    // ⚠️ 예전엔 900분까지 돌려 "환자가 하나도 안 남았다"로 쟀지만, 마감 정산(600분)이 남은
+    // 환자를 통째로 쓸어가면서 그 계측기가 무력해졌다 — 퇴장 제거를 통째로 없애도 정산만으로
+    // 통과한다. 그래서 ① 특정 퇴장 환자가 **하루 안에**(RUNNING) 사라지는지 ② 정산 직전까지
+    // 폰이 쌓이지 않는지를 직접 잰다.
+    let w = until(hospitalWorld(3), x => x.pawns.some(p => p.stage === 'LEAVING'))
+    const leavingId = w.pawns.find(p => p.stage === 'LEAVING')!.id
+    for (let i = 0; i < 60 && w.pawns.some(p => p.id === leavingId); i++) w = tick(w, 1)
+    expect(w.pawns.some(p => p.id === leavingId)).toBe(false)
+    expect(w.phase).toBe('RUNNING') // 정산이 치운 게 아니라 제 발로 걸어 나갔다
+
+    const w0 = hospitalWorld(3)
+    const eod = run(w0, DAY_END_MIN - 1) // 마감 직전 — 아직 정산이 없는 시점
+    expect(eod.nextId - w0.nextId).toBeGreaterThan(10)                 // 하루 종일 사람이 오갔는데
+    expect(eod.pawns.filter(p => p.kind === 'PATIENT').length)
+      .toBeLessThanOrEqual(1)                                          // 남은 건 걸어 나가는 중인 한 명뿐
+    expect(eod.pawns.filter(p => p.kind === 'DOCTOR')).toHaveLength(1)
   })
 
   it('떠나는 환자는 입구를 향한다', () => {

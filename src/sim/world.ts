@@ -1,6 +1,7 @@
 // 타일 세계 — 순수 데이터와 통행 판정. 렌더·React 임포트 금지.
 import type { DeptKey } from '../game/types'
 import type { Pawn } from './pawn' // 타입 전용 임포트 — pawn.ts가 world를 되받아도 순환 무해
+import type { DayRecord } from './day' // 타입 전용 — day.ts가 SimWorld를 되받아도 런타임 순환 없음
 
 export const GRID_W = 48
 export const GRID_H = 32
@@ -18,9 +19,15 @@ export interface Room {
 export type FurnitureKind = 'DESK' | 'CHAIR' | 'BED' | 'COUNTER'
 export interface Furniture { kind: FurnitureKind; x: number; y: number; roomId: string }
 
+/** 세계의 진행 국면 — RUNNING일 때만 시간이 흐른다.
+ *  마감·결산 화면 동안 세계가 계속 굴러가면 플레이어가 읽는 숫자와 세계가 어긋난다. */
+export type SimPhase = 'RUNNING' | 'DAY_END' | 'WEEK_END' | 'CLOSED'
+
 export interface SimWorld {
   minute: number   // 개장(09:00)부터의 게임 분
   day: number      // 1부터
+  week: number     // 1부터
+  phase: SimPhase
   treasuryManwon: number
   rooms: Room[]
   furniture: Furniture[]
@@ -29,6 +36,8 @@ export interface SimWorld {
   seed: number
   /** 하루 집계 — 폰은 퇴장하면 배열에서 사라지므로, 무슨 일이 있었는지는 여기에만 남는다. */
   stats: SimStats
+  /** 이번 주의 하루 기록 — 주를 넘기면 비운다(주간 결산이 이 배열을 합산한다). */
+  days: DayRecord[]
 }
 
 export interface SimStats {
@@ -38,9 +47,9 @@ export interface SimStats {
 
 export function createWorld(seed: number): SimWorld {
   return {
-    minute: 0, day: 1, treasuryManwon: INITIAL_TREASURY_MANWON,
+    minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
     rooms: [], furniture: [], pawns: [], nextId: 1, seed,
-    stats: { examsDone: 0, leftCount: 0 },
+    stats: { examsDone: 0, leftCount: 0 }, days: [],
   }
 }
 
