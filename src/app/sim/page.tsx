@@ -5,7 +5,7 @@ import TileMap, { type BuildPreview } from "@/components/TileMap";
 import DayEndOverlay from "@/components/DayEndOverlay";
 import HirePanel from "@/components/HirePanel";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
-import { ROOM_LABEL, turnAwayText } from "@/components/simHud";
+import { ROOM_LABEL, turnAwayBatchText } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, type SimSpeed } from "@/components/useSimClock";
 import { MS_PER_GAME_MIN } from "@/game/hospitalMap";
 import { formatClockFromOpen } from "@/game/daysim";
@@ -105,9 +105,13 @@ export default function SimPage() {
 
   /*
     되돌아간 응급 알림 — 폰이 만들어지지 않는 사건이라(문전 판정) 화면에 아무 흔적이 없다.
-    그래서 **상태의 변화**를 본다: stats.emergencyTurnedAway가 길어졌으면 방금 한 건이 붙은
-    것이고, 마지막 항목이 그 사유다. 이벤트 큐를 세계에 두지 않는 이유는 그러면 코어가
-    "누가 읽었는가"를 기억해야 하기 때문이다(순수 세계에 UI 수명이 섞인다).
+    그래서 **상태의 변화**를 본다: stats.emergencyTurnedAway가 길어진 만큼이 이번에 붙은
+    건들이다. 이벤트 큐를 세계에 두지 않는 이유는 그러면 코어가 "누가 읽었는가"를 기억해야
+    하기 때문이다(순수 세계에 UI 수명이 섞인다).
+
+    ⚠️ **한 프레임에 여러 건이 들어온다.** 3배속 한 프레임은 최대 15게임분이라(useSimClock의
+    MAX_FRAME_MS) 그 사이 회차가 둘 이상 붙을 수 있다 — 마지막 한 건만 띄우면 나머지는 흔적
+    없이 사라진다. 그래서 마지막 항목이 아니라 **읽은 지점부터의 구간**을 넘겨 요약하게 한다.
 
     ⚠️ 세는 자리는 ref다 — 상태로 두면 이 효과가 자기 자신을 다시 부른다. 하루가 바뀌면
     배열이 [] 로 리셋되므로(freshStats) 길이가 줄고, 그때는 알리지 않고 기준만 되돌린다.
@@ -115,9 +119,8 @@ export default function SimPage() {
   const turnedAway = world.stats.emergencyTurnedAway;
   const seenTurnAwayRef = useRef(0);
   useEffect(() => {
-    if (turnedAway.length > seenTurnAwayRef.current) {
-      showToast(turnAwayText(turnedAway[turnedAway.length - 1]));
-    }
+    const pending = turnedAway.slice(seenTurnAwayRef.current);
+    if (pending.length > 0) showToast(turnAwayBatchText(pending));
     seenTurnAwayRef.current = turnedAway.length;
   }, [turnedAway]);
 
@@ -174,8 +177,13 @@ export default function SimPage() {
   };
 
   /** 채용 — 확정은 setState **바깥**에서 한다(건설 commit과 같은 이유: 업데이터 안에서 부르면
-   *  StrictMode의 이중 호출이 두 명을 뽑는다). 패널이 떠 있는 동안 시계가 멈춰 있어 이 world가
-   *  낡을 일도 없다. */
+   *  StrictMode의 이중 호출이 두 명을 뽑는다).
+   *
+   *  ⚠️ 대신 이 world는 **렌더 시점의 스냅샷**이다. 패널이 떠 있는 동안 시계가 멈춰(paused)
+   *  클럭발 갱신은 오지 않지만, **같은 소스의 연타**는 남는다 — 두 클릭이 한 렌더의 world를
+   *  같이 보면 뒤엣것이 앞엣것을 덮어 한 명이 유실된다. 실사용 위험이 낮은 건 클릭이 discrete
+   *  이벤트라 React가 각 클릭을 별도 태스크로 갈라 사이에 렌더가 끼기 때문이지, 정지 자체가
+   *  막아 주기 때문이 아니다. 업데이터로 옮기려면 StrictMode 이중 채용 검증이 먼저다. */
   const hire = (dept: SimDeptKey) => setWorld(hireDoctor(world, dept));
 
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
@@ -203,7 +211,7 @@ export default function SimPage() {
         </span>
         {/* 응급 — 받은 건수와 되돌아간 건수를 나란히. 회차는 폰이 만들어지지 않아 화면에
             흔적이 없으므로(문전 판정) 이 숫자가 유일한 기록이다. */}
-        <span>
+        <span title="문앞 판정 기준 — 처치 완료와 다를 수 있음">
           <span className="text-on-desk-muted">응급 </span>
           {world.stats.emergencyAccepted}
           <span className="text-on-desk-muted"> · 회차 </span>

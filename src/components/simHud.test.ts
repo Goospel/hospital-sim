@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  doctorCountByDept, fatigueTone, roomLabel, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
+  doctorCountByDept, fatigueTone, roomLabel, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText,
+  turnAwayText,
 } from './simHud'
 import { simDept } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
@@ -45,6 +46,42 @@ describe('turnAwayText — 회차 토스트 문구', () => {
         for (const word of banned) expect(text).not.toContain(word)
       }
     }
+  })
+})
+
+describe('turnAwayBatchText — 한 프레임에 여러 건이 몰릴 때', () => {
+  // 3배속 한 프레임은 최대 15게임분이라 그 사이 회차가 둘 이상 붙을 수 있다.
+  // 마지막 한 건만 띄우면 나머지는 **화면에 흔적 없이** 사라진다(폰이 안 만들어지는 사건이라
+  // 다른 단서가 없다) — 건수는 HUD에서 늘지만 왜 늘었는지는 영영 안 보인다.
+  it('한 건이면 그 건의 문구 그대로 — 흔한 경우에 요약 껍데기를 씌우지 않는다', () => {
+    expect(turnAwayBatchText([away('STEMI', 'NO_BED')])).toBe(turnAwayText(away('STEMI', 'NO_BED')))
+  })
+
+  it('두 건 이상이면 건수 요약 + **마지막** 건의 문구', () => {
+    const text = turnAwayBatchText([
+      away('STEMI', 'NO_SPECIALIST'),
+      away('ACUTE_ABDOMEN', 'NO_SPECIALIST'),
+    ])
+    expect(text).toContain('2건')
+    expect(text).toContain(turnAwayText(away('ACUTE_ABDOMEN', 'NO_SPECIALIST')))
+    // 첫 건의 과가 요약에 남으면 마지막 건과 섞여 어느 과를 뽑아야 하는지가 흐려진다.
+    expect(text).not.toContain(simDept(emergencySpec('STEMI').dept).label)
+  })
+
+  it('건수는 실제 개수를 센다 — 3건이면 3건', () => {
+    const text = turnAwayBatchText([
+      away('STEMI', 'NO_BED'), away('STEMI', 'NO_BED'), away('STEMI', 'NO_BED'),
+    ])
+    expect(text).toContain('3건')
+  })
+
+  it('빈 배치는 문구가 없다(토스트를 띄우지 않는다는 신호)', () => {
+    expect(turnAwayBatchText([])).toBe('')
+  })
+
+  it('톤 가드레일 — 요약에도 비난 카피가 없다', () => {
+    const text = turnAwayBatchText([away('STEMI', 'NO_BED'), away('ACUTE_ABDOMEN', 'NO_SPECIALIST')])
+    for (const word of ['당신', '놓쳤', '실패', '했어야', '탓', '죽었']) expect(text).not.toContain(word)
   })
 })
 

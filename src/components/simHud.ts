@@ -45,6 +45,23 @@ export function turnAwayText(t: EmergencyTurnAway): string {
   return `${spec.label} — ${cause}`
 }
 
+/**
+ * **한 번에 여러 건**이 되돌아갔을 때의 토스트 문구.
+ *
+ * 회차는 한 건씩 오지 않는다: 3배속 한 프레임은 최대 15게임분이라 그 사이에 둘 이상이 붙을 수
+ * 있고, 화면은 프레임 단위로만 관측한다. 마지막 한 건만 띄우면 나머지는 **흔적 없이** 사라진다 —
+ * 회차는 폰이 만들어지지 않는 사건이라 토스트 말고 다른 단서가 없다(HUD 숫자는 늘지만 *왜*는
+ * 안 보인다). 그래서 건수를 먼저 말하고 마지막 건의 사유를 붙인다.
+ *
+ * 한 건일 때 요약을 안 씌우는 건 흔한 경우의 문장을 짧게 두기 위함이고, 빈 배치에 빈 문자열을
+ * 돌려주는 건 "띄우지 않는다"의 신호다(호출부가 길이를 다시 세지 않게).
+ */
+export function turnAwayBatchText(pending: readonly EmergencyTurnAway[]): string {
+  if (pending.length === 0) return ''
+  const last = turnAwayText(pending[pending.length - 1])
+  return pending.length === 1 ? last : `응급 ${pending.length}건이 되돌아갔습니다 — 마지막: ${last}`
+}
+
 /** 사유별 회차 집계 — 0도 자리를 지킨다(문구 쪽에서 0줄을 빼는 판단을 한다). */
 export function turnAwayBreakdown(list: readonly EmergencyTurnAway[]): Record<TurnAwayReason, number> {
   const out: Record<TurnAwayReason, number> = { NO_SPECIALIST: 0, NO_BED: 0 }
