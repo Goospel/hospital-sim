@@ -2,7 +2,11 @@
 // 경로는 목적지가 정해질 때 findPath로 1회 계산해 path에 저장하고, 틱은 소비만 한다
 // (findPath는 최장 경로 ~3ms라 매 틱 재탐색하면 폰 수만큼 곱해져 프레임을 먹는다).
 import type { DeptKey } from '../game/types'
-import type { SimWorld } from './world'
+import { GRID_W, GRID_H, isWalkable, type SimWorld } from './world'
+// ENTRANCE는 patientFlow가 단일 출처다(환자가 들어오는 문과 의사가 출근하는 문은 같은 문이다).
+// patientFlow → pawn 방향은 타입 전용 임포트라 런타임 순환이 생기지 않는다.
+import { ENTRANCE } from './patientFlow'
+import type { SimDeptKey } from './dept'
 import type { Pt } from './path'
 
 /** 폰의 이동 속도 — 게임 분당 타일 수. 시간 분할 불변식이 성립하려면 정수여야 한다. */
@@ -39,6 +43,40 @@ export interface Pawn {
 export function spawnDoctor(w: SimWorld, dept: DeptKey, at: Pt): SimWorld {
   const p: Pawn = { id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
+}
+
+/** 정문에서 가까운 순서로 통행 가능한 첫 타일 — 채용한 의사가 설 자리.
+ *  BFS라 거리순이 보장되고, 방향 순서(위·우·아래·좌)가 findPath와 같아 동률도 결정론이다.
+ *  ⚠️ 정문 자체는 방을 지을 수 없는 마지막 줄이라(placeRoom 경계) 보통 여기서 곧바로 끝난다 —
+ *  탐색이 도는 건 손으로 세운 세계처럼 정문이 막힌 경우뿐이다. */
+function spawnSpotNear(w: SimWorld, from: Pt): Pt {
+  const seen = new Set<string>([`${from.x},${from.y}`])
+  const queue: Pt[] = [from]
+  while (queue.length > 0) {
+    const cur = queue.shift()!
+    if (isWalkable(w, cur.x, cur.y)) return cur
+    for (const d of SPAWN_DIRS) {
+      const nx = { x: cur.x + d.x, y: cur.y + d.y }
+      const key = `${nx.x},${nx.y}`
+      if (seen.has(key)) continue
+      if (nx.x < 0 || nx.y < 0 || nx.x >= GRID_W || nx.y >= GRID_H) continue
+      seen.add(key)
+      queue.push(nx)
+    }
+  }
+  // 세계에 통행 타일이 하나도 없다 — 채용을 조용히 삼키느니 정문에 세운다.
+  // 막힌 칸에 낀 폰도 findPath가 출발지를 선검사하지 않아 스스로 걸어 나올 수 있다(의도된 비대칭).
+  return from
+}
+
+const SPAWN_DIRS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
+
+/** 채용 — 그 과 의사 한 명이 정문으로 걸어 들어온다.
+ *  **일시금이 없다**(금고 무변): 기존 게임의 계약금(DEPARTMENTS.hireCostManwon)은 PR C/D 절단이고,
+ *  이 슬라이스에서 채용의 대가는 오직 **주 고정비**(dept.ts weeklyCostManwon)다 — 그래야 "뽑는
+ *  순간 아픈" 게 아니라 "주말마다 청구되는" 형태가 되고, 필수과의 적자가 주 단위로 드러난다. */
+export function hireDoctor(w: SimWorld, dept: SimDeptKey): SimWorld {
+  return spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE))
 }
 
 /** 경로를 분 예산만큼 소비 — tick의 이동 절반.
