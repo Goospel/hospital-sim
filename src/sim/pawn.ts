@@ -1,7 +1,6 @@
 // 폰 — 세계를 걸어다니는 개체(의사·환자)와 그 이동 계산. 순수 데이터·순수 함수.
 // 경로는 목적지가 정해질 때 findPath로 1회 계산해 path에 저장하고, 틱은 소비만 한다
 // (findPath는 최장 경로 ~3ms라 매 틱 재탐색하면 폰 수만큼 곱해져 프레임을 먹는다).
-import type { DeptKey } from '../game/types'
 import { GRID_W, GRID_H, ENTRANCE, isWalkable, type SimWorld } from './world'
 import type { SimDeptKey } from './dept'
 import type { Pt } from './path'
@@ -28,16 +27,22 @@ export interface Pawn {
    *     "도착"으로 오인한다 — 그래서 도착 판정은 항상 **위치 == dest**로 한다. */
   dest?: Pt
   // DOCTOR
-  dept?: DeptKey
+  /** 전공과. 카탈로그 밖 과(2주차 절단)를 넣으면 라우팅이 런타임에 터지므로 `SimDeptKey`로
+   *  좁혀 컴파일로 당긴다(Room.dept와 같은 이유). */
+  dept?: SimDeptKey
   roomId?: string          // 배정된 진료실
   // PATIENT
   stage?: PatientStage
+  /** 이 환자가 보러 온 과 — **도착 시점에 배정되고 이후 바뀌지 않는다**(patientFlow.maybeArrive).
+   *  진료가 성립하려면 환자·진료실·의사의 과가 셋 다 같아야 하고(삼중 일치), 진료 수익도
+   *  이 과의 수가로 매겨진다. 즉 "그 과가 없으면 그 환자를 놓친다"의 담지자가 이 필드다. */
+  wantsDept?: SimDeptKey
   arrivedMin?: number      // 대기 시작 시각(인내 계산)
   examUntilMin?: number
   doctorId?: string
 }
 
-export function spawnDoctor(w: SimWorld, dept: DeptKey, at: Pt): SimWorld {
+export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
   const p: Pawn = { id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
 }

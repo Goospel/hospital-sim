@@ -1,5 +1,5 @@
 // 타일 세계 — 순수 데이터와 통행 판정. 렌더·React 임포트 금지.
-import type { DeptKey } from '../game/types'
+import type { SimDeptKey, SimDeptStats } from './dept' // 타입 전용 — dept.ts는 world를 모른다
 import type { Pawn } from './pawn' // 타입 전용 임포트 — pawn.ts가 world를 되받아도 순환 무해
 import type { DayRecord } from './day' // 타입 전용 — day.ts가 SimWorld를 되받아도 런타임 순환 없음
 import type { Pt } from './path' // 타입 전용 — path.ts가 world의 격자 상수를 되받아도 런타임 순환 없음
@@ -19,7 +19,10 @@ export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION'
 export interface Room {
   id: string
   type: RoomType
-  dept?: DeptKey // EXAM만 사용(과 지정) — 1주차에선 미지정 허용
+  /** EXAM만 갖는다(과 지정). 다른 방 종류에는 **없다** — placeRoom이 떨군다(build.ts).
+   *  타입이 `DeptKey`가 아니라 `SimDeptKey`인 이유: 카탈로그 밖 과(예: 'CHECKUP')를 넣은
+   *  방은 라우팅이 `simDept`에서 **런타임에** 터진다. 좁혀 두면 그 실수가 컴파일로 당겨진다. */
+  dept?: SimDeptKey
   x: number; y: number; w: number; h: number
 }
 
@@ -58,13 +61,22 @@ export interface SimWorld {
 export interface SimStats {
   examsDone: number  // 완료된 진료 수(수익의 근거)
   leftCount: number  // 대기 못 하고 떠난 환자 수(자리 부족 + 인내 초과)
+  /** 과별 진료·수익 — 수가가 과마다 달라진 뒤로 **총수익을 여기서 유도한다**(Σ revenueManwon).
+   *  총액을 따로 들고 있으면 과별 합과 어긋나도 아무도 모른다(deptLedger 불변식 I-A 계승). */
+  byDept: SimDeptStats
+}
+
+/** 하루 집계의 영점 — `createWorld`와 `freshMorning`(day.ts)이 **같은 모양**을 써야 한다.
+ *  한쪽만 새 필드를 빠뜨리면 그날 집계가 undefined로 시작해 조용히 무너진다. */
+export function freshStats(): SimStats {
+  return { examsDone: 0, leftCount: 0, byDept: {} }
 }
 
 export function createWorld(seed: number): SimWorld {
   return {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
     rooms: [], furniture: [], pawns: [], nextId: 1, seed,
-    stats: { examsDone: 0, leftCount: 0 }, days: [], insolvencyStreak: 0, weekSettled: false,
+    stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
   }
 }
 

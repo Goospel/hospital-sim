@@ -7,8 +7,11 @@ import {
 import { DAYS_PER_WEEK, type DayRecord } from './day'
 import type { Pawn } from './pawn'
 
+// 주간 요약은 **DayRecord의 합**만 본다(수가 계산은 하루 쪽 소관) — 그래서 여기 30은 과별
+// 수가가 아니라 "한 건에 30씩 벌었다고 치자"는 임의의 픽스처다. 계획 Task 5가 과별 표를
+// 얹기 전까지 주 결산은 과를 모른다.
 const day = (n: number, exams: number): DayRecord =>
-  ({ day: n, examsDone: exams, leftCount: 0, revenueManwon: exams * 30 })
+  ({ day: n, examsDone: exams, leftCount: 0, revenueManwon: exams * 30, byDept: {} })
 
 const doctor = (id: string, x: number): Pawn => ({ id, kind: 'DOCTOR', x, y: 8, path: [] })
 
@@ -40,7 +43,7 @@ describe('주간 요약', () => {
   it('진료·이탈도 7일 **합**이다(하루치나 마지막 날이 아니라)', () => {
     // 날마다 값을 다르게 준다 — 전부 같으면 "합" 대신 "첫날 × 7"이나 "마지막 날"로 바꿔도 안 걸린다.
     const days: DayRecord[] = [1, 2, 3, 4, 5, 6, 7].map(n =>
-      ({ day: n, examsDone: n, leftCount: n * 2, revenueManwon: n * 30 }))
+      ({ day: n, examsDone: n, leftCount: n * 2, revenueManwon: n * 30, byDept: {} }))
     const s = weekSummary(weekEndWorld({ days }))
     expect(s.examsDone).toBe(28)          // 1+2+…+7
     expect(s.leftCount).toBe(56)
@@ -136,10 +139,12 @@ describe('다음 주', () => {
     // 들고 시작해 그날 DayRecord가 지난주 진료까지 다시 센다(에러 없이 숫자만 틀린다).
     const walking: Pawn = { id: 'doc-1', kind: 'DOCTOR', x: 8, y: 8, path: [{ x: 9, y: 8 }], dest: { x: 9, y: 8 } }
     const settled = settleWeek(weekEndWorld({
-      treasuryManwon: 100_000, pawns: [walking], stats: { examsDone: 12, leftCount: 3 },
+      treasuryManwon: 100_000, pawns: [walking],
+      stats: { examsDone: 12, leftCount: 3, byDept: { CARDIOLOGY: { patients: 12, revenueManwon: 300 } } },
     }))
     const next = startNextWeek(settled)
-    expect(next.stats).toEqual({ examsDone: 0, leftCount: 0 })
+    // 과별 집계도 아침에 비운다 — 안 비우면 새 주 첫날 장부가 지난주 진료를 다시 싣는다.
+    expect(next.stats).toEqual({ examsDone: 0, leftCount: 0, byDept: {} })
     const doc = next.pawns[0]
     expect(doc.path).toEqual([])
     expect(doc.dest).toBeUndefined()

@@ -1,10 +1,11 @@
 // 하루의 마디 — 마감 정산(settleDay)과 다음 날 시작(startNextDay).
 // 마감은 tick이 부르고(600분), 다음 날은 **플레이어가** 부른다 — 시계가 하루를 넘기면 결산을
 // 읽을 틈이 없다. 7일차 밤은 다음 날이 아니라 주간 결산(WEEK_END)으로 간다.
-import type { SimWorld } from './world'
+import { freshStats, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { buildBlockedSet } from './path'
-import { EXAM_REVENUE_MANWON, furnitureSpot } from './patientFlow'
+import { furnitureSpot, wantsDeptOf } from './patientFlow'
+import { simDept, addExamToDeptStats, deptRevenueSum, type SimDeptStats } from './dept'
 
 export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
 export const DAYS_PER_WEEK = 7
@@ -20,7 +21,12 @@ export interface DayRecord {
   day: number
   examsDone: number
   leftCount: number
+  /** 그날 진료 수익의 총액 — **`byDept`에서 유도한다**(Σ revenueManwon). 따로 세면 두 숫자가
+   *  어긋날 수 있고, 어긋나도 화면엔 둘 중 하나만 보여서 아무도 모른다. */
   revenueManwon: number
+  /** 그날 과별 진료·수익 — 결산 과별 표(계획 Task 5·6)의 입력. 기존 `DayRecord.deptStats`
+   *  (src/game/session.ts)와 같은 자리의 같은 개념이다. */
+  byDept: SimDeptStats
 }
 
 /** 운영 마감 정산 — RUNNING 세계에만 허용(이중 정산 방지).
@@ -32,18 +38,27 @@ export function settleDay(world: SimWorld): SimWorld {
   if (world.phase !== 'RUNNING') throw new Error(`settleDay: RUNNING이 아닌 세계(${world.phase})`)
   let exams = world.stats.examsDone
   let left = world.stats.leftCount
+  let byDept: SimDeptStats = world.stats.byDept
+  // 마감에 인정한 진료의 수익만 따로 센다 — 하루 중에 끝난 건은 그때 이미 금고에 들어갔다.
+  let lateRevenueManwon = 0
   for (const p of world.pawns) {
     if (p.kind !== 'PATIENT') continue
-    if (p.stage === 'IN_EXAM') exams += 1
-    else if (p.stage && COUNTS_AS_TURNED_AWAY.includes(p.stage)) left += 1
+    if (p.stage === 'IN_EXAM') {
+      // 마감 시점의 진행 중 진료도 **그 환자의 과 수가**로 계산한다 — 여기만 상수로 두면
+      // 하루의 마지막 몇 건이 다른 값으로 매겨지고, 그 차이는 장부 총액에만 나타나 추적이 어렵다.
+      const dept = wantsDeptOf(p)
+      exams += 1
+      lateRevenueManwon += simDept(dept).examRevenueManwon
+      byDept = addExamToDeptStats(byDept, dept)
+    } else if (p.stage && COUNTS_AS_TURNED_AWAY.includes(p.stage)) left += 1
   }
   const doctors = world.pawns.filter(p => p.kind === 'DOCTOR')
-  const examsDelta = exams - world.stats.examsDone
   const record: DayRecord = {
     day: world.day,
     examsDone: exams,
     leftCount: left,
-    revenueManwon: exams * EXAM_REVENUE_MANWON,
+    revenueManwon: deptRevenueSum(byDept),
+    byDept,
   }
   const days = [...world.days, record]
   return {
@@ -56,8 +71,8 @@ export function settleDay(world: SimWorld): SimWorld {
     // 정상 흐름에선 startNextWeek이 days를 비워 7에서 딱 걸리므로 지금은 등가다.
     phase: days.length >= DAYS_PER_WEEK ? 'WEEK_END' : 'DAY_END',
     pawns: doctors,
-    treasuryManwon: world.treasuryManwon + examsDelta * EXAM_REVENUE_MANWON,
-    stats: { examsDone: exams, leftCount: left },
+    treasuryManwon: world.treasuryManwon + lateRevenueManwon,
+    stats: { examsDone: exams, leftCount: left, byDept },
     days,
   }
 }
@@ -77,7 +92,7 @@ export function freshMorning(world: SimWorld): SimWorld {
     const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null
     return spot ? { ...next, x: spot.x, y: spot.y } : next
   })
-  return { ...world, minute: 0, pawns, stats: { examsDone: 0, leftCount: 0 } }
+  return { ...world, minute: 0, pawns, stats: freshStats() }
 }
 
 /** 하루 넘기기 — DAY_END에서만(시계가 아니라 플레이어가 부른다).

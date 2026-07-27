@@ -4,7 +4,11 @@ import { placeRoom } from './build'
 import { spawnDoctor, type Pawn, type PatientStage } from './pawn'
 import { tick } from './tick'
 import { DAY_END_MIN, DAYS_PER_WEEK, settleDay, startNextDay } from './day'
-import { EXAM_REVENUE_MANWON } from './patientFlow'
+import { simDept, deptRevenueSum } from './dept'
+
+/** 진료 수익은 건당 상수가 아니라 **과별 수가**다(계획 Task 2) — 아래 단언들은 상수 × 건수가
+ *  아니라 과별 집계에서 총액을 유도한다. hospitalWorld는 내과 진료실뿐이라 내과만 돈다. */
+const INTERNAL_RATE = simDept('INTERNAL_MEDICINE').examRevenueManwon
 
 function hospitalWorld(seed: number) {
   const w = createWorld(seed)
@@ -48,8 +52,9 @@ describe('하루 마감', () => {
     expect(built).toBeGreaterThan(0)
     const w = runToDayEnd(3)
     expect(w.pawns.every(p => p.kind === 'DOCTOR')).toBe(true)
-    // 금고 불변식은 정산을 통과해도 유지된다 — 금고 = 초기 − 건설비 + 진료×30
-    expect(w.treasuryManwon).toBe(INITIAL_TREASURY_MANWON - built + w.stats.examsDone * EXAM_REVENUE_MANWON)
+    // 금고 불변식은 정산을 통과해도 유지된다 — 금고 = 초기 − 건설비 + Σ(과별 환자 × 과 수가)
+    expect(w.stats.byDept).toEqual({ INTERNAL_MEDICINE: { patients: w.stats.examsDone, revenueManwon: w.stats.examsDone * INTERNAL_RATE } })
+    expect(w.treasuryManwon).toBe(INITIAL_TREASURY_MANWON - built + deptRevenueSum(w.stats.byDept))
   })
 
   it('정산은 IN_EXAM만 진료로 인정하고, 이미 집계된 퇴장 환자를 다시 세지 않는다', () => {
@@ -57,8 +62,10 @@ describe('하루 마감', () => {
     // 손으로 세운 세계로 잠근다(아니면 정산 분기가 통째로 관측되지 않는다).
     const w = tick(hospitalWorld(3), 5) // 의사가 진료실에 자리잡은 뒤
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
+    // 정산은 방이 아니라 **그 환자의 과**로 수가를 매긴다 — IN_EXAM 환자만 미용으로 두면
+    // 상수(옛 30)로 되돌아가도 값이 같아 안 걸리므로, 아래 단언은 미용 수가를 직접 부른다.
     const patient = (id: string, stage: PatientStage): Pawn =>
-      ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage })
+      ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage, wantsDept: 'AESTHETICS' })
     const staged = {
       ...w,
       pawns: [
@@ -74,7 +81,10 @@ describe('하루 마감', () => {
     const s = settleDay(staged)
     expect(s.stats.examsDone).toBe(w.stats.examsDone + 1)  // IN_EXAM 1명만
     expect(s.stats.leftCount).toBe(w.stats.leftCount + 3)  // ENTERING·WAITING·TO_EXAM
-    expect(s.treasuryManwon).toBe(w.treasuryManwon + EXAM_REVENUE_MANWON)
+    const cosmeticRate = simDept('AESTHETICS').examRevenueManwon
+    expect(s.treasuryManwon).toBe(w.treasuryManwon + cosmeticRate)
+    expect(s.stats.byDept).toEqual({ AESTHETICS: { patients: 1, revenueManwon: cosmeticRate } })
+    expect(s.days[0].revenueManwon).toBe(cosmeticRate) // Σ byDept == 그날 총수익
     expect(s.pawns).toEqual([doc]) // 환자는 전부 세계에서 빠지고 의사만 남는다
   })
 
@@ -107,7 +117,9 @@ describe('하루 마감', () => {
     expect(d.day).toBe(1)
     expect(d.examsDone).toBe(w.stats.examsDone)
     expect(d.leftCount).toBe(w.stats.leftCount)
-    expect(d.revenueManwon).toBe(w.stats.examsDone * EXAM_REVENUE_MANWON)
+    // 내과 진료실뿐인 병원이라 그날 장부는 내과 한 줄이고, 총액은 그 줄에서 유도된다.
+    expect(d.byDept).toEqual({ INTERNAL_MEDICINE: { patients: d.examsDone, revenueManwon: d.examsDone * INTERNAL_RATE } })
+    expect(d.revenueManwon).toBe(d.examsDone * INTERNAL_RATE)
     expect(d.examsDone).toBeGreaterThan(0) // 계측기가 0으로 헛돌지 않았다
   })
 
@@ -129,7 +141,7 @@ describe('다음 날', () => {
     expect(next.phase).toBe('RUNNING')
     expect(next.day).toBe(2)
     expect(next.minute).toBe(0)
-    expect(next.stats).toEqual({ examsDone: 0, leftCount: 0 })
+    expect(next.stats).toEqual({ examsDone: 0, leftCount: 0, byDept: {} })
     expect(next.days).toHaveLength(1) // 기록은 보존
     expect(next.pawns.some(p => p.kind === 'PATIENT')).toBe(false)
     const doc = next.pawns.find(p => p.kind === 'DOCTOR')!
@@ -199,7 +211,7 @@ describe('다음 날', () => {
     // 이어 돌리는 경로가 생기면) 등호는 WEEK_END를 **말없이** 건너뛰고 하루가 영원히 이어진다.
     // 결산이 안 열리면 고정비도 폐업도 오지 않는다 — 게임이 멈추는 게 아니라 끝나지 않는다.
     const w = hospitalWorld(3)
-    const overrun = { ...w, days: [1, 2, 3, 4, 5, 6, 7].map(n => ({ day: n, examsDone: 0, leftCount: 0, revenueManwon: 0 })) }
+    const overrun = { ...w, days: [1, 2, 3, 4, 5, 6, 7].map(n => ({ day: n, examsDone: 0, leftCount: 0, revenueManwon: 0, byDept: {} })) }
     const settled = settleDay(overrun)
     expect(settled.days).toHaveLength(DAYS_PER_WEEK + 1)
     expect(settled.phase).toBe('WEEK_END')

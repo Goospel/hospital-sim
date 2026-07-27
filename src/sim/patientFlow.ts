@@ -11,17 +11,24 @@ import { buildBlockedSet, findPath, isBlockedTile, type Pt } from './path'
 // 같은 문을 쓴다. 여기 두면 하위 모듈인 pawn이 이 파일을 값으로 당겨 레이어가 뒤집힌다.
 import { GRID_W, GRID_H, ENTRANCE, type Room, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
+import { simDept, addExamToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
 
 export const EXAM_DURATION_MIN = 20
-export const EXAM_REVENUE_MANWON = 30
 /** 대기 인내 — 이만큼 앉아 있었는데 안 불리면 떠난다(수익 0). */
 export const PATIENCE_MIN = 90
 export const ARRIVAL_WINDOW_MIN = 480     // 주간(09:00~17:00)에만 도착
 export const ARRIVAL_PROB_PER_MIN = 1 / 8 // 평균 8분에 한 명
 
 /** 도착 스트림 전용 salt — daysim.callSeed 주석의 레지스트리에 없는 값이라야 한다
- *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23). 새 무작위 축은 새 salt를 받는다. */
+ *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23, 이 파일에서 29·31). 새 무작위 축은 새 salt를 받는다. */
 const ARRIVAL_SALT = 29
+
+/** 희망 과 스트림 전용 salt — **도착 판정(29)과 반드시 다른 축**이다.
+ *  같은 salt를 쓰면 두 시드가 통째로 같아지고, 도착이 성립한 분은 정의상
+ *  `seededUnit < ARRIVAL_PROB_PER_MIN`(0.125)이라 **들어온 환자가 전원 첫 구간(내과)**이 된다 —
+ *  분포가 45/20/15/20이 아니라 100/0/0/0으로 붕괴하는데 에러는 하나도 안 난다. 그래서 이 두
+ *  스트림의 비상관은 취향이 아니라 계약이고, 테스트가 구간 전수의 시드 집합 교집합으로 잠근다. */
+const WANTS_DEPT_SALT = 31
 
 /** 도착 판정 시드 — **날 키(주,날)를 먼저 해시해 하루의 기점을 잡고, 분은 그 위에 더한다.**
  *  분마다 독립 판정이라 (주,날,분) 조합마다 서로 다른 시드가 필요하다.
@@ -45,6 +52,44 @@ export function arrivalSeed(w: SimWorld): number {
   const worldMix = (seededUnit(w.seed) * 2 ** 32) | 0
   const dayBase = (seededUnit(callSeed(w.week, w.day, 0, ARRIVAL_SALT) ^ worldMix) * 2 ** 32) | 0
   return (dayBase + w.minute) | 0
+}
+
+/** 희망 과 시드 — `arrivalSeed`와 **똑같은 형태**로 만든다(날 키를 먼저 해시하고 분을 더한다).
+ *  형태를 맞추는 이유는 T-087의 함정(분을 callSeed의 index 슬롯에 넣어 폭 97을 넘김)이 이 축에도
+ *  똑같이 도사리기 때문이다 — 검증된 폴딩을 재사용해도 슬롯 폭 계약은 축마다 다시 확인해야 한다.
+ *  다른 것은 salt 하나뿐이고, 그 하나가 도착 판정과의 상관을 끊는다(WANTS_DEPT_SALT 주석). */
+export function wantsDeptSeed(w: SimWorld): number {
+  const worldMix = (seededUnit(w.seed) * 2 ** 32) | 0
+  const dayBase = (seededUnit(callSeed(w.week, w.day, 0, WANTS_DEPT_SALT) ^ worldMix) * 2 ** 32) | 0
+  return (dayBase + w.minute) | 0
+}
+
+/** 도착 환자의 희망 과 분포 — 계획 표(내과 45 · 외과 20 · 순환기 15 · 미용 20)의 **단일 출처**다.
+ *  값은 각 구간의 **누적 상한**이고, 배열 순서가 곧 구간 순서라 결정론의 일부다.
+ *  왜 누적으로 적나: 개별 확률로 두면 합이 1인지 눈으로 확인할 수 없고, 한 과를 조정할 때
+ *  나머지를 손으로 맞춰야 한다. 마지막 값 1.00이 곧 "합계 1" 검사다. */
+export const ARRIVAL_DEPT_MIX: ReadonlyArray<readonly [SimDeptKey, number]> = [
+  ['INTERNAL_MEDICINE', 0.45],
+  ['GENERAL_SURGERY', 0.65],
+  ['CARDIOLOGY', 0.80],
+  ['AESTHETICS', 1.00],
+]
+
+/** [0,1) 난수 → 희망 과. 구간은 아래가 닫히고 위가 열린다(`u < upper`).
+ *  치역 밖 값이 오면 마지막 과로 접지 않고 던진다 — 접으면 상한 표가 틀려도(마지막이 0.9 따위)
+ *  미용이 조용히 늘어날 뿐 아무도 모른다. */
+export function pickWantsDept(u: number): SimDeptKey {
+  if (u >= 0) for (const [dept, upper] of ARRIVAL_DEPT_MIX) if (u < upper) return dept
+  throw new Error(`pickWantsDept: [0,1) 밖의 값(${u}) — seededUnit의 치역을 벗어났다`)
+}
+
+/** 환자의 희망 과 — 없으면 던진다.
+ *  `undefined`를 카탈로그에 넘기면 수익이 NaN이 되어 금고로 번지는데, NaN은 어떤 예외도 안 내고
+ *  이후 모든 산술을 NaN으로 오염시킨다(simDept가 던지는 것과 같은 이유). 도착(maybeArrive)이
+ *  모든 환자에게 배정하므로, 비어 있다는 건 손으로 세운 세계이거나 배정 경로가 빠진 것이다. */
+export function wantsDeptOf(p: Pawn): SimDeptKey {
+  if (!p.wantsDept) throw new Error(`환자(${p.id})에 wantsDept가 없다 — 도착에서 과가 배정되지 않았다`)
+  return p.wantsDept
 }
 
 const samePt = (a: { x: number; y: number }, b: Pt) => a.x === b.x && a.y === b.y
@@ -138,13 +183,20 @@ function maybeArrive(w: SimWorld): SimWorld {
   const patient: Pawn = {
     id: `pat-${w.nextId}`, kind: 'PATIENT',
     x: ENTRANCE.x, y: ENTRANCE.y, path: seat.path, dest: seat.spot, stage: 'ENTERING',
+    // 무엇을 보러 왔는가는 문을 들어서는 순간 정해지고 이후 바뀌지 않는다 — 그 과가 없으면
+    // 이 환자는 아무리 기다려도 못 본다(인내 초과 이탈). 시드는 (판·주·날·분)의 순수 함수라
+    // **호출 순서에 의존하지 않는다** — 자리가 없어 발길을 돌린 사람 몫을 건너뛰어도 뒤 환자의
+    // 과가 밀리지 않는다(순차 소비형 RNG였다면 좌석 수가 과 분포를 흔들었을 것이다).
+    wantsDept: pickWantsDept(seededUnit(wantsDeptSeed(w))),
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, patient] }
 }
 
 // ─── 배정 ────────────────────────────────────────────────────────────────────
 
-/** 방 없는 의사를 빈 EXAM 방에 배정하고 책상 옆으로 보낸다(폰 순서 × 방 순서 = 결정론). */
+/** 방 없는 의사를 **자기 과의** 빈 EXAM 방에 배정하고 책상 옆으로 보낸다(폰 순서 × 방 순서 = 결정론).
+ *  과가 다른 방에 앉히면 그 의사는 영원히 놀면서 방 하나를 물고 있고(라우팅의 삼중 일치가 막는다),
+ *  같은 과 의사가 뒤에 와도 그 방을 못 쓴다 — 배정 단계에서 미리 거른다. */
 function assignDoctorRooms(w: SimWorld): SimWorld {
   const taken = new Set(w.pawns.map(p => p.roomId).filter((id): id is string => !!id))
   const examRooms = w.rooms.filter(r => r.type === 'EXAM' && !taken.has(r.id))
@@ -155,6 +207,8 @@ function assignDoctorRooms(w: SimWorld): SimWorld {
     if (p.kind !== 'DOCTOR' || p.roomId) return p
     for (const room of examRooms) {
       if (taken.has(room.id)) continue
+      // 과 없는 의사(손세계 폰)는 어떤 방과도 같지 않아 여기서 전부 걸러진다 — 의도된 결과다.
+      if (room.dept !== p.dept) continue
       const spot = furnitureSpot(w, room.id, 'DESK', blocked)
       if (!spot) continue
       const path = findPath(w, { x: p.x, y: p.y }, spot)
@@ -168,7 +222,13 @@ function assignDoctorRooms(w: SimWorld): SimWorld {
 }
 
 /** 대기 환자(도착순)와 유휴 의사를 짝짓는다. 의사의 "바쁨"은 환자의 doctorId로만 표현된다 —
- *  의사 쪽에 busy 플래그를 두면 환자가 사라질 때(제거·이탈) 되돌리는 걸 잊어 방이 영구히 잠긴다. */
+ *  의사 쪽에 busy 플래그를 두면 환자가 사라질 때(제거·이탈) 되돌리는 걸 잊어 방이 영구히 잠긴다.
+ *
+ *  ⚠️ **삼중 일치**가 이 슬라이스의 심장이다: 환자의 희망 과 == 진료실의 과 == 의사의 과일
+ *  때만 짝이 성립한다. 셋 중 하나라도 빼면 "아무 의사나 아무 환자를 본다"가 되어, 과를 세운
+ *  의미(그 과가 없으면 그 환자를 놓친다)가 통째로 사라진다 — 게임은 계속 돌고 숫자만 거짓이 된다.
+ *  방 축이 남아 있는 이유: 배정(assignDoctorRooms)이 이미 같은 과로 앉히지만, 그건 **다른 함수의
+ *  성질**이라 여기서 다시 확인하지 않으면 그쪽이 느슨해지는 순간 조용히 새는 통로가 된다. */
 function assignWaitingToExam(w: SimWorld): SimWorld {
   const waiting = w.pawns
     .map((p, i) => ({ p, i }))
@@ -176,24 +236,32 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
     .sort((a, b) => (a.p.arrivedMin ?? 0) - (b.p.arrivedMin ?? 0) || a.i - b.i)
   if (waiting.length === 0) return w
   const busy = new Set(w.pawns.map(p => p.doctorId).filter((id): id is string => !!id))
-  const idle = w.pawns.filter(p => {
-    if (p.kind !== 'DOCTOR' || !p.roomId || busy.has(p.id)) return false
+  // 유휴 의사를 **과별 줄**로 세운다 — 과마다 대기열이 따로 서므로, 내과가 밀려도 미용은 돈다.
+  // 줄 안의 순서는 폰 배열 순서 그대로라 결정론이 유지된다.
+  const idleByDept = new Map<SimDeptKey, Pawn[]>()
+  for (const p of w.pawns) {
+    if (p.kind !== 'DOCTOR' || !p.roomId || busy.has(p.id) || !p.dept) continue
     const room = w.rooms.find(r => r.id === p.roomId)
-    return !!room && insideRoom(room, p) // 아직 방으로 걸어가는 중이면 진료를 못 받는다
-  })
-  if (idle.length === 0) return w
+    if (!room || !insideRoom(room, p)) continue // 아직 방으로 걸어가는 중이면 진료를 못 받는다
+    if (room.dept !== p.dept) continue          // 삼중 일치의 방 축
+    const queue = idleByDept.get(p.dept)
+    if (queue) queue.push(p)
+    else idleByDept.set(p.dept, [p])
+  }
+  if (idleByDept.size === 0) return w
   const blocked = buildBlockedSet(w)
   const updates = new Map<number, Pawn>()
-  let d = 0
   for (const { p, i } of waiting) {
-    if (d >= idle.length) break
-    const doc = idle[d]
+    // 삼중 일치의 환자 축 — 자기 과 줄에서만 의사를 꺼낸다. 그 과가 없거나 전원이 바쁘면
+    // 이 환자는 이번 분에 못 불리고 계속 앉아 있다가 PATIENCE_MIN을 넘기면 떠난다.
+    const queue = p.wantsDept ? idleByDept.get(p.wantsDept) : undefined
+    const doc = queue?.shift()
+    if (!doc) continue
     const spot = furnitureSpot(w, doc.roomId!, 'CHAIR', blocked)
     const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
-    // 갈 수 없으면 그 의사를 건너뛴다. ⚠️ 도달 가능성은 **환자 위치에도** 달렸으므로 다른
-    // 환자라면 갈 수 있었을 수 있다 — 즉 이건 공평한 판정이 아니라 재시도 폭주를 막는 절충이다.
-    // 밀린 환자는 다음 분에 다시 후보가 되고, 계속 못 가면 PATIENCE_MIN이 상한을 쳐 준다.
-    d++
+    // 갈 수 없으면 그 의사를 건너뛴다(이미 줄에서 뺐다). ⚠️ 도달 가능성은 **환자 위치에도**
+    // 달렸으므로 다른 환자라면 갈 수 있었을 수 있다 — 즉 이건 공평한 판정이 아니라 재시도
+    // 폭주를 막는 절충이다. 밀린 환자는 다음 분에 다시 후보가 되고, 계속 못 가면 인내가 상한을 친다.
     if (!spot || !path) continue
     updates.set(i, { ...p, stage: 'TO_EXAM', doctorId: doc.id, dest: spot, path })
   }
@@ -215,6 +283,8 @@ function toExit(w: SimWorld, p: Pawn, stage: PatientStage): Pawn | null {
 function progressStages(w: SimWorld): SimWorld {
   let treasuryManwon = w.treasuryManwon
   let { examsDone, leftCount } = w.stats
+  // 과별 집계는 갈아끼우기(재할당)로만 갱신한다 — 입력 세계의 객체를 건드리면 tick의 순수성이 깨진다.
+  let byDept: SimDeptStats = w.stats.byDept
   const out: Pawn[] = []
   const keep = (p: Pawn | null) => { if (p) out.push(p) }
 
@@ -250,8 +320,12 @@ function progressStages(w: SimWorld): SimWorld {
       // IN_EXAM은 자리에 앉아 있어 이동하지 않는다 — 좌초할 수 없다.
       case 'IN_EXAM':
         if (w.minute >= (p.examUntilMin ?? Infinity)) {
+          // 수익은 **환자가 보러 온 과의 수가**다 — 같은 20분이어도 미용 30만원, 내과 12만원.
+          // 이 한 줄이 "옳은 의료를 할수록 장부가 나빠진다"의 수입 쪽 절반이다(지출 쪽은 주 고정비).
+          const dept = wantsDeptOf(p)
           examsDone++
-          treasuryManwon += EXAM_REVENUE_MANWON
+          treasuryManwon += simDept(dept).examRevenueManwon
+          byDept = addExamToDeptStats(byDept, dept)
           // doctorId를 지우는 것이 곧 의사의 유휴 복귀다(busy 판정의 단일 출처).
           // 갓 만든 복사본만 건드리므로 입력 세계는 그대로다(tick의 순수성 계약).
           const done: Pawn = { ...p }
@@ -269,5 +343,5 @@ function progressStages(w: SimWorld): SimWorld {
         keep(p)
     }
   }
-  return { ...w, treasuryManwon, pawns: out, stats: { examsDone, leftCount } }
+  return { ...w, treasuryManwon, pawns: out, stats: { examsDone, leftCount, byDept } }
 }

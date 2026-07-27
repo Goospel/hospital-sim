@@ -121,3 +121,31 @@ export function simDept(key: SimDeptKey): SimDeptSpec {
   if (!spec) throw new Error(`simDept: 카탈로그에 없는 과(${key}) — 2주차 절단 과이거나 오타다`)
   return spec
 }
+
+/** 과별 진료 스냅샷 — {환자 수, 수익(만원)}.
+ *  기존 `src/game/deptLedger.ts`의 `DeptDayStats`와 **동형**(계승)이다: 저쪽은 수용된 콜을
+ *  담당 과(handlingDept)로 접고, 여기는 완료된 외래를 환자의 희망 과로 접는다. 모양을 맞춰 둔
+ *  이유는 결산 표(계획 Task 5·6)가 두 층에서 같은 읽기 코드를 쓸 수 있어야 하기 때문이다.
+ *  다른 점은 키를 `SimDeptKey`로 좁힌 것뿐 — 이 층엔 2주차 절단 과가 아예 없다.
+ *  **부분 기록(Partial)인 것도 계승이다**: 오늘 아무도 안 온 과는 0줄이 아니라 줄이 없다. */
+export type SimDeptStats = Partial<Record<SimDeptKey, { patients: number; revenueManwon: number }>>
+
+/** 과별 수익의 합 — 불변식 "Σ byDept.revenueManwon == 총수익"의 **단일 출처**다
+ *  (기존 deptLedger 불변식 I-A 계승). 총액을 따로 누적해 두면 한쪽이 조용히 낡는다. */
+export function deptRevenueSum(byDept: SimDeptStats): number {
+  return Object.values(byDept).reduce((sum, s) => sum + (s?.revenueManwon ?? 0), 0)
+}
+
+/** 완료된 외래 한 건을 과별 집계에 더한 **새 객체**를 돌려준다(입력 불변 — tick의 순수성 계약).
+ *  수가 조회를 여기 한 곳에 모아 둔다: 환자 수만 늘리고 수익을 안 더하거나 다른 과 수가를
+ *  쓰는 어긋남이 호출부마다 따로 생길 수 없다. */
+export function addExamToDeptStats(byDept: SimDeptStats, dept: SimDeptKey): SimDeptStats {
+  const cur = byDept[dept] ?? { patients: 0, revenueManwon: 0 }
+  return {
+    ...byDept,
+    [dept]: {
+      patients: cur.patients + 1,
+      revenueManwon: cur.revenueManwon + simDept(dept).examRevenueManwon,
+    },
+  }
+}

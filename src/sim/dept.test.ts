@@ -72,6 +72,29 @@ describe('EXAM 과 기본값', () => {
     if (!r.ok) throw new Error('전제 실패')
     expect(r.world.rooms[0].dept).toBeUndefined()
   })
+
+  it('EXAM이 아닌 방은 과를 **지정해도** 떨군다 — 무의미한 값이 실려 다니지 않는다', () => {
+    // 위 테스트는 "안 주면 안 붙는다"만 잰다(spec에 dept가 아예 없으니 항진명제에 가깝다).
+    // 실제 위험은 준 값이 그대로 실려 가는 것이다: 대기실·병동에는 과 개념이 없어서, 실려 온
+    // dept는 읽는 쪽에서 뜻을 만들어낸다(예: 라우팅이 방 종류를 안 보면 "순환기 대기실"이
+    // 진료실 행세를 한다). EXAM만 과를 갖는다는 계약을 여기서 못박는다.
+    for (const type of ['WARD', 'WAITING', 'LOUNGE', 'RECEPTION'] as const) {
+      const r = placeRoom(createWorld(1), { type, dept: 'CARDIOLOGY', x: 4, y: 4, w: 6, h: 5 })
+      if (!r.ok) throw new Error(`전제 실패: ${type}`)
+      expect(r.world.rooms[0].type).toBe(type) // 나머지 스펙은 그대로 실린다
+      expect(r.world.rooms[0].dept).toBeUndefined()
+    }
+  })
+
+  it('카탈로그 밖 과는 방·의사에 **컴파일에서** 막힌다', () => {
+    // 넓은 DeptKey를 그대로 두면 이 두 줄이 타입을 통과하고, 그 방·의사는 라우팅이 simDept를
+    // 부르는 **런타임**에야 터진다(그마저 그 방에 환자가 갈 때만). 좁혀 두면 여기로 당겨진다.
+    // @ts-expect-error EXAM의 과는 SimDeptKey다 — 'CHECKUP'은 2주차 절단 과라 들어갈 수 없다
+    placeRoom(createWorld(1), { type: 'EXAM', dept: 'CHECKUP', x: 4, y: 4, w: 6, h: 5 })
+    // @ts-expect-error 의사의 전공과도 SimDeptKey다
+    hireDoctor(createWorld(1), 'CHECKUP')
+    expect(true).toBe(true) // 이 테스트의 단언은 위 두 줄이 **컴파일되지 않는다**는 것이다(tsc 게이트)
+  })
 })
 
 describe('hireDoctor', () => {

@@ -2,12 +2,16 @@ import { describe, it, expect } from 'vitest'
 import { createWorld, isWalkable, ENTRANCE, type SimWorld } from './world'
 import { placeRoom } from './build'
 import type { Pt } from './path'
-import { spawnDoctor } from './pawn'
+import { spawnDoctor, hireDoctor, type Pawn } from './pawn'
 import { tick } from './tick'
 import {
-  EXAM_DURATION_MIN, EXAM_REVENUE_MANWON, PATIENCE_MIN,
+  EXAM_DURATION_MIN, PATIENCE_MIN,
   ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats, arrivalSeed,
+  wantsDeptSeed, pickWantsDept, wantsDeptOf, ARRIVAL_DEPT_MIX,
 } from './patientFlow'
+import {
+  HIRABLE_DEPTS, simDept, deptRevenueSum, type SimDeptKey, type SimDeptStats,
+} from './dept'
 import { seededUnit } from '../game/daysim'
 import { DAY_END_MIN, DAYS_PER_WEEK } from './day'
 
@@ -54,10 +58,66 @@ function roomySeatsWorld(seed: number) {
   return r.world
 }
 
+/** 4과 진료실 + 대기실 + 4과 의사 각 1명 — 라우팅이 실제로 갈리는 최소 병원.
+ *  ⚠️ **채용 순서를 방 순서의 역순으로** 둔다. 같은 순서로 두면 배정이 과를 안 보고 그냥
+ *  "i번째 의사 → i번째 방"으로 짝지어도 결과가 같아, "자기 과 방에만 배정된다"는 단언이
+ *  우연히 통과한다(실측: 그 상태에서 과 조건을 지워도 안 걸렸다). 역순이면 과를 봐야만 맞는다. */
+function fourDeptWorld(seed: number) {
+  let w: SimWorld = createWorld(seed)
+  const wait = placeRoom(w, { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
+  if (!wait.ok) throw new Error('전제 실패')
+  w = wait.world
+  HIRABLE_DEPTS.forEach((dept, i) => {
+    const r = placeRoom(w, { type: 'EXAM', dept, x: 2 + i * 8, y: 2, w: 6, h: 5 })
+    if (!r.ok) throw new Error('전제 실패')
+    w = r.world
+  })
+  for (const dept of [...HIRABLE_DEPTS].reverse()) w = hireDoctor(w, dept)
+  return w
+}
+
+/** 진료실 하나 + 그 과 의사 하나. **대기실이 없어 자연 도착이 폰을 만들지 않는다** —
+ *  그래서 아래 테스트들은 손으로 앉힌 환자 한 명만 관측한다(수익·라우팅을 한 건으로 격리). */
+function soloDeptWorld(dept: SimDeptKey, seed = 3) {
+  const r = placeRoom(createWorld(seed), { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 })
+  if (!r.ok) throw new Error('전제 실패')
+  const w = tick(hireDoctor(r.world, dept), 40) // 의사가 책상 앞에 설 때까지
+  const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
+  if (!doc.roomId) throw new Error('전제 실패 — 의사가 진료실에 배정되지 않았다')
+  return w
+}
+
+/** 진료실 문(9,10) 바로 바깥에 앉은 환자 — 대기실을 짓지 않고 대기 상태를 만든다. */
+function seatPatient(w: SimWorld, wantsDept: SimDeptKey): SimWorld {
+  const at = { x: 9, y: 11 }
+  if (!isWalkable(w, at.x, at.y)) throw new Error('전제 실패 — 앉힐 자리가 막혔다')
+  const patient: Pawn = {
+    id: 'pat-hand', kind: 'PATIENT', x: at.x, y: at.y, path: [], dest: at,
+    stage: 'WAITING', arrivedMin: w.minute, wantsDept,
+  }
+  return { ...w, pawns: [...w.pawns, patient] }
+}
+
 const run = (w: SimWorld, minutes = DAY_TICKS) => {
   for (let i = 0; i < minutes; i++) w = tick(w, 1)
   return w
 }
+
+/** 하루를 돌리며 **새로 생긴 환자의 희망 과**를 순서대로 모은다.
+ *  퇴장한 폰은 배열에서 사라지므로 도착 순간에 잡지 않으면 관측할 수 없다. */
+function runCollectingWants(w0: SimWorld, minutes = DAY_TICKS) {
+  let w = w0
+  const wants: SimDeptKey[] = []
+  for (let i = 0; i < minutes; i++) {
+    const before = new Set(w.pawns.map(p => p.id))
+    w = tick(w, 1)
+    for (const p of w.pawns) if (p.kind === 'PATIENT' && !before.has(p.id)) wants.push(wantsDeptOf(p))
+  }
+  return { w, wants }
+}
+
+const patientsOf = (byDept: SimDeptStats) =>
+  Object.values(byDept).reduce((n, s) => n + (s?.patients ?? 0), 0)
 
 /** 조건이 참이 될 때까지 1분씩 돌린다 — 전제가 성립 안 하면 조용히 통과하지 말고 터진다 */
 function until(w: SimWorld, pred: (w: SimWorld) => boolean, limit = ARRIVAL_WINDOW_MIN) {
@@ -73,7 +133,9 @@ describe('환자 흐름', () => {
     const w0 = hospitalWorld(3)
     const w = run(w0)
     expect(w.stats.examsDone).toBeGreaterThan(0)
-    expect(w.treasuryManwon).toBe(w0.treasuryManwon + w.stats.examsDone * EXAM_REVENUE_MANWON)
+    // 수익은 더 이상 건당 상수가 아니라 **과별 수가**의 합이다(계획 Task 2) — 금고 불변식도
+    // 과별 집계에서 유도한다. 상수 × 건수로 재면 과가 갈리는 순간 그 등식이 거짓이 된다.
+    expect(w.treasuryManwon).toBe(w0.treasuryManwon + deptRevenueSum(w.stats.byDept))
   })
 
   it('불변식: 의사 0명이면 진료 0건', () => {
@@ -289,12 +351,14 @@ describe('진료 배정', () => {
   })
 
   it('두 의사가 한 방을 나눠 갖지 않는다', () => {
+    // 의사 전원이 진료실과 **같은 과**여야 이 테스트가 겨누는 것(방 독점)이 관측된다 —
+    // 과가 다르면 배정 자체가 안 일어나 "한 명만 배정" 단언이 항진명제가 된다(라우팅 도입 후 조정).
     let w = hospitalWorld(3)
-    w = spawnDoctor(w, 'CARDIOLOGY', { x: 9, y: 9 })
+    w = spawnDoctor(w, 'INTERNAL_MEDICINE', { x: 9, y: 9 })
     w = tick(w, 5)
     const rooms = w.pawns.filter(p => p.kind === 'DOCTOR').map(p => p.roomId)
     expect(rooms.filter(Boolean)).toHaveLength(1) // EXAM 방이 하나뿐이니 한 명만 배정된다
-    w = spawnDoctor(w, 'GENERAL_SURGERY', { x: 30, y: 30 })
+    w = spawnDoctor(w, 'INTERNAL_MEDICINE', { x: 30, y: 30 })
     const r = placeRoom(w, { type: 'EXAM', x: 6, y: 13, w: 6, h: 5 })
     if (!r.ok) throw new Error('전제 실패')
     w = tick(r.world, 30)
@@ -345,7 +409,9 @@ describe('진료 배정', () => {
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
     const seated = (id: string, at: Pt, arrivedMin: number) => ({
       id, kind: 'PATIENT' as const, x: at.x, y: at.y, path: [], dest: at,
-      stage: 'WAITING' as const, arrivedMin,
+      // 손으로 앉히는 환자에도 희망 과를 준다 — 라우팅이 삼중 일치를 요구하므로(계획 Task 2)
+      // 과가 없으면 둘 다 안 불려 "도착 시각순"이라는 이 테스트의 대비가 통째로 사라진다.
+      stage: 'WAITING' as const, arrivedMin, wantsDept: 'INTERNAL_MEDICINE' as const,
     })
     w = {
       ...w,
@@ -500,5 +566,220 @@ describe('좌초 해소', () => {
     const examsAtRelease = w.stats.examsDone
     w = run(w, 300)
     expect(w.stats.examsDone).toBeGreaterThan(examsAtRelease) // 자물쇠가 진짜로 풀렸다
+  })
+})
+
+describe('희망 과 배정 — 분포와 스트림 축', () => {
+  it('누적 구간이 계획 표(45/20/15/20)를 그대로 싣는다 — 경계는 아래쪽이 닫힌다', () => {
+    // 경계 바로 앞/뒤를 쌍으로 잰다(T-085). 한쪽만 재면 `<`를 `<=`로 바꿔도 안 걸린다.
+    expect(ARRIVAL_DEPT_MIX.map(([dept]) => dept))
+      .toEqual(['INTERNAL_MEDICINE', 'GENERAL_SURGERY', 'CARDIOLOGY', 'AESTHETICS'])
+    expect(pickWantsDept(0)).toBe('INTERNAL_MEDICINE')
+    expect(pickWantsDept(0.4499999)).toBe('INTERNAL_MEDICINE')
+    expect(pickWantsDept(0.45)).toBe('GENERAL_SURGERY')      // 45%가 내과의 상한(닫힌 쪽)
+    expect(pickWantsDept(0.6499999)).toBe('GENERAL_SURGERY')
+    expect(pickWantsDept(0.65)).toBe('CARDIOLOGY')
+    expect(pickWantsDept(0.7999999)).toBe('CARDIOLOGY')
+    expect(pickWantsDept(0.8)).toBe('AESTHETICS')
+    expect(pickWantsDept(0.9999999)).toBe('AESTHETICS')
+  })
+
+  it('[0,1) 밖의 값은 조용히 마지막 과로 접히지 않고 던진다', () => {
+    // 폴백으로 접으면 상한 표가 틀려도(예: 마지막이 0.9) 아무도 모른 채 미용이 늘어난다.
+    expect(() => pickWantsDept(1)).toThrow()
+    expect(() => pickWantsDept(-0.1)).toThrow()
+  })
+
+  it('실제 스트림의 분포가 45/20/15/20에 붙는다 — 표만 맞고 시드가 쏠리면 여기서 걸린다', () => {
+    const counts = new Map<SimDeptKey, number>(HIRABLE_DEPTS.map(d => [d, 0]))
+    const w0 = createWorld(7)
+    let n = 0
+    for (let week = 1; week <= 8; week++) {
+      for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+        for (let minute = 0; minute < ARRIVAL_WINDOW_MIN; minute++) {
+          const d = pickWantsDept(seededUnit(wantsDeptSeed({ ...w0, week, day, minute })))
+          counts.set(d, counts.get(d)! + 1)
+          n++
+        }
+      }
+    }
+    expect(n).toBe(8 * DAYS_PER_WEEK * ARRIVAL_WINDOW_MIN)
+    const share = (d: SimDeptKey) => counts.get(d)! / n
+    expect(share('INTERNAL_MEDICINE')).toBeCloseTo(0.45, 2)
+    expect(share('GENERAL_SURGERY')).toBeCloseTo(0.20, 2)
+    expect(share('CARDIOLOGY')).toBeCloseTo(0.15, 2)
+    expect(share('AESTHETICS')).toBeCloseTo(0.20, 2)
+  })
+
+  it('희망 과는 도착 판정과 **다른 축**이다 — 두 스트림의 시드 집합이 겹치지 않는다', () => {
+    // salt를 공유하면 두 시드가 통째로 같아진다. 그러면 도착이 성립하는 분은 정의상
+    // seededUnit < ARRIVAL_PROB_PER_MIN(0.125)이라 **도착한 환자가 전원 내과**가 된다 —
+    // 분포가 45/20/15/20이 아니라 100/0/0/0으로 붕괴하는데 에러는 하나도 안 난다.
+    // 한 점만 비교하면 "그 점만 피하는" 오프셋도 통과하므로 구간 전수의 집합 교집합으로 잰다.
+    const w0 = createWorld(7)
+    const arrivals = new Set<number>()
+    const wants = new Set<number>()
+    for (let week = 1; week <= 8; week++) {
+      for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+        for (let minute = 0; minute < ARRIVAL_WINDOW_MIN; minute++) {
+          arrivals.add(arrivalSeed({ ...w0, week, day, minute }))
+          wants.add(wantsDeptSeed({ ...w0, week, day, minute }))
+        }
+      }
+    }
+    expect(arrivals.size).toBe(8 * DAYS_PER_WEEK * ARRIVAL_WINDOW_MIN) // 계측기가 헛돌지 않았다
+    expect([...wants].filter(s => arrivals.has(s))).toEqual([])
+  })
+
+  it('희망 과 시드도 주·날·분 전 조합에서 겹치지 않는다(T-087 — index 슬롯 금지)', () => {
+    const w0 = createWorld(7)
+    const seen = new Set<number>()
+    let count = 0
+    for (let week = 1; week <= 8; week++) {
+      for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+        for (let minute = 0; minute < ARRIVAL_WINDOW_MIN; minute++) {
+          seen.add(wantsDeptSeed({ ...w0, week, day, minute }))
+          count++
+        }
+      }
+    }
+    expect(count).toBe(8 * DAYS_PER_WEEK * ARRIVAL_WINDOW_MIN)
+    expect(seen.size).toBe(count)
+    // 회귀 한 점 — 분을 callSeed의 index 슬롯(폭 97)에 넣으면 여기가 같아진다.
+    expect(wantsDeptSeed({ ...w0, day: 1, minute: 97 })).not.toBe(wantsDeptSeed({ ...w0, day: 2, minute: 0 }))
+  })
+
+  it('세계 시드가 다르면 희망 과 스트림도 다르다 — 판마다 같은 환자가 오지 않는다', () => {
+    const streamOf = (seed: number) => {
+      const w0 = createWorld(seed)
+      return Array.from({ length: 200 }, (_, minute) =>
+        pickWantsDept(seededUnit(wantsDeptSeed({ ...w0, minute }))))
+    }
+    expect(streamOf(3)).not.toEqual(streamOf(4))
+  })
+
+  it('실제 도착한 환자에도 4과가 전부 실린다 — 배정이 도착 흐름에 붙어 있다', () => {
+    const { wants } = runCollectingWants(fourDeptWorld(3))
+    expect(wants.length).toBeGreaterThan(20) // 계측기가 헛돌지 않았다
+    expect([...new Set(wants)].sort()).toEqual([...HIRABLE_DEPTS].sort())
+  })
+})
+
+describe('과 라우팅 — 삼중 일치', () => {
+  it('내과만 있는 병원에서 미용 환자는 진료받지 못하고 떠난다', () => {
+    const { w, wants } = runCollectingWants(hospitalWorld(3), DAY_END_MIN - 1)
+    expect(wants.filter(d => d === 'AESTHETICS').length).toBeGreaterThan(0) // 실제로 미용 환자가 왔다
+    expect(w.phase).toBe('RUNNING')
+    // 장부에 남은 과는 내과 하나뿐 — 다른 과 환자는 한 건도 돈이 되지 않았다.
+    expect(Object.keys(w.stats.byDept)).toEqual(['INTERNAL_MEDICINE'])
+    expect(w.stats.byDept.INTERNAL_MEDICINE!.patients).toBeGreaterThan(0)
+    expect(w.stats.leftCount).toBeGreaterThan(0)
+  })
+
+  it('의사는 자기 과 진료실에만 배정된다', () => {
+    const w = tick(fourDeptWorld(3), 60)
+    const rooms = new Map(w.rooms.map(r => [r.id, r]))
+    const doctors = w.pawns.filter(p => p.kind === 'DOCTOR')
+    expect(doctors).toHaveLength(HIRABLE_DEPTS.length)
+    for (const doc of doctors) {
+      expect(doc.roomId).toBeDefined() // 전제: 전원이 방을 얻었다(항진명제 방지)
+      expect(rooms.get(doc.roomId!)!.dept).toBe(doc.dept)
+    }
+  })
+
+  it('과가 없는 의사에게는 빈 진료실이 있어도 방이 가지 않는다', () => {
+    // 채용을 거치지 않은 손세계 폰. 과 없는 의사가 진료실을 물면 그 방이 통째로 잠긴다.
+    const r = placeRoom(createWorld(3), { type: 'EXAM', dept: 'CARDIOLOGY', x: 6, y: 6, w: 6, h: 5 })
+    if (!r.ok) throw new Error('전제 실패')
+    const deptless: Pawn = { id: 'doc-x', kind: 'DOCTOR', x: 9, y: 12, path: [] }
+    const w = tick({ ...r.world, pawns: [deptless] }, 60)
+    expect(w.pawns[0].roomId).toBeUndefined()
+  })
+
+  it('방의 과가 다르면 진료가 성립하지 않는다 — 삼중 일치의 방 축', () => {
+    // 의사(내과) == 환자(내과)인데 방만 순환기다. 방 조건을 빼면 여기서 진료가 돈다.
+    const base = soloDeptWorld('INTERNAL_MEDICINE')
+    const mismatched = { ...base, rooms: base.rooms.map(r => ({ ...r, dept: 'CARDIOLOGY' as const })) }
+    const w = run(seatPatient(mismatched, 'INTERNAL_MEDICINE'), 120)
+    expect(w.stats.examsDone).toBe(0)
+    expect(w.stats.byDept).toEqual({})
+  })
+
+  it('의사의 과가 다르면 진료가 성립하지 않는다 — 삼중 일치의 의사 축', () => {
+    // 방(내과) == 환자(내과)인데 의사만 순환기다. 의사 조건을 빼면 여기서 진료가 돈다.
+    const base = soloDeptWorld('INTERNAL_MEDICINE')
+    const mismatched = {
+      ...base,
+      pawns: base.pawns.map(p => (p.kind === 'DOCTOR' ? { ...p, dept: 'CARDIOLOGY' as const } : p)),
+    }
+    const w = run(seatPatient(mismatched, 'INTERNAL_MEDICINE'), 120)
+    expect(w.stats.examsDone).toBe(0)
+    expect(w.stats.byDept).toEqual({})
+  })
+
+  it('환자의 과가 다르면 진료가 성립하지 않는다 — 삼중 일치의 환자 축', () => {
+    const w = run(seatPatient(soloDeptWorld('INTERNAL_MEDICINE'), 'AESTHETICS'), 120)
+    expect(w.stats.examsDone).toBe(0)
+    expect(w.stats.leftCount).toBeGreaterThan(0) // 기다리다 인내를 넘겨 떠났다
+  })
+
+  it('삼중이 맞으면 진료가 돈다 — 위 세 테스트가 "아무것도 안 도는 세계"를 재고 있지 않다', () => {
+    const w = run(seatPatient(soloDeptWorld('INTERNAL_MEDICINE'), 'INTERNAL_MEDICINE'), 120)
+    expect(w.stats.examsDone).toBe(1)
+  })
+
+  it('한 과가 밀려도 다른 과는 계속 돈다 — 과별로 줄이 따로 선다', () => {
+    const { w } = runCollectingWants(fourDeptWorld(3), DAY_END_MIN - 1)
+    for (const dept of HIRABLE_DEPTS) {
+      expect(w.stats.byDept[dept]?.patients ?? 0).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('과별 수익', () => {
+  it('진료 한 건의 수익은 그 과의 수가다 — 건당 상수가 아니다', () => {
+    // 같은 세계·같은 한 건인데 과만 다르다. 30 고정으로 되돌리면 내과(12)에서 곧바로 걸린다.
+    for (const dept of HIRABLE_DEPTS) {
+      const w0 = soloDeptWorld(dept)
+      const w = run(seatPatient(w0, dept), 120)
+      const rate = simDept(dept).examRevenueManwon
+      expect(w.stats.examsDone).toBe(1)
+      expect(w.treasuryManwon - w0.treasuryManwon).toBe(rate)
+      expect(w.stats.byDept).toEqual({ [dept]: { patients: 1, revenueManwon: rate } })
+    }
+  })
+
+  it('불변식: Σ byDept.patients == examsDone, 과별 수익 == 환자 수 × 그 과 수가', () => {
+    const w = run(fourDeptWorld(3), DAY_END_MIN - 1)
+    expect(w.stats.examsDone).toBeGreaterThan(0)
+    expect(patientsOf(w.stats.byDept)).toBe(w.stats.examsDone)
+    for (const [key, stat] of Object.entries(w.stats.byDept) as [SimDeptKey, { patients: number; revenueManwon: number }][]) {
+      expect(stat.revenueManwon).toBe(stat.patients * simDept(key).examRevenueManwon)
+    }
+  })
+
+  it('금고 불변식: 금고 = 초기 − 건설비 + Σ(과별 환자 × 과 수가)', () => {
+    const w0 = fourDeptWorld(3)
+    const w = run(w0, DAY_END_MIN - 1)
+    const expected = HIRABLE_DEPTS.reduce(
+      (sum, d) => sum + (w.stats.byDept[d]?.patients ?? 0) * simDept(d).examRevenueManwon, 0)
+    expect(expected).toBeGreaterThan(0) // 계측기가 0으로 헛돌지 않았다
+    expect(w.treasuryManwon).toBe(w0.treasuryManwon + expected)
+    expect(deptRevenueSum(w.stats.byDept)).toBe(expected)
+  })
+
+  it('결정론: 4과 병원도 같은 시드면 하루가 완전히 같다', () => {
+    expect(run(fourDeptWorld(11))).toEqual(run(fourDeptWorld(11)))
+  })
+
+  it('과가 없는 환자가 진료를 끝내면 조용히 0원이 아니라 즉시 터진다', () => {
+    // wantsDept 없이 IN_EXAM에 도달하는 경로는 손세계뿐이다. 카탈로그 조회가 undefined를
+    // 통과하면 수익이 NaN으로 금고에 번지는데 NaN은 아무 예외도 안 낸다(무성 실패).
+    const base = soloDeptWorld('INTERNAL_MEDICINE')
+    const orphan: Pawn = {
+      id: 'pat-orphan', kind: 'PATIENT', x: 9, y: 11, path: [], dest: { x: 9, y: 11 },
+      stage: 'IN_EXAM', examUntilMin: base.minute + 1,
+    }
+    expect(() => tick({ ...base, pawns: [...base.pawns, orphan] }, 2)).toThrow()
   })
 })
