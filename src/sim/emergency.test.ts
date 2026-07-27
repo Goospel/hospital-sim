@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, INITIAL_TREASURY_MANWON, type SimWorld } from './world'
+import { createWorld, ENTRANCE, INITIAL_TREASURY_MANWON, type SimWorld } from './world'
 import { placeRoom } from './build'
 import { hireDoctor, type Pawn } from './pawn'
 import { buildBlockedSet } from './path'
@@ -39,7 +39,9 @@ function place(w: SimWorld, spec: Parameters<typeof placeRoom>[1]): SimWorld {
 }
 
 /** 응급만 관측되는 최소 병원. **대기실이 없어 외래는 폰조차 생기지 않는다**(문전박대) —
- *  그래서 이 세계의 금고·집계 변화는 전부 응급이 만든 것이다. */
+ *  그래서 이 세계의 **금고·byDept·examsDone** 변화는 전부 응급이 만든 것이다.
+ *  ⚠️ `leftCount`는 예외다: 앉을 자리가 없어 발길을 돌린 외래가 그 카운터를 올린다(실측 하루 61건).
+ *  응급만의 이탈을 재려면 이 세계에서도 leftCount의 **차이**를 잡아야 한다. */
 function emergencyWorld(
   { seed = BOTH_KINDS_SEED, dept = 'CARDIOLOGY' as SimDeptKey | null, ward = true } = {},
 ): SimWorld {
@@ -315,6 +317,96 @@ describe('수용 — 병동 처치', () => {
     expect(w.pawns.find(p => p.id === 'out-b')!.stage).toBe('WAITING')
     w = run(w, 30)
     expect(w.pawns.find(p => p.id === 'out-b')!.stage).toBe('WAITING') // 처치 중엔 계속 밀린다
+  })
+})
+
+describe('배정·전이 계약', () => {
+  // 이 절은 **주석이 계약이라 선언한 세 축**을 계측한다. 셋 다 없었을 때 각 축을 지워도
+  // 전체 green이었다(리뷰 실측) — 주석은 계약을 서술할 뿐 방어하지 못한다.
+
+  /** 침대 2개 병동 — 6×4의 내부는 4×2라 자동 배치가 한 칸 걸러 둘을 놓는다. */
+  const WARD_2BED = { type: 'WARD' as const, x: 30, y: 20, w: 6, h: 4 }
+
+  /** 도착 창이 닫힌 뒤의 손세계 — 자연 도착(외래·응급)이 끼어들지 않아 손으로 세운 상황만 관측된다.
+   *  의사는 **인자 순서대로** 폰 배열에 들어간다(배정이 무엇을 먼저 집는지가 관측 대상이라 중요). */
+  function handWorld(ward: typeof WARD_1BED, depts: SimDeptKey[]): SimWorld {
+    let w = place(createWorld(3), ward)
+    for (const dept of depts) w = hireDoctor(w, dept)
+    return { ...w, minute: ARRIVAL_WINDOW_MIN }
+  }
+
+  const inBed = (id: string, spot: { x: number; y: number }): Pawn => ({
+    id, kind: 'PATIENT', x: spot.x, y: spot.y, path: [], dest: spot,
+    stage: 'IN_BED', emergency: 'STEMI', wantsDept: 'CARDIOLOGY',
+  })
+
+  it('응급은 **그 과** 의사만 부른다 — 유휴라고 미용 의사가 PCI를 하지 않는다', () => {
+    // 배후과 벽은 도착 판정에만 있는 게 아니다. 침대에 누워 의사를 기다리는 구간(IN_BED)이
+    // 실재하고(실측: 30시드 중 15~19시드에서 발생·최장 329분), 그 구간의 배정이 과를 안 보면
+    // **하드락이 여기서 통째로 새어나간다** — 순환기를 안 뽑아도 미용 의사가 STEMI를 처치한다.
+    // 미용을 폰 배열 **맨 앞**에 둔다: 과 조건을 지우면 `find`가 곧바로 미용을 집는다.
+    let w = handWorld(WARD_2BED, ['AESTHETICS', 'INTERNAL_MEDICINE', 'CARDIOLOGY'])
+    const beds = wardBeds(w)
+    expect(beds).toHaveLength(2) // 전제: 침대 둘 — 의사가 남아도 둘째는 못 눕는 게 아니다
+    w = tick({ ...w, pawns: [...w.pawns, inBed('emg-a', beds[0]), inBed('emg-b', beds[1])] }, 1)
+    const treating = w.pawns.filter(p => p.stage === 'IN_TREATMENT')
+    // 순환기는 한 명뿐이라 처치도 한 건이다 — 유휴 의사가 둘 더 있어도 그들은 STEMI를 못 본다.
+    expect(treating).toHaveLength(1)
+    const doc = w.pawns.find(p => p.id === treating[0].doctorId)!
+    expect(doc.dept).toBe('CARDIOLOGY')
+    expect(w.pawns.filter(p => p.stage === 'IN_BED')).toHaveLength(1) // 둘째는 계속 기다린다
+  })
+
+  it('침대에 닿은 그 분에 처치가 시작된다 — 전이와 배정이 같은 틱 안에서 만난다', () => {
+    // stepEmergencies의 내부 순서(전이 → 배정) 계약. 뒤집으면 침대에 누운 환자가 **한 분**
+    // 놀고, 그 한 분은 응급이 몰릴수록 누적된다.
+    let w = handWorld(WARD_1BED, ['CARDIOLOGY'])
+    const bed = wardBeds(w)[0]
+    const walking: Pawn = {
+      id: 'emg-walk', kind: 'PATIENT', x: bed.x, y: bed.y + 1, path: [bed], dest: bed,
+      stage: 'TO_BED', emergency: 'STEMI', wantsDept: 'CARDIOLOGY',
+    }
+    expect(walking.y).not.toBe(bed.y) // 전제: 아직 침대에 닿지 않았다(이번 분에 닿는다)
+    w = tick({ ...w, pawns: [...w.pawns, walking] }, 1)
+    const p = w.pawns.find(x => x.id === 'emg-walk')!
+    expect(p).toMatchObject({ x: bed.x, y: bed.y, stage: 'IN_TREATMENT' })
+    expect(p.treatUntilMin).toBe(w.minute + STEMI.durationMin)
+  })
+
+  it('처치가 끝나는 그 분에 다음 응급이 그 의사를 잡는다', () => {
+    // 같은 계약의 뒤쪽 절반 — 방금 풀려난 의사(전이)와 기다리던 환자(배정)가 같은 분에 만난다.
+    let w = handWorld(WARD_2BED, ['CARDIOLOGY'])
+    const beds = wardBeds(w)
+    const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
+    const finishing: Pawn = {
+      ...inBed('emg-first', beds[0]),
+      stage: 'IN_TREATMENT', doctorId: doc.id, treatUntilMin: w.minute + 1,
+    }
+    const before = w.treasuryManwon
+    w = tick({ ...w, pawns: [doc, finishing, inBed('emg-next', beds[1])] }, 1)
+    expect(w.treasuryManwon).toBe(before + STEMI.revenueManwon) // 전제: 첫째 처치가 실제로 끝났다
+    const next = w.pawns.find(p => p.id === 'emg-next')!
+    expect(next.stage).toBe('IN_TREATMENT')
+    expect(next.doctorId).toBe(doc.id) // 같은 의사가 곧바로 다음 응급으로 간다
+  })
+
+  it('침대로 가던 길이 끊기면 환자를 풀어준다 — 침대가 영구히 잠기지 않는다', () => {
+    // 외래 쌍둥이(patientFlow의 TO_EXAM 좌초)와 같은 병. 안 풀면 그 폰이 침대를 문 채 영구
+    // 정지하고, 침대가 하나면 이후 모든 응급이 NO_BED다 — 철거가 없어 세션 내 비가역이다.
+    // tick의 재탐색 실패 결과(path 비움)를 손으로 만든다. 합법적인 건설 한 번으로 도달한다.
+    let w = handWorld(WARD_1BED, ['CARDIOLOGY'])
+    const bed = wardBeds(w)[0]
+    const stranded: Pawn = {
+      id: 'emg-stuck', kind: 'PATIENT', x: ENTRANCE.x, y: ENTRANCE.y, path: [], dest: bed,
+      stage: 'TO_BED', emergency: 'STEMI', wantsDept: 'CARDIOLOGY',
+    }
+    w = { ...w, pawns: [...w.pawns, stranded] }
+    expect(freeBed(w, buildBlockedSet(w))).toBeNull() // 전제: 좌초한 폰이 침대를 물고 있다
+    const before = w.stats.leftCount
+    w = tick(w, 1)
+    expect(w.pawns.find(p => p.id === 'emg-stuck')!.stage).toBe('LEFT_WAITING')
+    expect(w.stats.leftCount).toBe(before + 1)
+    expect(freeBed(w, buildBlockedSet(w))).not.toBeNull() // 침대가 다시 열렸다
   })
 })
 

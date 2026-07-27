@@ -259,6 +259,12 @@ function progressEmergencies(w: SimWorld): SimWorld {
 function assignEmergencyDoctors(w: SimWorld): SimWorld {
   const waiting = w.pawns
     .map((p, i) => ({ p, i }))
+    // `!p.doctorId`는 **방어적 중복이고, 사살 불가임을 알고 남긴다**: 의사가 붙는 순간
+    // 스테이지가 IN_TREATMENT로 넘어가므로 "IN_BED인데 의사를 문" 폰은 현재 도달 불가다
+    // (리뷰 실측 — 이 조건을 지워도 어떤 테스트도 안 죽는다). 그럼에도 지우지 않는 이유는
+    // 이게 최적화가 아니라 **이중 배정 금지**라서다: 두 조건이 갈리는 스테이지가 하나라도
+    // 생기면 한 의사가 두 환자를 동시에 처치한다. patientFlow의 "사살 불가 분기는 두지
+    // 않는다"는 잣대는 **한 틱 아끼는 최적화**를 겨눈 것이라 여기엔 적용되지 않는다.
     .filter(({ p }) => p.emergency && p.stage === 'IN_BED' && !p.doctorId)
   if (waiting.length === 0) return w
   const busy = new Set(w.pawns.map(p => p.doctorId).filter((id): id is string => !!id))
