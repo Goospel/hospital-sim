@@ -15,7 +15,7 @@ import { ENTRANCE, type SimWorld } from './world'
 import type { Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
 import { ARRIVAL_WINDOW_MIN, furnitureSpots, minuteStreamSeed, toExit } from './patientFlow'
-import { interruptActivity } from './needs'
+import { interruptActivity, starvedSlowFactor } from './needs'
 import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
 
 /** 응급 도착 스트림 전용 salt — `daysim.callSeed` 주석의 **레지스트리에 등재된 값**이다.
@@ -320,9 +320,13 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
     if (!doc) continue // 그 과 의사가 전부 묶여 있다 — 이 환자는 침대에서 계속 기다린다
     busy.add(doc.id)
     if (doc.activity) interrupted.set(doc.id, interruptActivity(doc))
-    // 외래와 같은 계약: 소요는 **시작하는 순간** 그 의사의 피로로 확정된다. 지친 의사의 PCI는
-    // 90분이 아니라 그보다 길고, 그동안 그 과의 외래·다음 응급이 함께 밀린다.
-    const workMin = slowedDurationMin(spec.durationMin, fatigueOf(doc))
+    // 외래와 같은 계약: 소요는 **시작하는 순간** 그 의사의 피로·허기로 확정된다. 지치거나 굶은
+    // 의사의 PCI는 90분이 아니라 그보다 길고, 그동안 그 과의 외래·다음 응급이 함께 밀린다.
+    // 곱하는 순서·정수화도 외래와 같다(patientFlow의 TO_EXAM 주석) — 갈리면 같은 상태의 의사가
+    // 진료와 처치에서 다른 배율을 받는다.
+    const workMin = Math.round(
+      slowedDurationMin(spec.durationMin, fatigueOf(doc)) * starvedSlowFactor(doc),
+    )
     updates.set(i, {
       ...p, stage: 'IN_TREATMENT', doctorId: doc.id, treatUntilMin: w.minute + workMin, workMin,
     })

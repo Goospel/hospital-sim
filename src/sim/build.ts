@@ -6,8 +6,11 @@ export const MIN_ROOM_W = 4
 export const MIN_ROOM_H = 4
 export const COST_PER_TILE_MANWON = 50
 
+/** 격자 자동 배치(한 칸 걸러)로 채우는 방과 그 가구 — `autoFurniture`의 else 갈래가 읽는 표다.
+ *  식당이 대기실과 **같은 CHAIR 격자**인 것이 계약이다: 좌석 수 = 의자 수라는 성질(furnitureSpots
+ *  주석)이 식사 좌석 점유에도 그대로 성립해야 두 의사가 한 의자에 겹치지 않는다. */
 export const FURNITURE_OF: Partial<Record<RoomType, 'CHAIR' | 'BED'>> = {
-  WAITING: 'CHAIR', WARD: 'BED',
+  WAITING: 'CHAIR', WARD: 'BED', CAFETERIA: 'CHAIR',
 }
 
 export function roomCostManwon(w: number, h: number): number {
@@ -24,7 +27,7 @@ function overlaps(a: Room, b: Omit<Room, 'id'>): boolean {
 
 /** 내부 타일에 가구를 자동 배치한다.
  *  EXAM: 좌상단 내부에 DESK+CHAIR / RECEPTION: COUNTER 1
- *  WAITING: 내부를 한 칸 걸러 CHAIR / WARD: 한 칸 걸러 BED
+ *  WAITING·CAFETERIA: 내부를 한 칸 걸러 CHAIR / WARD: 한 칸 걸러 BED
  *  LOUNGE: CHAIR 2 (휴게) */
 function autoFurniture(room: Room): Furniture[] {
   const ix = room.x + 1, iy = room.y + 1 // 내부 좌상단

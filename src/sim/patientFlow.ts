@@ -16,6 +16,9 @@ import {
 import type { Pawn, PatientStage } from './pawn'
 import { simDept, addExamToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
 import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
+// 굶주림 감속은 needs.ts가 **단일 출처**다(응급도 같은 함수를 부른다) — 여기서 임계를 다시
+// 적으면 진료만 느려지고 처치는 그대로인 병원이 조용히 생긴다.
+import { starvedSlowFactor } from './needs'
 
 export const EXAM_DURATION_MIN = 20
 /** 대기 인내 — 이만큼 앉아 있었는데 안 불리면 떠난다(수익 0). */
@@ -353,11 +356,16 @@ function progressStages(w: SimWorld): SimWorld {
         break
       case 'TO_EXAM':
         if (arrived) {
-          // 소요는 **시작하는 순간** 담당 의사의 피로로 확정된다(진료 중에 늘었다 줄었다 하지
-          // 않는다). 그 의사는 이 환자를 문 채라 진료가 끝날 때까지 다른 일을 못 하므로,
-          // 이번 분 안에서 그의 피로가 바뀔 길도 없다.
-          const workMin = slowedDurationMin(
-            EXAM_DURATION_MIN, fatigueOf(w.pawns.find(d => d.id === p.doctorId)),
+          // 소요는 **시작하는 순간** 담당 의사의 피로·허기로 확정된다(진료 중에 늘었다 줄었다
+          // 하지 않는다). 그 의사는 이 환자를 문 채라 진료가 끝날 때까지 다른 일을 못 하므로,
+          // 이번 분 안에서 그의 상태가 바뀔 길도 없다.
+          //
+          // 두 감속은 **곱**으로 얹히고 각 단계마다 정수로 접는다(`round(round(base×피로)×허기)`).
+          // 한 번에 곱해 마지막에만 반올림하면 피로 감속의 반올림 계약(fatigue.slowedDurationMin)이
+          // 우회돼, 같은 피로가 허기 유무에 따라 다른 기준선에서 출발한다.
+          const doc = w.pawns.find(d => d.id === p.doctorId)
+          const workMin = Math.round(
+            slowedDurationMin(EXAM_DURATION_MIN, fatigueOf(doc)) * starvedSlowFactor(doc),
           )
           keep({ ...p, stage: 'IN_EXAM', examUntilMin: w.minute + workMin, workMin })
         } else if (stranded) {

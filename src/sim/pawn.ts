@@ -45,15 +45,24 @@ export interface Pawn {
   /** 지금 이 의사가 스스로 하고 있는 일 — 진료·처치가 아니라 **자기를 돌보는** 행동이다(needs.ts).
    *  없으면 근무 중이다. 이 필드가 있는 의사는 외래 배정 후보에서 빠지고(patientFlow), 응급이
    *  낚아채는 순간 해제된다(emergency — 회복 없이 끊긴다).
-   *  ⚠️ Task 2에서 `'TO_MEAL' | 'EATING'`(허기)으로 **확장 예정**이다 — 같은 기계를 쓴다.
+   *  휴식(LOUNGE)과 식사(CAFETERIA)가 **같은 기계**를 쓴다 — 갈래별 이름만 다르고 개시·전이·
+   *  종료·좌초는 needs.ts의 브레이크 표 하나가 굴린다.
    *  왜 `busy` 같은 불리언이 아닌가: "쉬는 중"과 "쉬러 가는 중"은 다음 행동이 다르고(도착
    *  판정 vs 종료 시각), 상태 이름이 없으면 그 구별이 dest·path 같은 딴 필드로 새어 나간다. */
-  activity?: 'TO_LOUNGE' | 'RESTING'
-  /** 지금 붙은 욕구 블록이 **끝나는 시각**(게임 분) — `activity`가 앉은 상태('RESTING')일 때만 있다.
-   *  시작 시각이 아니라 종료 시각인 이유는 환자의 `examUntilMin`과 같다: 매 분 "끝났나"만 물으면 된다.
-   *  ⚠️ 이름이 `restUntilMin`이 아닌 이유: Task 2의 식사 블록이 **같은 타이머**를 쓴다. 욕구마다
+  activity?: 'TO_LOUNGE' | 'RESTING' | 'TO_MEAL' | 'EATING'
+  /** 지금 붙은 욕구 블록이 **끝나는 시각**(게임 분) — `activity`가 앉은 상태('RESTING'·'EATING')일
+   *  때만 있다. 시작 시각이 아니라 종료 시각인 이유는 환자의 `examUntilMin`과 같다: 매 분
+   *  "끝났나"만 물으면 된다.
+   *  ⚠️ 이름이 `restUntilMin`이 아닌 이유: 식사 블록이 **같은 타이머**를 쓰기 때문이다. 욕구마다
    *  필드를 따로 두면 종료 처리가 갈래마다 복제되고, 한쪽만 지우는 실수가 조용히 산다. */
   activityUntilMin?: number
+  /** 마지막 식사 이후 지난 분 — **의사만**. 채용 시 0에서 시작해 RUNNING 분마다 +1 오르고
+   *  (휴식·식사 중에도 오른다), 식사 블록이 **끝날 때** 0으로 되돌아간다(needs.ts).
+   *  아침에도 0으로 리셋된다(day.freshMorning — 저녁을 먹고 출근한다는 각색).
+   *  효과는 하나다: `HUNGRY_AFTER_MIN`을 넘긴 채 시작한 작업이 `STARVED_SLOW`배 길어진다.
+   *  피로(fatigue)와 **다른 필드**인 이유: 회복 경로가 다르다 — 피로는 밤과 휴식으로 내려가고
+   *  허기는 오직 식사로만 내려간다. 한 필드로 겸하면 식당이 휴게실의 복제가 된다. */
+  hungerMin?: number
   /** 오늘 누적 **표준강도분**(소요 분 × 과 강도) — 의사만. 아침에 0으로 리셋된다.
    *  피로 증가가 이 누적치의 함수라(하루 `FATIGUE_FREE_MIN` 초과분만 쌓인다) 하루치를 들고 있어야
    *  한다. 건별로 따로 반올림해 더하면 같은 하루가 쪼개는 방식에 따라 다른 피로를 낳는다. */
@@ -92,11 +101,12 @@ export function doctorDeptOf(p: Pawn): SimDeptKey {
 }
 
 export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
-  // 피로·부하를 **명시적으로 0**에서 시작한다 — `?? 0` 폴백이 있어도 필드가 실재해야 UI·저장이
+  // 피로·부하·허기를 **명시적으로 0**에서 시작한다 — `?? 0` 폴백이 있어도 필드가 실재해야 UI·저장이
   // "아직 일 안 한 의사"와 "필드가 없는 손세계 폰"을 구별할 수 있다.
+  // 허기 0 = 밥을 먹고 출근했다(freshMorning의 아침 리셋과 같은 각색).
   const p: Pawn = {
     id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept,
-    fatigue: 0, loadMinToday: 0,
+    fatigue: 0, loadMinToday: 0, hungerMin: 0,
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
 }

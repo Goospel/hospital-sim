@@ -35,6 +35,9 @@ export const ROOM_STYLE: Record<RoomType, { floor: string; wall: string }> = {
   WAITING: { floor: "#241f18", wall: "#4a4130" },
   LOUNGE: { floor: "#16241c", wall: "#2c4a39" },
   RECEPTION: { floor: "#261a1a", wall: "#4f3232" },
+  // 식당 — 휴게실(녹)의 이웃 색조(황록). 두 방은 같은 "쉬는 곳"이라 계열을 붙이되, 한 화면에
+  // 나란히 서도 구별되게 색상만 옮긴다. `Record<RoomType, …>`이라 이 줄이 없으면 tsc가 막는다.
+  CAFETERIA: { floor: "#24220f", wall: "#4a4620" },
 };
 
 const OUTSIDE_FLOOR = "#0d0d11"; // 부지 바닥(방 밖) — 복도이자 마당

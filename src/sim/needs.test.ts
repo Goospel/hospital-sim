@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, type SimWorld } from './world'
-import { placeRoom } from './build'
+import { FURNITURE_OF, placeRoom } from './build'
 import { hireDoctor, PAWN_TILES_PER_MIN, type Pawn } from './pawn'
 import { buildBlockedSet, findPath } from './path'
 import { tick } from './tick'
 import { freshMorning } from './day'
-import { ARRIVAL_WINDOW_MIN, furnitureSpot, furnitureSpots } from './patientFlow'
-import { wardBeds } from './emergency'
-import { FATIGUE_RED, FATIGUE_REST } from '../game/doctor'
-import { REST_BREAK_MIN, REST_BREAK_RECOVER } from './needs'
+import { ARRIVAL_WINDOW_MIN, EXAM_DURATION_MIN, furnitureSpot, furnitureSpots } from './patientFlow'
+import { emergencySpec, wardBeds } from './emergency'
+import { FATIGUE_MAX, FATIGUE_RED, FATIGUE_REST, fatigueSlowFactor } from '../game/doctor'
+import { HUNGRY_AFTER_MIN, MEAL_MIN, REST_BREAK_MIN, REST_BREAK_RECOVER, STARVED_SLOW } from './needs'
 
 /** 순환기 진료실 — 8×8이라 의사가 책상에서 문까지 **여러 분** 방 안에 머문다.
  *  그 구간이 있어야 "방 안에 있는데도 외래 배정에서 빠진다"(activity 제외)가 관측된다:
@@ -33,6 +33,12 @@ const SEALER = { type: 'WARD' as const, x: 16, y: 10, w: 4, h: 4 }
 const FAR_LOUNGE = { type: 'LOUNGE' as const, x: 24, y: 6, w: 4, h: 4 }
 /** 침대 1개짜리 병동(emergency.test.ts와 같은 규격) */
 const WARD_1BED = { type: 'WARD' as const, x: 30, y: 20, w: 4, h: 4 }
+/** 의자 1개짜리 식당 — LOUNGE_1과 **같은 자리·같은 규격**이다. 둘을 갈아 끼우면 달라지는 건
+ *  방 종류 하나뿐이라, 휴식과 식사의 대조가 거리·좌석 수에 오염되지 않는다. */
+const CAFETERIA_1 = { type: 'CAFETERIA' as const, x: 16, y: 6, w: 4, h: 4 }
+/** LOUNGE_1과 **함께** 지을 때의 식당 — 겹치지 않게 옆으로 옮긴 같은 규격.
+ *  휴식·식사 우선순위(표 순서)를 재려면 두 자리가 동시에 비어 있어야 한다. */
+const CAFETERIA_BESIDE = { type: 'CAFETERIA' as const, x: 24, y: 6, w: 4, h: 4 }
 
 function place(w: SimWorld, spec: Parameters<typeof placeRoom>[1]): SimWorld {
   const r = placeRoom(w, spec)
@@ -66,6 +72,7 @@ function deskSpot(w: SimWorld, p: Pawn = doctorOf(w)) {
 }
 
 const loungeSeats = (w: SimWorld) => furnitureSpots(w, 'LOUNGE', 'CHAIR')
+const mealSeats = (w: SimWorld) => furnitureSpots(w, 'CAFETERIA', 'CHAIR')
 
 /** 그 자리까지 길이 있는가 — 봉인 테스트의 전제를 실제로 확인한다(구현과 같은 findPath). */
 function findable(w: SimWorld, p: Pawn, to: { x: number; y: number }): boolean {
@@ -81,12 +88,13 @@ function insideOwnRoom(w: SimWorld, p: Pawn): boolean {
 
 /** 순환기 의사 1명이 자기 책상 앞에 자리잡은 병원. 도착 창이 닫힌 뒤로 시계를 옮겨
  *  자연 도착(외래·응급)이 끼어들지 않게 한다 — 관측되는 건 손으로 세운 상황뿐이다.
- *  대기실이 없어 외래 폰은 애초에 생기지 않는다(문전박대). */
+ *  대기실이 없어 외래 폰은 애초에 생기지 않는다(문전박대).
+ *  `rooms`는 진료실 **말고** 더 지을 방들이다 — 휴게실이든 식당이든 같은 자리로 들어간다. */
 function restWorld(
-  { lounge = [LOUNGE_1] as Array<Parameters<typeof placeRoom>[1]>, seed = 3 } = {},
+  { rooms = [LOUNGE_1] as Array<Parameters<typeof placeRoom>[1]>, seed = 3 } = {},
 ): SimWorld {
   let w = place(createWorld(seed), EXAM_CARDIO)
-  for (const spec of lounge) w = place(w, spec)
+  for (const spec of rooms) w = place(w, spec)
   w = hireDoctor(w, 'CARDIOLOGY')
   w = until(w, x => {
     const d = doctorOf(x)
@@ -99,6 +107,12 @@ function restWorld(
 const tired = (w: SimWorld, fatigue: number): SimWorld => ({
   ...w,
   pawns: w.pawns.map(p => (p.kind === 'DOCTOR' ? { ...p, fatigue } : p)),
+})
+
+/** 모든 의사의 허기를 못박는다 — `tired`의 허기판. 임계 근처를 손으로 세워야 경계가 관측된다. */
+const hungryFor = (w: SimWorld, hungerMin: number): SimWorld => ({
+  ...w,
+  pawns: w.pawns.map(p => (p.kind === 'DOCTOR' ? { ...p, hungerMin } : p)),
 })
 
 const waitingPatient = (id: string, spot: { x: number; y: number }, minute: number): Pawn => ({
@@ -179,7 +193,7 @@ describe('휴식 — 개시·전이·종료', () => {
 
   it('휴게실이 없으면 못 쉰다 — 피로도 자리도 그대로다', () => {
     // 이게 사직으로 가는 인과의 입구다: 못 쉬면 안 내려가고, 안 내려가면 포화한다.
-    const w0 = tired(restWorld({ lounge: [] }), FATIGUE_RED)
+    const w0 = tired(restWorld({ rooms: [] }), FATIGUE_RED)
     const before = at(doctorOf(w0))
     const w = run(w0, 100)
     const doc = doctorOf(w)
@@ -201,7 +215,7 @@ describe('휴식 — 개시·전이·종료', () => {
     expect(seated[0].id).toBe(doctors(one)[0].id)
 
     // 대조 — 의자가 둘이면 둘 다 간다. "한 번에 한 명"이 아니라 **좌석 수**가 한도다.
-    const two = tired(hireDoctor(restWorld({ lounge: [LOUNGE_2] }), 'CARDIOLOGY'), FATIGUE_RED)
+    const two = tired(hireDoctor(restWorld({ rooms: [LOUNGE_2] }), 'CARDIOLOGY'), FATIGUE_RED)
     expect(loungeSeats(two)).toHaveLength(2)  // 전제
     const bothGone = tick(two, 1)
     const going = doctors(bothGone).filter(d => d.activity === 'TO_LOUNGE')
@@ -213,7 +227,7 @@ describe('휴식 — 개시·전이·종료', () => {
   it('닿을 수 없는 의자는 건너뛰고 다음 후보를 본다 — 봉인된 휴게실이 전체를 가리지 않는다', () => {
     // 대기실 좌석(patientFlow.freeSeat)과 같은 규칙. 첫 후보에서 끝내면 봉인된 방 하나가
     // 멀쩡한 휴게실을 통째로 가려 아무도 못 쉬고, 철거가 없어 세션 내 비가역이다.
-    let w = restWorld({ lounge: [LOUNGE_1, FAR_LOUNGE] })
+    let w = restWorld({ rooms: [LOUNGE_1, FAR_LOUNGE] })
     w = place(w, SEALER) // LOUNGE_1의 문 앞을 벽으로 덮는다
     w = tired(w, FATIGUE_RED)
     const seats = loungeSeats(w)
@@ -401,7 +415,7 @@ describe('배치 인과 — 거리가 무엇을 바꾸나', () => {
     lounge: Parameters<typeof placeRoom>[1], fatigue: number, minutes: number,
     startMin = ARRIVAL_WINDOW_MIN,
   ) {
-    let w = tired({ ...restWorld({ lounge: [lounge] }), minute: startMin }, fatigue)
+    let w = tired({ ...restWorld({ rooms: [lounge] }), minute: startMin }, fatigue)
     const desk = deskSpot(w)
     let dwell = 0
     const restStarts: number[] = []
@@ -470,6 +484,15 @@ describe('불변식·경계', () => {
     expect(w).toEqual(snapshot)
   })
 
+  it('시간 분할 불변: 식사 전이가 섞여도 40분 한 번 = 1분 40번', () => {
+    const w0 = hungryFor(restWorld({ rooms: [CAFETERIA_1] }), HUNGRY_AFTER_MIN - 1)
+    const once = tick(w0, 40)
+    expect(once).toEqual(run(w0, 40))
+    // 계측기가 헛돌지 않았다 — 그 40분 안에서 개시·전이·종료가 전부 지나갔다(허기가 리셋됐다).
+    expect(doctorOf(once).hungerMin).toBeLessThan(HUNGRY_AFTER_MIN)
+    expect(doctorOf(once).activity).toBeUndefined()
+  })
+
   it('freshMorning은 activity·activityUntilMin을 지운다 — 아침은 책상에서 시작한다', () => {
     // 남기면 'RESTING'인 채로 하루가 시작돼 그 의사가 진료 후보에서 통째로 빠지고,
     // 어제의 activityUntilMin이 오늘 0분엔 이미 지난 값이라 쉬지도 않은 회복이 들어온다.
@@ -483,5 +506,254 @@ describe('불변식·경계', () => {
     expect(doc.activityUntilMin).toBeUndefined()
     expect(doc.dest).toBeUndefined()
     expect(at(doc)).toEqual(desk)
+  })
+
+  it('freshMorning은 hungerMin을 0으로 되돌린다 — 저녁을 먹고 출근한다', () => {
+    // 안 되돌리면 어제 굶은 의사가 오늘 **첫 진료부터** 1.15배로 시작하고, 식당이 없는 병원은
+    // 이튿날부터 영구히 굶은 상태가 된다(허기는 식사 말고 내려갈 길이 없다).
+    const w = hungryFor(restWorld(), HUNGRY_AFTER_MIN)
+    expect(doctorOf(w).hungerMin).toBe(HUNGRY_AFTER_MIN) // 전제
+    expect(doctorOf(freshMorning(w)).hungerMin).toBe(0)
+  })
+})
+
+describe('허기 상수', () => {
+  it('굶주림 감속은 피로 최대 감속보다 완만하다 — 1 < STARVED_SLOW < 1.5', () => {
+    // 대소가 뒤집히면 "한 끼 거른 것"이 "포화까지 갈려나간 것"보다 무거워져, 이 게임이 겨눈
+    // 인과(피로 → 포화 → 사직)의 무게가 밥 한 끼에 가려진다. 값이 아니라 **관계**가 계약이다.
+    expect(STARVED_SLOW).toBeGreaterThan(1)
+    expect(STARVED_SLOW).toBeLessThan(fatigueSlowFactor(FATIGUE_MAX))
+    expect(MEAL_MIN).toBeGreaterThan(0)
+    // 하루(DAY_END_MIN 600분) 안에 임계에 닿아야 식사가 게임 안에서 관측된다.
+    expect(HUNGRY_AFTER_MIN).toBeGreaterThan(0)
+  })
+})
+
+describe('허기 — 개시·전이·종료', () => {
+  it('허기 임계 의사는 식당으로 걸어가 20분 먹고 hungerMin 0으로 책상에 돌아온다', () => {
+    let w = hungryFor(restWorld({ rooms: [CAFETERIA_1] }), HUNGRY_AFTER_MIN - 1)
+    const desk = deskSpot(w)
+    const seats = mealSeats(w)
+    expect(seats).toHaveLength(1)          // 전제: 의자 하나짜리 식당
+    const seat = seats[0]
+    expect(at(doctorOf(w))).toEqual(desk)  // 전제: 책상 앞에서 시작한다
+    expect(doctorOf(w).fatigue).toBe(0)    // 전제: 피로는 임계 아래 — 관측되는 건 허기뿐이다
+
+    // ⓐ 개시 — 그 분에 허기가 임계에 닿고(299 → 300) 곧바로 목적지·경로가 잡힌다
+    w = tick(w, 1)
+    let doc = doctorOf(w)
+    expect(doc.hungerMin).toBe(HUNGRY_AFTER_MIN)
+    expect(doc.activity).toBe('TO_MEAL')
+    expect(doc.dest).toEqual(seat)
+    expect(doc.path.length).toBeGreaterThan(0)
+
+    // ⓑ 전이 — 의자에 **닿는** 그 분에 EATING
+    w = until(w, x => doctorOf(x).activity === 'EATING')
+    doc = doctorOf(w)
+    expect(at(doc)).toEqual(seat)
+    expect(doc.activityUntilMin).toBe(w.minute + MEAL_MIN)
+    expect(doc.dest).toEqual(seat)         // dest 유지 = 좌석 점유의 표현
+    const mealStart = w.minute
+
+    // 먹는 **동안에도 허기는 오른다** — 리셋은 블록이 끝날 때 한 번이다(회복과 같은 시점 계약).
+    w = run(w, MEAL_MIN - 1)
+    expect(doctorOf(w).activity).toBe('EATING')
+    expect(doctorOf(w).hungerMin).toBeGreaterThan(HUNGRY_AFTER_MIN)
+
+    // ⓒ 종료 — 정확히 MEAL_MIN분에
+    w = run(w, 1)
+    expect(w.minute).toBe(mealStart + MEAL_MIN)
+    doc = doctorOf(w)
+    expect(doc.activity).toBeUndefined()
+    expect(doc.activityUntilMin).toBeUndefined()
+    expect(doc.hungerMin).toBe(0)
+    expect(doc.dest).toEqual(desk)         // 자기 방 책상으로 복귀
+
+    // 실제로 걸어 돌아온다 — 배가 부르니 다시 나가지 않는다
+    w = until(w, x => at(doctorOf(x)).x === desk.x && at(doctorOf(x)).y === desk.y)
+    expect(doctorOf(w).activity).toBeUndefined()
+  })
+
+  it('허기가 임계 미만이면 식당이 있어도 가지 않는다 — 문은 300에서 열린다', () => {
+    // 임계를 지우면(허기 0에도 식사) 이 단언들이 함께 죽는다. 그리고 **분당 +1을 지우면**
+    // 298이 영원히 299에 못 닿아 마지막 단언이 죽는다 — 그게 이 경계쌍의 계측점이다.
+    const below = run(hungryFor(restWorld({ rooms: [CAFETERIA_1] }), HUNGRY_AFTER_MIN - 3), 1)
+    expect(doctorOf(below).hungerMin).toBe(HUNGRY_AFTER_MIN - 2)
+    expect(doctorOf(below).activity).toBeUndefined()
+    expect(at(doctorOf(below))).toEqual(deskSpot(below)) // 자리도 그대로다
+    const atThreshold = run(hungryFor(restWorld({ rooms: [CAFETERIA_1] }), HUNGRY_AFTER_MIN - 1), 1)
+    expect(doctorOf(atThreshold).activity).toBe('TO_MEAL') // 경계는 닫힌 쪽(>=)이다
+  })
+
+  it('식당이 없으면 못 먹는다 — 굶은 채로 계속 일한다', () => {
+    // 이게 "식당 없는 병원은 오후가 느리다"의 입구다: 못 먹으면 안 내려가고, 안 내려가면
+    // 그 뒤 모든 작업에 1.15가 붙는다.
+    const w0 = hungryFor(restWorld({ rooms: [] }), HUNGRY_AFTER_MIN)
+    const before = at(doctorOf(w0))
+    const w = run(w0, 100)
+    const doc = doctorOf(w)
+    expect(doc.activity).toBeUndefined()
+    expect(doc.hungerMin).toBe(HUNGRY_AFTER_MIN + 100) // 계속 올라간다
+    expect(at(doc)).toEqual(before)
+  })
+})
+
+describe('욕구 우선순위 — 표 순서가 계약이다', () => {
+  it('피로와 허기가 동시에 임계면 휴식이 먼저다', () => {
+    // 표 순서를 뒤집으면(식사 먼저) 이 단언이 죽는다. 왜 휴식이 먼저인가: 회복은 사직을 막지만
+    // 식사는 속도만 되돌린다 — 되돌릴 수 없는 쪽이 급하다.
+    const both = hungryFor(
+      tired(restWorld({ rooms: [LOUNGE_1, CAFETERIA_BESIDE] }), FATIGUE_RED),
+      HUNGRY_AFTER_MIN,
+    )
+    const restSeat = loungeSeats(both)[0]
+    const mealSeat = mealSeats(both)[0]
+    expect(restSeat).not.toEqual(mealSeat) // 전제: 두 자리가 서로 다르고 둘 다 비었다
+
+    const after = tick(both, 1)
+    expect(doctorOf(after).activity).toBe('TO_LOUNGE')
+    expect(doctorOf(after).dest).toEqual(restSeat)
+
+    // 대조 — 배만 고픈 의사는 같은 병원에서 식당으로 간다. 이게 없으면 "언제나 휴식"이라는
+    // 구현(식사 갈래를 통째로 지운 것)도 위 단언을 통과한다(공허한 우선순위 테스트).
+    const onlyHungry = tick(
+      hungryFor(restWorld({ rooms: [LOUNGE_1, CAFETERIA_BESIDE] }), HUNGRY_AFTER_MIN),
+      1,
+    )
+    expect(doctorOf(onlyHungry).activity).toBe('TO_MEAL')
+    expect(doctorOf(onlyHungry).dest).toEqual(mealSeat)
+  })
+})
+
+describe('굶주림 감속 — 작업 시작 시점에 확정된다', () => {
+  /** 같은 병원·같은 시드에서 허기만 갈아 끼우고 외래 한 건의 **확정 소요**를 잰다.
+   *  식당이 없어 굶은 의사는 굶은 채로 진료에 들어간다(대조가 성립하는 조건). */
+  function examWorkMin(hungerMin: number): number {
+    let w = hungryFor(restWorld({ rooms: [] }), hungerMin)
+    w = { ...w, pawns: [...w.pawns, waitingPatient('pat-slow', { x: 20, y: 20 }, w.minute)] }
+    w = until(w, x => x.pawns.find(p => p.id === 'pat-slow')?.stage === 'IN_EXAM')
+    const workMin = w.pawns.find(p => p.id === 'pat-slow')!.workMin
+    if (workMin === undefined) throw new Error('전제 실패 — 진료 소요가 확정되지 않았다')
+    return workMin
+  }
+
+  it('굶은 의사의 외래는 1.15배 길다 — 식당 없는 병원의 오후가 느려진다', () => {
+    const fed = examWorkMin(0)
+    const starved = examWorkMin(HUNGRY_AFTER_MIN)
+    // 피로는 0이라 감속의 유일한 원인이 허기다(두 축이 섞이면 계측력이 흐려진다).
+    expect(fed).toBe(EXAM_DURATION_MIN)
+    expect(starved).toBe(Math.round(EXAM_DURATION_MIN * STARVED_SLOW))
+    expect(starved).toBeGreaterThan(fed)
+  })
+
+  /** 응급판 — 침대에 누운 응급에 의사가 붙는 그 분의 확정 소요. */
+  function treatWorkMin(hungerMin: number): number {
+    const w0 = hungryFor(place(restWorld({ rooms: [] }), WARD_1BED), hungerMin)
+    const bed = wardBeds(w0)[0]
+    const w = tick({ ...w0, pawns: [...w0.pawns, inBed('emg-slow', bed)] }, 1)
+    const patient = w.pawns.find(p => p.id === 'emg-slow')!
+    expect(patient.stage).toBe('IN_TREATMENT') // 전제: 그 분에 배정됐다
+    return patient.workMin!
+  }
+
+  it('굶주림 감속은 응급 처치에도 걸린다 — 외래에만 적으면 한쪽이 조용히 낡는다', () => {
+    const base = emergencySpec('STEMI').durationMin
+    expect(treatWorkMin(0)).toBe(base)
+    expect(treatWorkMin(HUNGRY_AFTER_MIN)).toBe(Math.round(base * STARVED_SLOW))
+  })
+})
+
+describe('식사와 일의 경합', () => {
+  /** 그 활동 중인 의사를 응급이 낚아채는 세계 — 배정 직후 상태를 돌려준다. */
+  function interruptedWhile(activity: 'TO_MEAL' | 'EATING') {
+    let w = place(hungryFor(restWorld({ rooms: [CAFETERIA_1] }), HUNGRY_AFTER_MIN), WARD_1BED)
+    w = until(w, x => doctorOf(x).activity === activity)
+    const hungerBefore = doctorOf(w).hungerMin!
+    const untilMin = doctorOf(w).activityUntilMin
+    const bed = wardBeds(w)[0]
+    w = tick({ ...w, pawns: [...w.pawns, inBed('emg-meal', bed)] }, 1)
+    return { w, hungerBefore, untilMin }
+  }
+
+  it.each(['TO_MEAL', 'EATING'] as const)('%s 중에도 그 과 응급은 그 분에 배정된다 — 먹다 끊겼으니 허기는 그대로다', activity => {
+    const { w, hungerBefore } = interruptedWhile(activity)
+    const doc = doctorOf(w)
+    expect(w.pawns.find(p => p.id === 'emg-meal')).toMatchObject({
+      stage: 'IN_TREATMENT', doctorId: doc.id,
+    })
+    // 식사가 **무효**가 된다 — activity·예정 종료·좌석 점유가 그 자리에서 사라진다.
+    expect(doc.activity).toBeUndefined()
+    expect(doc.activityUntilMin).toBeUndefined()
+    expect(doc.dest).toBeUndefined()
+    expect(doc.path).toEqual([])
+    // ⚠️ 계측점 — 허기는 **리셋되지 않는다**(먹다 끊겼다). 그 분의 +1만 올라 있다.
+    expect(doc.hungerMin).toBe(hungerBefore + 1)
+    expect(doc.hungerMin).toBeGreaterThanOrEqual(HUNGRY_AFTER_MIN)
+  })
+
+  it('예정됐던 식사 종료 시각을 지나도 허기는 안 내려간다 — 먹지 않았기 때문이다', () => {
+    const { w: w0, untilMin } = interruptedWhile('EATING')
+    expect(untilMin).toBeDefined() // 전제: 예정 종료가 있었다
+    const w = run(w0, untilMin! - w0.minute + 5)
+    expect(doctorOf(w).hungerMin).toBeGreaterThanOrEqual(HUNGRY_AFTER_MIN)
+    expect(doctorOf(w).activity).toBeUndefined()
+    expect(w.pawns.find(p => p.id === 'emg-meal')!.stage).toBe('IN_TREATMENT')
+  })
+
+  it('식사하러 나선 의사는 대기 환자를 받지 않는다 — 휴식과 같은 가드가 걸린다', () => {
+    let w = tick(hungryFor(restWorld({ rooms: [CAFETERIA_1] }), HUNGRY_AFTER_MIN), 1)
+    expect(doctorOf(w).activity).toBe('TO_MEAL')      // 전제: 나섰다
+    expect(insideOwnRoom(w, doctorOf(w))).toBe(true)  // 전제: 아직 방 안 — 여기가 계측 지점이다
+    w = { ...w, pawns: [...w.pawns, waitingPatient('pat-meal', { x: 20, y: 20 }, w.minute)] }
+
+    w = tick(w, 1)
+    expect(insideOwnRoom(w, doctorOf(w))).toBe(true)
+    expect(doctorOf(w).activity).toBe('TO_MEAL')
+    expect(w.pawns.find(p => p.id === 'pat-meal')!.doctorId).toBeUndefined()
+
+    // 대조 — 식사가 끝나 책상으로 돌아오면 그 환자를 본다(제외가 영구 봉인이 아니다)
+    w = until(w, x => x.pawns.find(p => p.id === 'pat-meal')?.stage !== 'WAITING', 200)
+    expect(w.pawns.find(p => p.id === 'pat-meal')!.stage).toBe('TO_EXAM')
+  })
+
+  it('식당 가던 길이 끊기면 식사를 접고 책상으로 돌아온다 — 영구 정지 금지', () => {
+    // 좌초 해소는 activity 종류와 무관한 Task 1의 기계다(clearActivity 단일 출처) — 회귀 확인.
+    let w = tick(hungryFor(restWorld({ rooms: [CAFETERIA_1] }), HUNGRY_AFTER_MIN), 1)
+    expect(doctorOf(w).activity).toBe('TO_MEAL') // 전제
+    const desk = deskSpot(w)
+    w = { ...w, pawns: w.pawns.map(p => (p.kind === 'DOCTOR' ? { ...p, path: [] } : p)) }
+    w = tick(w, 1)
+    const doc = doctorOf(w)
+    expect(doc.activity).toBeUndefined()
+    expect(doc.activityUntilMin).toBeUndefined()
+    expect(doc.dest).toEqual(desk)
+    expect(doc.hungerMin).toBeGreaterThan(HUNGRY_AFTER_MIN) // 먹지 못했으니 리셋도 없다
+  })
+
+  it('의자 하나에 둘이 앉지 않는다 — 좌석 점유는 휴게실과 같은 기계다', () => {
+    const one = hungryFor(hireDoctor(restWorld({ rooms: [CAFETERIA_1] }), 'CARDIOLOGY'), HUNGRY_AFTER_MIN)
+    expect(doctors(one)).toHaveLength(2)   // 전제
+    expect(mealSeats(one)).toHaveLength(1) // 전제: 의자 하나
+    const after = tick(one, 1)
+    const going = doctors(after).filter(d => d.activity === 'TO_MEAL')
+    expect(going).toHaveLength(1)
+    expect(going[0].id).toBe(doctors(one)[0].id) // 타이브레이크는 폰 배열 순서다
+  })
+})
+
+describe('식당 건설', () => {
+  it('CAFETERIA는 대기실과 **같은** 격자 의자를 깔고 과를 갖지 않는다', () => {
+    expect(FURNITURE_OF.CAFETERIA).toBe('CHAIR')
+    const res = placeRoom(createWorld(1), { type: 'CAFETERIA', x: 4, y: 4, w: 8, h: 6 })
+    if (!res.ok) throw new Error('전제 실패 — 식당을 못 지었다')
+    expect(res.world.rooms[0].type).toBe('CAFETERIA')
+    expect(res.world.rooms[0].dept).toBeUndefined() // 진료실만 과를 갖는다(placeRoom이 떨군다)
+    expect(res.world.furniture.length).toBeGreaterThan(0)
+    expect(res.world.furniture.every(f => f.kind === 'CHAIR')).toBe(true)
+
+    // 같은 규격의 대기실과 **좌표까지 같다** — 격자 규칙이 갈리면 좌석 수가 조용히 달라진다.
+    const waiting = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w: 8, h: 6 })
+    if (!waiting.ok) throw new Error('전제 실패')
+    expect(res.world.furniture.map(at)).toEqual(waiting.world.furniture.map(at))
   })
 })

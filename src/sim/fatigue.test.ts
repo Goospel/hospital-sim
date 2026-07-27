@@ -16,6 +16,7 @@ import {
   FATIGUE_SLOW_FROM, fatigueSlowFactor, stepFatigue,
 } from '../game/doctor'
 import { addWorkLoad, fatigueGain, fatigueOf, restOvernight, slowedDurationMin } from './fatigue'
+import { STARVED_SLOW } from './needs'
 
 /** 응급이 실제로 수용되는 세계 시드(emergency.test와 같은 근거 — 시드마다 그날 응급이 갈린다). */
 const BOTH_KINDS_SEED = 4
@@ -169,8 +170,16 @@ describe('축적 — 표준강도분', () => {
     const w = run(outpatientWorld('AESTHETICS'), DAY_END_MIN - 1)
     const d = theDoctor(w)
     expect(w.stats.examsDone).toBeGreaterThan(5) // 계측기가 헛돌지 않았다(실제로 종일 봤다)
-    // 부하는 **분이 아니라 표준강도분**이다 — 강도 곱을 빼면 이 등식이 곧바로 깨진다.
-    expect(d.loadMinToday).toBeCloseTo(w.stats.examsDone * EXAM_DURATION_MIN * simDept('AESTHETICS').intensity)
+    // 부하는 **분이 아니라 표준강도분**이다 — 강도 곱을 빼면 이 부등식이 곧바로 깨진다
+    // (강도 없이는 examsDone × 20 = 상한의 세 배가 넘는다).
+    //
+    // ⚠️ 등식이 아니라 **구간**인 이유: 이 병원엔 식당이 없어 의사가 `HUNGRY_AFTER_MIN`(300분)
+    // 이후 굶은 채로 일한다(needs.starvedSlowFactor). 그 뒤 시작한 외래는 20분이 아니라 23분이라,
+    // 건별 소요가 20과 `round(20 × STARVED_SLOW)` 사이에서 갈린다 — 몇 건이 어느 쪽인지는
+    // 도착 시드가 정하므로 여기서 세지 않고 양쪽 끝만 잠근다. 무풍이라는 주장(피로 0)은 그대로다.
+    const base = w.stats.examsDone * simDept('AESTHETICS').intensity
+    expect(d.loadMinToday!).toBeGreaterThanOrEqual(base * EXAM_DURATION_MIN)
+    expect(d.loadMinToday!).toBeLessThanOrEqual(base * Math.round(EXAM_DURATION_MIN * STARVED_SLOW))
     expect(d.loadMinToday).toBeLessThan(FATIGUE_FREE_MIN)
     expect(d.fatigue).toBe(0)
   })

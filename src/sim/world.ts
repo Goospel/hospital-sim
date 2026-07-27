@@ -15,7 +15,7 @@ export const INITIAL_TREASURY_MANWON = 50_000 // 개원 자본 5억(기존 경�
  *  patientFlow가 pawn의 값을 하나라도 쓰는 순간 실제 순환이 된다. */
 export const ENTRANCE: Pt = { x: 24, y: GRID_H - 1 }
 
-export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION'
+export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION' | 'CAFETERIA'
 
 export interface Room {
   id: string

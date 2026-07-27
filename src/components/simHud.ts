@@ -18,6 +18,7 @@ export const ROOM_LABEL: Record<RoomType, string> = {
   WAITING: '대기실',
   LOUNGE: '휴게실',
   RECEPTION: '접수처',
+  CAFETERIA: '식당',
 }
 
 /** 방 이름 — **진료실만 과가 붙는다**(다른 방엔 과 개념이 없다 — placeRoom이 dept를 떨군다).

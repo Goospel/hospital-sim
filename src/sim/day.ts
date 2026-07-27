@@ -127,9 +127,14 @@ export function freshMorning(world: SimWorld): SimWorld {
     // 어제 붙었던 욕구 행동(휴식)도 함께 뗀다 — **아침은 책상에서 시작한다**. 남기면
     // 'RESTING'인 채로 하루가 열려 그 의사가 외래 후보에서 통째로 빠지고, 어제의
     // activityUntilMin(예: 520분)이 오늘 0분엔 이미 지난 값이라 쉬지도 않은 회복이 들어온다.
-    // 어떤 필드가 "욕구 행동"인지는 needs.clearActivity가 단일 출처다(Task 2에서 늘어난다).
+    // 어떤 필드가 "욕구 행동"인지는 needs.clearActivity가 단일 출처다.
     const next: Pawn = { ...clearActivity(restOvernight(p)), path: [] }
     delete next.dest
+    // 허기도 아침에 0으로 돌아간다 — **저녁을 먹고 출근했다**는 각색이다. 안 되돌리면 허기는
+    // 식사 말고 내려갈 길이 없어서(피로와 달리 밤 회복이 없다), 식당 없는 병원의 의사는
+    // 이튿날부터 **첫 진료부터** 영구히 1.15배가 된다. 리셋 자리가 여기인 이유는 피로 회복과
+    // 같다: 7일차 밤엔 startNextDay가 없어 그쪽에 달면 주의 첫날만 굶은 채로 시작한다.
+    if (p.kind === 'DOCTOR') next.hungerMin = 0
     // 방을 못 찾거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
     const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null
     return spot ? { ...next, x: spot.x, y: spot.y } : next
