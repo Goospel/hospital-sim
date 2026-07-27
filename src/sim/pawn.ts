@@ -38,6 +38,14 @@ export interface Pawn {
    *  좁혀 컴파일로 당긴다(Room.dept와 같은 이유). */
   dept?: SimDeptKey
   roomId?: string          // 배정된 진료실
+  /** 누적 피로(0~`FATIGUE_MAX`) — **의사만** 갖는다. 채용 시 0에서 시작해 진료·처치가 끝날 때
+   *  오르고 아침마다 `FATIGUE_REST`만큼 내린다(fatigue.ts). 효과는 하나다: 진료 소요가 늘어난다.
+   *  하루로 리셋되지 **않는다** — 주를 넘겨도 이어지는 것이 "주 후반에 갈려나간다"의 담지자다. */
+  fatigue?: number
+  /** 오늘 누적 **표준강도분**(소요 분 × 과 강도) — 의사만. 아침에 0으로 리셋된다.
+   *  피로 증가가 이 누적치의 함수라(하루 `FATIGUE_FREE_MIN` 초과분만 쌓인다) 하루치를 들고 있어야
+   *  한다. 건별로 따로 반올림해 더하면 같은 하루가 쪼개는 방식에 따라 다른 피로를 낳는다. */
+  loadMinToday?: number
   // PATIENT
   stage?: PatientStage
   /** 이 환자가 보러 온 과 — **도착 시점에 배정되고 이후 바뀌지 않는다**(patientFlow.maybeArrive).
@@ -53,10 +61,21 @@ export interface Pawn {
   /** 응급 처치 종료 시각 — `examUntilMin`과 **다른 필드**다. 겸하면 마감 정산이 외래 수가로
    *  응급을 계산하고(IN_EXAM 분기와 구별 불가) 850만원짜리 처치가 25만원으로 접힌다. */
   treatUntilMin?: number
+  /** 지금 이 환자에게 붙은 작업(외래 진료·응급 처치)의 **확정 소요 분**.
+   *  시작할 때 담당 의사의 피로 감속을 반영해 정해지고(fatigue.slowedDurationMin), 끝날 때
+   *  표준강도분 축적의 입력이 된다. `*UntilMin`에서 되계산하지 않는 이유: 그러려면 시작 시각을
+   *  따로 들거나 "그동안 의사의 피로가 안 변했다"는 성질에 기대야 하는데, 둘 다 이 한 필드보다
+   *  깨지기 쉽다. 외래·응급이 한 폰에 겹치지 않아 필드는 하나면 된다. */
+  workMin?: number
 }
 
 export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
-  const p: Pawn = { id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept }
+  // 피로·부하를 **명시적으로 0**에서 시작한다 — `?? 0` 폴백이 있어도 필드가 실재해야 UI·저장이
+  // "아직 일 안 한 의사"와 "필드가 없는 손세계 폰"을 구별할 수 있다.
+  const p: Pawn = {
+    id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept,
+    fatigue: 0, loadMinToday: 0,
+  }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
 }
 

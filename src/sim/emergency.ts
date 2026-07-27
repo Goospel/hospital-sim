@@ -15,6 +15,7 @@ import { ENTRANCE, type SimWorld } from './world'
 import type { Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
 import { ARRIVAL_WINDOW_MIN, furnitureSpots, minuteStreamSeed, toExit } from './patientFlow'
+import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
 
 /** 응급 도착 스트림 전용 salt — `daysim.callSeed` 주석의 **레지스트리에 등재된 값**이다.
  *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23·29·31, 이 파일에서 37·41.) */
@@ -78,6 +79,19 @@ export const EMERGENCIES: Record<EmergencyKind, EmergencySpec> = {
     durationMin: 90,
   },
 }
+
+/**
+ * 응급 처치의 **피로 강도**(부하 = 소요 분 × 이 값). 두 종류가 같은 값이라 종류별 필드가 아니라
+ * 모듈 상수다 — 갈리는 날 `EmergencySpec`으로 내리면 된다.
+ *
+ * 2.0 = `src/game/doctor.ts` FATIGUE_INTENSITY의 STEMI·ABDOMINAL_EMERGENCY **그대로**(각색 없음).
+ * 저쪽 주석대로 "응급 수술·시술급 — 생사·집중"이라는 판단은 스케일과 무관하다. 외래 기준선(1.0)의
+ * 두 배이고 필수과 외래(dept.ts 1.2)보다도 무겁다 — 90분짜리 처치 한 건이 하루 문턱
+ * (`FATIGUE_FREE_MIN`)을 혼자 넘긴다는 뜻이고, **응급을 받는 과가 갈려나간다**는 이 게임의
+ * 논지가 피로 축에서 완성되는 자리다. 값의 자리가 카탈로그(dept.ts)가 아니라 여기인 이유는
+ * 이 파일 머리말과 같다: 응급은 도착·판정·수가·소요·강도까지 한 덩어리다.
+ */
+export const EMERGENCY_INTENSITY = 2.0
 
 /** 응급 종류 분포 — 계획 표의 STEMI/급성복증 50/50. 값은 각 구간의 **누적 상한**이고
  *  배열 순서가 곧 구간 순서라 결정론의 일부다(patientFlow.ARRIVAL_DEPT_MIX와 같은 형태). */
@@ -208,6 +222,8 @@ function progressEmergencies(w: SimWorld): SimWorld {
   let treasuryManwon = w.treasuryManwon
   let leftCount = w.stats.leftCount
   let byDept: SimDeptStats = w.stats.byDept
+  /** 이번 분에 끝난 처치의 표준강도분 — 외래와 같은 기계(fatigue.applyWorkLoads)로 얹는다. */
+  const loadByDoctor = new Map<string, number>()
   const out: Pawn[] = []
   const keep = (p: Pawn | null) => { if (p) out.push(p) }
 
@@ -235,9 +251,16 @@ function progressEmergencies(w: SimWorld): SimWorld {
           // 응급 수가도 **그 과의 장부**로 들어간다 — 따로 두면 과별 순익이 응급을 모르는 채
           // 계산돼 "순환기는 응급을 받아도 적자"라는 이 게임의 논지를 잴 수 없다.
           byDept = addRevenueToDeptStats(byDept, spec.dept, spec.revenueManwon)
+          // 처치도 **끝날 때** 부하가 쌓인다(외래와 같은 시점 계약). 강도는 과 강도가 아니라
+          // 응급 강도다 — 같은 순환기 의사라도 90분 PCI와 20분 외래는 같은 무게가 아니다.
+          if (p.doctorId) {
+            const load = (p.workMin ?? spec.durationMin) * EMERGENCY_INTENSITY
+            loadByDoctor.set(p.doctorId, (loadByDoctor.get(p.doctorId) ?? 0) + load)
+          }
           const done: Pawn = { ...p }
           delete done.doctorId      // 의사 해방 = 유휴 복귀의 단일 표현
           delete done.treatUntilMin
+          delete done.workMin
           keep(toExit(w, done, 'LEAVING')) // 퇴장과 동시에 dest가 입구로 바뀌어 침대가 풀린다
         } else keep(p)
         break
@@ -245,7 +268,10 @@ function progressEmergencies(w: SimWorld): SimWorld {
         keep(p) // LEAVING·LEFT_WAITING의 퇴장·제거는 patientFlow.progressStages 소관이다
     }
   }
-  return { ...w, treasuryManwon, pawns: out, stats: { ...w.stats, leftCount, byDept } }
+  return {
+    ...w, treasuryManwon, pawns: applyWorkLoads(out, loadByDoctor),
+    stats: { ...w.stats, leftCount, byDept },
+  }
 }
 
 /** 침대에서 기다리는 응급에게 그 과의 유휴 의사를 붙인다(폰 배열 순서 = 결정론).
@@ -274,8 +300,11 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
     const doc = w.pawns.find(d => d.kind === 'DOCTOR' && d.dept === spec.dept && !busy.has(d.id))
     if (!doc) continue // 그 과 의사가 전부 묶여 있다 — 이 환자는 침대에서 계속 기다린다
     busy.add(doc.id)
+    // 외래와 같은 계약: 소요는 **시작하는 순간** 그 의사의 피로로 확정된다. 지친 의사의 PCI는
+    // 90분이 아니라 그보다 길고, 그동안 그 과의 외래·다음 응급이 함께 밀린다.
+    const workMin = slowedDurationMin(spec.durationMin, fatigueOf(doc))
     updates.set(i, {
-      ...p, stage: 'IN_TREATMENT', doctorId: doc.id, treatUntilMin: w.minute + spec.durationMin,
+      ...p, stage: 'IN_TREATMENT', doctorId: doc.id, treatUntilMin: w.minute + workMin, workMin,
     })
   }
   if (updates.size === 0) return w

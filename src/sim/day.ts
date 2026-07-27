@@ -9,6 +9,7 @@ import {
   simDept, addExamToDeptStats, addRevenueToDeptStats, deptRevenueSum, type SimDeptStats,
 } from './dept'
 import { emergencySpec, emergencyKindOf } from './emergency'
+import { restOvernight } from './fatigue'
 
 export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
 export const DAYS_PER_WEEK = 7
@@ -97,7 +98,7 @@ export function settleDay(world: SimWorld): SimWorld {
   }
 }
 
-/** 새 아침의 공통 초기화 — 분 0·당일 집계 0·의사는 자기 진료실 책상 앞에서 다시 시작.
+/** 새 아침의 공통 초기화 — 분 0·당일 집계 0·**하룻밤 회복**·의사는 자기 진료실 책상 앞에서 다시 시작.
  *  하루를 넘길 때(startNextDay)와 주를 넘길 때(week.startNextWeek)가 **같은 아침**을 열어야 한다.
  *  7일차 밤엔 startNextDay가 없어서, 여기가 갈리면 주의 첫날만 지난주 stats를 들고 시작해
  *  그날 DayRecord가 지난주 진료까지 다시 센다(에러 없이 숫자만 틀린다).
@@ -106,7 +107,9 @@ export function settleDay(world: SimWorld): SimWorld {
 export function freshMorning(world: SimWorld): SimWorld {
   const blocked = buildBlockedSet(world)
   const pawns = world.pawns.map(p => {
-    const next: Pawn = { ...p, path: [] }
+    // 하룻밤 회복도 여기 있어야 한다 — 7일차 밤엔 startNextDay가 없어서, 회복을 그쪽에 달면
+    // **주의 첫날만** 지친 채로 시작한다(stats 리셋이 여기 있는 것과 같은 이유).
+    const next: Pawn = { ...restOvernight(p), path: [] }
     delete next.dest
     // 방을 못 찾거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
     const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null

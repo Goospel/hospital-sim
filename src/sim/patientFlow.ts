@@ -15,6 +15,7 @@ import {
 } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { simDept, addExamToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
+import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
 
 export const EXAM_DURATION_MIN = 20
 /** 대기 인내 — 이만큼 앉아 있었는데 안 불리면 떠난다(수익 0). */
@@ -306,6 +307,9 @@ function progressStages(w: SimWorld): SimWorld {
   let { examsDone, leftCount } = w.stats
   // 과별 집계는 갈아끼우기(재할당)로만 갱신한다 — 입력 세계의 객체를 건드리면 tick의 순수성이 깨진다.
   let byDept: SimDeptStats = w.stats.byDept
+  /** 이번 분에 끝난 진료의 **표준강도분**을 의사별로 모은다 — 의사 폰은 이 루프의 앞머리에서
+   *  이미 `out`으로 넘어가므로 여기서 직접 못 고친다(applyWorkLoads 주석). */
+  const loadByDoctor = new Map<string, number>()
   const out: Pawn[] = []
   const keep = (p: Pawn | null) => { if (p) out.push(p) }
 
@@ -330,8 +334,15 @@ function progressStages(w: SimWorld): SimWorld {
         } else keep(p)
         break
       case 'TO_EXAM':
-        if (arrived) keep({ ...p, stage: 'IN_EXAM', examUntilMin: w.minute + EXAM_DURATION_MIN })
-        else if (stranded) {
+        if (arrived) {
+          // 소요는 **시작하는 순간** 담당 의사의 피로로 확정된다(진료 중에 늘었다 줄었다 하지
+          // 않는다). 그 의사는 이 환자를 문 채라 진료가 끝날 때까지 다른 일을 못 하므로,
+          // 이번 분 안에서 그의 피로가 바뀔 길도 없다.
+          const workMin = slowedDurationMin(
+            EXAM_DURATION_MIN, fatigueOf(w.pawns.find(d => d.id === p.doctorId)),
+          )
+          keep({ ...p, stage: 'IN_EXAM', examUntilMin: w.minute + workMin, workMin })
+        } else if (stranded) {
           leftCount++
           const freed: Pawn = { ...p }
           delete freed.doctorId // 의사부터 풀어준다 — 안 풀면 진료실이 통째로 잠긴다
@@ -347,11 +358,21 @@ function progressStages(w: SimWorld): SimWorld {
           examsDone++
           treasuryManwon += simDept(dept).examRevenueManwon
           byDept = addExamToDeptStats(byDept, dept)
+          // 부하는 **끝날 때** 쌓인다 — 그리고 그 단위는 분이 아니라 **표준강도분**(소요 × 과 강도)이다.
+          // 강도를 빼면 "많이 보는 과가 갈린다"가 되어 미용이 포화하고 필수과가 무풍이 된다
+          // (src/game/doctor.ts FATIGUE_INTENSITY 주석의 실측). 감속으로 길어진 소요는 그대로
+          // 부하가 되므로 피로가 피로를 부른다 — 그게 "갈려나간다"의 형태다.
+          // `workMin` 폴백은 손세계 폰(진료 시작을 거치지 않고 IN_EXAM으로 세운 세계)의 몫이다.
+          if (p.doctorId) {
+            const load = (p.workMin ?? EXAM_DURATION_MIN) * simDept(dept).intensity
+            loadByDoctor.set(p.doctorId, (loadByDoctor.get(p.doctorId) ?? 0) + load)
+          }
           // doctorId를 지우는 것이 곧 의사의 유휴 복귀다(busy 판정의 단일 출처).
           // 갓 만든 복사본만 건드리므로 입력 세계는 그대로다(tick의 순수성 계약).
           const done: Pawn = { ...p }
           delete done.doctorId
           delete done.examUntilMin
+          delete done.workMin // 끝난 작업의 소요는 남기지 않는다 — 다음 작업이 물려받으면 안 된다
           keep(toExit(w, done, 'LEAVING'))
         } else keep(p)
         break
@@ -366,5 +387,8 @@ function progressStages(w: SimWorld): SimWorld {
   }
   // 응급 집계(수용·회차)는 이 단계가 만들지 않으므로 입력 값을 그대로 통과시킨다 —
   // 필드를 손으로 나열하면 새 집계가 늘 때마다 여기서 조용히 0으로 리셋된다.
-  return { ...w, treasuryManwon, pawns: out, stats: { ...w.stats, examsDone, leftCount, byDept } }
+  return {
+    ...w, treasuryManwon, pawns: applyWorkLoads(out, loadByDoctor),
+    stats: { ...w.stats, examsDone, leftCount, byDept },
+  }
 }
