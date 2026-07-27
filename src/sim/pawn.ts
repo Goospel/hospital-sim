@@ -69,6 +69,16 @@ export interface Pawn {
   workMin?: number
 }
 
+/** 이 의사의 전공과 — 없으면 던진다(`wantsDeptOf`·`emergencyKindOf`와 같은 계약).
+ *  과가 곧 **주급**이라(dept.ts weeklyCostManwon) `undefined`를 0원으로 접으면 그 의사만
+ *  공짜로 일하는 병원이 되고, 그 차이는 주간 결산 총액에만 나타나 추적이 어렵다.
+ *  채용(hireDoctor)·스폰(spawnDoctor)이 반드시 과를 싣기 때문에, 비었다는 건 손으로 세운
+ *  세계이거나 채용 경로를 건너뛴 것이다. */
+export function doctorDeptOf(p: Pawn): SimDeptKey {
+  if (!p.dept) throw new Error(`의사(${p.id})에 과가 없다 — 채용을 거치지 않은 폰이다`)
+  return p.dept
+}
+
 export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
   // 피로·부하를 **명시적으로 0**에서 시작한다 — `?? 0` 폴백이 있어도 필드가 실재해야 UI·저장이
   // "아직 일 안 한 의사"와 "필드가 없는 손세계 폰"을 구별할 수 있다.

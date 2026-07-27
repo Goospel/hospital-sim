@@ -1,21 +1,40 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, type SimWorld } from './world'
-import {
-  WEEKLY_DOCTOR_COST_MANWON, INSOLVENCY_WEEKS_TO_CLOSE,
-  weekSummary, settleWeek, startNextWeek,
-} from './week'
-import { DAYS_PER_WEEK, type DayRecord } from './day'
-import type { Pawn } from './pawn'
+import { INSOLVENCY_WEEKS_TO_CLOSE, weekSummary, settleWeek, startNextWeek } from './week'
+import { DAY_END_MIN, DAYS_PER_WEEK, startNextDay, type DayRecord } from './day'
+import { placeRoom } from './build'
+import { hireDoctor, type Pawn } from './pawn'
+import { tick } from './tick'
+import { HIRABLE_DEPTS, deptRevenueSum, simDept, type SimDeptKey, type SimDeptStats } from './dept'
 
-// 주간 요약은 **DayRecord의 합**만 본다(수가 계산은 하루 쪽 소관) — 그래서 여기 30은 과별
-// 수가가 아니라 "한 건에 30씩 벌었다고 치자"는 임의의 픽스처다. 계획 Task 5가 과별 표를
-// 얹기 전까지 주 결산은 과를 모른다.
-const NO_EMERGENCY = { accepted: 0, turnedAway: 0 } // 주 결산은 아직 응급을 합산하지 않는다(계획 Task 5)
+// 하루 기록의 수익은 **과별 집계에서 유도된다**(DayRecord.revenueManwon = Σ byDept) — 픽스처도
+// 그 불변식을 지켜야 한다. 여기 30은 과별 수가가 아니라 "한 건에 30씩 벌었다고 치자"는 임의의
+// 단가다(주 결산은 수가를 모른다 — 계산은 하루 쪽 소관이다).
+const FIXTURE_RATE = 30
+const NO_EMERGENCY = { accepted: 0, turnedAway: 0 }
 
-const day = (n: number, exams: number): DayRecord =>
-  ({ day: n, examsDone: exams, leftCount: 0, revenueManwon: exams * 30, byDept: {}, emergencies: NO_EMERGENCY })
+const dayOf = (n: number, byDept: SimDeptStats, emergencies = NO_EMERGENCY): DayRecord => ({
+  day: n,
+  examsDone: Object.values(byDept).reduce((s, v) => s + (v?.patients ?? 0), 0),
+  leftCount: 0,
+  revenueManwon: deptRevenueSum(byDept),
+  byDept,
+  emergencies,
+})
 
-const doctor = (id: string, x: number): Pawn => ({ id, kind: 'DOCTOR', x, y: 8, path: [] })
+const day = (n: number, exams: number, dept: SimDeptKey = 'INTERNAL_MEDICINE'): DayRecord =>
+  dayOf(n, { [dept]: { patients: exams, revenueManwon: exams * FIXTURE_RATE } })
+
+/** 픽스처 의사 — **과가 반드시 있다**. 고정비가 과별로 갈린 뒤로 과 없는 의사는 값을 매길 수
+ *  없어 결산이 던진다(week.doctorDeptOf). */
+const doctor = (id: string, x: number, dept: SimDeptKey): Pawn =>
+  ({ id, kind: 'DOCTOR', x, y: 8, path: [], dept })
+
+/** 기본 픽스처의 두 의사는 **일부러 다른 과**다(내과 3,000 · 미용 800 따위) — 같은 과 둘이면
+ *  "의사 수 × 균일 상수"로 회귀해도 값이 같아 과별 합산이 통째로 관측되지 않는다. */
+const FIXTURE_DEPTS: SimDeptKey[] = ['INTERNAL_MEDICINE', 'AESTHETICS']
+const FIXTURE_FIXED_COST =
+  FIXTURE_DEPTS.reduce((sum, d) => sum + simDept(d).weeklyCostManwon, 0)
 
 function weekEndWorld(over: Partial<SimWorld> = {}): SimWorld {
   const base = createWorld(1)
@@ -26,7 +45,7 @@ function weekEndWorld(over: Partial<SimWorld> = {}): SimWorld {
     // 단언이 항진명제가 된다(`day: w.day`로 바꿔도 안 죽는다). week: 3과 같은 함정의 day 축.
     day: DAYS_PER_WEEK,
     days: [1, 2, 3, 4, 5, 6, 7].map(n => day(n, 10)),
-    pawns: [doctor('doc-1', 8), doctor('doc-2', 9)],
+    pawns: [doctor('doc-1', 8, FIXTURE_DEPTS[0]), doctor('doc-2', 9, FIXTURE_DEPTS[1])],
     ...over,
   }
 }
@@ -38,32 +57,182 @@ describe('주간 요약', () => {
     const s = weekSummary(w)
     expect(s.week).toBe(3)
     expect(s.revenueManwon).toBe(7 * 10 * 30)
-    expect(s.fixedCostManwon).toBe(2 * WEEKLY_DOCTOR_COST_MANWON)
+    expect(s.fixedCostManwon).toBe(FIXTURE_FIXED_COST)
     expect(s.netManwon).toBe(s.revenueManwon - s.fixedCostManwon)
   })
 
   it('진료·이탈도 7일 **합**이다(하루치나 마지막 날이 아니라)', () => {
     // 날마다 값을 다르게 준다 — 전부 같으면 "합" 대신 "첫날 × 7"이나 "마지막 날"로 바꿔도 안 걸린다.
-    const days: DayRecord[] = [1, 2, 3, 4, 5, 6, 7].map(n =>
-      ({ day: n, examsDone: n, leftCount: n * 2, revenueManwon: n * 30, byDept: {}, emergencies: NO_EMERGENCY }))
+    const days: DayRecord[] = [1, 2, 3, 4, 5, 6, 7].map(n => ({ ...day(n, n), leftCount: n * 2 }))
     const s = weekSummary(weekEndWorld({ days }))
     expect(s.examsDone).toBe(28)          // 1+2+…+7
     expect(s.leftCount).toBe(56)
-    expect(s.revenueManwon).toBe(28 * 30)
+    expect(s.revenueManwon).toBe(28 * FIXTURE_RATE)
   })
 
   it('고정비는 **의사** 수만 센다 — 세계에 남은 환자는 월급을 받지 않는다', () => {
     // 자연 흐름에선 마감이 환자를 다 빼가 pawns가 곧 의사라 이 구분이 통째로 관측되지 않는다.
     const patient: Pawn = { id: 'pat-1', kind: 'PATIENT', x: 20, y: 21, path: [], stage: 'WAITING' }
-    const w = weekEndWorld({ pawns: [doctor('doc-1', 8), doctor('doc-2', 9), patient] })
-    expect(weekSummary(w).fixedCostManwon).toBe(2 * WEEKLY_DOCTOR_COST_MANWON)
+    const w = weekEndWorld({
+      pawns: [doctor('doc-1', 8, FIXTURE_DEPTS[0]), doctor('doc-2', 9, FIXTURE_DEPTS[1]), patient],
+    })
+    expect(weekSummary(w).fixedCostManwon).toBe(FIXTURE_FIXED_COST)
   })
 
   it('기록이 없는 주는 수익 0 — 고정비는 그대로 나간다', () => {
     const s = weekSummary(weekEndWorld({ days: [] }))
     expect(s.revenueManwon).toBe(0)
-    expect(s.fixedCostManwon).toBe(2 * WEEKLY_DOCTOR_COST_MANWON)
-    expect(s.netManwon).toBe(-2 * WEEKLY_DOCTOR_COST_MANWON)
+    expect(s.fixedCostManwon).toBe(FIXTURE_FIXED_COST)
+    expect(s.netManwon).toBe(-FIXTURE_FIXED_COST)
+  })
+})
+
+describe('주간 요약 — 과별 표·응급 줄', () => {
+  const cost = (d: SimDeptKey) => simDept(d).weeklyCostManwon
+
+  it('고정비는 **과별** 주급의 합이다 — 균일 상수로 접히지 않는다', () => {
+    const w = weekEndWorld({
+      pawns: [
+        doctor('doc-1', 8, 'CARDIOLOGY'), doctor('doc-2', 9, 'CARDIOLOGY'),
+        doctor('doc-3', 10, 'AESTHETICS'),
+      ],
+    })
+    const s = weekSummary(w)
+    expect(s.fixedCostManwon).toBe(2 * cost('CARDIOLOGY') + cost('AESTHETICS'))
+    // "의사 수 × 어떤 하나의 값"으로 회귀하면(옛 균일 상수·전원 내과 값) 반드시 이 셋 중
+    // 하나와 같아진다 — 과가 섞인 병원에서만 그 회귀가 관측된다.
+    for (const key of HIRABLE_DEPTS) expect(s.fixedCostManwon).not.toBe(3 * cost(key))
+  })
+
+  it('과 없는 의사는 조용히 0원이 아니라 던진다 — 값을 매길 수 없는 폰이다', () => {
+    const ghost: Pawn = { id: 'ghost', kind: 'DOCTOR', x: 8, y: 8, path: [] }
+    expect(() => weekSummary(weekEndWorld({ pawns: [ghost] }))).toThrow()
+  })
+
+  it('byDept: 과마다 의사 수·수익·고정비·순익이 서고, Σ가 총계와 같다', () => {
+    const days = [1, 2, 3, 4, 5, 6, 7].map(n => dayOf(n, {
+      CARDIOLOGY: { patients: 2, revenueManwon: 900 },
+      AESTHETICS: { patients: 3, revenueManwon: 90 },
+    }))
+    const s = weekSummary(weekEndWorld({
+      days,
+      pawns: [
+        doctor('doc-1', 8, 'CARDIOLOGY'),
+        doctor('doc-2', 9, 'AESTHETICS'), doctor('doc-3', 10, 'AESTHETICS'),
+      ],
+    }))
+    expect(s.byDept.CARDIOLOGY).toEqual({
+      doctors: 1,
+      revenueManwon: 7 * 900,
+      fixedCostManwon: cost('CARDIOLOGY'),
+      netManwon: 7 * 900 - cost('CARDIOLOGY'),
+    })
+    expect(s.byDept.AESTHETICS).toEqual({
+      doctors: 2,
+      revenueManwon: 7 * 90,
+      fixedCostManwon: 2 * cost('AESTHETICS'),
+      netManwon: 7 * 90 - 2 * cost('AESTHETICS'),
+    })
+    // Σ 불변식(기존 deptLedger I-A 계승) — 과별 표가 한 줄이라도 새면 여기서 걸린다.
+    const lines = Object.values(s.byDept)
+    expect(lines.reduce((a, l) => a + l.revenueManwon, 0)).toBe(s.revenueManwon)
+    expect(lines.reduce((a, l) => a + l.fixedCostManwon, 0)).toBe(s.fixedCostManwon)
+    expect(lines.reduce((a, l) => a + l.netManwon, 0)).toBe(s.netManwon)
+  })
+
+  it('의사가 있는 과는 수익 0이어도 줄이 선다 — 진료를 한 건도 안 봐도 고정비는 나간다', () => {
+    const s = weekSummary(weekEndWorld({ days: [], pawns: [doctor('doc-1', 8, 'CARDIOLOGY')] }))
+    expect(s.byDept.CARDIOLOGY).toEqual({
+      doctors: 1, revenueManwon: 0, fixedCostManwon: cost('CARDIOLOGY'), netManwon: -cost('CARDIOLOGY'),
+    })
+    // 관계가 아예 없는 과는 0줄이 아니라 **줄이 없다**(SimDeptStats의 Partial 계승).
+    expect(Object.keys(s.byDept)).toEqual(['CARDIOLOGY'])
+  })
+
+  it('의사가 없는 과의 수익도 줄이 선다 — 그 주에 번 돈이 표에서 사라지지 않는다', () => {
+    // PR C의 사직이 붙으면 "주중에 벌었는데 주말엔 그 과 의사가 0명"이 실재한다. 지금도
+    // 손세계로는 만들 수 있고, 이 줄이 없으면 Σ byDept가 총수익과 어긋난다.
+    const s = weekSummary(weekEndWorld({
+      days: [dayOf(1, { CARDIOLOGY: { patients: 1, revenueManwon: 850 } })],
+      pawns: [doctor('doc-1', 8, 'AESTHETICS')],
+    }))
+    expect(s.byDept.CARDIOLOGY).toEqual({
+      doctors: 0, revenueManwon: 850, fixedCostManwon: 0, netManwon: 850,
+    })
+    expect(s.revenueManwon).toBe(850)
+  })
+
+  it('응급은 주 단위로 합산된다 — 수용·회차 각각(사유별 내역은 stats 소관)', () => {
+    // 날마다 값을 다르게 준다 — 전부 같으면 "합" 대신 "첫날 × N"이나 "마지막 날"로 바꿔도 안 걸린다.
+    const days = [1, 2, 3].map(n => dayOf(n, {}, { accepted: n, turnedAway: n * 2 }))
+    expect(weekSummary(weekEndWorld({ days })).emergencies).toEqual({ accepted: 6, turnedAway: 12 })
+  })
+})
+
+// ─── I-B1: 부호 불변식 ────────────────────────────────────────────────────────
+// 이 게임의 논지("옳은 의료를 할수록 장부가 나빠진다")가 **숫자로 성립하는지**를 재는 회귀 잠금이다.
+// 여기가 깨지면 카탈로그 값이 어긋났다는 뜻이고, 그건 게임이 하려던 말이 뒤집혔다는 뜻이다.
+// (튜닝으로 값을 바꿀 수는 있다 — 바꾸되 **부호는 유지**한다. 계획 Task 5.)
+describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다', () => {
+  const I_B1_SEED = 3
+
+  function place(w: SimWorld, spec: Parameters<typeof placeRoom>[1]): SimWorld {
+    const r = placeRoom(w, spec)
+    if (!r.ok) throw new Error(`전제 실패 — 건설 거부(${r.reason})`)
+    return r.world
+  }
+
+  /** 표준 시나리오 — **과 하나만 다르고 나머지는 완전히 같은** 병원(같은 시드·같은 방 배치·
+   *  의사 1명·병동까지 동일). 차이를 과로 좁혀야 순익 차이가 카탈로그에서 왔다고 말할 수 있다. */
+  function standardHospital(dept: SimDeptKey, seed: number): SimWorld {
+    let w = createWorld(seed)
+    w = place(w, { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
+    w = place(w, { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 })
+    // 병동은 **양쪽 다** 짓는다 — 순환기만 지어 주면 "응급을 받을 수 있어서" 진 게 아니라
+    // "병동을 더 지어서" 진 것이 되어 비교가 과의 비교가 아니게 된다.
+    w = place(w, { type: 'WARD', x: 30, y: 20, w: 6, h: 5 })
+    return hireDoctor(w, dept)
+  }
+
+  function runWeek(dept: SimDeptKey, seed = I_B1_SEED) {
+    let w = standardHospital(dept, seed)
+    for (let d = 0; d < DAYS_PER_WEEK; d++) {
+      w = tick(w, DAY_END_MIN)
+      if (w.phase === 'DAY_END') w = startNextDay(w)
+    }
+    if (w.phase !== 'WEEK_END') throw new Error(`전제 실패 — 주말에 닿지 못했다(${w.phase})`)
+    return weekSummary(w)
+  }
+
+  it('ⓐ 미용 1명 병원의 주 순익 > 순환기 1명 병원의 주 순익', () => {
+    const aesthetics = runWeek('AESTHETICS')
+    const cardiology = runWeek('CARDIOLOGY')
+    expect(aesthetics.netManwon).toBeGreaterThan(cardiology.netManwon)
+    // 부호까지 못박는다 — 대소만 재면 둘 다 흑자여도(혹은 둘 다 적자여도) 통과한다.
+    expect(aesthetics.netManwon).toBeGreaterThan(0)
+    expect(cardiology.netManwon).toBeLessThan(0)
+    expect(aesthetics.examsDone).toBeGreaterThan(0) // 계측기가 빈 병원으로 헛돌지 않았다
+  })
+
+  it('ⓑ 순환기 1명 병원은 응급을 받아도 과별 순익 ≤ 0 — 옳은 의료가 장부를 이기지 못한다', () => {
+    const s = runWeek('CARDIOLOGY')
+    const line = s.byDept.CARDIOLOGY!
+    // **전제**: 응급이 실제로 수용돼 그 수익이 그 과 장부에 실렸다. 이 두 줄이 없으면
+    // "응급을 받아도"가 공허해진다(응급이 0건인 세계에서 적자인 건 아무 말도 아니다).
+    expect(s.emergencies.accepted).toBeGreaterThan(0)
+    expect(line.revenueManwon)
+      .toBeGreaterThan(s.examsDone * simDept('CARDIOLOGY').examRevenueManwon)
+    expect(line.netManwon).toBeLessThanOrEqual(0)
+  })
+
+  it('부호는 시드가 바뀌어도 뒤집히지 않는다 — 한 판의 우연이 아니다', () => {
+    for (const seed of [1, 4, 7]) {
+      const a = runWeek('AESTHETICS', seed)
+      const c = runWeek('CARDIOLOGY', seed)
+      expect(a.netManwon, `시드 ${seed}`).toBeGreaterThan(c.netManwon)
+      expect(a.netManwon, `시드 ${seed}`).toBeGreaterThan(0)
+      expect(c.byDept.CARDIOLOGY!.netManwon, `시드 ${seed}`).toBeLessThanOrEqual(0)
+    }
   })
 })
 
@@ -71,7 +240,7 @@ describe('주간 결산', () => {
   it('settleWeek: 고정비가 금고에서 빠진다(수익은 진료 시점에 이미 들어옴 — 이중 지급 금지)', () => {
     const w = weekEndWorld({ treasuryManwon: 10_000 })
     const settled = settleWeek(w)
-    expect(settled.treasuryManwon).toBe(10_000 - 2 * WEEKLY_DOCTOR_COST_MANWON)
+    expect(settled.treasuryManwon).toBe(10_000 - FIXTURE_FIXED_COST)
     expect(settled.phase).toBe('WEEK_END') // 결산해도 결산 화면은 남는다(플레이어가 읽고 넘긴다)
   })
 
@@ -94,7 +263,7 @@ describe('주간 결산', () => {
 
   it('금고 0은 음수가 아니다 — 딱 고정비만큼 벌면 살아남는다', () => {
     // 경계 앞에서 기준을 캡처한다(T-085): 고정비와 금고가 같은 순간이 폐업 판정의 경계다.
-    const exact = settleWeek(weekEndWorld({ treasuryManwon: 2 * WEEKLY_DOCTOR_COST_MANWON, insolvencyStreak: 1 }))
+    const exact = settleWeek(weekEndWorld({ treasuryManwon: FIXTURE_FIXED_COST, insolvencyStreak: 1 }))
     expect(exact.treasuryManwon).toBe(0)
     expect(exact.insolvencyStreak).toBe(0) // `<= 0`으로 쓰면 여기서 걸린다
     expect(exact.phase).toBe('WEEK_END')
@@ -122,7 +291,7 @@ describe('주간 결산', () => {
   it('두 번 결산하면 거부한다 — 고정비가 두 번 빠지지 않는다(이중 정산 방지)', () => {
     const settled = settleWeek(weekEndWorld({ treasuryManwon: 100_000 }))
     expect(() => settleWeek(settled)).toThrow()
-    expect(settled.treasuryManwon).toBe(100_000 - 2 * WEEKLY_DOCTOR_COST_MANWON) // 한 번만 빠졌다
+    expect(settled.treasuryManwon).toBe(100_000 - FIXTURE_FIXED_COST) // 한 번만 빠졌다
   })
 })
 
@@ -139,7 +308,10 @@ describe('다음 주', () => {
   it('startNextWeek도 새 하루로 시작한다 — 당일 집계 0·의사는 어제 경로를 버린다', () => {
     // 7일차 밤엔 startNextDay가 없다. 여기서 하루 초기화를 빠뜨리면 주의 첫날만 지난주 stats를
     // 들고 시작해 그날 DayRecord가 지난주 진료까지 다시 센다(에러 없이 숫자만 틀린다).
-    const walking: Pawn = { id: 'doc-1', kind: 'DOCTOR', x: 8, y: 8, path: [{ x: 9, y: 8 }], dest: { x: 9, y: 8 } }
+    const walking: Pawn = {
+      id: 'doc-1', kind: 'DOCTOR', x: 8, y: 8, path: [{ x: 9, y: 8 }], dest: { x: 9, y: 8 },
+      dept: 'CARDIOLOGY',
+    }
     const settled = settleWeek(weekEndWorld({
       treasuryManwon: 100_000, pawns: [walking],
       stats: {
@@ -168,7 +340,7 @@ describe('다음 주', () => {
     const next = startNextWeek(settleWeek(weekEndWorld({ treasuryManwon: 100_000 })))
     const week2End: SimWorld = { ...next, phase: 'WEEK_END', days: [1, 2, 3, 4, 5, 6, 7].map(n => day(n, 10)) }
     const settled2 = settleWeek(week2End)
-    expect(settled2.treasuryManwon).toBe(next.treasuryManwon - 2 * WEEKLY_DOCTOR_COST_MANWON)
+    expect(settled2.treasuryManwon).toBe(next.treasuryManwon - FIXTURE_FIXED_COST)
   })
 
   it('startNextWeek는 WEEK_END가 아닌 세계를 거부한다', () => {

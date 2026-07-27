@@ -77,9 +77,13 @@ function firstEmergencyMin(w0: SimWorld, kind: EmergencyKind, from = 1): number 
 const emergencyPawns = (w: SimWorld) => w.pawns.filter(p => p.emergency)
 
 describe('응급 카탈로그', () => {
-  it('두 종류의 배후과·수가·소요가 계획 표 그대로다(값의 단일 출처는 emergency.ts)', () => {
-    expect(STEMI).toMatchObject({ dept: 'CARDIOLOGY', revenueManwon: 850, durationMin: 90 })
-    expect(ACUTE).toMatchObject({ dept: 'GENERAL_SURGERY', revenueManwon: 300, durationMin: 90 })
+  it('두 종류의 배후과·수가·소요를 그대로 싣는다(값의 단일 출처는 emergency.ts)', () => {
+    // ⚠️ 수가는 계획 표의 최초값(850/300)이 **아니다** — 그 값이면 순환기 1명 병원이 응급만으로
+    // 주 +10,000 흑자가 되어 부호가 통째로 뒤집혔다(실측). 부호 불변식 I-B1(week.test.ts)에
+    // 맞춰 재조정했고, 두 값의 대소(심장중재 > 개복)는 그대로다.
+    expect(STEMI).toMatchObject({ dept: 'CARDIOLOGY', revenueManwon: 350, durationMin: 90 })
+    expect(ACUTE).toMatchObject({ dept: 'GENERAL_SURGERY', revenueManwon: 150, durationMin: 90 })
+    expect(STEMI.revenueManwon).toBeGreaterThan(ACUTE.revenueManwon)
     // 응급 수가는 외래 수가와 **다른 축**이다 — 외래 수가로 회귀하면 여기서 걸린다.
     expect(STEMI.revenueManwon).not.toBe(simDept('CARDIOLOGY').examRevenueManwon)
     expect(ACUTE.revenueManwon).not.toBe(simDept('GENERAL_SURGERY').examRevenueManwon)

@@ -5,6 +5,9 @@ import { spawnDoctor, type Pawn, type PatientStage } from './pawn'
 import { tick } from './tick'
 import { DAY_END_MIN, DAYS_PER_WEEK, settleDay, startNextDay } from './day'
 import { simDept, deptRevenueSum } from './dept'
+import { EMERGENCY_INTENSITY } from './emergency'
+import { fatigueGain } from './fatigue'
+import { FATIGUE_FREE_MIN } from '../game/doctor'
 
 /** 진료 수익은 건당 상수가 아니라 **과별 수가**다(계획 Task 2) — 아래 단언들은 상수 × 건수가
  *  아니라 과별 집계에서 총액을 유도한다. hospitalWorld는 내과 진료실뿐이라 내과만 돈다. */
@@ -104,6 +107,59 @@ describe('하루 마감', () => {
     }
     const s = settleDay(staged)
     expect(s.stats.leftCount).toBe(w.stats.leftCount + 1) // WAITING 한 명만
+  })
+
+  // ─── 마감이 인정한 노동의 피로 ────────────────────────────────────────────
+  // 마감은 진행 중 진료·처치를 **완료로 인정해 수익을 준다**. 그런데 부하는 작업이 끝날 때만
+  // 쌓이므로(patientFlow·emergency), 마감으로 끝난 건은 수익만 들어오고 피로는 빠져나간다 —
+  // 하루 상한이 통째로 어긋나는 무성 실패다(의사 1인당 최대 204 표준강도분 = 피로 51점 과소).
+  // 아래 셋이 그 비대칭을 잠근다.
+
+  /** 마감 시점의 세계를 손으로 세운다 — 자연 흐름의 600분엔 IN_EXAM·IN_TREATMENT가 남을지가
+   *  시드에 달려 이 분기가 통째로 관측되지 않는다(위 스테이지 계약 테스트와 같은 이유). */
+  function atDusk(patient: Pawn, docOver: Partial<Pawn> = {}) {
+    const w = tick(hospitalWorld(3), 5)
+    // 문턱(FATIGUE_FREE_MIN) **위**에서 잰다 — 아래면 어떤 부하를 얹어도 gain이 0이라
+    // 계측기가 통째로 공허해진다(T-085 — 경계 앞에서 기준을 캡처한다).
+    const loadBefore = FATIGUE_FREE_MIN + 40
+    const doc: Pawn = {
+      ...w.pawns.find(p => p.kind === 'DOCTOR')!, fatigue: 0, loadMinToday: loadBefore, ...docOver,
+    }
+    const settled = settleDay({ ...w, pawns: [doc, { ...patient, doctorId: patient.doctorId && doc.id }] })
+    return { loadBefore, doc, after: settled.pawns.find(p => p.id === doc.id)!, settled }
+  }
+
+  const duskExam = (over: Partial<Pawn> = {}): Pawn => ({
+    id: 'in-exam', kind: 'PATIENT', x: 20, y: 21, path: [], stage: 'IN_EXAM',
+    wantsDept: 'CARDIOLOGY', doctorId: 'doc', workMin: 30, ...over,
+  })
+
+  it('마감이 완료로 인정한 진료의 부하도 그 의사에게 쌓인다 — 수익만 받고 피로는 안 받지 않는다', () => {
+    const { loadBefore, after } = atDusk(duskExam())
+    // 표준강도분 = 확정 소요 × **그 과의** 강도(순환기 1.2) — 소요만 세면 30이라 여기서 갈린다.
+    const load = 30 * simDept('CARDIOLOGY').intensity
+    expect(after.loadMinToday).toBe(loadBefore + load)
+    expect(after.fatigue).toBe(fatigueGain(loadBefore + load) - fatigueGain(loadBefore))
+    expect(after.fatigue).toBeGreaterThan(0) // 계측기가 0으로 헛돌지 않았다
+  })
+
+  it('마감이 완료로 인정한 **응급 처치**의 부하는 응급 강도로 쌓인다(과 강도로 접히지 않는다)', () => {
+    const treat = duskExam({
+      id: 'in-treat', stage: 'IN_TREATMENT', emergency: 'STEMI', workMin: 90,
+    })
+    const { loadBefore, after } = atDusk(treat)
+    const load = 90 * EMERGENCY_INTENSITY
+    // 과 강도(1.2)로 접으면 108, 응급 강도(2.0)면 180 — 두 값이 갈려 회귀가 곧바로 드러난다.
+    expect(after.loadMinToday).toBe(loadBefore + load)
+    expect(after.fatigue).toBe(fatigueGain(loadBefore + load) - fatigueGain(loadBefore))
+    expect(after.fatigue).toBeGreaterThan(0)
+  })
+
+  it('담당 의사가 없는 진행 중 진료(손세계 폰)는 아무에게도 부하를 얹지 않는다', () => {
+    const orphan = duskExam({ doctorId: undefined })
+    const { loadBefore, after } = atDusk(orphan)
+    expect(after.loadMinToday).toBe(loadBefore)
+    expect(after.fatigue).toBe(0)
   })
 
   it('settleDay는 입력 세계를 변형하지 않는다 (순수)', () => {

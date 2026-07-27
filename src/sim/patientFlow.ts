@@ -102,6 +102,15 @@ export function wantsDeptOf(p: Pawn): SimDeptKey {
   return p.wantsDept
 }
 
+/** 끝난 외래 한 건의 **표준강도분**(소요 × 과 강도) — 피로 축적의 입력.
+ *  단위를 여기 한 곳에 모으는 이유: 진료의 완료는 두 곳에서 관측된다(정상 종료는
+ *  `progressStages`, 마감에 걸린 건은 `day.settleDay`). 식을 양쪽에 적으면 한쪽만 강도를
+ *  잊거나 폴백이 갈려도 에러 없이 피로만 어긋난다 — 마감 쪽이 실제로 그랬다.
+ *  `workMin` 폴백은 손세계 폰(진료 시작을 거치지 않고 IN_EXAM으로 세운 세계)의 몫이다. */
+export function examLoadMin(p: Pawn, dept: SimDeptKey): number {
+  return (p.workMin ?? EXAM_DURATION_MIN) * simDept(dept).intensity
+}
+
 const samePt = (a: { x: number; y: number }, b: Pt) => a.x === b.x && a.y === b.y
 const ptKey = (p: Pt) => `${p.x},${p.y}`
 
@@ -364,7 +373,7 @@ function progressStages(w: SimWorld): SimWorld {
           // 부하가 되므로 피로가 피로를 부른다 — 그게 "갈려나간다"의 형태다.
           // `workMin` 폴백은 손세계 폰(진료 시작을 거치지 않고 IN_EXAM으로 세운 세계)의 몫이다.
           if (p.doctorId) {
-            const load = (p.workMin ?? EXAM_DURATION_MIN) * simDept(dept).intensity
+            const load = examLoadMin(p, dept)
             loadByDoctor.set(p.doctorId, (loadByDoctor.get(p.doctorId) ?? 0) + load)
           }
           // doctorId를 지우는 것이 곧 의사의 유휴 복귀다(busy 판정의 단일 출처).

@@ -65,17 +65,21 @@ export const EMERGENCIES: Record<EmergencyKind, EmergencySpec> = {
     kind: 'STEMI',
     label: '급성 심근경색',
     dept: 'CARDIOLOGY',
-    // 850 ← 순환기 주 고정비(5,000)의 1/6 수준. 한 주에 6건을 받아야 고정비를 겨우 메운다 —
-    // 도착률(120분당 1건 × 50%)로는 주 14건이 상한이라 **가능하지만 빠듯하다**는 눈금이다.
-    revenueManwon: 850,
+    // 350 ← 외래 수가(25)의 14배. "응급 한 건이 그 과 외래 십수 건 값"이라는 대소는 지키되,
+    // **주급을 메우지는 못하는** 자리에 둔다: 순환기 주급 8,000을 채우려면 주 23건이 필요한데
+    // 도착률(120분당 1건 × 50%)로는 실측 상한이 17건이다. 이 간격이 부호 불변식 I-B1 ⓑ
+    // ("응급을 받아도 적자")의 수학이고, 그래서 이 값은 취향이 아니라 **불변식의 일부**다.
+    // ⚠️ 최초 값은 850이었다 — 그때 순환기 병원은 응급만으로 주 +10,000 흑자였다(부호 역전).
+    revenueManwon: 350,
     durationMin: 90,
   },
   ACUTE_ABDOMEN: {
     kind: 'ACUTE_ABDOMEN',
     label: '급성복증',
     dept: 'GENERAL_SURGERY',
-    // 300 ← STEMI의 절반 아래. 옛 층에서도 개복이 심장중재보다 수가가 낮았다(대소 계승).
-    revenueManwon: 300,
+    // 150 ← STEMI(350)의 절반 아래. 옛 층에서도 개복이 심장중재보다 수가가 낮았다(대소 계승).
+    // 외과 주급(4,500)에 견주면 STEMI와 같은 관계다 — 주 30건을 받아야 메우는데 상한은 22건이다.
+    revenueManwon: 150,
     durationMin: 90,
   },
 }
@@ -92,6 +96,14 @@ export const EMERGENCIES: Record<EmergencyKind, EmergencySpec> = {
  * 이 파일 머리말과 같다: 응급은 도착·판정·수가·소요·강도까지 한 덩어리다.
  */
 export const EMERGENCY_INTENSITY = 2.0
+
+/** 끝난 응급 처치 한 건의 **표준강도분**(소요 × 응급 강도) — `patientFlow.examLoadMin`의 응급판이고
+ *  같은 이유로 여기 하나다: 처치의 완료도 두 곳에서 관측된다(정상 종료는 `progressEmergencies`,
+ *  마감에 걸린 건은 `day.settleDay`). 강도가 **과 강도가 아니라 응급 강도**인 것이 핵심이라,
+ *  식이 흩어지면 한쪽만 과 강도(1.2)로 접혀도 아무 에러가 안 난다. */
+export function emergencyLoadMin(p: Pawn, spec: EmergencySpec): number {
+  return (p.workMin ?? spec.durationMin) * EMERGENCY_INTENSITY
+}
 
 /** 응급 종류 분포 — 계획 표의 STEMI/급성복증 50/50. 값은 각 구간의 **누적 상한**이고
  *  배열 순서가 곧 구간 순서라 결정론의 일부다(patientFlow.ARRIVAL_DEPT_MIX와 같은 형태). */
@@ -254,7 +266,7 @@ function progressEmergencies(w: SimWorld): SimWorld {
           // 처치도 **끝날 때** 부하가 쌓인다(외래와 같은 시점 계약). 강도는 과 강도가 아니라
           // 응급 강도다 — 같은 순환기 의사라도 90분 PCI와 20분 외래는 같은 무게가 아니다.
           if (p.doctorId) {
-            const load = (p.workMin ?? spec.durationMin) * EMERGENCY_INTENSITY
+            const load = emergencyLoadMin(p, spec)
             loadByDoctor.set(p.doctorId, (loadByDoctor.get(p.doctorId) ?? 0) + load)
           }
           const done: Pawn = { ...p }

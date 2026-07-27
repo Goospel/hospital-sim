@@ -14,15 +14,18 @@ describe('과 카탈로그', () => {
     expect(simDept('INTERNAL_MEDICINE').examRevenueManwon).toBeLessThan(simDept('AESTHETICS').examRevenueManwon)
   })
 
-  // 계획 표(2026-07-28 PR B)의 값 잠금. 부등호 테스트만으로는 **한 과 안에서 수가와 고정비가
-  // 뒤바뀌어도** 과 간 대소가 그대로라 통과한다(미용 30/2,500 → 2,500/30이어도 내과 12 < 미용 2,500).
-  // 그래서 표 자체를 한 번 못박는다 — 값을 의도적으로 조정할 땐 여기와 계획 표를 함께 고친다.
-  it('계획 표의 수치를 그대로 싣는다(수가·고정비·강도)', () => {
+  // 카탈로그 값 잠금. 부등호 테스트만으로는 **한 과 안에서 수가와 고정비가 뒤바뀌어도** 과 간
+  // 대소가 그대로라 통과한다(미용 30/800 → 800/30이어도 내과 12 < 미용 800).
+  // 그래서 표 자체를 한 번 못박는다 — 값을 의도적으로 조정할 땐 여기와 dept.ts 주석을 함께 고친다.
+  // ⚠️ 고정비는 **계획 표의 최초값(2,500/3,000/4,000/5,000)이 아니다**. 구현 후 실측에서 부호가
+  // 통째로 뒤집혀 있었고(미용 적자·순환기 응급으로 대흑자), 계획이 허용한 대로 부호 불변식
+  // I-B1(week.test.ts)에 맞춰 재조정했다 — 근거는 dept.ts의 값별 주석에 있다.
+  it('카탈로그 수치를 그대로 싣는다(수가·고정비·강도)', () => {
     const table: Record<SimDeptKey, { examRevenueManwon: number; weeklyCostManwon: number; intensity: number }> = {
-      AESTHETICS: { examRevenueManwon: 30, weeklyCostManwon: 2_500, intensity: 0.3 },
-      INTERNAL_MEDICINE: { examRevenueManwon: 12, weeklyCostManwon: 3_000, intensity: 1.0 },
-      GENERAL_SURGERY: { examRevenueManwon: 25, weeklyCostManwon: 4_000, intensity: 1.2 },
-      CARDIOLOGY: { examRevenueManwon: 25, weeklyCostManwon: 5_000, intensity: 1.2 },
+      AESTHETICS: { examRevenueManwon: 30, weeklyCostManwon: 800, intensity: 0.3 },
+      INTERNAL_MEDICINE: { examRevenueManwon: 12, weeklyCostManwon: 1_500, intensity: 1.0 },
+      GENERAL_SURGERY: { examRevenueManwon: 25, weeklyCostManwon: 4_500, intensity: 1.2 },
+      CARDIOLOGY: { examRevenueManwon: 25, weeklyCostManwon: 8_000, intensity: 1.2 },
     }
     for (const key of HIRABLE_DEPTS) {
       expect(simDept(key)).toMatchObject(table[key])

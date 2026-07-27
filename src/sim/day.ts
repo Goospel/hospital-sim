@@ -4,12 +4,12 @@
 import { freshStats, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { buildBlockedSet } from './path'
-import { furnitureSpot, wantsDeptOf } from './patientFlow'
+import { examLoadMin, furnitureSpot, wantsDeptOf } from './patientFlow'
 import {
   simDept, addExamToDeptStats, addRevenueToDeptStats, deptRevenueSum, type SimDeptStats,
 } from './dept'
-import { emergencySpec, emergencyKindOf } from './emergency'
-import { restOvernight } from './fatigue'
+import { emergencyLoadMin, emergencySpec, emergencyKindOf } from './emergency'
+import { applyWorkLoads, restOvernight } from './fatigue'
 
 export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
 export const DAYS_PER_WEEK = 7
@@ -38,7 +38,8 @@ export interface DayRecord {
 }
 
 /** 운영 마감 정산 — RUNNING 세계에만 허용(이중 정산 방지).
- *  진행 중 진료(IN_EXAM)는 완료 인정(각색: 야근 연장은 범위 밖), 아직 진료를 못 받은 환자
+ *  진행 중 진료(IN_EXAM)는 완료 인정(각색: 야근 연장은 범위 밖) — **수익과 피로를 함께** 인정한다.
+ *  둘 중 수익만 주면 그 노동은 장부에는 있고 의사 몸에는 없는 것이 된다. 아직 진료를 못 받은 환자
  *  (`COUNTS_AS_TURNED_AWAY`)는 이탈 집계. 환자는 스테이지와 무관하게 전원 세계에서 빠진다.
  *  ⚠️ 이미 집계가 끝난 환자(LEAVING = 진료 완료 / LEFT_WAITING = 이탈)는 다시 세지 않는다 —
  *  세면 그 하루의 leftCount가 실제 인원보다 부풀어 DayRecord와 주간 결산까지 함께 틀어진다. */
@@ -49,6 +50,15 @@ export function settleDay(world: SimWorld): SimWorld {
   let byDept: SimDeptStats = world.stats.byDept
   // 마감에 인정한 진료의 수익만 따로 센다 — 하루 중에 끝난 건은 그때 이미 금고에 들어갔다.
   let lateRevenueManwon = 0
+  /** 마감이 **완료로 인정한** 작업의 표준강도분 — 진료 중 끝난 건과 똑같이 의사에게 얹는다.
+   *  수익만 인정하고 부하를 빼면 하루 상한이 통째로 어긋난다: 의사 한 명이 마감에 물고 있을 수
+   *  있는 최대 노동(외래 20분 + 응급 90분 아님 — 각각 한 건씩)이 매일 공짜가 되고, 그만큼
+   *  피로가 과소 계상돼 "갈려나간다"가 늦게 온다(에러 없이 곡선만 완만해진다). */
+  const loadByDoctor = new Map<string, number>()
+  const addLoad = (doctorId: string | undefined, load: number) => {
+    if (!doctorId) return // 손세계 폰 — 담당 의사가 없으면 얹을 데도 없다
+    loadByDoctor.set(doctorId, (loadByDoctor.get(doctorId) ?? 0) + load)
+  }
   for (const p of world.pawns) {
     if (p.kind !== 'PATIENT') continue
     if (p.stage === 'IN_EXAM') {
@@ -58,6 +68,7 @@ export function settleDay(world: SimWorld): SimWorld {
       exams += 1
       lateRevenueManwon += simDept(dept).examRevenueManwon
       byDept = addExamToDeptStats(byDept, dept)
+      addLoad(p.doctorId, examLoadMin(p, dept))
     } else if (p.stage === 'IN_TREATMENT') {
       // 진행 중 **응급 처치**도 완료 인정 — 외래(IN_EXAM)와 같은 각색이다(야근 연장은 범위 밖).
       // 수가는 반드시 응급 카탈로그에서 온다: 외래 수가로 접으면 850만원짜리 처치가 25만원이
@@ -65,9 +76,12 @@ export function settleDay(world: SimWorld): SimWorld {
       const spec = emergencySpec(emergencyKindOf(p))
       lateRevenueManwon += spec.revenueManwon
       byDept = addRevenueToDeptStats(byDept, spec.dept, spec.revenueManwon)
+      addLoad(p.doctorId, emergencyLoadMin(p, spec))
     } else if (p.stage && COUNTS_AS_TURNED_AWAY.includes(p.stage)) left += 1
   }
-  const doctors = world.pawns.filter(p => p.kind === 'DOCTOR')
+  // 부하는 환자를 다 훑은 **뒤** 한 번에 얹는다 — 같은 의사가 외래와 응급을 동시에 물고 있을
+  // 수는 없지만(doctorId는 하나), 모아서 얹는 계약을 진료 중 축적(applyWorkLoads)과 같게 둔다.
+  const doctors = applyWorkLoads(world.pawns.filter(p => p.kind === 'DOCTOR'), loadByDoctor)
   const record: DayRecord = {
     day: world.day,
     examsDone: exams,
