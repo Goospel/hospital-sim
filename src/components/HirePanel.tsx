@@ -17,14 +17,21 @@ import { doctorCountByDept } from "./simHud";
  *
  * ⚠️ **채용 일시금은 없다**(hireDoctor — 금고 무변). 이 패널이 금고를 보여주되 "잔액 부족"
  * 같은 판정을 하지 않는 이유다: 채용의 대가는 지금이 아니라 주말에 온다.
+ *
+ * 대신 **돈으로 못 사는 제약**이 여기 하나 더 있다: 전국에 남은 그 과 사람(`hirePool`).
+ * 0이면 금고가 아무리 두꺼워도 못 뽑고, 사직자는 그 풀로 **돌아오지 않는다**(week.startNextWeek).
+ * 그래서 이 숫자는 잔액이 아니라 **남은 판 전체의 상한**이다 — 줄어드는 걸 채용 화면에서 보게 한다.
  */
 export default function HirePanel({
   pawns,
+  hirePool,
   treasuryManwon,
   onHire,
   onClose,
 }: {
   pawns: Pawn[];
+  /** 과별 **전국 잔여 인원** — 세계가 들고 있는 값을 그대로 읽는다(화면이 세지 않는다). */
+  hirePool: Record<SimDeptKey, number>;
   treasuryManwon: number;
   onHire: (dept: SimDeptKey) => void;
   onClose: () => void;
@@ -58,22 +65,40 @@ export default function HirePanel({
         <ul className="flex flex-col divide-y divide-frame border-y border-frame">
           {HIRABLE_DEPTS.map((key) => {
             const spec = simDept(key);
+            const remaining = hirePool[key];
+            const empty = remaining <= 0;
             return (
-              <li key={key} className="flex items-center gap-3 py-2.5">
+              <li key={key} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
                 <span className="min-w-24 text-sm text-on-desk">{spec.label}</span>
                 <span className="font-mono text-xs tabular-nums text-on-desk-muted">
                   현재 {counts[key]}명
                 </span>
+                {/* 전국 잔여 — 0이면 붉게. 색만으로 지지 않는다: 숫자와 아래 사유 문구가 함께 판정을 진다. */}
+                <span
+                  className={`font-mono text-xs tabular-nums ${empty ? "text-alarm" : "text-on-desk-muted"}`}
+                  title="한 판 동안 이 과에서 더 뽑을 수 있는 사람 수 — 사직자는 여기로 돌아오지 않습니다"
+                >
+                  전국 잔여 {remaining}명
+                </span>
                 <span className="ml-auto font-mono text-xs tabular-nums text-on-desk-muted">
                   주급 {formatManwon(spec.weeklyCostManwon)}
                 </span>
+                {/* 풀이 빈 과는 **버튼이 눌리지 않는다**. 그래도 코어의 거부 경로(NO_POOL 토스트)는
+                    남는다 — 이중 벨트다: 화면이 잘못 열어 줘도 세계는 안 바뀌고, 그 사실이 토스트로
+                    말해진다(조용히 먹히는 버튼이 최악이다). */}
                 <button
                   type="button"
+                  disabled={empty}
                   onClick={() => onHire(key)}
-                  className="border border-frame px-3 py-1 text-xs text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+                  className="border border-frame px-3 py-1 text-xs text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted disabled:cursor-not-allowed disabled:border-frame disabled:text-on-desk-muted/40 disabled:hover:border-frame"
                 >
                   채용
                 </button>
+                {empty && (
+                  <p className="w-full text-[11px] text-alarm">
+                    전국에 남은 {spec.label} 의사가 없습니다 — 떠난 사람은 이 숫자로 돌아오지 않습니다.
+                  </p>
+                )}
               </li>
             );
           })}

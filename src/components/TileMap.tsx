@@ -4,7 +4,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { FATIGUE_MAX } from "@/game/doctor";
 import { GRID_W, GRID_H, doorTile, type RoomType, type SimWorld } from "@/sim/world";
 import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, PatientSprite } from "./PixelSprite";
-import { fatigueTone, roomLabel } from "./simHud";
+import { busyDoctorIds, doctorActivityMark, fatigueTone, FATIGUE_COLOR, roomLabel } from "./simHud";
 
 /**
  * 타일 병원 맵 — SimWorld를 그대로 그리는 순수 표시층. 세계를 만들지도 고치지도 않는다.
@@ -35,6 +35,9 @@ export const ROOM_STYLE: Record<RoomType, { floor: string; wall: string }> = {
   WAITING: { floor: "#241f18", wall: "#4a4130" },
   LOUNGE: { floor: "#16241c", wall: "#2c4a39" },
   RECEPTION: { floor: "#261a1a", wall: "#4f3232" },
+  // 식당 — 휴게실(녹)의 이웃 색조(황록). 두 방은 같은 "쉬는 곳"이라 계열을 붙이되, 한 화면에
+  // 나란히 서도 구별되게 색상만 옮긴다. `Record<RoomType, …>`이라 이 줄이 없으면 tsc가 막는다.
+  CAFETERIA: { floor: "#24220f", wall: "#4a4620" },
 };
 
 const OUTSIDE_FLOOR = "#0d0d11"; // 부지 바닥(방 밖) — 복도이자 마당
@@ -51,14 +54,6 @@ function CounterSprite() {
     </svg>
   );
 }
-
-/** 피로 단계별 색 — 기존 게임 FatigueBar와 같은 3단(회백 → 밝음 → 적).
- *  경계 숫자는 여기 없다: 단계 판정은 simHud.fatigueTone이 doctor.ts 상수로 하고 여기선 칠만 한다. */
-const FATIGUE_COLOR: Record<ReturnType<typeof fatigueTone>, string> = {
-  CALM: "var(--on-desk-muted)",
-  SLOW: "var(--on-desk)",
-  RED: "var(--alarm)",
-};
 
 /** 의사 아바타 위 피로 막대(타일 폭). 0이어도 트랙을 남긴다 — 눈금이 있어야 "아직 0"이 읽힌다. */
 function FatigueBar({ fatigue }: { fatigue: number }) {
@@ -118,7 +113,9 @@ export default function TileMap({
   onTileCancel,
 }: TileMapProps) {
   // 진료 중인 의사 — 환자의 doctorId가 "바쁨"의 단일 출처다(patientFlow와 같은 규칙).
-  const busyDoctors = new Set(world.pawns.map((p) => p.doctorId).filter((id): id is string => !!id));
+  // 집합을 만드는 식 자체도 simHud가 든다: 인사 패널이 태업 판정에 같은 집합을 쓰므로
+  // 여기서 따로 적으면 두 화면이 각자의 "바쁨"을 갖게 된다.
+  const busyDoctors = busyDoctorIds(world.pawns);
 
   return (
     <div className="overflow-x-auto">
@@ -230,7 +227,11 @@ export default function TileMap({
         ))}
 
         {/* 폰 — key는 id로 고정한다(위 주석). 이동은 left/top transition이 걷는다. */}
-        {world.pawns.map((p) => (
+        {world.pawns.map((p) => {
+          // 욕구 표시는 의사만 갖는 상태라 환자에는 언제나 null이다(activity 필드가 없다) —
+          // 그래서 kind로 한 번 더 거르지 않는다.
+          const activityMark = doctorActivityMark(p);
+          return (
           <div
             key={p.id}
             className="pointer-events-none absolute"
@@ -261,8 +262,22 @@ export default function TileMap({
                 고=적)이고 경계 판정은 simHud.fatigueTone 하나가 진다. 색이 아니라 **길이**가
                 판정을 나르는 것도 그대로다 — 흑백으로 찍어도 읽힌다. */}
             {p.kind === "DOCTOR" && <FatigueBar fatigue={p.fatigue ?? 0} />}
+            {/* 휴식·식사 글리프 — 책상을 비운 의사가 아무 표시 없이 걸어가면 화면에서는 그냥
+                **의사가 사라진 것**으로 보인다("왜 진료를 안 하지"). 휴게실·식당을 지은 보람이
+                여기 있다: 걷는 동안에도 글리프가 붙어 있어 왕복에 걸리는 시간이 눈에 보인다.
+                표시 판정은 simHud.doctorActivityMark(단일 출처)가 하고 여기선 놓기만 한다. */}
+            {activityMark && (
+              <span
+                className="pointer-events-none absolute -right-1 -top-1 font-mono text-[8px] leading-none text-on-desk"
+                style={{ textShadow: "0 0 2px var(--desk)" }}
+                title={activityMark.label}
+              >
+                {activityMark.glyph}
+              </span>
+            )}
           </div>
-        ))}
+          );
+        })}
 
         {/* 건설 미리보기 — 지금 손을 떼면 무엇이 생기는지. 거부될 사각형은 붉게 남아 사유 토스트와 짝이 된다. */}
         {preview && (

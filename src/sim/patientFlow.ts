@@ -6,16 +6,19 @@
 //  ② 도착 판정은 **위치 == dest**다. `path.length === 0`은 "길이 끊겨 비워진 폰"과 구별되지 않는다.
 //  ③ 경로는 목적지가 정해질 때 1회만 계산한다. 매 분 재탐색하면 findPath(~3ms)가 인원수만큼 곱해진다.
 import { seededUnit, callSeed } from '../game/daysim'
-import { buildBlockedSet, findPath, isBlockedTile, type Pt } from './path'
+import { buildBlockedSet, findPath, type Pt } from './path'
 // ENTRANCE(정문)는 world가 단일 출처다 — 격자에서 파생하는 상수이고, 의사의 출근(pawn.hireDoctor)도
 // 같은 문을 쓴다. 여기 두면 하위 모듈인 pawn이 이 파일을 값으로 당겨 레이어가 뒤집힌다.
-import {
-  GRID_W, GRID_H, ENTRANCE,
-  type FurnitureKind, type Room, type RoomType, type SimWorld,
-} from './world'
-import type { Pawn, PatientStage } from './pawn'
+import { ENTRANCE, type Room, type SimWorld } from './world'
+// 좌표 파생은 spots.ts가 **단일 출처**다(leaf). 이 파일에 두면 욕구(needs)가 좌석을 찾느라
+// 상위를 값으로 당겨 needs ⇄ patientFlow 순환이 된다 — spots.ts 머리말.
+import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
+import { priorityOf, type Pawn, type PatientStage } from './pawn'
 import { simDept, addExamToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
-import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
+import { applyWorkLoads } from './fatigue'
+// 작업 소요식(피로 × 허기 감속)은 needs.ts가 **단일 출처**다(응급도 같은 함수를 부른다) —
+// 여기서 식을 다시 적으면 진료만 느려지고 처치는 그대로인 병원이 조용히 생긴다.
+import { prefersRestOverExam, workDurationMin } from './needs'
 
 export const EXAM_DURATION_MIN = 20
 /** 대기 인내 — 이만큼 앉아 있었는데 안 불리면 떠난다(수익 0). */
@@ -111,9 +114,6 @@ export function examLoadMin(p: Pawn, dept: SimDeptKey): number {
   return (p.workMin ?? EXAM_DURATION_MIN) * simDept(dept).intensity
 }
 
-const samePt = (a: { x: number; y: number }, b: Pt) => a.x === b.x && a.y === b.y
-const ptKey = (p: Pt) => `${p.x},${p.y}`
-
 export function stepPatients(world: SimWorld): SimWorld {
   let w = maybeArrive(world)
   w = assignDoctorRooms(w)
@@ -121,61 +121,14 @@ export function stepPatients(world: SimWorld): SimWorld {
   return progressStages(w)
 }
 
-// ─── 좌표 파생 ────────────────────────────────────────────────────────────────
-
-/** 4방향 탐색 순서 — findPath와 같은 (위·우·아래·좌). 이 순서가 결정론의 일부다. */
-const NEIGHBORS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
-
-/** 가구 앞 통행 타일 — 가구 타일 자체는 막혀 있어 폰이 설 수 없다.
- *  그래서 "의자에 앉는다"는 실제로는 **의자에 인접한 첫 통행 타일에 선다**로 구현된다. */
-function frontTile(blocked: Set<number>, at: Pt): Pt | null {
-  for (const d of NEIGHBORS) {
-    const t = { x: at.x + d.x, y: at.y + d.y }
-    if (t.x < 0 || t.y < 0 || t.x >= GRID_W || t.y >= GRID_H) continue
-    if (!isBlockedTile(blocked, t)) return t
-  }
-  return null
-}
-
-/** 방 안 가구 앞에 설 자리 — 의사의 정위치(책상 앞)와 진료 좌석(의자 앞)의 **단일 출처**다.
- *  하루를 넘길 때(day.startNextDay) 의사를 제자리로 되돌리는 것도 여기를 본다 — 파생식을
- *  복제하면 "책상 앞"이 배정과 복귀에서 갈라져 의사가 어제와 다른 칸에 선다. */
-export function furnitureSpot(
-  w: SimWorld, roomId: string, kind: 'DESK' | 'CHAIR', blocked: Set<number>,
-): Pt | null {
-  const f = w.furniture.find(x => x.roomId === roomId && x.kind === kind)
-  return f ? frontTile(blocked, f) : null
-}
-
 const insideRoom = (r: Room, p: { x: number; y: number }) =>
   p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h
 
 // ─── 도착 ────────────────────────────────────────────────────────────────────
 
-/** 그 종류의 방에 놓인 그 가구 앞에 설 수 있는 타일들. **가구 하나당 자리 하나**가 이 함수의
- *  계약이고, 그게 화면(그려진 의자·침대)과 수용 용량을 같게 만든다 — build의 autoFurniture가
- *  앞 타일이 겹치는 가구를 애초에 놓지 않아 성립한다. 여기 dedupe는 그 계약이 깨졌을 때 두
- *  환자가 한 타일에 겹치는 것만은 막는 안전망이다(용량이 줄지언정 겹치지는 않는다).
- *  대기실 좌석과 병동 침대(emergency.wardBeds)가 **같은 기계**라 여기 하나로 둔다 — 복제하면
- *  한쪽만 dedupe를 잃거나 방 종류 필터가 갈린다. */
-export function furnitureSpots(
-  w: SimWorld, roomType: RoomType, kind: FurnitureKind,
-  blocked: Set<number> = buildBlockedSet(w),
-): Pt[] {
-  const rooms = new Set(w.rooms.filter(r => r.type === roomType).map(r => r.id))
-  const seen = new Set<string>()
-  const out: Pt[] = []
-  for (const f of w.furniture) {
-    if (f.kind !== kind || !rooms.has(f.roomId)) continue
-    const spot = frontTile(blocked, f)
-    if (!spot || seen.has(ptKey(spot))) continue
-    seen.add(ptKey(spot))
-    out.push(spot)
-  }
-  return out
-}
-
-/** 대기실 좌석 = 의자 앞에 설 수 있는 타일들(자리 계약은 furnitureSpots 주석). */
+/** 대기실 좌석 = 의자 앞에 설 수 있는 타일들(자리 계약은 spots.furnitureSpots 주석).
+ *  **좌표 파생과 달리 이 함수는 방 종류의 의미를 안다**("대기실") — 그래서 spots.ts로 내리지
+ *  않고 여기 남는다(spots.ts 머리말의 경계). */
 export function waitingSeats(w: SimWorld, blocked: Set<number> = buildBlockedSet(w)): Pt[] {
   return furnitureSpots(w, 'WAITING', 'CHAIR', blocked)
 }
@@ -233,7 +186,13 @@ function assignDoctorRooms(w: SimWorld): SimWorld {
   if (!w.pawns.some(p => p.kind === 'DOCTOR' && !p.roomId)) return w
   const blocked = buildBlockedSet(w)
   const pawns = w.pawns.map(p => {
-    if (p.kind !== 'DOCTOR' || p.roomId) return p
+    // `p.activity`(needs.ts) — 욕구 행동 중인 의사는 **방 배정도 받지 않는다**. 형제
+    // (assignWaitingToExam)와 대칭인 이 한 줄이 없으면 배정이 그 의사의 dest·path를 책상으로
+    // 덮어써, 휴게실로 걸어가던 사람이 **자기 책상에서 'RESTING'** 이 된다(실측: TO_LOUNGE
+    // 도중 같은 과 진료실을 지으면 재현). 왕복 없이 회복 15가 들어오고, 의자를 안 쓰니 좌석
+    // 한도도 우회되며, 배치 인과(거리가 책상 체류를 깎는다)가 통째로 증발한다 — 에러는 0이다.
+    // 배정은 사라지지 않고 **미뤄질 뿐**이다: 휴식이 끝나면 다음 분에 다시 후보가 된다.
+    if (p.kind !== 'DOCTOR' || p.roomId || p.activity) return p
     for (const room of examRooms) {
       if (taken.has(room.id)) continue
       // 과 없는 의사(손세계 폰)는 어떤 방과도 같지 않아 여기서 전부 걸러진다 — 의도된 결과다.
@@ -266,25 +225,54 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
   if (waiting.length === 0) return w
   const busy = new Set(w.pawns.map(p => p.doctorId).filter((id): id is string => !!id))
   // 유휴 의사를 **과별 줄**로 세운다 — 과마다 대기열이 따로 서므로, 내과가 밀려도 미용은 돈다.
-  // 줄 안의 순서는 폰 배열 순서 그대로라 결정론이 유지된다.
-  const idleByDept = new Map<SimDeptKey, Pawn[]>()
-  for (const p of w.pawns) {
-    if (p.kind !== 'DOCTOR' || !p.roomId || busy.has(p.id) || !p.dept) continue
+  const idleByDept = new Map<SimDeptKey, Array<{ doc: Pawn; i: number }>>()
+  for (const [i, p] of w.pawns.entries()) {
+    // `p.activity`(needs.ts) — 쉬러 나섰거나 쉬고 있는 의사는 유휴가 **아니다**. 이 축이
+    // 없으면 진료실을 나서는 도중(아직 방 안이라 insideRoom이 참인 구간)에 환자가 붙어,
+    // 의사는 휴게실로 걸어가는데 환자는 진료실 의자로 걸어가는 두 갈래가 생긴다.
+    if (p.kind !== 'DOCTOR' || !p.roomId || busy.has(p.id) || !p.dept || p.activity) continue
+    // `exam === 0`은 **금지**다 — 이 의사는 대기 환자를 영원히 안 받는다(그 과에 다른 의사가
+    // 없으면 그 환자들은 인내를 넘겨 떠난다). 플레이어가 고른 대가이고, 장부에 그대로 실린다.
+    if (priorityOf(p, 'exam') === 0) continue
     const room = w.rooms.find(r => r.id === p.roomId)
     if (!room || !insideRoom(room, p)) continue // 아직 방으로 걸어가는 중이면 진료를 못 받는다
     if (room.dept !== p.dept) continue          // 삼중 일치의 방 축
+    // 휴식을 진료보다 높게 매긴 지친 의사는 **환자가 줄 서 있어도** 유휴 풀에서 빠진다.
+    // (`needs.prefersRestOverExam`이 단일 출처다 — 식을 여기 복제하면 욕구 기계의 판정과 갈려,
+    //  안 쉬는데 환자도 안 받는 구간이 생긴다. 순서상 삼중 일치 뒤에 두어 "라우팅이 성립하는가"와
+    //  "그럼에도 안 받는가"를 갈라 놓는다 — 술어가 순수해 어느 자리든 결과는 같다.)
+    //
+    // ⚠️ 여기서 빠진 의사가 **반드시 쉬러 가는 것은 아니다.** 그 분의 stepDoctors는 빈 휴게실
+    //    좌석을 찾지 못하면 아무 데도 안 보내고, 그러면 그 의사는 진료도 휴식도 없이 **논다**
+    //    (피로 그대로 · 대기 환자는 인내를 넘겨 떠난다 · 에러 0).
+    //
+    //    이것은 버그가 아니라 **각색**이다: 쉬라고 지시해 놓고 쉴 곳을 안 지은 병원이 치르는
+    //    대가이고, 플레이어가 명시로 고른 구성(rest > exam)에서만 온다. 비가역도 아니다 —
+    //    밤 회복(FATIGUE_REST)이 피로를 임계 아래로 내리면 이튿날 저절로 풀리고, 토글을
+    //    되돌리거나 휴게실을 지어도 풀린다. 세 갈래 다 needs.test·priority.test가 잠근다.
+    //
+    //    ⓘ Task 2의 「휴게실이 없으면 밥이라도 먹으러 간다」와 **다른 판정인 이유**: 그쪽은
+    //      다른 욕구(식사)의 **자리가 있는데** 못 가게 막는 것이라 벌이 아니라 버그였다.
+    //      이쪽은 그 욕구의 자리 **자체가 없다** — 갈 곳이 없는 것을 기계가 만들어낼 수는 없다.
+    if (prefersRestOverExam(p)) continue
     const queue = idleByDept.get(p.dept)
-    if (queue) queue.push(p)
-    else idleByDept.set(p.dept, [p])
+    if (queue) queue.push({ doc: p, i })
+    else idleByDept.set(p.dept, [{ doc: p, i }])
   }
   if (idleByDept.size === 0) return w
+  // 줄 안의 순서는 **exam 내림차순, 동률이면 폰 배열 순서**다. 배열 인덱스를 명시적으로 들고
+  // 타이브레이크에 쓰는 이유는 `Array.sort`의 안정성에 기대지 않기 위해서다 — 결정론이 런타임
+  // 구현 세부에 얹히면 그 근거를 코드에서 읽을 수 없다(대기 환자 정렬과 같은 형태).
+  for (const queue of idleByDept.values()) {
+    queue.sort((a, b) => priorityOf(b.doc, 'exam') - priorityOf(a.doc, 'exam') || a.i - b.i)
+  }
   const blocked = buildBlockedSet(w)
   const updates = new Map<number, Pawn>()
   for (const { p, i } of waiting) {
     // 삼중 일치의 환자 축 — 자기 과 줄에서만 의사를 꺼낸다. 그 과가 없거나 전원이 바쁘면
     // 이 환자는 이번 분에 못 불리고 계속 앉아 있다가 PATIENCE_MIN을 넘기면 떠난다.
     const queue = p.wantsDept ? idleByDept.get(p.wantsDept) : undefined
-    const doc = queue?.shift()
+    const doc = queue?.shift()?.doc
     if (!doc) continue
     const spot = furnitureSpot(w, doc.roomId!, 'CHAIR', blocked)
     const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
@@ -344,12 +332,20 @@ function progressStages(w: SimWorld): SimWorld {
         break
       case 'TO_EXAM':
         if (arrived) {
-          // 소요는 **시작하는 순간** 담당 의사의 피로로 확정된다(진료 중에 늘었다 줄었다 하지
-          // 않는다). 그 의사는 이 환자를 문 채라 진료가 끝날 때까지 다른 일을 못 하므로,
-          // 이번 분 안에서 그의 피로가 바뀔 길도 없다.
-          const workMin = slowedDurationMin(
-            EXAM_DURATION_MIN, fatigueOf(w.pawns.find(d => d.id === p.doctorId)),
-          )
+          // 소요는 **시작하는 순간** 담당 의사의 피로·허기로 확정된다(진료 중에 늘었다 줄었다
+          // 하지 않는다). 그 의사는 이 환자를 문 채라 진료가 끝날 때까지 다른 일을 못 하므로,
+          // 이번 분 안에서 그의 상태가 바뀔 길도 없다.
+          //
+          // 감속식(곱 순서·이중 반올림)은 `needs.workDurationMin`이 **단일 출처**다 — 응급
+          // 처치(emergency.assignEmergencyDoctors)가 부르는 그 함수다. 식을 여기 다시 적으면
+          // 같은 상태의 의사가 진료와 처치에서 다른 배율을 받는다.
+          // ⚠️ **곱 순서는 외래에서 계측되지 않는다**(등가 돌연변이): 20분은 순서를 뒤집어도
+          //    FATIGUE_RED에서 29분으로 일치한다(전수 실측 — 피로 0..100 중 갈리는 값 21개뿐).
+          //    그 계약을 잠그는 것은 응급 90분 경로다(needs.test.ts 「곱이 쌓인다 — 응급」이
+          //    130 vs 129로 잡는다) — 두 자리가 **한 함수를 공유하게 된 지금** 그 계측 하나가
+          //    이 경로까지 함께 덮는다.
+          const doc = w.pawns.find(d => d.id === p.doctorId)
+          const workMin = workDurationMin(EXAM_DURATION_MIN, doc)
           keep({ ...p, stage: 'IN_EXAM', examUntilMin: w.minute + workMin, workMin })
         } else if (stranded) {
           leftCount++

@@ -3,6 +3,7 @@ import { SIM_DEPTS, simDept, HIRABLE_DEPTS, DEFAULT_EXAM_DEPT, type SimDeptKey }
 import { createWorld, isWalkable, ENTRANCE } from './world'
 import { placeRoom } from './build'
 import { hireDoctor } from './pawn'
+import { hire } from './testHelpers'
 
 const manhattan = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
@@ -102,7 +103,7 @@ describe('EXAM 과 기본값', () => {
 
 describe('hireDoctor', () => {
   it('입구 부근 통행 타일에 그 과 의사 스폰·nextId 증가·비용 0(주급이 비용)', () => {
-    const w = hireDoctor(createWorld(1), 'CARDIOLOGY')
+    const w = hire(createWorld(1), 'CARDIOLOGY')
     expect(w.pawns).toHaveLength(1)
     expect(w.pawns[0]).toMatchObject({ kind: 'DOCTOR', dept: 'CARDIOLOGY' })
     expect(w.treasuryManwon).toBe(50_000)
@@ -112,12 +113,12 @@ describe('hireDoctor', () => {
 
   it('과가 그대로 실린다 — 어느 과를 뽑았는지가 폰에 남는다', () => {
     for (const key of HIRABLE_DEPTS) {
-      expect(hireDoctor(createWorld(1), key).pawns[0].dept).toBe(key)
+      expect(hire(createWorld(1), key).pawns[0].dept).toBe(key)
     }
   })
 
   it('빈 세계에선 정문 타일에 선다', () => {
-    const w = hireDoctor(createWorld(1), 'AESTHETICS')
+    const w = hire(createWorld(1), 'AESTHETICS')
     expect({ x: w.pawns[0].x, y: w.pawns[0].y }).toEqual(ENTRANCE)
   })
 
@@ -129,14 +130,14 @@ describe('hireDoctor', () => {
       ...base,
       furniture: [{ kind: 'BED' as const, x: ENTRANCE.x, y: ENTRANCE.y, roomId: 'ghost' }],
     }
-    const w = hireDoctor(blockedEntrance, 'GENERAL_SURGERY')
+    const w = hire(blockedEntrance, 'GENERAL_SURGERY')
     const at = { x: w.pawns[0].x, y: w.pawns[0].y }
     expect(isWalkable(w, at.x, at.y)).toBe(true)
     expect(manhattan(at, ENTRANCE)).toBe(1) // 정문 바로 옆 — "입구 부근"을 지킨다
   })
 
   it('두 번 채용하면 두 명이 남고 id가 겹치지 않는다', () => {
-    const w = hireDoctor(hireDoctor(createWorld(1), 'AESTHETICS'), 'CARDIOLOGY')
+    const w = hire(hire(createWorld(1), 'AESTHETICS'), 'CARDIOLOGY')
     expect(w.pawns.map(p => p.id)).toEqual(['doc-1', 'doc-2'])
     expect(w.pawns.map(p => p.dept)).toEqual(['AESTHETICS', 'CARDIOLOGY'])
   })
@@ -149,6 +150,9 @@ describe('hireDoctor', () => {
   })
 
   it('결정론 — 같은 세계에서 같은 결과', () => {
-    expect(hireDoctor(createWorld(3), 'CARDIOLOGY')).toEqual(hireDoctor(createWorld(3), 'CARDIOLOGY'))
+    // ⚠️ **성공을 먼저 못박는다.** 결과끼리만 비교하면 두 호출이 나란히 거부됐을 때도
+    //    `{ok:false, reason:'NO_POOL'}` 둘이 같아서 통과한다 — 채용이 통째로 막힌 세계에서도
+    //    green인 공허한 계측이 된다. `hire`(언랩)가 거부를 던지므로 이 줄이 그 경로를 봉한다.
+    expect(hire(createWorld(3), 'CARDIOLOGY')).toEqual(hire(createWorld(3), 'CARDIOLOGY'))
   })
 })

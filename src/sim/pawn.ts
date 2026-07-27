@@ -10,6 +10,72 @@ import type { Pt } from './path'
 export const PAWN_TILES_PER_MIN = 2
 
 export type PawnKind = 'DOCTOR' | 'PATIENT'
+
+/**
+ * 의사 한 명의 일 하나에 매기는 우선순위 — **0=금지 · 1=낮음 · 2=보통 · 3=높음**.
+ *
+ * 0이 "낮음"이 아니라 **금지**인 것이 이 눈금의 핵심이다: 플레이어가 시뮬에 개입하는 수단은
+ * 이 손잡이 하나뿐이고, 그중 실제로 게임을 바꾸는 것은 "안 한다"를 말할 수 있는가다
+ * (응급을 끈 순환기 의사가 있는 병원은 순환기가 **없는** 병원과 같은 판정을 받는다).
+ */
+export type Priority = 0 | 1 | 2 | 3
+
+/** 토글이 붙은 일의 종류 — 진료·응급·휴식. **식사에는 없다**: 굶기는 레버는 토글이 아니라
+ *  "식당을 안 짓는다"로 이미 존재한다(레버를 두 벌 두면 어느 쪽이 이기는지가 계약이 된다). */
+export type PriorityKind = 'exam' | 'emergency' | 'rest'
+
+/** 미지정 폰이 읽히는 값 — 손세계 폰·저장된 옛 세계가 전부 "보통"으로 산다.
+ *  이 폴백이 없으면 `priorities`를 안 실은 픽스처가 전부 금지(0)로 접혀 조용히 아무 일도 안 한다. */
+export const DEFAULT_PRIORITY: Priority = 2
+
+/** 이 폰의 그 축 우선순위 — **조회의 단일 출처**다(`?? 2`를 호출부에 흩어 적지 않는다).
+ *  네 모듈(외래·응급 판정·응급 배정·휴식)이 같은 폴백을 각자 적으면 한 곳만 잊어도 그 축이
+ *  금지로 접히고, 그 차이는 "왜 이 의사는 아무 일도 안 하지"로만 나타나 추적이 어렵다. */
+export function priorityOf(p: Pawn, kind: PriorityKind): Priority {
+  return p.priorities?.[kind] ?? DEFAULT_PRIORITY
+}
+
+/**
+ * 채용·스폰의 초기값 — 세 축 전부 보통.
+ *
+ * ⚠️ 초기값이 `DEFAULT_PRIORITY`(= 조회 폴백)와 **같은 상수를 쓰는 것은 의도한 등식**이다:
+ * "새로 뽑은 의사"와 "필드가 아예 없는 폰"이 **같게 읽힌다**. 등식이 깨지면 저장된 옛 세계를
+ * 불러온 병원이 새 병원과 다르게 굴러가는데, 그 차이는 어느 화면에도 안 뜬다.
+ *
+ * 초기값 디자인이 갈리는 날(예: 새 의사는 응급을 꺼 둔 채 온다)은 **그때 상수를 분리한다** —
+ * 그리고 그때도 **폴백은 2로 남긴다**: 폴백은 "이 의사가 어떻게 시작했나"가 아니라 "값이 없을 때
+ * 무엇으로 읽나"라, 초기값을 따라 움직이면 옛 세계의 의사들이 소급해서 성격이 바뀐다.
+ */
+const freshPriorities = (): NonNullable<Pawn['priorities']> => ({
+  exam: DEFAULT_PRIORITY, emergency: DEFAULT_PRIORITY, rest: DEFAULT_PRIORITY,
+})
+
+/**
+ * 의사 한 명의 축 하나를 갈아 끼운다(입력 불변 — 순수 함수) — **플레이어 개입의 유일한 진입점**.
+ *
+ * 범위 밖 값·없는 폰·의사가 아닌 폰이면 **던진다**. 접거나(clamp) 조용히 무시하면 UI는 바뀐 값을
+ * 보여주는데 시뮬은 다른 값으로 도는 상태가 되고, 그 어긋남은 "왜 껐는데 계속 일하지"로만
+ * 관측된다(`simDept`·`wantsDeptOf`가 undefined에 던지는 것과 같은 이유).
+ *
+ * 미지정 폰에 이 함수를 쓰면 나머지 두 축이 **기본값으로 실린다** — 한 축을 건드렸다고 다른 축이
+ * undefined로 남으면 이후 조회가 폴백에 의존해, "필드에 있는 값"과 "읽히는 값"이 갈린다.
+ * 그 채움을 `freshPriorities()` 위에 얹는 형태로 적는 이유는 **축이 늘 때 고칠 자리를 하나로**
+ * 두기 위해서다: 축을 손으로 나열하면 새 축이 여기서만 빠져 조용히 undefined로 남는다.
+ */
+export function setDoctorPriority(
+  w: SimWorld, doctorId: string, kind: PriorityKind, value: Priority,
+): SimWorld {
+  if (!Number.isInteger(value) || value < 0 || value > 3) {
+    throw new Error(`setDoctorPriority: 범위 밖 우선순위(${value}) — 0~3의 정수라야 한다`)
+  }
+  const target = w.pawns.find(p => p.id === doctorId)
+  if (!target) throw new Error(`setDoctorPriority: 세계에 없는 폰(${doctorId})`)
+  if (target.kind !== 'DOCTOR') {
+    throw new Error(`setDoctorPriority: 의사가 아닌 폰(${doctorId}) — 우선순위는 의사만 갖는다`)
+  }
+  const priorities = { ...freshPriorities(), ...target.priorities, [kind]: value }
+  return { ...w, pawns: w.pawns.map(p => (p.id === doctorId ? { ...p, priorities } : p)) }
+}
 /** ⚠️ 'PAYING'·'GONE'은 **2주차 예약**이라 지금은 아무도 만들지 않고 아무도 읽지 않는다.
  *  'PAYING'은 RECEPTION 경유 수납 흐름 자리, 'GONE'은 퇴장을 폰 제거가 아니라 상태로 남길 때의
  *  자리다(1주차는 입구에 닿으면 배열에서 바로 뺀다). 미사용이지만 지우지 않는다 — 흐름의 빈칸이
@@ -42,6 +108,46 @@ export interface Pawn {
    *  오르고 아침마다 `FATIGUE_REST`만큼 내린다(fatigue.ts). 효과는 하나다: 진료 소요가 늘어난다.
    *  하루로 리셋되지 **않는다** — 주를 넘겨도 이어지는 것이 "주 후반에 갈려나간다"의 담지자다. */
   fatigue?: number
+  /** 지금 이 의사가 스스로 하고 있는 일 — 진료·처치가 아니라 **자기를 돌보는** 행동이다(needs.ts).
+   *  없으면 근무 중이다. 이 필드가 있는 의사는 외래 배정 후보에서 빠지고(patientFlow), 응급이
+   *  낚아채는 순간 해제된다(emergency — 회복 없이 끊긴다).
+   *  휴식(LOUNGE)과 식사(CAFETERIA)가 **같은 기계**를 쓴다 — 갈래별 이름만 다르고 개시·전이·
+   *  종료·좌초는 needs.ts의 브레이크 표 하나가 굴린다.
+   *  왜 `busy` 같은 불리언이 아닌가: "쉬는 중"과 "쉬러 가는 중"은 다음 행동이 다르고(도착
+   *  판정 vs 종료 시각), 상태 이름이 없으면 그 구별이 dest·path 같은 딴 필드로 새어 나간다. */
+  activity?: 'TO_LOUNGE' | 'RESTING' | 'TO_MEAL' | 'EATING'
+  /** 지금 붙은 욕구 블록이 **끝나는 시각**(게임 분) — `activity`가 앉은 상태('RESTING'·'EATING')일
+   *  때만 있다. 시작 시각이 아니라 종료 시각인 이유는 환자의 `examUntilMin`과 같다: 매 분
+   *  "끝났나"만 물으면 된다.
+   *  ⚠️ 이름이 `restUntilMin`이 아닌 이유: 식사 블록이 **같은 타이머**를 쓰기 때문이다. 욕구마다
+   *  필드를 따로 두면 종료 처리가 갈래마다 복제되고, 한쪽만 지우는 실수가 조용히 산다. */
+  activityUntilMin?: number
+  /** 마지막 식사 이후 지난 분 — **의사만**. 채용 시 0에서 시작해 RUNNING 분마다 +1 오르고
+   *  (휴식·식사 중에도 오른다), 식사 블록이 **끝날 때** 0으로 되돌아간다(needs.ts).
+   *  아침에도 0으로 리셋된다(day.freshMorning — 저녁을 먹고 출근한다는 각색).
+   *  효과는 하나다: `HUNGRY_AFTER_MIN`을 넘긴 채 시작한 작업이 `STARVED_SLOW`배 길어진다.
+   *  피로(fatigue)와 **다른 필드**인 이유: 회복 경로가 다르다 — 피로는 밤과 휴식으로 내려가고
+   *  허기는 오직 식사로만 내려간다. 한 필드로 겸하면 식당이 휴게실의 복제가 된다. */
+  hungerMin?: number
+  /** 이 의사가 각 일에 매긴 우선순위 — **의사만**. 채용 시 세 축 모두 2에서 시작하고, 플레이어가
+   *  `setDoctorPriority`로만 바꾼다(시뮬은 절대 스스로 안 건드린다 — 개입은 플레이어의 것이다).
+   *  **없으면 전부 2로 읽힌다**(`priorityOf`) — 손세계 폰·저장된 옛 세계를 위한 폴백이다.
+   *  축이 셋인 이유는 그 셋이 서로를 **밀어내기** 때문이다: rest를 exam 위로 올리면 대기 환자가
+   *  있어도 쉬러 가고, emergency를 0으로 내리면 그 과 응급이 통째로 되돌아간다.
+   *  하루·주를 넘겨도 유지된다(아침 리셋 없음) — 플레이어의 지시가 밤새 풀리면 손잡이가 아니다. */
+  priorities?: { exam: Priority; emergency: Priority; rest: Priority }
+  /**
+   * **포화(`FATIGUE_MAX`)로 마감한 날**의 누적 — 의사만. 채용 시 0에서 시작하고 마감 정산이
+   * 하루에 최대 1 올린다(day.settleDay). 이 값이 `RESIGN_SATURATED_DAYS`에 닿으면 그 사람은
+   * 다음 주에 떠난다(week.resigningSimDoctors).
+   *
+   * ⚠️ **리셋이 없다** — 기존 게임 `src/game/doctor.ts`의 `stepSaturatedDays` 규칙을 그대로
+   * 계승한다: *"회복해도 그 날들은 몸에 남는다"*. 아침 회복도(fatigue.restOvernight) 주 넘김도
+   * (week.startNextWeek) 이 필드를 건드리지 않는다. 리셋 규칙을 두면 "며칠 쉬게 해 되돌리는"
+   * 최적화 표면이 생기고, 그러면 사직은 구조의 결과가 아니라 관리의 실수가 된다.
+   * 옛 주석대로 **완편 병원은 이 카운터가 영원히 0**이다 — 구조적으로 망가진 배치에서만 돈다.
+   */
+  saturatedDays?: number
   /** 오늘 누적 **표준강도분**(소요 분 × 과 강도) — 의사만. 아침에 0으로 리셋된다.
    *  피로 증가가 이 누적치의 함수라(하루 `FATIGUE_FREE_MIN` 초과분만 쌓인다) 하루치를 들고 있어야
    *  한다. 건별로 따로 반올림해 더하면 같은 하루가 쪼개는 방식에 따라 다른 피로를 낳는다. */
@@ -80,11 +186,14 @@ export function doctorDeptOf(p: Pawn): SimDeptKey {
 }
 
 export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
-  // 피로·부하를 **명시적으로 0**에서 시작한다 — `?? 0` 폴백이 있어도 필드가 실재해야 UI·저장이
+  // 피로·부하·허기를 **명시적으로 0**에서 시작한다 — `?? 0` 폴백이 있어도 필드가 실재해야 UI·저장이
   // "아직 일 안 한 의사"와 "필드가 없는 손세계 폰"을 구별할 수 있다.
+  // 허기 0 = 밥을 먹고 출근했다(freshMorning의 아침 리셋과 같은 각색).
+  // 우선순위도 같은 이유로 명시한다 — 새 의사는 세 축이 전부 '보통'이다.
+  // 포화 일수도 명시적으로 0이다 — 이 사람은 아직 하루도 갈리지 않았다.
   const p: Pawn = {
     id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept,
-    fatigue: 0, loadMinToday: 0,
+    fatigue: 0, loadMinToday: 0, hungerMin: 0, saturatedDays: 0, priorities: freshPriorities(),
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
 }
@@ -116,12 +225,26 @@ function spawnSpotNear(w: SimWorld, from: Pt): Pt {
   return from
 }
 
-/** 채용 — 그 과 의사 한 명이 정문으로 걸어 들어온다.
+/** 채용의 결과 — 건설(`build.PlaceResult`)과 **같은 모양**이다. 화면이 두 실패를 같은 코드로
+ *  다룰 수 있고, 무엇보다 실패를 "그냥 아무 일도 안 일어난 세계"로 돌려주지 않는다:
+ *  그러면 채용 버튼이 조용히 먹히고 플레이어는 왜 안 뽑히는지 알 길이 없다. */
+export type HireResult =
+  | { ok: true; world: SimWorld }
+  | { ok: false; reason: 'NO_POOL' }
+
+/** 채용 — 그 과 의사 한 명이 정문으로 걸어 들어오고, **전국에 남은 그 과 사람이 하나 줄어든다**.
  *  **일시금이 없다**(금고 무변): 기존 게임의 계약금(DEPARTMENTS.hireCostManwon)은 PR C/D 절단이고,
  *  이 슬라이스에서 채용의 대가는 오직 **주 고정비**(dept.ts weeklyCostManwon)다 — 그래야 "뽑는
- *  순간 아픈" 게 아니라 "주말마다 청구되는" 형태가 되고, 필수과의 적자가 주 단위로 드러난다. */
-export function hireDoctor(w: SimWorld, dept: SimDeptKey): SimWorld {
-  return spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE))
+ *  순간 아픈" 게 아니라 "주말마다 청구되는" 형태가 되고, 필수과의 적자가 주 단위로 드러난다.
+ *
+ *  그 대신 **사람 쪽 대가**가 여기 있다: 풀이 0인 과는 돈이 아무리 많아도 못 뽑는다(응급의
+ *  배후과 하드락과 같은 형태의 비협상 제약이다). 실패한 채용은 세계를 스치지도 않는다 —
+ *  차감만 하고 폰을 안 세우거나 그 반대면 인원과 풀이 조용히 갈린다. */
+export function hireDoctor(w: SimWorld, dept: SimDeptKey): HireResult {
+  const remaining = w.hirePool[dept]
+  if (remaining <= 0) return { ok: false, reason: 'NO_POOL' }
+  const world = spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE))
+  return { ok: true, world: { ...world, hirePool: { ...world.hirePool, [dept]: remaining - 1 } } }
 }
 
 /** 경로를 분 예산만큼 소비 — tick의 이동 절반.

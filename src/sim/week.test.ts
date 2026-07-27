@@ -3,7 +3,8 @@ import { createWorld, type SimWorld } from './world'
 import { INSOLVENCY_WEEKS_TO_CLOSE, weekSummary, settleWeek, startNextWeek } from './week'
 import { DAY_END_MIN, DAYS_PER_WEEK, startNextDay, type DayRecord } from './day'
 import { placeRoom } from './build'
-import { hireDoctor, type Pawn } from './pawn'
+import { type Pawn } from './pawn'
+import { hire } from './testHelpers'
 import { tick } from './tick'
 import { HIRABLE_DEPTS, deptRevenueSum, simDept, type SimDeptKey, type SimDeptStats } from './dept'
 
@@ -192,7 +193,7 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
     // 병동은 **양쪽 다** 짓는다 — 순환기만 지어 주면 "응급을 받을 수 있어서" 진 게 아니라
     // "병동을 더 지어서" 진 것이 되어 비교가 과의 비교가 아니게 된다.
     w = place(w, { type: 'WARD', x: 30, y: 20, w: 6, h: 5 })
-    return hireDoctor(w, dept)
+    return hire(w, dept)
   }
 
   function runWeek(dept: SimDeptKey, seed = I_B1_SEED) {

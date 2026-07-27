@@ -4,15 +4,38 @@
 import { freshStats, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { buildBlockedSet } from './path'
-import { examLoadMin, furnitureSpot, wantsDeptOf } from './patientFlow'
+import { examLoadMin, wantsDeptOf } from './patientFlow'
+import { furnitureSpot } from './spots'
 import {
   simDept, addExamToDeptStats, addRevenueToDeptStats, deptRevenueSum, type SimDeptStats,
 } from './dept'
 import { emergencyLoadMin, emergencySpec, emergencyKindOf } from './emergency'
-import { applyWorkLoads, restOvernight } from './fatigue'
+import { applyWorkLoads, fatigueOf, restOvernight } from './fatigue'
+import { clearActivity } from './needs'
+import { FATIGUE_MAX } from '../game/doctor'
 
 export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
 export const DAYS_PER_WEEK = 7
+
+/**
+ * 포화(`FATIGUE_MAX`)로 마감한 의사의 `saturatedDays`를 하나 올린다(입력 불변).
+ *
+ * 규칙은 기존 게임 `src/game/doctor.ts`의 `stepSaturatedDays`를 그대로 계승한다 — **포화로
+ * 마감한 날만 세고 리셋은 없다**(*"회복해도 그 날들은 몸에 남는다"* · *"완편 병원은 이 카운터가
+ * 영원히 0"*). ⚠️ 그 함수를 임포트해 부르지 못하는 이유는 시그니처뿐이다: 저쪽은
+ * `Record<id, 피로>` → `Record<id, 일수>`를 다루는 반면 이 층의 상태는 폰 배열 위에 산다.
+ * 상수(`FATIGUE_MAX`)는 임포트해 쓰므로 임계가 두 곳에 적히지는 않는다.
+ *
+ * 판정이 `>=`인 이유: 피로는 `FATIGUE_MAX`에서 클램프되므로(fatigue.addWorkLoad) `>`로 쓰면
+ * **아무 날도 세지 않는다** — 사직이 통째로, 에러 하나 없이 죽는다.
+ */
+function stepSaturation(pawns: Pawn[]): Pawn[] {
+  return pawns.map(p => (
+    p.kind === 'DOCTOR' && fatigueOf(p) >= FATIGUE_MAX
+      ? { ...p, saturatedDays: (p.saturatedDays ?? 0) + 1 }
+      : p
+  ))
+}
 
 /** 마감 시점에 "진료를 못 받고 돌아간" 것으로 세는 스테이지 — **명시 목록(inclusion)**이다.
  *  denylist(`stage !== 'LEAVING' && ...`)로 쓰면 새 스테이지가 생기는 순간 자동으로 이탈이 된다:
@@ -81,7 +104,9 @@ export function settleDay(world: SimWorld): SimWorld {
   }
   // 부하는 환자를 다 훑은 **뒤** 한 번에 얹는다 — 같은 의사가 외래와 응급을 동시에 물고 있을
   // 수는 없지만(doctorId는 하나), 모아서 얹는 계약을 진료 중 축적(applyWorkLoads)과 같게 둔다.
-  const doctors = applyWorkLoads(world.pawns.filter(p => p.kind === 'DOCTOR'), loadByDoctor)
+  // 포화 판정은 부하를 얹은 **뒤**다 — 앞에 두면 "마지막 한 건에 갈려 포화한 날"이 안 세지고,
+  // 그만큼 사직이 늦게 온다(에러 없이 곡선만 완만해진다 — 마감 부하 인정과 같은 병).
+  const doctors = stepSaturation(applyWorkLoads(world.pawns.filter(p => p.kind === 'DOCTOR'), loadByDoctor))
   const record: DayRecord = {
     day: world.day,
     examsDone: exams,
@@ -123,8 +148,17 @@ export function freshMorning(world: SimWorld): SimWorld {
   const pawns = world.pawns.map(p => {
     // 하룻밤 회복도 여기 있어야 한다 — 7일차 밤엔 startNextDay가 없어서, 회복을 그쪽에 달면
     // **주의 첫날만** 지친 채로 시작한다(stats 리셋이 여기 있는 것과 같은 이유).
-    const next: Pawn = { ...restOvernight(p), path: [] }
+    // 어제 붙었던 욕구 행동(휴식)도 함께 뗀다 — **아침은 책상에서 시작한다**. 남기면
+    // 'RESTING'인 채로 하루가 열려 그 의사가 외래 후보에서 통째로 빠지고, 어제의
+    // activityUntilMin(예: 520분)이 오늘 0분엔 이미 지난 값이라 쉬지도 않은 회복이 들어온다.
+    // 어떤 필드가 "욕구 행동"인지는 needs.clearActivity가 단일 출처다.
+    const next: Pawn = { ...clearActivity(restOvernight(p)), path: [] }
     delete next.dest
+    // 허기도 아침에 0으로 돌아간다 — **저녁을 먹고 출근했다**는 각색이다. 안 되돌리면 허기는
+    // 식사 말고 내려갈 길이 없어서(피로와 달리 밤 회복이 없다), 식당 없는 병원의 의사는
+    // 이튿날부터 **첫 진료부터** 영구히 1.15배가 된다. 리셋 자리가 여기인 이유는 피로 회복과
+    // 같다: 7일차 밤엔 startNextDay가 없어 그쪽에 달면 주의 첫날만 굶은 채로 시작한다.
+    if (p.kind === 'DOCTOR') next.hungerMin = 0
     // 방을 못 찾거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
     const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null
     return spot ? { ...next, x: spot.x, y: spot.y } : next

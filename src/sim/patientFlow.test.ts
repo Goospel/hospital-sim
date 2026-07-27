@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { createWorld, isWalkable, ENTRANCE, type SimWorld } from './world'
 import { placeRoom } from './build'
 import type { Pt } from './path'
-import { spawnDoctor, hireDoctor, type Pawn } from './pawn'
+import { spawnDoctor, type Pawn } from './pawn'
+import { hire } from './testHelpers'
 import { tick } from './tick'
 import {
   EXAM_DURATION_MIN, PATIENCE_MIN,
@@ -72,7 +73,7 @@ function fourDeptWorld(seed: number) {
     if (!r.ok) throw new Error('전제 실패')
     w = r.world
   })
-  for (const dept of [...HIRABLE_DEPTS].reverse()) w = hireDoctor(w, dept)
+  for (const dept of [...HIRABLE_DEPTS].reverse()) w = hire(w, dept)
   return w
 }
 
@@ -81,7 +82,7 @@ function fourDeptWorld(seed: number) {
 function soloDeptWorld(dept: SimDeptKey, seed = 3) {
   const r = placeRoom(createWorld(seed), { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 })
   if (!r.ok) throw new Error('전제 실패')
-  const w = tick(hireDoctor(r.world, dept), 40) // 의사가 책상 앞에 설 때까지
+  const w = tick(hire(r.world, dept), 40) // 의사가 책상 앞에 설 때까지
   const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
   if (!doc.roomId) throw new Error('전제 실패 — 의사가 진료실에 배정되지 않았다')
   return w

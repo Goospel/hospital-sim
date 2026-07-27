@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { createWorld, INITIAL_TREASURY_MANWON, type SimWorld } from './world'
 import { placeRoom } from './build'
-import { hireDoctor, type Pawn } from './pawn'
+import { type Pawn } from './pawn'
+import { hire } from './testHelpers'
 import { tick } from './tick'
 import { DAY_END_MIN, startNextDay } from './day'
 import { startNextWeek } from './week'
@@ -16,6 +17,7 @@ import {
   FATIGUE_SLOW_FROM, fatigueSlowFactor, stepFatigue,
 } from '../game/doctor'
 import { addWorkLoad, fatigueGain, fatigueOf, restOvernight, slowedDurationMin } from './fatigue'
+import { STARVED_SLOW } from './needs'
 
 /** 응급이 실제로 수용되는 세계 시드(emergency.test와 같은 근거 — 시드마다 그날 응급이 갈린다). */
 const BOTH_KINDS_SEED = 4
@@ -47,7 +49,7 @@ const theDoctor = (w: SimWorld) => w.pawns.find(p => p.kind === 'DOCTOR')!
 function outpatientWorld(dept: SimDeptKey, seed = 3): SimWorld {
   let w = place(createWorld(seed), { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
   w = place(w, { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 })
-  return hireDoctor(w, dept)
+  return hire(w, dept)
 }
 
 /** 외래 + 응급이 **같은 의사**를 두고 섞이는 병원(emergency.test의 mixedWorld와 같은 배치). */
@@ -55,13 +57,13 @@ function mixedWorld(seed = BOTH_KINDS_SEED): SimWorld {
   let w = place(createWorld(seed), { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
   w = place(w, { type: 'EXAM', dept: 'CARDIOLOGY', x: 6, y: 6, w: 6, h: 5 })
   w = place(w, WARD_1BED)
-  return hireDoctor(w, 'CARDIOLOGY')
+  return hire(w, 'CARDIOLOGY')
 }
 
 /** 진료실 하나 + 그 과 의사 하나(대기실 없음 — 자연 도착이 폰조차 만들지 않는다).
  *  의사의 피로를 손으로 박아 **감속만** 격리해 관측한다. */
 function fatiguedSoloWorld(dept: SimDeptKey, fatigue: number, seed = 3): SimWorld {
-  const w = tick(hireDoctor(place(createWorld(seed), { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 }), dept), 40)
+  const w = tick(hire(place(createWorld(seed), { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 }), dept), 40)
   if (!theDoctor(w).roomId) throw new Error('전제 실패 — 의사가 진료실에 배정되지 않았다')
   return { ...w, pawns: w.pawns.map(p => (p.kind === 'DOCTOR' ? { ...p, fatigue } : p)) }
 }
@@ -169,8 +171,19 @@ describe('축적 — 표준강도분', () => {
     const w = run(outpatientWorld('AESTHETICS'), DAY_END_MIN - 1)
     const d = theDoctor(w)
     expect(w.stats.examsDone).toBeGreaterThan(5) // 계측기가 헛돌지 않았다(실제로 종일 봤다)
-    // 부하는 **분이 아니라 표준강도분**이다 — 강도 곱을 빼면 이 등식이 곧바로 깨진다.
-    expect(d.loadMinToday).toBeCloseTo(w.stats.examsDone * EXAM_DURATION_MIN * simDept('AESTHETICS').intensity)
+    // 부하는 **분이 아니라 표준강도분**이다 — 강도 곱을 빼면 이 부등식이 곧바로 깨진다
+    // (강도 없이는 examsDone × 20 = 상한의 세 배가 넘는다).
+    //
+    // ⚠️ 등식이 아니라 **구간**인 이유: 이 병원엔 식당이 없어 의사가 `HUNGRY_AFTER_MIN`(300분)
+    // 이후 굶은 채로 일한다(needs.starvedSlowFactor). 그 뒤 시작한 외래는 20분이 아니라 23분이라,
+    // 건별 소요가 20과 `round(20 × STARVED_SLOW)` 사이에서 갈린다 — 몇 건이 어느 쪽인지는
+    // 도착 시드가 정하므로 여기서 세지 않고 양쪽 끝만 잠근다. 무풍이라는 주장(피로 0)은 그대로다.
+    // ⓘ 상한을 느슨하게 둔 대가는 **다른 파일이 치른다**: 굶주림 감속 자체(1.15배)는
+    //    needs.test.ts 「굶은 의사의 외래는 1.15배 길다」가 단일 건으로 정확히 잡는다. 여기서
+    //    구간이 넓다고 그 축이 무계측인 것은 아니다 — 이 테스트가 지는 몫은 **강도 곱**뿐이다.
+    const base = w.stats.examsDone * simDept('AESTHETICS').intensity
+    expect(d.loadMinToday!).toBeGreaterThanOrEqual(base * EXAM_DURATION_MIN)
+    expect(d.loadMinToday!).toBeLessThanOrEqual(base * Math.round(EXAM_DURATION_MIN * STARVED_SLOW))
     expect(d.loadMinToday).toBeLessThan(FATIGUE_FREE_MIN)
     expect(d.fatigue).toBe(0)
   })
@@ -190,7 +203,7 @@ describe('축적 — 표준강도분', () => {
     // 병동 + 순환기 의사 하나뿐인 세계(대기실이 없어 외래는 폰조차 안 생긴다) — 첫 처치가 끝난
     // 그 분의 부하 증가만 관측된다.
     let w = place(createWorld(BOTH_KINDS_SEED), WARD_1BED)
-    w = hireDoctor(w, 'CARDIOLOGY')
+    w = hire(w, 'CARDIOLOGY')
     w = until(w, x => x.pawns.some(p => p.stage === 'IN_TREATMENT'), ARRIVAL_WINDOW_MIN)
     expect(theDoctor(w).loadMinToday).toBe(0) // 전제: 아직 아무것도 안 끝났다
     w = until(w, x => (theDoctor(x).loadMinToday ?? 0) > 0, EMERGENCIES.STEMI.durationMin + 5)
@@ -199,7 +212,7 @@ describe('축적 — 표준강도분', () => {
 
   it('부하는 그 일을 한 의사에게만 붙는다', () => {
     let w = outpatientWorld('INTERNAL_MEDICINE')
-    w = hireDoctor(w, 'AESTHETICS') // 방이 없어 놀기만 하는 의사
+    w = hire(w, 'AESTHETICS') // 방이 없어 놀기만 하는 의사
     w = until(w, x => x.stats.examsDone > 0, ARRIVAL_WINDOW_MIN)
     const idle = w.pawns.filter(p => p.kind === 'DOCTOR').find(p => p.dept === 'AESTHETICS')!
     expect(idle.loadMinToday).toBe(0)
@@ -228,7 +241,7 @@ describe('감속 — 피로가 진료를 늦춘다', () => {
 
   it('응급 처치도 같은 배율로 늘어난다', () => {
     let w = place(createWorld(3), WARD_1BED)
-    w = hireDoctor(w, 'CARDIOLOGY')
+    w = hire(w, 'CARDIOLOGY')
     w = { ...w, minute: ARRIVAL_WINDOW_MIN, pawns: w.pawns.map(p => ({ ...p, fatigue: FATIGUE_RED })) }
     const bed = wardBeds(w)[0]
     const emergency: Pawn = {

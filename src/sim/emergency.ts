@@ -6,16 +6,24 @@
 // 거부면 폰을 만들지도 않는다(1주차 문전박대 선례 — 만들었다 내보내면 화면엔 같아 보여도
 // nextId·경로 계산이 헛돌고, "몇 명이 문 앞에서 돌아섰나"가 관측되지 않는다).
 //
+// ⚠️ **"그 과 의사"의 정의가 PR C에서 좁아졌다**: 응급 우선순위를 0으로 끈 의사는 이 판정에서
+// **없는 의사**다(`priorityOf(p, 'emergency') > 0`). 하드락이 약해진 게 아니라 반대다 —
+// **응급을 끈 의사는 없는 의사다. 그 대가는 회차 카운트로 청구된다.** 플레이어가 "이 사람은
+// 응급 안 받습니다"라고 말할 수 있어야 토글이 손잡이인데, 그렇게 꺼 놓고도 응급이 들어오면
+// 그 말이 거짓이 된다. 정의는 세 자리에서 같다: 판정 · 배정 · 인터럽트가 전부 같은 조건을 본다.
+//
 // 값(수가·소요)의 **단일 출처는 이 파일**이다. 과 카탈로그(dept.ts)에 응급 열을 두지 않은
 // 이유: 응급은 도착률·판정·처치 시간까지 한 덩어리라, 카탈로그가 절반만 들고 있으면 수가가
 // 두 곳에 적힌다(이 저장소가 세 번 경고한 이중 기재).
 import { seededUnit } from '../game/daysim'
 import { buildBlockedSet, findPath, type Pt } from './path'
 import { ENTRANCE, type SimWorld } from './world'
-import type { Pawn } from './pawn'
+import { priorityOf, type Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
-import { ARRIVAL_WINDOW_MIN, furnitureSpots, minuteStreamSeed, toExit } from './patientFlow'
-import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
+import { ARRIVAL_WINDOW_MIN, minuteStreamSeed, toExit } from './patientFlow'
+import { furnitureSpots, ptKey, samePt } from './spots'
+import { interruptActivity, workDurationMin } from './needs'
+import { applyWorkLoads } from './fatigue'
 
 /** 응급 도착 스트림 전용 salt — `daysim.callSeed` 주석의 **레지스트리에 등재된 값**이다.
  *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23·29·31, 이 파일에서 37·41.) */
@@ -43,7 +51,9 @@ export interface EmergencyTurnAway { kind: EmergencyKind; reason: TurnAwayReason
 export interface EmergencySpec {
   kind: EmergencyKind
   label: string
-  /** 이 응급을 받을 수 있는 **배후과**. 이 과 의사가 0명이면 하드락이다. */
+  /** 이 응급을 받을 수 있는 **배후과**. 이 과에서 **응급을 켠**(`priorityOf(p,'emergency') > 0`)
+   *  의사가 0명이면 하드락이다 — 뽑지 않은 것과 뽑아 두고 끈 것이 같은 판정을 받는다(PR C의
+   *  정의 확장 · 파일 머리말). */
   dept: SimDeptKey
   /** 처치 한 건의 수익(만원). 외래 수가와 **다른 축**이다 — 응급은 한 건이 그 과 외래 수십
    *  건을 넘지만, 받으려면 24시간 대기(주 고정비)와 침대를 먼저 사야 한다. */
@@ -158,8 +168,6 @@ export function wardBeds(w: SimWorld, blocked: Set<number> = buildBlockedSet(w))
   return furnitureSpots(w, 'WARD', 'BED', blocked)
 }
 
-const ptKey = (p: Pt) => `${p.x},${p.y}`
-
 /** 비어 있고 **입구에서 닿을 수 있는** 첫 침대와 거기까지의 경로.
  *  점유는 응급 환자의 dest로 표현된다(대기실 좌석과 같은 방식) — 별도 점유 테이블을 두면
  *  폰이 사라질 때(퇴장·마감) 되돌리는 걸 잊어 침대가 영구히 잠긴다.
@@ -204,7 +212,11 @@ function maybeEmergency(w: SimWorld): SimWorld {
   // ① 배후과 — **의사가 지금 한가한지는 묻지 않는다**. 외래 중이면 그걸 마치고 온다(응급이
   //    다음 작업의 최우선). 한가함을 조건으로 걸면 바쁜 병원일수록 응급을 못 받는 꼴이 되어,
   //    "그 과가 없으면 못 받는다"가 "그 과가 바쁘면 못 받는다"로 바뀐다 — 다른 게임이 된다.
-  if (!w.pawns.some(p => p.kind === 'DOCTOR' && p.dept === spec.dept)) {
+  //    묻는 것은 **플레이어가 그 의사에게 응급을 맡겼는가** 하나뿐이다(`emergency > 0`) —
+  //    응급을 끈 의사는 이 판정에서 없는 의사다(파일 머리말의 정의 확장).
+  if (!w.pawns.some(
+    p => p.kind === 'DOCTOR' && p.dept === spec.dept && priorityOf(p, 'emergency') > 0,
+  )) {
     return turnAway(w, kind, 'NO_SPECIALIST')
   }
   // ② 빈 침대. 의사를 **먼저** 보는 것이 사유의 순서 계약이다 — 둘 다 없을 때 플레이어가
@@ -226,8 +238,6 @@ function maybeEmergency(w: SimWorld): SimWorld {
     stats: { ...w.stats, emergencyAccepted: w.stats.emergencyAccepted + 1 },
   }
 }
-
-const samePt = (a: { x: number; y: number }, b: Pt) => a.x === b.x && a.y === b.y
 
 function progressEmergencies(w: SimWorld): SimWorld {
   if (!w.pawns.some(p => p.emergency)) return w
@@ -307,18 +317,54 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
   if (waiting.length === 0) return w
   const busy = new Set(w.pawns.map(p => p.doctorId).filter((id): id is string => !!id))
   const updates = new Map<number, Pawn>()
+  /**
+   * 응급을 맡은 의사들 — **emergency 내림차순, 동률이면 폰 배열 순서**. 한 번만 정렬해 둔다:
+   * `busy`는 배정마다 바뀌지만 순서는 안 바뀌므로, 환자마다 다시 정렬하면 같은 결과에 비용만 는다.
+   *
+   * `emergency === 0`인 의사는 여기서 **통째로 빠진다** — 판정(maybeEmergency ①)에서 없는 의사로
+   * 세어 놓고 배정에서는 집으면, 그 과 의사를 다 끈 병원이 응급을 되돌려 보내면서 동시에 그
+   * 의사를 처치에 묶는 모순이 생긴다. 인터럽트도 배정의 부수효과라, 여기서 빠지면 쉬던 의사가
+   * 낚아채이는 일도 함께 사라진다(끈다는 말의 뜻이 세 자리에서 같아진다).
+   *
+   * ⓘ **과 축은 이 정렬에 없다** — 배후과 일치는 아래 `find`가 환자마다 따로 본다. 정렬은
+   *   "누가 먼저 불려 나오나"의 순서일 뿐이고, 과가 다른 의사는 순서와 무관하게 그 환자를
+   *   못 받는다. 정렬 키에 과를 섞으면 STEMI 한 명 때문에 급성복증 줄까지 재배열된다.
+   */
+  const candidates = w.pawns
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => p.kind === 'DOCTOR' && priorityOf(p, 'emergency') > 0)
+    .sort((a, b) => priorityOf(b.p, 'emergency') - priorityOf(a.p, 'emergency') || a.i - b.i)
+    .map(({ p }) => p)
+  /** 응급에 끌려간 의사 — 휴식·식사(`activity`)를 **그 자리에서** 끊는다(needs.interruptActivity).
+   *  후보 판정은 activity를 보지 **않는다**: 쉬는 중이라고 응급을 못 받으면 "그 과가 없으면
+   *  못 받는다"가 "그 과가 쉬고 있으면 못 받는다"로 바뀌어 하드락의 뜻이 흐려진다.
+   *  대신 붙는 순간 휴식이 무효가 된다 — **회복 없이** 끊긴다. 이 해제를 빼면 의사는 처치
+   *  중에도 'RESTING'인 채라, 예정된 종료 시각에 쉬지도 않은 회복을 받고 책상으로 걸어간다.
+   *  (예외는 `emergency === 0` 하나다 — 그 의사는 후보에 아예 없어 쉬던 자리를 지킨다.) */
+  const interrupted = new Map<string, Pawn>()
   for (const { p, i } of waiting) {
     const spec = emergencySpec(emergencyKindOf(p))
-    const doc = w.pawns.find(d => d.kind === 'DOCTOR' && d.dept === spec.dept && !busy.has(d.id))
+    const doc = candidates.find(d => d.dept === spec.dept && !busy.has(d.id))
     if (!doc) continue // 그 과 의사가 전부 묶여 있다 — 이 환자는 침대에서 계속 기다린다
     busy.add(doc.id)
-    // 외래와 같은 계약: 소요는 **시작하는 순간** 그 의사의 피로로 확정된다. 지친 의사의 PCI는
-    // 90분이 아니라 그보다 길고, 그동안 그 과의 외래·다음 응급이 함께 밀린다.
-    const workMin = slowedDurationMin(spec.durationMin, fatigueOf(doc))
+    if (doc.activity) interrupted.set(doc.id, interruptActivity(doc))
+    // 외래와 같은 계약: 소요는 **시작하는 순간** 그 의사의 피로·허기로 확정된다. 지치거나 굶은
+    // 의사의 PCI는 90분이 아니라 그보다 길고, 그동안 그 과의 외래·다음 응급이 함께 밀린다.
+    // 곱하는 순서·정수화가 외래와 같은 것은 이제 성질이 아니라 **같은 함수**다
+    // (`needs.workDurationMin` — 갈릴 여지 자체를 없앴다).
+    // ⓘ **곱 순서의 계측점이 이 경로다**: 90분 base는 순서를 뒤집으면 피로 67에서 130 → 129로
+    //   갈리는데, 외래 20분은 같은 피로에서 29로 일치해 못 잡는다. 함수가 하나가 된 지금 그
+    //   계측은 외래 경로까지 함께 잠근다.
+    const workMin = workDurationMin(spec.durationMin, doc)
     updates.set(i, {
       ...p, stage: 'IN_TREATMENT', doctorId: doc.id, treatUntilMin: w.minute + workMin, workMin,
     })
   }
-  if (updates.size === 0) return w
-  return { ...w, pawns: w.pawns.map((p, i) => updates.get(i) ?? p) }
+  // 두 map을 **함께** 본다. `updates.size === 0`만 보면 "의사 해제는 있는데 환자 갱신은 없다"는
+  // 조합이 생기는 날 그 해제가 조용히 버려진다 — 지금은 배정이 곧 두 갱신을 함께 만들어 그런
+  // 조합이 없지만, 그건 이 함수 밖의 성질이라 여기서 기대면 암묵 불변식에 얹는 셈이다.
+  if (updates.size === 0 && interrupted.size === 0) return w
+  // 폰 id는 world.nextId에서 나와 전역 유일하다(`doc-*`·`pat-*`·`emg-*`) — 환자 갱신(index)과
+  // 의사 갱신(id)이 한 map에서 섞여도 서로를 덮지 않는다.
+  return { ...w, pawns: w.pawns.map((p, i) => updates.get(i) ?? interrupted.get(p.id) ?? p) }
 }

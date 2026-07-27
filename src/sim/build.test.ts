@@ -98,7 +98,7 @@ describe('placeRoom', () => {
     expect(res.world.furniture.length).toBeGreaterThanOrEqual(4)
   })
   it('모든 방 종류가 유효한 가구를 낳는다 — 종류 누락으로 정체불명 가구가 생기지 않는다', () => {
-    const types: RoomType[] = ['EXAM', 'WARD', 'WAITING', 'LOUNGE', 'RECEPTION']
+    const types: RoomType[] = ['EXAM', 'WARD', 'WAITING', 'LOUNGE', 'RECEPTION', 'CAFETERIA']
     for (const type of types) {
       const res = placeRoom(createWorld(1), { type, x: 4, y: 4, w: 6, h: 5 })
       if (!res.ok) throw new Error(`전제 실패: ${type}`)
@@ -107,7 +107,7 @@ describe('placeRoom', () => {
     }
   })
   it('가구는 서로 같은 타일에 겹치지 않는다', () => {
-    const types: RoomType[] = ['EXAM', 'WARD', 'WAITING', 'LOUNGE', 'RECEPTION']
+    const types: RoomType[] = ['EXAM', 'WARD', 'WAITING', 'LOUNGE', 'RECEPTION', 'CAFETERIA']
     for (const type of types) {
       for (const [w, h] of [[MIN_ROOM_W, MIN_ROOM_H], [6, 5], [8, 6]]) {
         const res = placeRoom(createWorld(1), { type, x: 4, y: 4, w, h })

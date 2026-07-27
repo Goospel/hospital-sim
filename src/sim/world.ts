@@ -1,5 +1,6 @@
 // 타일 세계 — 순수 데이터와 통행 판정. 렌더·React 임포트 금지.
-import type { SimDeptKey, SimDeptStats } from './dept' // 타입 전용 — dept.ts는 world를 모른다
+// dept.ts는 world를 모른다(단방향) — 그래서 값(freshHirePool)까지 당겨도 순환이 없다.
+import { freshHirePool, type SimDeptKey, type SimDeptStats } from './dept'
 import type { EmergencyTurnAway } from './emergency' // 타입 전용 — emergency.ts가 world를 되받아도 런타임 순환 없음
 import type { Pawn } from './pawn' // 타입 전용 임포트 — pawn.ts가 world를 되받아도 순환 무해
 import type { DayRecord } from './day' // 타입 전용 — day.ts가 SimWorld를 되받아도 런타임 순환 없음
@@ -15,7 +16,7 @@ export const INITIAL_TREASURY_MANWON = 50_000 // 개원 자본 5억(기존 경�
  *  patientFlow가 pawn의 값을 하나라도 쓰는 순간 실제 순환이 된다. */
 export const ENTRANCE: Pt = { x: 24, y: GRID_H - 1 }
 
-export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION'
+export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION' | 'CAFETERIA'
 
 export interface Room {
   id: string
@@ -57,6 +58,11 @@ export interface SimWorld {
    *  결산이 돌기 때문이다(진입 시 자동 1회 → 요약을 읽고 → 다음 주 버튼). phase를 옮기면
    *  결산이 끝나는 순간 플레이어가 읽어야 할 화면이 사라진다. */
   weekSettled: boolean
+  /** **전국에 남은** 과별 의사 수 — 채용이 하나씩 깎고(pawn.hireDoctor), 0이면 그 과를 더 뽑을 수
+   *  없다. 사직자는 여기로 **돌아오지 않는다**(week.startNextWeek) — 다른 병원으로 옮긴 게 아니라
+   *  필수의료를 떠난 것이라, 이 숫자는 한 판 동안 단조 감소한다.
+   *  초기값은 카탈로그 파생이다(dept.freshHirePool) — 두 곳에 적지 않는다. */
+  hirePool: Record<SimDeptKey, number>
 }
 
 export interface SimStats {
@@ -85,6 +91,7 @@ export function createWorld(seed: number): SimWorld {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
     rooms: [], furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
+    hirePool: freshHirePool(),
   }
 }
 
