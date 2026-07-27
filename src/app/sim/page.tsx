@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import TileMap, { ROOM_LABEL, type BuildPreview } from "@/components/TileMap";
-import { useSimClock, type SimSpeed } from "@/components/useSimClock";
+import DayEndOverlay from "@/components/DayEndOverlay";
+import WeekEndOverlay from "@/components/WeekEndOverlay";
+import { effectiveSpeed, useSimClock, type SimSpeed } from "@/components/useSimClock";
 import { MS_PER_GAME_MIN } from "@/game/hospitalMap";
 import { formatClockFromOpen } from "@/game/daysim";
 import { createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { placeRoom, roomCostManwon, COST_PER_TILE_MANWON, MIN_ROOM_W, MIN_ROOM_H, type PlaceResult } from "@/sim/build";
 import { spawnDoctor } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
+import { startNextDay } from "@/sim/day";
+import { settleWeek, startNextWeek, weekSummary } from "@/sim/week";
 
 /**
  * /sim — 타일 병원의 첫 화면. 시뮬 코어(src/sim)를 **읽고 그리기만** 한다.
@@ -79,7 +83,7 @@ export default function SimPage() {
     드래그가 취소되거나 중간에 언마운트될 때 배속이 0에 갇힌다. drag를 비우는 것이
     곧 시계 재개라, 확정 경로와 파기 경로가 재개를 각자 기억할 필요가 없다.
   */
-  const running: SimSpeed = drag ? 0 : speed;
+  const running: SimSpeed = effectiveSpeed(world.phase, drag ? 0 : speed);
   useSimClock(running, setWorld);
 
   useEffect(() => {
@@ -87,6 +91,33 @@ export default function SimPage() {
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  /*
+    주간 결산 자동 1회 — 7일차 밤에 세계가 WEEK_END로 들어오면 여기서 고정비를 뺀다.
+    플레이어가 누르는 게 아니라 자동인 이유: 결산은 선택지가 아니라 청구서다(누를 수
+    있으면 안 누르고 버티는 게 최적 전략이 된다).
+
+    ⚠️ **정확히 1회**여야 한다 — settleWeek을 두 번 부르면 고정비가 두 번 빠져 멀쩡한
+    병원이 장부로만 망한다. 코어가 이중 정산을 throw로 막으므로(weekSettled) 방어를
+    소홀히 하면 no-op이 아니라 **크래시**다. 그래서 가드가 세 겹이고, 각자 다른 경로를 막는다:
+      ① `world.weekSettled` 이른 반환 — 결산이 끝나면 deps가 바뀌어 이펙트가 **다시 돈다**.
+         실제로 가장 먼저 터지는 경로다(실측: 이 줄만 빼도 결산 직후 "이미 결산했다"
+         Uncaught Error로 화면이 통째로 죽는다).
+      ② settlingRef — 같은 국면에서 이펙트가 두 번 세워질 때(StrictMode 마운트).
+      ③ 업데이터 안 재확인 — StrictMode가 업데이터를 두 번 불러도 두 번째는 이미 결산된
+         세계를 받아 그대로 돌려준다.
+    1주차의 이중 건설(setState 업데이터 안에서 placeRoom)과 같은 함정이라 같은 자리를 막는다.
+  */
+  const settlingRef = useRef(false);
+  useEffect(() => {
+    if (world.phase !== "WEEK_END" || world.weekSettled) {
+      settlingRef.current = false;
+      return;
+    }
+    if (settlingRef.current) return;
+    settlingRef.current = true;
+    setWorld((w) => (w.phase === "WEEK_END" && !w.weekSettled ? settleWeek(w) : w));
+  }, [world.phase, world.weekSettled]);
 
   const preview: BuildPreview | null = useMemo(() => {
     if (!drag || !selected) return null;
@@ -111,6 +142,10 @@ export default function SimPage() {
       {/* ── 상단 바 — 시각·금고·오늘 집계·시간 조작 ── */}
       <header className="flex flex-wrap items-center gap-x-5 gap-y-2 border border-frame bg-desk-2 px-4 py-2 font-mono text-sm tabular-nums text-on-desk">
         <span className="text-base font-semibold">{formatClockFromOpen(world.minute)}</span>
+        {/* 하루 안의 시각만으로는 지금이 몇 번째 하루인지 알 수 없다 — 주·일이 리듬의 좌표다. */}
+        <span className="text-on-desk-muted">
+          {world.week}주 {world.day}일
+        </span>
         <span>
           <span className="text-on-desk-muted">금고 </span>
           {world.treasuryManwon.toLocaleString()}만원
@@ -198,6 +233,37 @@ export default function SimPage() {
           )}
         </p>
       </footer>
+
+      {/*
+        마감·결산은 라우트를 바꾸지 않고 부지 위에 덮는다 — 타일 병원은 한 장면으로 이어지는 게
+        리듬이다. 세계가 흐르지 않는 건 오버레이가 아니라 phase가 보장한다(effectiveSpeed·tick).
+
+        전이는 전부 **업데이터 안에서 phase를 다시 확인**하고 부른다. 코어의 startNextDay·
+        startNextWeek은 국면이 어긋나면 throw이므로, 버튼을 두 번 눌러 두 갱신이 줄 서면
+        두 번째가 크래시가 된다 — 화면이 사라진 뒤의 클릭은 조용히 버리는 게 맞다.
+      */}
+      {world.phase === "DAY_END" && (
+        <DayEndOverlay
+          week={world.week}
+          day={world.day}
+          days={world.days}
+          onNextDay={() => setWorld((w) => (w.phase === "DAY_END" ? startNextDay(w) : w))}
+        />
+      )}
+
+      {/* 결산 **전** 한 프레임(weekSettled=false)은 아직 고정비가 안 빠진 금고라 띄우지 않는다 —
+          그 한 장이 보이면 플레이어는 순이익이 아니라 수익을 결산으로 읽는다. */}
+      {(world.phase === "WEEK_END" || world.phase === "CLOSED") && world.weekSettled && (
+        <WeekEndOverlay
+          week={world.week}
+          days={world.days}
+          summary={weekSummary(world)}
+          treasuryManwon={world.treasuryManwon}
+          insolvencyStreak={world.insolvencyStreak}
+          closed={world.phase === "CLOSED"}
+          onNextWeek={() => setWorld((w) => (w.phase === "WEEK_END" ? startNextWeek(w) : w))}
+        />
+      )}
     </main>
   );
 }
