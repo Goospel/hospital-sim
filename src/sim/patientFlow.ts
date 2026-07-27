@@ -233,7 +233,13 @@ function assignDoctorRooms(w: SimWorld): SimWorld {
   if (!w.pawns.some(p => p.kind === 'DOCTOR' && !p.roomId)) return w
   const blocked = buildBlockedSet(w)
   const pawns = w.pawns.map(p => {
-    if (p.kind !== 'DOCTOR' || p.roomId) return p
+    // `p.activity`(needs.ts) — 욕구 행동 중인 의사는 **방 배정도 받지 않는다**. 형제
+    // (assignWaitingToExam)와 대칭인 이 한 줄이 없으면 배정이 그 의사의 dest·path를 책상으로
+    // 덮어써, 휴게실로 걸어가던 사람이 **자기 책상에서 'RESTING'** 이 된다(실측: TO_LOUNGE
+    // 도중 같은 과 진료실을 지으면 재현). 왕복 없이 회복 15가 들어오고, 의자를 안 쓰니 좌석
+    // 한도도 우회되며, 배치 인과(거리가 책상 체류를 깎는다)가 통째로 증발한다 — 에러는 0이다.
+    // 배정은 사라지지 않고 **미뤄질 뿐**이다: 휴식이 끝나면 다음 분에 다시 후보가 된다.
+    if (p.kind !== 'DOCTOR' || p.roomId || p.activity) return p
     for (const room of examRooms) {
       if (taken.has(room.id)) continue
       // 과 없는 의사(손세계 폰)는 어떤 방과도 같지 않아 여기서 전부 걸러진다 — 의도된 결과다.

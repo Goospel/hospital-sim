@@ -327,7 +327,10 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
       ...p, stage: 'IN_TREATMENT', doctorId: doc.id, treatUntilMin: w.minute + workMin, workMin,
     })
   }
-  if (updates.size === 0) return w
+  // 두 map을 **함께** 본다. `updates.size === 0`만 보면 "의사 해제는 있는데 환자 갱신은 없다"는
+  // 조합이 생기는 날 그 해제가 조용히 버려진다 — 지금은 배정이 곧 두 갱신을 함께 만들어 그런
+  // 조합이 없지만, 그건 이 함수 밖의 성질이라 여기서 기대면 암묵 불변식에 얹는 셈이다.
+  if (updates.size === 0 && interrupted.size === 0) return w
   // 폰 id는 world.nextId에서 나와 전역 유일하다(`doc-*`·`pat-*`·`emg-*`) — 환자 갱신(index)과
   // 의사 갱신(id)이 한 map에서 섞여도 서로를 덮지 않는다.
   return { ...w, pawns: w.pawns.map((p, i) => updates.get(i) ?? interrupted.get(p.id) ?? p) }

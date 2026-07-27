@@ -62,13 +62,18 @@ function wantsRestNow(p: Pawn): boolean {
 export function clearActivity(p: Pawn): Pawn {
   const next: Pawn = { ...p }
   delete next.activity
-  delete next.restUntilMin
+  delete next.activityUntilMin
   return next
 }
 
 /** 욕구 행동을 끊고 **그 자리에 세운다**(dest·path까지 해제) — 응급이 의사를 낚아채는 자리.
  *  dest를 남기면 좌석 점유가 계속 잡혀 다른 의사가 그 의자에 못 앉고, path를 남기면 처치를
- *  시작한 의사가 휴게실을 향해 계속 걸어간다. 회복은 **없다** — 블록이 끝나야 내려간다. */
+ *  **시작한 의사가 휴게실을 향해 계속 걸어간다**(RESTING은 path가 이미 비어 등가라, 이 줄이
+ *  실제로 값을 하는 구간은 'TO_LOUNGE' 도중의 인터럽트 하나뿐이다 — 계약 테스트도 거기서 잰다).
+ *  회복은 **없다** — 블록이 끝나야 내려간다.
+ *  ⓘ dest 해제의 대가: 인터럽트당한 의사는 의자 앞 타일에 그대로 남고, 좌석이 풀렸으므로 다른
+ *    의사가 그 자리를 잡아 **두 폰이 한 타일에 겹칠 수 있다**. 결정론·장부에는 영향이 없고
+ *    (겹침은 표시상의 일이다) 처치가 끝나면 책상으로 돌아가 저절로 풀린다 — 수용한 각색이다. */
 export function interruptActivity(p: Pawn): Pawn {
   const next: Pawn = { ...clearActivity(p), path: [] }
   delete next.dest
@@ -89,6 +94,9 @@ interface StepCtx {
  * 의사마다 한 분에 **한 갈래만** 지난다: 쉬러 나선 그 분에 곧바로 앉지 않고, 회복한 그 분에
  * 곧바로 다시 나서지 않는다. 갈래를 이어 붙이면 "걸어가는 데 걸리는 시간"이 사라져 배치
  * 인과(휴게실이 멀수록 책상 체류가 짧다 — 머리말의 실측)가 통째로 증발한다.
+ *
+ * 순회는 **폰 배열 순서**다 — 좌석이 모자랄 때 누가 먼저 앉는지가 그 순서로 정해진다
+ * (외래 배정·응급 배정과 같은 타이브레이크라, 세 단계가 같은 근거로 결정론을 얻는다).
  */
 export function stepDoctors(world: SimWorld): SimWorld {
   // 쉬는 중인 의사도 없고 임계에 닿은 의사도 없으면 이 단계는 통째로 건너뛴다 — 좌석·통행
@@ -105,6 +113,10 @@ export function stepDoctors(world: SimWorld): SimWorld {
     // 좌석 점유는 **다른 의사의 dest**로 표현된다(환자 좌석 freeSeat와 같은 기계) — 별도
     // 점유 테이블을 두면 의사가 응급에 끌려가거나 아침이 오는 순간 되돌리는 걸 잊어
     // 의자가 영구히 잠긴다. dest는 어차피 재탐색용으로 이미 있다.
+    // ⓘ 이 집합은 **분 시작 시점의 스냅샷**이라, 같은 분에 풀린 의자(그 분에 휴식이 끝났거나
+    //   응급에 끌려간 자리)는 다음 분까지 예약된 것처럼 보인다 — 의도한 한 분의 지연이다.
+    //   앞서 처리된 의사의 해제까지 반영하려면 순회 중에 집합을 되짚어야 하고, 그러면 결과가
+    //   폰 배열 순서에 더 깊이 얽힌다. 한 분 늦게 앉는 것이 그 복잡도보다 싸다.
     taken: new Set(
       world.pawns.filter(p => p.activity && p.dest).map(p => ptKey(p.dest!)),
     ),
@@ -124,7 +136,7 @@ function stepDoctor(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
     case 'TO_LOUNGE': {
       // ⓑ 전이 — 의자에 **닿는** 그 분에 앉는다. dest는 그대로 둔다(좌석 점유의 표현).
       if (p.dest && samePt(p, p.dest)) {
-        return { ...p, activity: 'RESTING', restUntilMin: w.minute + REST_BREAK_MIN }
+        return { ...p, activity: 'RESTING', activityUntilMin: w.minute + REST_BREAK_MIN }
       }
       // ⓓ 좌초 — 못 닿았는데 경로가 비었다(tick의 재탐색이 실패했다는 뜻이고, 스스로는 절대
       //    못 벗어난다). 안 풀면 이 의사는 'TO_LOUNGE'인 채 굳어 외래에도 응급에도 안 잡힌다 —
@@ -136,7 +148,7 @@ function stepDoctor(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
       // ⓒ 종료 — 예정 시각에 도달한 그 분에 한 번에 내려간다.
       //
       // `?? Infinity`(= 끝나지 않는다)는 **의도한 방향**이다. 이 상태는 현 생성 경로로는
-      // 도달 불가지만(RESTING은 ⓑ에서만 만들어지고 거기서 restUntilMin이 함께 실린다),
+      // 도달 불가지만(RESTING은 ⓑ에서만 만들어지고 거기서 activityUntilMin이 함께 실린다),
       // 손으로 세운 세계에서는 올 수 있다. 두 폴백 중 하나를 골라야 하고 —
       //  · Infinity: 안 끝난다(그 의사가 놀지만 **장부는 정직하다**)
       //  · 0·현재분: 곧바로 끝난다(쉬지도 않은 회복을 **공짜로** 준다)
@@ -146,7 +158,7 @@ function stepDoctor(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
       // 같은 모양을 유지하기 위해서다 — 셋이 갈리면 손세계 픽스처가 자리마다 다르게 터진다.
       // 이 선택은 주석으로만 두지 않는다: needs.test.ts가 "종료 시각 없는 RESTING은 회복하지
       // 않는다"로 잠근다(폴백을 0으로 돌리면 그 테스트가 죽는다).
-      if (w.minute < (p.restUntilMin ?? Infinity)) return p
+      if (w.minute < (p.activityUntilMin ?? Infinity)) return p
       const rested: Pawn = {
         ...clearActivity(p),
         fatigue: Math.max(0, fatigueOf(p) - REST_BREAK_RECOVER),

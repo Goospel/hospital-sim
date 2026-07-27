@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, type SimWorld } from './world'
 import { placeRoom } from './build'
-import { hireDoctor, type Pawn } from './pawn'
+import { hireDoctor, PAWN_TILES_PER_MIN, type Pawn } from './pawn'
 import { buildBlockedSet, findPath } from './path'
 import { tick } from './tick'
 import { freshMorning } from './day'
@@ -23,9 +23,10 @@ const LOUNGE_1 = { type: 'LOUNGE' as const, x: 16, y: 6, w: 4, h: 4 }
 const LOUNGE_2 = { type: 'LOUNGE' as const, x: 16, y: 6, w: 6, h: 4 }
 /** 같은 규격의 **먼** 휴게실 — LOUNGE_1과 진료실 사이 거리만 다르다(왕복 보행 분 대조용). */
 const LOUNGE_FAR = { type: 'LOUNGE' as const, x: 40, y: 6, w: 4, h: 4 }
-/** 두 휴게실의 **책상 체류 분 차이** — 실측값이다(시뮬이 결정론이라 고정이고, 왕복 두 다리의
- *  보행 분에 해당한다). 위 방 좌표에서 파생하므로 좌표를 옮기면 이 값도 함께 틀려 소리 내어 깨진다. */
-const DESK_DWELL_GAP_MIN = 24
+/** 두 휴게실의 **책상 체류 분 차이** — 방 좌표에서 파생한다(리터럴 24를 적으면 방을 옮길 때
+ *  조용히 낡는다). 두 휴게실은 x만 다르고 y·크기가 같아 경로 차이가 곧 x 차이이며, 왕복이라
+ *  두 배, 분당 `PAWN_TILES_PER_MIN` 타일이라 그만큼 나눈다. */
+const DESK_DWELL_GAP_MIN = (2 * (LOUNGE_FAR.x - LOUNGE_1.x)) / PAWN_TILES_PER_MIN
 /** LOUNGE_1의 문(18,9) 바로 앞 타일(18,10)을 벽으로 덮는 방 — 휴게실이 **도달 불가**가 된다. */
 const SEALER = { type: 'WARD' as const, x: 16, y: 10, w: 4, h: 4 }
 /** 봉인된 휴게실 너머의 멀쩡한 휴게실 — 후보 순서상 **두 번째**다. */
@@ -65,6 +66,11 @@ function deskSpot(w: SimWorld, p: Pawn = doctorOf(w)) {
 }
 
 const loungeSeats = (w: SimWorld) => furnitureSpots(w, 'LOUNGE', 'CHAIR')
+
+/** 그 자리까지 길이 있는가 — 봉인 테스트의 전제를 실제로 확인한다(구현과 같은 findPath). */
+function findable(w: SimWorld, p: Pawn, to: { x: number; y: number }): boolean {
+  return findPath(w, { x: p.x, y: p.y }, to) !== null
+}
 
 /** 그 폰이 자기 진료실 **안**에 서 있는가 — 외래 배정의 유휴 판정이 보는 축이다.
  *  activity 제외를 겨눈 테스트는 이 값이 참인 순간에 재야 계측력이 있다. */
@@ -136,7 +142,7 @@ describe('휴식 — 개시·전이·종료', () => {
     w = until(w, x => doctorOf(x).activity === 'RESTING')
     doc = doctorOf(w)
     expect(at(doc)).toEqual(seat)
-    expect(doc.restUntilMin).toBe(w.minute + REST_BREAK_MIN)
+    expect(doc.activityUntilMin).toBe(w.minute + REST_BREAK_MIN)
     expect(doc.dest).toEqual(seat)         // dest 유지 = 좌석 점유의 표현
     expect(doc.fatigue).toBe(FATIGUE_RED)
     const restStart = w.minute
@@ -151,7 +157,7 @@ describe('휴식 — 개시·전이·종료', () => {
     expect(w.minute).toBe(restStart + REST_BREAK_MIN)
     doc = doctorOf(w)
     expect(doc.activity).toBeUndefined()
-    expect(doc.restUntilMin).toBeUndefined()
+    expect(doc.activityUntilMin).toBeUndefined()
     expect(doc.fatigue).toBe(FATIGUE_RED - REST_BREAK_RECOVER)
     expect(doc.dest).toEqual(desk)         // 자기 방 책상으로 복귀
 
@@ -188,7 +194,11 @@ describe('휴식 — 개시·전이·종료', () => {
     expect(doctors(one)).toHaveLength(2)      // 전제
     expect(loungeSeats(one)).toHaveLength(1)  // 전제: 의자 하나
     const after = tick(one, 1)
-    expect(doctors(after).filter(d => d.activity === 'TO_LOUNGE')).toHaveLength(1)
+    const seated = doctors(after).filter(d => d.activity === 'TO_LOUNGE')
+    expect(seated).toHaveLength(1)
+    // **누가** 앉는지도 계약이다 — 타이브레이크는 폰 배열 순서(먼저 채용된 의사)다.
+    // 이 단언이 없으면 순회 순서를 뒤집어도(예: 역순) 아무 테스트가 안 죽는다.
+    expect(seated[0].id).toBe(doctors(one)[0].id)
 
     // 대조 — 의자가 둘이면 둘 다 간다. "한 번에 한 명"이 아니라 **좌석 수**가 한도다.
     const two = tired(hireDoctor(restWorld({ lounge: [LOUNGE_2] }), 'CARDIOLOGY'), FATIGUE_RED)
@@ -254,7 +264,7 @@ describe('휴식 — 개시·전이·종료', () => {
         ? { ...p, x: seat.x, y: seat.y, path: [], dest: seat, activity: 'RESTING' as const }
         : p)),
     }
-    expect(doctorOf(w).restUntilMin).toBeUndefined() // 전제
+    expect(doctorOf(w).activityUntilMin).toBeUndefined() // 전제
     w = run(w, 100)
     expect(doctorOf(w).activity).toBe('RESTING')
     expect(doctorOf(w).fatigue).toBe(FATIGUE_RED)
@@ -270,7 +280,7 @@ describe('휴식 — 개시·전이·종료', () => {
     w = tick(w, 1)
     const doc = doctorOf(w)
     expect(doc.activity).toBeUndefined()
-    expect(doc.restUntilMin).toBeUndefined()
+    expect(doc.activityUntilMin).toBeUndefined()
     expect(doc.dest).toEqual(desk)
     expect(doc.fatigue).toBe(FATIGUE_RED) // 쉬지 못했으니 회복도 없다
   })
@@ -303,10 +313,61 @@ describe('휴식과 일의 경합', () => {
     expect(w.pawns.find(p => p.id === 'pat-hand')!.stage).toBe('TO_EXAM')
   })
 
+  it('휴게실로 걸어가는 의사는 방 배정에 하이재킹당하지 않는다 — 건설이 목적지를 바꾸지 않는다', () => {
+    // assignDoctorRooms의 대칭 가드. 없으면 배정이 dest·path를 책상으로 덮어써, 휴게실로
+    // 걸어가던 의사가 **자기 책상에서 RESTING** 이 된다 — 왕복 0분에 회복 15, 좌석 한도 우회,
+    // 배치 인과 증발. 전부 에러 없이 일어난다.
+    let w = place(createWorld(3), LOUNGE_1) // 진료실 없이 시작 — 의사는 방이 없다
+    w = hireDoctor(w, 'CARDIOLOGY')
+    w = tired({ ...w, minute: ARRIVAL_WINDOW_MIN }, FATIGUE_RED)
+    const seat = loungeSeats(w)[0]
+
+    w = tick(w, 1)
+    expect(doctorOf(w).activity).toBe('TO_LOUNGE') // 전제: 이미 나섰다
+    expect(doctorOf(w).dest).toEqual(seat)
+    // 걷는 도중 그 과 진료실이 생긴다(합법적인 건설 한 번).
+    w = place(w, EXAM_CARDIO)
+
+    w = run(w, 3)
+    expect(doctorOf(w).dest).toEqual(seat)         // 목적지는 여전히 의자다
+    expect(doctorOf(w).roomId).toBeUndefined()     // 배정은 미뤄진다(사라지지 않는다)
+    w = until(w, x => doctorOf(x).activity === 'RESTING')
+    expect(at(doctorOf(w))).toEqual(seat)          // 책상이 아니라 **의자**에서 쉰다
+
+    // 휴식이 끝나면 미뤄졌던 배정이 온다 — 가드는 영구 봉인이 아니다.
+    w = until(w, x => !!doctorOf(x).roomId, 200)
+    expect(doctorOf(w).fatigue).toBe(FATIGUE_RED - REST_BREAK_RECOVER)
+  })
+
+  it('걸어가던 중 응급에 끌려가면 그 자리에 선다 — 휴게실로 계속 걷지 않는다', () => {
+    // interruptActivity의 `path: []`가 실제로 값을 하는 **유일한 구간**이다(RESTING은 path가
+    // 이미 비어 등가라, 거기서 재면 그 줄을 지워도 아무 테스트가 안 죽는다 — 리뷰 실측).
+    let w = place(tired(restWorld(), FATIGUE_RED), WARD_1BED)
+    const seat = loungeSeats(w)[0]
+    w = run(w, 4) // 개시 1분 + 3분 보행 — 의자에 닿기 전이다
+    expect(doctorOf(w).activity).toBe('TO_LOUNGE')
+    expect(doctorOf(w).path.length).toBeGreaterThan(0) // 전제: 아직 걷는 중
+    expect(at(doctorOf(w))).not.toEqual(seat)
+
+    const bed = wardBeds(w)[0]
+    w = tick({ ...w, pawns: [...w.pawns, inBed('emg-walk', bed)] }, 1)
+    // ⚠️ 기준 위치는 인터럽트 **이후**에 잡는다 — 그 분에도 stepMove가 먼저 2타일을 소비하므로
+    //    직전 분의 좌표를 기준으로 삼으면 정상 동작도 "움직였다"로 읽힌다(T-085).
+    const stopped = at(doctorOf(w))
+    expect(w.pawns.find(p => p.id === 'emg-walk')!.stage).toBe('IN_TREATMENT')
+    expect(doctorOf(w).path).toEqual([])   // ← path를 안 비우면 계속 걸어간다
+    expect(doctorOf(w).dest).toBeUndefined()
+    expect(stopped).not.toEqual(seat)      // 의자에 앉은 게 아니라 길 위에 섰다
+
+    w = run(w, 40)
+    expect(at(doctorOf(w))).toEqual(stopped) // 처치가 끝날 때까지 그 자리 그대로
+    expect(doctorOf(w).activity).toBeUndefined()
+  })
+
   it('휴식 중이어도 그 과 응급이 침대에서 기다리면 그 분에 배정된다 — 회복은 없다', () => {
     let w = place(tired(restWorld(), FATIGUE_RED), WARD_1BED)
     w = until(w, x => doctorOf(x).activity === 'RESTING')
-    const restUntil = doctorOf(w).restUntilMin!
+    const restUntil = doctorOf(w).activityUntilMin!
     const fatigueBefore = doctorOf(w).fatigue
     const bed = wardBeds(w)[0]
     w = tick({ ...w, pawns: [...w.pawns, inBed('emg-hand', bed)] }, 1)
@@ -317,7 +378,7 @@ describe('휴식과 일의 경합', () => {
     })
     // 휴식이 **무효**가 된다 — activity·예정 종료·좌석 점유가 그 자리에서 사라진다.
     expect(doc.activity).toBeUndefined()
-    expect(doc.restUntilMin).toBeUndefined()
+    expect(doc.activityUntilMin).toBeUndefined()
     expect(doc.dest).toBeUndefined()
     expect(doc.path).toEqual([])
     expect(doc.fatigue).toBe(fatigueBefore)
@@ -331,18 +392,32 @@ describe('휴식과 일의 경합', () => {
 })
 
 describe('배치 인과 — 거리가 무엇을 바꾸나', () => {
-  /** 그 세계를 N분 굴리며 의사가 **책상 앞에 서 있던 분**을 센다(= 진료를 받을 수 있던 시간). */
-  function deskDwell(lounge: Parameters<typeof placeRoom>[1], minutes: number) {
-    let w = tired(restWorld({ lounge: [lounge] }), FATIGUE_RED)
+  /** 그 세계를 N분 굴리며 관측한다 — 책상 앞에 서 있던 분(= 진료를 받을 수 있던 시간)과
+   *  휴식이 **시작된 분들**(회복 횟수이자 블록 간격의 근거). */
+  /** `startMin`은 관측 창을 마감(DAY_END_MIN) 안에 넣기 위한 것이다 — 세계가 마감에 닿으면
+   *  얼어붙어(phase DAY_END) 남은 분이 통째로 사라진다. 이른 시각으로 옮겨도 이 세계엔
+   *  대기실도 병동도 없어 외래·응급이 폰조차 못 만든다(문전박대) — 관측 대상은 의사뿐이다. */
+  function probe(
+    lounge: Parameters<typeof placeRoom>[1], fatigue: number, minutes: number,
+    startMin = ARRIVAL_WINDOW_MIN,
+  ) {
+    let w = tired({ ...restWorld({ lounge: [lounge] }), minute: startMin }, fatigue)
     const desk = deskSpot(w)
     let dwell = 0
+    const restStarts: number[] = []
+    let wasResting = false
     for (let i = 0; i < minutes; i++) {
       w = tick(w, 1)
       const d = doctorOf(w)
       if (d.x === desk.x && d.y === desk.y) dwell++
+      const resting = d.activity === 'RESTING'
+      if (resting && !wasResting) restStarts.push(w.minute)
+      wasResting = resting
     }
-    return { dwell, fatigue: doctorOf(w).fatigue }
+    return { dwell, restStarts, fatigue: doctorOf(w).fatigue }
   }
+  const deskDwell = (lounge: Parameters<typeof placeRoom>[1], minutes: number) =>
+    probe(lounge, FATIGUE_RED, minutes)
 
   it('휴게실이 멀수록 줄어드는 건 회복 횟수가 아니라 책상 체류 시간이다', () => {
     // 초안 주석은 "멀수록 덜 쉰다"고 적었는데 **실측이 그걸 부정했다**(needs.ts 머리말).
@@ -355,6 +430,27 @@ describe('배치 인과 — 거리가 무엇을 바꾸나', () => {
     // ⓑ 달라지는 건 진료 가능한 시간이다 — 왕복 두 다리만큼.
     expect(far.dwell).toBeLessThan(near.dwell)
     expect(near.dwell - far.dwell).toBe(DESK_DWELL_GAP_MIN)
+  })
+
+  it('피로 82에서는 둘째 블록이 왕복 없이 이어진다 — 머리말이 지목한 재임계 구조', () => {
+    // 머리말은 "거리가 회복 횟수를 못 줄이는" 근인으로 이 구조를 지목한다: 피로가
+    // FATIGUE_RED + REST_BREAK_RECOVER 이상이면 회복 직후에도 여전히 임계 위라, 책상에
+    // 닿기 전에 돌아서서 **왕복 비용을 치르지 않고** 다시 앉는다. 주석의 그 인과를 잰다.
+    const SATURATED = FATIGUE_RED + REST_BREAK_RECOVER
+    const near = probe(LOUNGE_1, SATURATED, 190, 100)
+    const far = probe(LOUNGE_FAR, SATURATED, 190, 100)
+
+    // ⓐ 두 블록이 다 돌았고(82 → 67 → 52), 횟수는 거리와 무관하다.
+    expect(near.restStarts).toHaveLength(2)
+    expect(far.restStarts).toHaveLength(2)
+    expect(near.fatigue).toBe(SATURATED - 2 * REST_BREAK_RECOVER)
+    expect(far.fatigue).toBe(near.fatigue)
+
+    // ⓑ 핵심 — 두 블록 **사이**의 간격이 거리와 무관하게 같다. 책상까지 갔다 왔다면
+    //    원거리 세계의 간격이 DESK_DWELL_GAP_MIN만큼 벌어졌을 것이다.
+    const gapOf = (r: number[]) => r[1] - r[0]
+    expect(gapOf(far.restStarts)).toBe(gapOf(near.restStarts))
+    expect(gapOf(near.restStarts)).toBeLessThan(REST_BREAK_MIN + DESK_DWELL_GAP_MIN)
   })
 })
 
@@ -374,23 +470,18 @@ describe('불변식·경계', () => {
     expect(w).toEqual(snapshot)
   })
 
-  it('freshMorning은 activity·restUntilMin을 지운다 — 아침은 책상에서 시작한다', () => {
+  it('freshMorning은 activity·activityUntilMin을 지운다 — 아침은 책상에서 시작한다', () => {
     // 남기면 'RESTING'인 채로 하루가 시작돼 그 의사가 진료 후보에서 통째로 빠지고,
-    // 어제의 restUntilMin이 오늘 0분엔 이미 지난 값이라 쉬지도 않은 회복이 들어온다.
+    // 어제의 activityUntilMin이 오늘 0분엔 이미 지난 값이라 쉬지도 않은 회복이 들어온다.
     let w = tired(restWorld(), FATIGUE_RED)
     w = until(w, x => doctorOf(x).activity === 'RESTING')
-    expect(doctorOf(w).restUntilMin).toBeDefined() // 전제
+    expect(doctorOf(w).activityUntilMin).toBeDefined() // 전제
     const desk = deskSpot(w)
     const morning = freshMorning(w)
     const doc = doctorOf(morning)
     expect(doc.activity).toBeUndefined()
-    expect(doc.restUntilMin).toBeUndefined()
+    expect(doc.activityUntilMin).toBeUndefined()
     expect(doc.dest).toBeUndefined()
     expect(at(doc)).toEqual(desk)
   })
 })
-
-/** 그 자리까지 길이 있는가 — 봉인 테스트의 전제를 실제로 확인한다(구현과 같은 findPath). */
-function findable(w: SimWorld, p: Pawn, to: { x: number; y: number }): boolean {
-  return findPath(w, { x: p.x, y: p.y }, to) !== null
-}

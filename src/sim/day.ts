@@ -126,7 +126,7 @@ export function freshMorning(world: SimWorld): SimWorld {
     // **주의 첫날만** 지친 채로 시작한다(stats 리셋이 여기 있는 것과 같은 이유).
     // 어제 붙었던 욕구 행동(휴식)도 함께 뗀다 — **아침은 책상에서 시작한다**. 남기면
     // 'RESTING'인 채로 하루가 열려 그 의사가 외래 후보에서 통째로 빠지고, 어제의
-    // restUntilMin(예: 520분)이 오늘 0분엔 이미 지난 값이라 쉬지도 않은 회복이 들어온다.
+    // activityUntilMin(예: 520분)이 오늘 0분엔 이미 지난 값이라 쉬지도 않은 회복이 들어온다.
     // 어떤 필드가 "욕구 행동"인지는 needs.clearActivity가 단일 출처다(Task 2에서 늘어난다).
     const next: Pawn = { ...clearActivity(restOvernight(p)), path: [] }
     delete next.dest
