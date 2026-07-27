@@ -78,6 +78,21 @@ describe('하루 마감', () => {
     expect(s.pawns).toEqual([doc]) // 환자는 전부 세계에서 빠지고 의사만 남는다
   })
 
+  it('이탈 집계는 명시 목록(inclusion)이라 새 스테이지가 자동으로 이탈이 되지 않는다', () => {
+    // 'PAYING'·'GONE'은 아직 아무도 만들지 않는 2주차 예약 스테이지다(pawn.ts). 집계를 denylist로
+    // 쓰면 그 흐름이 붙는 순간 수납 걷는 환자가 조용히 이탈로 세진다 — 에러 없이 숫자만 틀린다.
+    const w = tick(hospitalWorld(3), 5)
+    const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
+    const patient = (id: string, stage: PatientStage): Pawn =>
+      ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage })
+    const staged = {
+      ...w,
+      pawns: [doc, patient('paying', 'PAYING'), patient('gone', 'GONE'), patient('waiting', 'WAITING')],
+    }
+    const s = settleDay(staged)
+    expect(s.stats.leftCount).toBe(w.stats.leftCount + 1) // WAITING 한 명만
+  })
+
   it('settleDay는 입력 세계를 변형하지 않는다 (순수)', () => {
     const w = tick(hospitalWorld(3), 120)
     const snapshot = structuredClone(w)

@@ -82,10 +82,17 @@ describe('환자 흐름', () => {
   })
 
   it('대기실이 없으면 환자가 들어오자마자 이탈로 집계된다', () => {
-    const w = run(createWorld(3))
+    // 마감 직전까지만 돌린다 — 정산(600분)이 어차피 환자를 전부 쓸어가므로 600분을 넘겨 재면
+    // 아래 `pawns === []`가 항진명제가 된다("아무도 안 남았다"를 더는 관측하지 못한다).
+    const w0 = createWorld(3)
+    const w = run(w0, DAY_END_MIN - 1)
+    expect(w.phase).toBe('RUNNING')
     expect(w.stats.examsDone).toBe(0)
     expect(w.stats.leftCount).toBeGreaterThan(0)
-    expect(w.pawns).toEqual([]) // 발길을 돌린 환자는 폰으로 만들지도 않는다
+    expect(w.pawns).toEqual([])
+    // "폰으로 만들지도 않았다"는 nextId로만 관측된다 — pawns는 퇴장 기계가 어차피 비워주므로
+    // 문간 환자를 폰으로 만들었다가 곧바로 내보내도 []로 보인다(같은 항진명제의 다른 얼굴).
+    expect(w.nextId).toBe(w0.nextId)
   })
 
   it(`인내 ${PATIENCE_MIN}분 초과 대기자는 LEFT_WAITING으로 떠난다`, () => {
