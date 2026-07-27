@@ -10,6 +10,7 @@ import {
 } from './dept'
 import { emergencyLoadMin, emergencySpec, emergencyKindOf } from './emergency'
 import { applyWorkLoads, restOvernight } from './fatigue'
+import { clearActivity } from './needs'
 
 export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
 export const DAYS_PER_WEEK = 7
@@ -123,7 +124,11 @@ export function freshMorning(world: SimWorld): SimWorld {
   const pawns = world.pawns.map(p => {
     // 하룻밤 회복도 여기 있어야 한다 — 7일차 밤엔 startNextDay가 없어서, 회복을 그쪽에 달면
     // **주의 첫날만** 지친 채로 시작한다(stats 리셋이 여기 있는 것과 같은 이유).
-    const next: Pawn = { ...restOvernight(p), path: [] }
+    // 어제 붙었던 욕구 행동(휴식)도 함께 뗀다 — **아침은 책상에서 시작한다**. 남기면
+    // 'RESTING'인 채로 하루가 열려 그 의사가 외래 후보에서 통째로 빠지고, 어제의
+    // restUntilMin(예: 520분)이 오늘 0분엔 이미 지난 값이라 쉬지도 않은 회복이 들어온다.
+    // 어떤 필드가 "욕구 행동"인지는 needs.clearActivity가 단일 출처다(Task 2에서 늘어난다).
+    const next: Pawn = { ...clearActivity(restOvernight(p)), path: [] }
     delete next.dest
     // 방을 못 찾거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
     const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null

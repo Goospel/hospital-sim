@@ -15,6 +15,7 @@ import { ENTRANCE, type SimWorld } from './world'
 import type { Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
 import { ARRIVAL_WINDOW_MIN, furnitureSpots, minuteStreamSeed, toExit } from './patientFlow'
+import { interruptActivity } from './needs'
 import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
 
 /** 응급 도착 스트림 전용 salt — `daysim.callSeed` 주석의 **레지스트리에 등재된 값**이다.
@@ -307,11 +308,18 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
   if (waiting.length === 0) return w
   const busy = new Set(w.pawns.map(p => p.doctorId).filter((id): id is string => !!id))
   const updates = new Map<number, Pawn>()
+  /** 응급에 끌려간 의사 — 휴식·식사(`activity`)를 **그 자리에서** 끊는다(needs.interruptActivity).
+   *  후보 판정은 activity를 보지 **않는다**: 쉬는 중이라고 응급을 못 받으면 "그 과가 없으면
+   *  못 받는다"가 "그 과가 쉬고 있으면 못 받는다"로 바뀌어 하드락의 뜻이 흐려진다.
+   *  대신 붙는 순간 휴식이 무효가 된다 — **회복 없이** 끊긴다. 이 해제를 빼면 의사는 처치
+   *  중에도 'RESTING'인 채라, 예정된 종료 시각에 쉬지도 않은 회복을 받고 책상으로 걸어간다. */
+  const interrupted = new Map<string, Pawn>()
   for (const { p, i } of waiting) {
     const spec = emergencySpec(emergencyKindOf(p))
     const doc = w.pawns.find(d => d.kind === 'DOCTOR' && d.dept === spec.dept && !busy.has(d.id))
     if (!doc) continue // 그 과 의사가 전부 묶여 있다 — 이 환자는 침대에서 계속 기다린다
     busy.add(doc.id)
+    if (doc.activity) interrupted.set(doc.id, interruptActivity(doc))
     // 외래와 같은 계약: 소요는 **시작하는 순간** 그 의사의 피로로 확정된다. 지친 의사의 PCI는
     // 90분이 아니라 그보다 길고, 그동안 그 과의 외래·다음 응급이 함께 밀린다.
     const workMin = slowedDurationMin(spec.durationMin, fatigueOf(doc))
@@ -320,5 +328,7 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
     })
   }
   if (updates.size === 0) return w
-  return { ...w, pawns: w.pawns.map((p, i) => updates.get(i) ?? p) }
+  // 폰 id는 world.nextId에서 나와 전역 유일하다(`doc-*`·`pat-*`·`emg-*`) — 환자 갱신(index)과
+  // 의사 갱신(id)이 한 map에서 섞여도 서로를 덮지 않는다.
+  return { ...w, pawns: w.pawns.map((p, i) => updates.get(i) ?? interrupted.get(p.id) ?? p) }
 }

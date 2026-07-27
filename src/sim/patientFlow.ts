@@ -269,7 +269,10 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
   // 줄 안의 순서는 폰 배열 순서 그대로라 결정론이 유지된다.
   const idleByDept = new Map<SimDeptKey, Pawn[]>()
   for (const p of w.pawns) {
-    if (p.kind !== 'DOCTOR' || !p.roomId || busy.has(p.id) || !p.dept) continue
+    // `p.activity`(needs.ts) — 쉬러 나섰거나 쉬고 있는 의사는 유휴가 **아니다**. 이 축이
+    // 없으면 진료실을 나서는 도중(아직 방 안이라 insideRoom이 참인 구간)에 환자가 붙어,
+    // 의사는 휴게실로 걸어가는데 환자는 진료실 의자로 걸어가는 두 갈래가 생긴다.
+    if (p.kind !== 'DOCTOR' || !p.roomId || busy.has(p.id) || !p.dept || p.activity) continue
     const room = w.rooms.find(r => r.id === p.roomId)
     if (!room || !insideRoom(room, p)) continue // 아직 방으로 걸어가는 중이면 진료를 못 받는다
     if (room.dept !== p.dept) continue          // 삼중 일치의 방 축
