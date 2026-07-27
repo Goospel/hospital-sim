@@ -51,7 +51,10 @@ export function settleDay(world: SimWorld): SimWorld {
     // 주의 마지막 날은 하루가 아니라 **주**가 끝난다 — 그날 밤엔 다음 날이 아니라 주간 결산이 온다.
     // 판정을 정산 안에 두는 이유: days를 늘리는 곳과 "몇 일째인가"를 읽는 곳이 갈리면
     // 7일차 밤에 DAY_END와 WEEK_END가 서로 다른 근거로 갈릴 수 있다(단일 출처).
-    phase: days.length === DAYS_PER_WEEK ? 'WEEK_END' : 'DAY_END',
+    // `>=`인 이유: 등호는 기록이 하나라도 더 붙은 세계에서 WEEK_END를 **말없이** 건너뛴다 —
+    // 결산이 안 열리면 고정비도 폐업도 오지 않아 하루가 영원히 이어진다(에러 없는 실패).
+    // 정상 흐름에선 startNextWeek이 days를 비워 7에서 딱 걸리므로 지금은 등가다.
+    phase: days.length >= DAYS_PER_WEEK ? 'WEEK_END' : 'DAY_END',
     pawns: doctors,
     treasuryManwon: world.treasuryManwon + examsDelta * EXAM_REVENUE_MANWON,
     stats: { examsDone: exams, leftCount: left },
@@ -59,12 +62,13 @@ export function settleDay(world: SimWorld): SimWorld {
   }
 }
 
-/** 하루 넘기기 — DAY_END에서만(시계가 아니라 플레이어가 부른다).
- *  하루 집계(stats)는 비우고 주간 기록(days)은 남긴다 — 주간 결산이 그 배열을 합산한다.
- *  의사는 어제 걷던 경로·목적지를 버리고 자기 진료실 책상 앞에서 다시 시작한다: dest가 남으면
- *  다음 날 첫 틱의 도착 판정(위치 == dest)이 어제 목적지를 보고 흔들린다. */
-export function startNextDay(world: SimWorld): SimWorld {
-  if (world.phase !== 'DAY_END') throw new Error(`startNextDay: DAY_END가 아닌 세계(${world.phase})`)
+/** 새 아침의 공통 초기화 — 분 0·당일 집계 0·의사는 자기 진료실 책상 앞에서 다시 시작.
+ *  하루를 넘길 때(startNextDay)와 주를 넘길 때(week.startNextWeek)가 **같은 아침**을 열어야 한다.
+ *  7일차 밤엔 startNextDay가 없어서, 여기가 갈리면 주의 첫날만 지난주 stats를 들고 시작해
+ *  그날 DayRecord가 지난주 진료까지 다시 센다(에러 없이 숫자만 틀린다).
+ *  의사가 어제 걷던 경로·목적지를 버리는 이유: dest가 남으면 첫 틱의 도착 판정(위치 == dest)이
+ *  어제 목적지를 보고 흔들린다. phase·day·week는 부르는 쪽이 정한다. */
+export function freshMorning(world: SimWorld): SimWorld {
   const blocked = buildBlockedSet(world)
   const pawns = world.pawns.map(p => {
     const next: Pawn = { ...p, path: [] }
@@ -73,12 +77,12 @@ export function startNextDay(world: SimWorld): SimWorld {
     const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null
     return spot ? { ...next, x: spot.x, y: spot.y } : next
   })
-  return {
-    ...world,
-    phase: 'RUNNING',
-    day: world.day + 1,
-    minute: 0,
-    pawns,
-    stats: { examsDone: 0, leftCount: 0 },
-  }
+  return { ...world, minute: 0, pawns, stats: { examsDone: 0, leftCount: 0 } }
+}
+
+/** 하루 넘기기 — DAY_END에서만(시계가 아니라 플레이어가 부른다).
+ *  하루 집계(stats)는 비우고 주간 기록(days)은 남긴다 — 주간 결산이 그 배열을 합산한다. */
+export function startNextDay(world: SimWorld): SimWorld {
+  if (world.phase !== 'DAY_END') throw new Error(`startNextDay: DAY_END가 아닌 세계(${world.phase})`)
+  return { ...freshMorning(world), phase: 'RUNNING', day: world.day + 1 }
 }

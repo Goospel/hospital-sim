@@ -38,6 +38,14 @@ export interface SimWorld {
   stats: SimStats
   /** 이번 주의 하루 기록 — 주를 넘기면 비운다(주간 결산이 이 배열을 합산한다). */
   days: DayRecord[]
+  /** 금고가 음수로 끝난 주가 몇 번 **연속**됐는가 — 기존 게임의 폐업 규칙(2주 연속)이 읽는다.
+   *  흑자로 끝난 주가 한 번이라도 끼면 0으로 리셋된다(누적이 아니라 연속이다). */
+  insolvencyStreak: number
+  /** 이번 주 결산(고정비 차감)이 이미 끝났는가 — 이중 정산 가드.
+   *  phase를 바꿔 표시하지 않는 이유: 결산 화면은 `WEEK_END` 하나로 떠 있고 그 화면 **안에서**
+   *  결산이 돌기 때문이다(진입 시 자동 1회 → 요약을 읽고 → 다음 주 버튼). phase를 옮기면
+   *  결산이 끝나는 순간 플레이어가 읽어야 할 화면이 사라진다. */
+  weekSettled: boolean
 }
 
 export interface SimStats {
@@ -49,7 +57,7 @@ export function createWorld(seed: number): SimWorld {
   return {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
     rooms: [], furniture: [], pawns: [], nextId: 1, seed,
-    stats: { examsDone: 0, leftCount: 0 }, days: [],
+    stats: { examsDone: 0, leftCount: 0 }, days: [], insolvencyStreak: 0, weekSettled: false,
   }
 }
 

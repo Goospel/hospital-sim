@@ -49,7 +49,7 @@ function frontTile(blocked: Set<number>, at: Pt): Pt | null {
  *  하루를 넘길 때(day.startNextDay) 의사를 제자리로 되돌리는 것도 여기를 본다 — 파생식을
  *  복제하면 "책상 앞"이 배정과 복귀에서 갈라져 의사가 어제와 다른 칸에 선다. */
 export function furnitureSpot(
-  w: SimWorld, roomId: string, kind: 'DESK' | 'CHAIR', blocked: Set<number> = buildBlockedSet(w),
+  w: SimWorld, roomId: string, kind: 'DESK' | 'CHAIR', blocked: Set<number>,
 ): Pt | null {
   const f = w.furniture.find(x => x.roomId === roomId && x.kind === kind)
   return f ? frontTile(blocked, f) : null

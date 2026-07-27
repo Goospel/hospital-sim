@@ -193,6 +193,18 @@ describe('다음 날', () => {
     expect(w.phase).toBe('WEEK_END')
   })
 
+  it('기록이 7일을 넘긴 세계도 WEEK_END로 간다 — 주간 결산을 조용히 건너뛰지 않는다', () => {
+    // 정상 흐름에선 days가 항상 0에서 시작해 7에서 딱 걸린다(startNextWeek이 비운다). 그래서
+    // `=== DAYS_PER_WEEK`도 지금은 등가다 — 하지만 기록이 하나라도 더 붙는 순간(주를 안 비우고
+    // 이어 돌리는 경로가 생기면) 등호는 WEEK_END를 **말없이** 건너뛰고 하루가 영원히 이어진다.
+    // 결산이 안 열리면 고정비도 폐업도 오지 않는다 — 게임이 멈추는 게 아니라 끝나지 않는다.
+    const w = hospitalWorld(3)
+    const overrun = { ...w, days: [1, 2, 3, 4, 5, 6, 7].map(n => ({ day: n, examsDone: 0, leftCount: 0, revenueManwon: 0 })) }
+    const settled = settleDay(overrun)
+    expect(settled.days).toHaveLength(DAYS_PER_WEEK + 1)
+    expect(settled.phase).toBe('WEEK_END')
+  })
+
   it('startNextDay는 DAY_END가 아닌 세계를 거부한다', () => {
     expect(() => startNextDay(hospitalWorld(3))).toThrow() // RUNNING
   })
