@@ -23,20 +23,28 @@ export const ARRIVAL_PROB_PER_MIN = 1 / 8 // 평균 8분에 한 명
  *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23). 새 무작위 축은 새 salt를 받는다. */
 const ARRIVAL_SALT = 29
 
-/** 도착 판정 시드 — (주,날,분)은 기존 게임의 검증된 폴딩(callSeed)으로 접는다.
- *  **week가 들어가는 게 핵심이다**: startNextWeek이 day를 1로 되돌리므로, week가 빠지면
- *  2주차가 1주차의 재방송이 된다(같은 분에 같은 환자가 온다 — 에러 없이 게임만 죽는다).
- *  즉석 폴딩(week * 7_000 따위)을 새로 만들지 않는 이유는 슬롯 폭을 또 계산해야 하고
- *  그 계산이 틀리면 먼 주차에서 조용히 충돌하기 때문이다 — callSeed가 이미 푼 문제다.
+/** 도착 판정 시드 — **날 키(주,날)를 먼저 해시해 하루의 기점을 잡고, 분은 그 위에 더한다.**
+ *  분마다 독립 판정이라 (주,날,분) 조합마다 서로 다른 시드가 필요하다.
  *
- *  world.seed(어느 판인가)는 callSeed에 슬롯이 없어 XOR로 얹는다. 덧셈이 아닌 이유:
- *  callSeed의 슬롯 산술은 `index * 101 + salt`라, 세계 시드를 더하면 seed 101이 분+1과
- *  같은 스트림으로 미끄러진다. 자기 해시(seededUnit)를 통과시켜 32비트에 고루 퍼뜨린 뒤
- *  XOR하면 슬롯 산술을 건드리지 않는다. 이 함수가 도착 시드의 **단일 출처**다 —
- *  테스트가 공식을 손으로 다시 쓰면(예전 경계 테스트가 그랬다) 한쪽이 조용히 낡는다. */
+ *  ⚠️ 분을 callSeed의 index 슬롯에 넣으면 안 된다 — 그 슬롯 폭은 97인데(`(…*97 + index)*101`)
+ *  분은 0..479라, day+1이 index+97과 **정확히 같은 시드**가 된다. 그러면 매일이 전날의 97분
+ *  시프트 재방송이다(실측: 인접 날 겹침 383/383, 전수 26,880 튜플 중 고유값 5,815). 에러 없이
+ *  게임만 죽는 종류이고, daysim의 callSeed 독스트링이 "index를 스트림 축으로 쓰지 마라"고
+ *  경고한 바로 그 함정이다. 그래서 index에는 0을 넣어 **날 키 전용**으로만 쓴다.
+ *
+ *  week가 들어가는 것도 같은 이유로 핵심이다: startNextWeek이 day를 1로 되돌리므로 week가
+ *  빠지면 2주차가 1주차의 재방송이 된다. 즉석 폴딩(week * 7_000 따위)을 새로 만들지 않는
+ *  이유는 슬롯 폭을 또 계산해야 하고 그 계산이 틀리면 먼 주차에서 조용히 충돌하기 때문이다.
+ *
+ *  world.seed(어느 판인가)는 callSeed에 슬롯이 없어 XOR로 얹는다. 덧셈이 아닌 이유: 슬롯
+ *  산술이 `index * 101 + salt`라 세계 시드를 더하면 seed 101이 옆 슬롯으로 미끄러진다.
+ *  자기 해시(seededUnit)를 통과시켜 32비트에 고루 퍼뜨린 뒤 XOR하면 슬롯을 안 건드린다.
+ *  이 함수가 도착 시드의 **단일 출처**다 — 테스트가 공식을 손으로 다시 쓰면(예전 경계
+ *  테스트가 그랬다) 한쪽이 조용히 낡는다. */
 export function arrivalSeed(w: SimWorld): number {
   const worldMix = (seededUnit(w.seed) * 2 ** 32) | 0
-  return callSeed(w.week, w.day, w.minute, ARRIVAL_SALT) ^ worldMix
+  const dayBase = (seededUnit(callSeed(w.week, w.day, 0, ARRIVAL_SALT) ^ worldMix) * 2 ** 32) | 0
+  return (dayBase + w.minute) | 0
 }
 
 const samePt = (a: { x: number; y: number }, b: Pt) => a.x === b.x && a.y === b.y
