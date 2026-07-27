@@ -14,7 +14,8 @@ import { buildBlockedSet, findPath, type Pt } from './path'
 import { ENTRANCE, type SimWorld } from './world'
 import type { Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
-import { ARRIVAL_WINDOW_MIN, furnitureSpots, minuteStreamSeed, toExit } from './patientFlow'
+import { ARRIVAL_WINDOW_MIN, minuteStreamSeed, toExit } from './patientFlow'
+import { furnitureSpots, ptKey, samePt } from './spots'
 import { interruptActivity, starvedSlowFactor } from './needs'
 import { applyWorkLoads, fatigueOf, slowedDurationMin } from './fatigue'
 
@@ -159,8 +160,6 @@ export function wardBeds(w: SimWorld, blocked: Set<number> = buildBlockedSet(w))
   return furnitureSpots(w, 'WARD', 'BED', blocked)
 }
 
-const ptKey = (p: Pt) => `${p.x},${p.y}`
-
 /** 비어 있고 **입구에서 닿을 수 있는** 첫 침대와 거기까지의 경로.
  *  점유는 응급 환자의 dest로 표현된다(대기실 좌석과 같은 방식) — 별도 점유 테이블을 두면
  *  폰이 사라질 때(퇴장·마감) 되돌리는 걸 잊어 침대가 영구히 잠긴다.
@@ -227,8 +226,6 @@ function maybeEmergency(w: SimWorld): SimWorld {
     stats: { ...w.stats, emergencyAccepted: w.stats.emergencyAccepted + 1 },
   }
 }
-
-const samePt = (a: { x: number; y: number }, b: Pt) => a.x === b.x && a.y === b.y
 
 function progressEmergencies(w: SimWorld): SimWorld {
   if (!w.pawns.some(p => p.emergency)) return w

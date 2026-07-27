@@ -4,7 +4,8 @@
 import { freshStats, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { buildBlockedSet } from './path'
-import { examLoadMin, furnitureSpot, wantsDeptOf } from './patientFlow'
+import { examLoadMin, wantsDeptOf } from './patientFlow'
+import { furnitureSpot } from './spots'
 import {
   simDept, addExamToDeptStats, addRevenueToDeptStats, deptRevenueSum, type SimDeptStats,
 } from './dept'

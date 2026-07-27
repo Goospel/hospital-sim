@@ -25,12 +25,15 @@
 //  ① RNG 0 — 전부 결정론 상태 전이다. 이 파일은 seed를 읽지 않는다(새 무작위 축 없음).
 //  ② 도착 판정은 **위치 == dest**다. `path.length === 0`은 길이가 끊겨 비워진 폰과 구별되지 않는다.
 //  ③ 경로는 목적지가 정해질 때 1회만 계산한다(tick의 revalidate가 재탐색을 맡는다).
+//  ④ 이 파일은 **patientFlow를 임포트하지 않는다** — 좌표 파생을 leaf(spots.ts)로 내려 순환을
+//     끊었다. 되돌리면 needs ⇄ patientFlow 순환이 살아나고, 최상위에서 평가되는 `BREAKS` 표가
+//     임포트 순서에 따라 TDZ로 터질 수 있다(spots.ts 머리말).
 import { FATIGUE_RED } from '../game/doctor'
-import { buildBlockedSet, findPath, type Pt } from './path'
+import { buildBlockedSet, findPath } from './path'
 import type { FurnitureKind, RoomType, SimWorld } from './world'
 import type { Pawn } from './pawn'
 import { fatigueOf } from './fatigue'
-import { furnitureSpot, furnitureSpots } from './patientFlow'
+import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
 
 /** 휴식 한 블록의 길이(분) — 각색·튜닝값. 왕복 보행 시간과 합쳐 "휴게실 하나가 의사를 얼마나
  *  오래 빼가나"를 정한다(그 시간만큼 그 과의 외래가 멎는다). */
@@ -66,9 +69,6 @@ export const MEAL_MIN = 20
  * 무게가 밥 한 끼에 가려진다. 이 대소는 취향이 아니라 계약이라 needs.test.ts가 잠근다.
  */
 export const STARVED_SLOW = 1.15
-
-const samePt = (a: { x: number; y: number }, b: Pt) => a.x === b.x && a.y === b.y
-const ptKey = (p: Pt) => `${p.x},${p.y}`
 
 /**
  * 지금 이 의사가 쉬러 나설 마음이 있는가 — **개시 임계의 단일 출처**다.
