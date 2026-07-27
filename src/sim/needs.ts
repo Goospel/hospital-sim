@@ -31,7 +31,7 @@
 import { FATIGUE_RED } from '../game/doctor'
 import { buildBlockedSet, findPath } from './path'
 import type { FurnitureKind, RoomType, SimWorld } from './world'
-import type { Pawn } from './pawn'
+import { priorityOf, type Pawn, type PriorityKind } from './pawn'
 import { fatigueOf, slowedDurationMin } from './fatigue'
 import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
 
@@ -71,7 +71,7 @@ export const MEAL_MIN = 20
 export const STARVED_SLOW = 1.15
 
 /**
- * 지금 이 의사가 쉬러 나설 마음이 있는가 — **개시 임계의 단일 출처**다.
+ * 피로가 쉬어야 할 선을 넘었는가 — **개시 임계의 단일 출처**이고, **토글과 무관한 순수 임계**다.
  *
  * 임계는 색 경계(`src/game/doctor.ts` FATIGUE_RED)와 같은 값을 쓴다 — 화면이 빨개지는 그
  * 지점에서 의사가 실제로 일을 끊는다. 리터럴로 복제하면 색과 행동이 조용히 갈린다.
@@ -80,8 +80,11 @@ export const STARVED_SLOW = 1.15
  * 판정이 임계를 각자 적고 있으면 한쪽을 지워도 다른 쪽이 가려 주어 아무 일이 안 일어나고,
  * 그래서 어떤 테스트도 그 실수를 못 잡는다(실측 2026-07-27 — 개시 임계를 지운 돌연변이가
  * 가드에 가려 869건 전부 통과했다). 두 곳이 같은 술어를 부르면 지우는 순간 함께 무너진다.
+ *
+ * ⓘ 우선순위 토글은 **여기 섞지 않는다** — 토글 소속은 BREAKS 표의 `priority` 칸이 들고,
+ *   임계와 토글을 곱하는 곳은 `breakActive` 하나다(그래야 갈래를 더할 때 표만 보면 된다).
  */
-function wantsRestNow(p: Pawn): boolean {
+function restThresholdReached(p: Pawn): boolean {
   return fatigueOf(p) >= FATIGUE_RED
 }
 
@@ -144,7 +147,16 @@ interface BreakDef {
   roomType: RoomType
   furnitureKind: FurnitureKind
   durationMin: number
-  /** 지금 나설 마음이 있는가(임계) */
+  /**
+   * 이 갈래를 끄고 켜는 **우선순위 축** — 없으면 토글이 없는 갈래다.
+   *
+   * 칸을 표에 둔 이유는 편의가 아니라 **가시성**이다: 토글 소속이 `wants` 안에 숨으면 "이
+   * 욕구를 플레이어가 끌 수 있나"를 알려면 술어 본문을 읽어야 하고, 갈래가 늘 때 한쪽만
+   * 토글을 받는 실수가 표에서 안 보인다. 식사 갈래에 이 칸이 **없다는 사실**이 곧
+   * "굶기는 레버는 토글이 아니라 식당을 안 짓는 것"이라는 설계를 표에서 읽히게 한다.
+   */
+  priority?: PriorityKind
+  /** 지금 나설 마음이 있는가 — **순수 임계**다(토글은 `priority` 칸이 따로 든다) */
   wants(p: Pawn): boolean
   /** 블록이 **끝날 때 한 번에** 일어나는 일 — 회복·리셋이 여기 한 줄로 모인다.
    *  분마다 나눠 주면 정수 산술이 깨져 같은 블록이 쪼개는 방식에 따라 다른 값을 낳는다.
@@ -166,24 +178,65 @@ interface BreakDef {
  *   병원에서 지치고 배고픈 의사가 밥도 못 먹는 것은 벌이 아니라 버그라, 순서는 우선순위이지
  *   배타가 아니다.
  */
-const BREAKS: readonly BreakDef[] = [
-  {
-    going: 'TO_LOUNGE', doing: 'RESTING',
-    roomType: 'LOUNGE', furnitureKind: 'CHAIR',
-    durationMin: REST_BREAK_MIN,
-    wants: wantsRestNow,
-    onEnd: p => ({ ...p, fatigue: Math.max(0, fatigueOf(p) - REST_BREAK_RECOVER) }),
-  },
-  {
-    going: 'TO_MEAL', doing: 'EATING',
-    roomType: 'CAFETERIA', furnitureKind: 'CHAIR',
-    durationMin: MEAL_MIN,
-    wants: wantsMealNow,
-    // 허기는 **여기서만** 내려간다(그리고 아침 freshMorning). 이 한 줄을 빼면 식당에 다녀온
-    // 의사가 여전히 배고픈 채라, 다음 분에 또 나서는 무한 왕복이 되고 감속도 안 풀린다.
-    onEnd: p => ({ ...p, hungerMin: 0 }),
-  },
-]
+const REST_BREAK: BreakDef = {
+  going: 'TO_LOUNGE', doing: 'RESTING',
+  roomType: 'LOUNGE', furnitureKind: 'CHAIR',
+  durationMin: REST_BREAK_MIN,
+  priority: 'rest',
+  wants: restThresholdReached,
+  onEnd: p => ({ ...p, fatigue: Math.max(0, fatigueOf(p) - REST_BREAK_RECOVER) }),
+}
+
+const MEAL_BREAK: BreakDef = {
+  going: 'TO_MEAL', doing: 'EATING',
+  roomType: 'CAFETERIA', furnitureKind: 'CHAIR',
+  durationMin: MEAL_MIN,
+  // `priority` 칸이 **없다** — 식사는 플레이어가 끌 수 없다(위 BreakDef.priority 주석).
+  wants: wantsMealNow,
+  // 허기는 **여기서만** 내려간다(그리고 아침 freshMorning). 이 한 줄을 빼면 식당에 다녀온
+  // 의사가 여전히 배고픈 채라, 다음 분에 또 나서는 무한 왕복이 되고 감속도 안 풀린다.
+  onEnd: p => ({ ...p, hungerMin: 0 }),
+}
+
+const BREAKS: readonly BreakDef[] = [REST_BREAK, MEAL_BREAK]
+
+/**
+ * 이 갈래가 지금 성립하는가 — **임계 그리고 (토글이 있는 갈래면) 그 토글이 0이 아닌가**.
+ *
+ * 개시(maybeStartBreak)·조기 반환 가드(wantsAnyBreak)·외래 선제 이탈(wantsRestNow)이 **전부
+ * 이 하나**를 부른다. 세 자리가 각자 "임계 && 토글"을 적으면 한 곳만 토글을 빠뜨려도 에러가
+ * 안 나고, 그 결과는 "껐는데 어떤 경로로는 여전히 쉬러 간다"라 재현이 어렵다.
+ */
+function breakActive(def: BreakDef, p: Pawn): boolean {
+  return def.wants(p) && (def.priority === undefined || priorityOf(p, def.priority) > 0)
+}
+
+/**
+ * 지금 이 의사가 실제로 쉬러 나서는가 — **휴식 갈래에 대한 `breakActive` 그 자체**다.
+ *
+ * 외래 배정(patientFlow)이 "이 의사를 유휴 풀에서 빼야 하나"를 물을 때 부른다. 식을 그쪽에
+ * 복제하면 욕구 기계가 내리는 판정과 외래가 믿는 판정이 갈려, 의사는 안 쉬는데 환자도 안
+ * 받는(또는 그 반대) 구간이 조용히 생긴다. 표를 통과해 계산하므로 표에서 `priority: 'rest'`를
+ * 지우는 순간 이 술어도 함께 토글을 잃는다 — 그게 단일 출처의 의미다.
+ */
+export function wantsRestNow(p: Pawn): boolean {
+  return breakActive(REST_BREAK, p)
+}
+
+/**
+ * 이 의사는 **대기 환자보다 휴식이 먼저인가** — `rest > exam`일 때만 참.
+ *
+ * 기본 규칙은 "유휴일 때만 쉰다"라, 환자가 줄 서 있는 한 지친 의사는 계속 붙잡혀 있다
+ * (외래 배정이 그를 집으면 `ctx.busy`에 걸려 개시가 막힌다). 이 술어가 참인 의사를 외래
+ * 유휴 풀에서 **미리 빼는 것**이 그 규칙을 뒤집는 유일한 수단이고, 그래서 이 한 줄이
+ * "쉬게 하려면 진료보다 높게 매겨라"라는 플레이어 조작을 성립시킨다.
+ *
+ * ⚠️ 비교는 `>`이지 `>=`가 아니다: 같으면(기본 2 = 2) 지금까지와 똑같이 유휴일 때만 쉰다.
+ * `>=`로 넓히면 **아무것도 안 건드린 병원**이 통째로 선제 이탈로 바뀐다.
+ */
+export function prefersRestOverExam(p: Pawn): boolean {
+  return wantsRestNow(p) && priorityOf(p, 'rest') > priorityOf(p, 'exam')
+}
 
 /** 붙어 있던 욕구 행동을 뗀다(입력 불변) — 종료·좌초·응급 인터럽트의 **단일 출처**다.
  *  세 자리가 각자 필드를 지우면 Task 2에서 필드가 늘 때 한 곳만 조용히 낡는다. */
@@ -277,7 +330,7 @@ export function stepDoctors(world: SimWorld): SimWorld {
  *  개시(maybeStartBreak)와 **같은 표**를 훑는다: 가드가 임계를 따로 적으면 갈래를 더할 때
  *  한쪽만 낡아, 새 욕구가 "임계에 닿아도 아무 일이 안 일어나는" 상태로 조용히 죽는다. */
 function wantsAnyBreak(p: Pawn): boolean {
-  return BREAKS.some(def => def.wants(p))
+  return BREAKS.some(def => breakActive(def, p))
 }
 
 function stepDoctor(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
@@ -326,7 +379,8 @@ function stepDoctor(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
 function maybeStartBreak(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
   if (ctx.busy.has(p.id)) return p
   for (const def of BREAKS) {
-    if (!def.wants(p)) continue
+    // 임계 **그리고** 토글 — 0으로 끈 갈래는 자리가 비어 있어도 통째로 건너뛴다(breakActive).
+    if (!breakActive(def, p)) continue
     for (const spot of furnitureSpots(w, def.roomType, def.furnitureKind, ctx.blocked)) {
       if (ctx.taken.has(ptKey(spot))) continue
       // 첫 후보가 도달 불가라고 여기서 끝내지 않는다 — 봉인된 휴게실 하나가 멀쩡한 다른

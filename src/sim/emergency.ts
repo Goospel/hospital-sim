@@ -6,13 +6,19 @@
 // 거부면 폰을 만들지도 않는다(1주차 문전박대 선례 — 만들었다 내보내면 화면엔 같아 보여도
 // nextId·경로 계산이 헛돌고, "몇 명이 문 앞에서 돌아섰나"가 관측되지 않는다).
 //
+// ⚠️ **"그 과 의사"의 정의가 PR C에서 좁아졌다**: 응급 우선순위를 0으로 끈 의사는 이 판정에서
+// **없는 의사**다(`priorityOf(p, 'emergency') > 0`). 하드락이 약해진 게 아니라 반대다 —
+// **응급을 끈 의사는 없는 의사다. 그 대가는 회차 카운트로 청구된다.** 플레이어가 "이 사람은
+// 응급 안 받습니다"라고 말할 수 있어야 토글이 손잡이인데, 그렇게 꺼 놓고도 응급이 들어오면
+// 그 말이 거짓이 된다. 정의는 세 자리에서 같다: 판정 · 배정 · 인터럽트가 전부 같은 조건을 본다.
+//
 // 값(수가·소요)의 **단일 출처는 이 파일**이다. 과 카탈로그(dept.ts)에 응급 열을 두지 않은
 // 이유: 응급은 도착률·판정·처치 시간까지 한 덩어리라, 카탈로그가 절반만 들고 있으면 수가가
 // 두 곳에 적힌다(이 저장소가 세 번 경고한 이중 기재).
 import { seededUnit } from '../game/daysim'
 import { buildBlockedSet, findPath, type Pt } from './path'
 import { ENTRANCE, type SimWorld } from './world'
-import type { Pawn } from './pawn'
+import { priorityOf, type Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
 import { ARRIVAL_WINDOW_MIN, minuteStreamSeed, toExit } from './patientFlow'
 import { furnitureSpots, ptKey, samePt } from './spots'
@@ -204,7 +210,11 @@ function maybeEmergency(w: SimWorld): SimWorld {
   // ① 배후과 — **의사가 지금 한가한지는 묻지 않는다**. 외래 중이면 그걸 마치고 온다(응급이
   //    다음 작업의 최우선). 한가함을 조건으로 걸면 바쁜 병원일수록 응급을 못 받는 꼴이 되어,
   //    "그 과가 없으면 못 받는다"가 "그 과가 바쁘면 못 받는다"로 바뀐다 — 다른 게임이 된다.
-  if (!w.pawns.some(p => p.kind === 'DOCTOR' && p.dept === spec.dept)) {
+  //    묻는 것은 **플레이어가 그 의사에게 응급을 맡겼는가** 하나뿐이다(`emergency > 0`) —
+  //    응급을 끈 의사는 이 판정에서 없는 의사다(파일 머리말의 정의 확장).
+  if (!w.pawns.some(
+    p => p.kind === 'DOCTOR' && p.dept === spec.dept && priorityOf(p, 'emergency') > 0,
+  )) {
     return turnAway(w, kind, 'NO_SPECIALIST')
   }
   // ② 빈 침대. 의사를 **먼저** 보는 것이 사유의 순서 계약이다 — 둘 다 없을 때 플레이어가
@@ -305,15 +315,30 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
   if (waiting.length === 0) return w
   const busy = new Set(w.pawns.map(p => p.doctorId).filter((id): id is string => !!id))
   const updates = new Map<number, Pawn>()
+  /**
+   * 응급을 맡은 의사들 — **emergency 내림차순, 동률이면 폰 배열 순서**. 한 번만 정렬해 둔다:
+   * `busy`는 배정마다 바뀌지만 순서는 안 바뀌므로, 환자마다 다시 정렬하면 같은 결과에 비용만 는다.
+   *
+   * `emergency === 0`인 의사는 여기서 **통째로 빠진다** — 판정(maybeEmergency ①)에서 없는 의사로
+   * 세어 놓고 배정에서는 집으면, 그 과 의사를 다 끈 병원이 응급을 되돌려 보내면서 동시에 그
+   * 의사를 처치에 묶는 모순이 생긴다. 인터럽트도 배정의 부수효과라, 여기서 빠지면 쉬던 의사가
+   * 낚아채이는 일도 함께 사라진다(끈다는 말의 뜻이 세 자리에서 같아진다).
+   */
+  const candidates = w.pawns
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => p.kind === 'DOCTOR' && priorityOf(p, 'emergency') > 0)
+    .sort((a, b) => priorityOf(b.p, 'emergency') - priorityOf(a.p, 'emergency') || a.i - b.i)
+    .map(({ p }) => p)
   /** 응급에 끌려간 의사 — 휴식·식사(`activity`)를 **그 자리에서** 끊는다(needs.interruptActivity).
    *  후보 판정은 activity를 보지 **않는다**: 쉬는 중이라고 응급을 못 받으면 "그 과가 없으면
    *  못 받는다"가 "그 과가 쉬고 있으면 못 받는다"로 바뀌어 하드락의 뜻이 흐려진다.
    *  대신 붙는 순간 휴식이 무효가 된다 — **회복 없이** 끊긴다. 이 해제를 빼면 의사는 처치
-   *  중에도 'RESTING'인 채라, 예정된 종료 시각에 쉬지도 않은 회복을 받고 책상으로 걸어간다. */
+   *  중에도 'RESTING'인 채라, 예정된 종료 시각에 쉬지도 않은 회복을 받고 책상으로 걸어간다.
+   *  (예외는 `emergency === 0` 하나다 — 그 의사는 후보에 아예 없어 쉬던 자리를 지킨다.) */
   const interrupted = new Map<string, Pawn>()
   for (const { p, i } of waiting) {
     const spec = emergencySpec(emergencyKindOf(p))
-    const doc = w.pawns.find(d => d.kind === 'DOCTOR' && d.dept === spec.dept && !busy.has(d.id))
+    const doc = candidates.find(d => d.dept === spec.dept && !busy.has(d.id))
     if (!doc) continue // 그 과 의사가 전부 묶여 있다 — 이 환자는 침대에서 계속 기다린다
     busy.add(doc.id)
     if (doc.activity) interrupted.set(doc.id, interruptActivity(doc))

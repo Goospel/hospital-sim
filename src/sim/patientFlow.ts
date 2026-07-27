@@ -13,12 +13,12 @@ import { ENTRANCE, type Room, type SimWorld } from './world'
 // 좌표 파생은 spots.ts가 **단일 출처**다(leaf). 이 파일에 두면 욕구(needs)가 좌석을 찾느라
 // 상위를 값으로 당겨 needs ⇄ patientFlow 순환이 된다 — spots.ts 머리말.
 import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
-import type { Pawn, PatientStage } from './pawn'
+import { priorityOf, type Pawn, type PatientStage } from './pawn'
 import { simDept, addExamToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
 import { applyWorkLoads } from './fatigue'
 // 작업 소요식(피로 × 허기 감속)은 needs.ts가 **단일 출처**다(응급도 같은 함수를 부른다) —
 // 여기서 식을 다시 적으면 진료만 느려지고 처치는 그대로인 병원이 조용히 생긴다.
-import { workDurationMin } from './needs'
+import { prefersRestOverExam, workDurationMin } from './needs'
 
 export const EXAM_DURATION_MIN = 20
 /** 대기 인내 — 이만큼 앉아 있었는데 안 불리면 떠난다(수익 0). */
@@ -225,28 +225,40 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
   if (waiting.length === 0) return w
   const busy = new Set(w.pawns.map(p => p.doctorId).filter((id): id is string => !!id))
   // 유휴 의사를 **과별 줄**로 세운다 — 과마다 대기열이 따로 서므로, 내과가 밀려도 미용은 돈다.
-  // 줄 안의 순서는 폰 배열 순서 그대로라 결정론이 유지된다.
-  const idleByDept = new Map<SimDeptKey, Pawn[]>()
-  for (const p of w.pawns) {
+  const idleByDept = new Map<SimDeptKey, Array<{ doc: Pawn; i: number }>>()
+  for (const [i, p] of w.pawns.entries()) {
     // `p.activity`(needs.ts) — 쉬러 나섰거나 쉬고 있는 의사는 유휴가 **아니다**. 이 축이
     // 없으면 진료실을 나서는 도중(아직 방 안이라 insideRoom이 참인 구간)에 환자가 붙어,
     // 의사는 휴게실로 걸어가는데 환자는 진료실 의자로 걸어가는 두 갈래가 생긴다.
     if (p.kind !== 'DOCTOR' || !p.roomId || busy.has(p.id) || !p.dept || p.activity) continue
+    // `exam === 0`은 **금지**다 — 이 의사는 대기 환자를 영원히 안 받는다(그 과에 다른 의사가
+    // 없으면 그 환자들은 인내를 넘겨 떠난다). 플레이어가 고른 대가이고, 장부에 그대로 실린다.
+    if (priorityOf(p, 'exam') === 0) continue
+    // 휴식을 진료보다 높게 매긴 지친 의사는 **환자가 줄 서 있어도** 유휴 풀에서 빠진다 —
+    // 그래야 그 분의 stepDoctors가 그를 휴게실로 보낸다(needs.prefersRestOverExam이 단일
+    // 출처다. 식을 여기 복제하면 욕구 기계의 판정과 갈려, 안 쉬는데 환자도 안 받는 구간이 생긴다).
+    if (prefersRestOverExam(p)) continue
     const room = w.rooms.find(r => r.id === p.roomId)
     if (!room || !insideRoom(room, p)) continue // 아직 방으로 걸어가는 중이면 진료를 못 받는다
     if (room.dept !== p.dept) continue          // 삼중 일치의 방 축
     const queue = idleByDept.get(p.dept)
-    if (queue) queue.push(p)
-    else idleByDept.set(p.dept, [p])
+    if (queue) queue.push({ doc: p, i })
+    else idleByDept.set(p.dept, [{ doc: p, i }])
   }
   if (idleByDept.size === 0) return w
+  // 줄 안의 순서는 **exam 내림차순, 동률이면 폰 배열 순서**다. 배열 인덱스를 명시적으로 들고
+  // 타이브레이크에 쓰는 이유는 `Array.sort`의 안정성에 기대지 않기 위해서다 — 결정론이 런타임
+  // 구현 세부에 얹히면 그 근거를 코드에서 읽을 수 없다(대기 환자 정렬과 같은 형태).
+  for (const queue of idleByDept.values()) {
+    queue.sort((a, b) => priorityOf(b.doc, 'exam') - priorityOf(a.doc, 'exam') || a.i - b.i)
+  }
   const blocked = buildBlockedSet(w)
   const updates = new Map<number, Pawn>()
   for (const { p, i } of waiting) {
     // 삼중 일치의 환자 축 — 자기 과 줄에서만 의사를 꺼낸다. 그 과가 없거나 전원이 바쁘면
     // 이 환자는 이번 분에 못 불리고 계속 앉아 있다가 PATIENCE_MIN을 넘기면 떠난다.
     const queue = p.wantsDept ? idleByDept.get(p.wantsDept) : undefined
-    const doc = queue?.shift()
+    const doc = queue?.shift()?.doc
     if (!doc) continue
     const spot = furnitureSpot(w, doc.roomId!, 'CHAIR', blocked)
     const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
