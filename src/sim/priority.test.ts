@@ -13,6 +13,7 @@ import {
 } from './pawn'
 import { tick } from './tick'
 import { ARRIVAL_WINDOW_MIN, PATIENCE_MIN } from './patientFlow'
+import type { SimDeptKey } from './dept'
 import { EMERGENCY_WINDOW_MIN, emergencyArrivalAt, wardBeds, type EmergencyKind } from './emergency'
 import { freshMorning } from './day'
 import { FATIGUE_RED, FATIGUE_REST } from '../game/doctor'
@@ -52,6 +53,14 @@ const docs = (w: SimWorld) => w.pawns.filter(p => p.kind === 'DOCTOR')
 const docOf = (w: SimWorld, i = 0) => docs(w)[i]
 const pawnById = (w: SimWorld, id: string) => w.pawns.find(p => p.id === id)
 
+/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
+ *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
+function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
+  const r = hireDoctor(w, dept)
+  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
+  return r.world
+}
+
 /** 순환기 의사 N명이 각자 책상 앞에 자리잡은 병원. 도착 창이 닫힌 뒤로 시계를 옮겨
  *  자연 도착(외래·응급)이 끼어들지 않게 한다 — 관측되는 건 손으로 세운 상황뿐이다. */
 function deskWorld(
@@ -59,7 +68,7 @@ function deskWorld(
 ): SimWorld {
   let w = place(createWorld(seed), EXAM_A)
   for (const spec of rooms) w = place(w, spec)
-  for (let i = 0; i < doctors; i++) w = hireDoctor(w, 'CARDIOLOGY')
+  for (let i = 0; i < doctors; i++) w = hire(w, 'CARDIOLOGY')
   w = until(w, x => docs(x).every(d => !!d.roomId && !!d.dest && d.x === d.dest.x && d.y === d.dest.y))
   return { ...w, minute: ARRIVAL_WINDOW_MIN }
 }
@@ -67,7 +76,7 @@ function deskWorld(
 /** 응급만 관측되는 병원 — 진료실도 대기실도 없어 외래는 폰조차 생기지 않는다. */
 function wardWorld({ doctors = 1, seed = BOTH_KINDS_SEED } = {}): SimWorld {
   let w = place(createWorld(seed), WARD_1BED)
-  for (let i = 0; i < doctors; i++) w = hireDoctor(w, 'CARDIOLOGY')
+  for (let i = 0; i < doctors; i++) w = hire(w, 'CARDIOLOGY')
   return w
 }
 

@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { SIM_DEPTS, simDept, HIRABLE_DEPTS, DEFAULT_EXAM_DEPT, type SimDeptKey } from './dept'
-import { createWorld, isWalkable, ENTRANCE } from './world'
+import { createWorld, isWalkable, ENTRANCE, type SimWorld } from './world'
 import { placeRoom } from './build'
 import { hireDoctor } from './pawn'
+
+/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
+ *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
+function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
+  const r = hireDoctor(w, dept)
+  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
+  return r.world
+}
 
 const manhattan = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
@@ -102,7 +110,7 @@ describe('EXAM 과 기본값', () => {
 
 describe('hireDoctor', () => {
   it('입구 부근 통행 타일에 그 과 의사 스폰·nextId 증가·비용 0(주급이 비용)', () => {
-    const w = hireDoctor(createWorld(1), 'CARDIOLOGY')
+    const w = hire(createWorld(1), 'CARDIOLOGY')
     expect(w.pawns).toHaveLength(1)
     expect(w.pawns[0]).toMatchObject({ kind: 'DOCTOR', dept: 'CARDIOLOGY' })
     expect(w.treasuryManwon).toBe(50_000)
@@ -112,12 +120,12 @@ describe('hireDoctor', () => {
 
   it('과가 그대로 실린다 — 어느 과를 뽑았는지가 폰에 남는다', () => {
     for (const key of HIRABLE_DEPTS) {
-      expect(hireDoctor(createWorld(1), key).pawns[0].dept).toBe(key)
+      expect(hire(createWorld(1), key).pawns[0].dept).toBe(key)
     }
   })
 
   it('빈 세계에선 정문 타일에 선다', () => {
-    const w = hireDoctor(createWorld(1), 'AESTHETICS')
+    const w = hire(createWorld(1), 'AESTHETICS')
     expect({ x: w.pawns[0].x, y: w.pawns[0].y }).toEqual(ENTRANCE)
   })
 
@@ -129,14 +137,14 @@ describe('hireDoctor', () => {
       ...base,
       furniture: [{ kind: 'BED' as const, x: ENTRANCE.x, y: ENTRANCE.y, roomId: 'ghost' }],
     }
-    const w = hireDoctor(blockedEntrance, 'GENERAL_SURGERY')
+    const w = hire(blockedEntrance, 'GENERAL_SURGERY')
     const at = { x: w.pawns[0].x, y: w.pawns[0].y }
     expect(isWalkable(w, at.x, at.y)).toBe(true)
     expect(manhattan(at, ENTRANCE)).toBe(1) // 정문 바로 옆 — "입구 부근"을 지킨다
   })
 
   it('두 번 채용하면 두 명이 남고 id가 겹치지 않는다', () => {
-    const w = hireDoctor(hireDoctor(createWorld(1), 'AESTHETICS'), 'CARDIOLOGY')
+    const w = hire(hire(createWorld(1), 'AESTHETICS'), 'CARDIOLOGY')
     expect(w.pawns.map(p => p.id)).toEqual(['doc-1', 'doc-2'])
     expect(w.pawns.map(p => p.dept)).toEqual(['AESTHETICS', 'CARDIOLOGY'])
   })

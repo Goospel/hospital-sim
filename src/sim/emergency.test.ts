@@ -38,6 +38,14 @@ function place(w: SimWorld, spec: Parameters<typeof placeRoom>[1]): SimWorld {
   return r.world
 }
 
+/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
+ *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
+function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
+  const r = hireDoctor(w, dept)
+  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
+  return r.world
+}
+
 /** 응급만 관측되는 최소 병원. **대기실이 없어 외래는 폰조차 생기지 않는다**(문전박대) —
  *  그래서 이 세계의 **금고·byDept·examsDone** 변화는 전부 응급이 만든 것이다.
  *  ⚠️ `leftCount`는 예외다: 앉을 자리가 없어 발길을 돌린 외래가 그 카운터를 올린다(실측 하루 61건).
@@ -47,7 +55,7 @@ function emergencyWorld(
 ): SimWorld {
   let w = createWorld(seed)
   if (ward) w = place(w, WARD_1BED)
-  if (dept) w = hireDoctor(w, dept)
+  if (dept) w = hire(w, dept)
   return w
 }
 
@@ -191,8 +199,8 @@ describe('배후과 벽 — 하드락', () => {
   it('다른 과 의사가 아무리 많아도, 금고가 아무리 두둑해도 뚫리지 않는다', () => {
     // 하드락의 뜻: 배치·돈으로 우회할 수 없다. 순환기만 빼고 전부 갖춘 병원을 만든다.
     let w0 = emergencyWorld({ dept: 'INTERNAL_MEDICINE' })
-    w0 = hireDoctor(w0, 'GENERAL_SURGERY')
-    w0 = hireDoctor(w0, 'AESTHETICS')
+    w0 = hire(w0, 'GENERAL_SURGERY')
+    w0 = hire(w0, 'AESTHETICS')
     w0 = { ...w0, treasuryManwon: 1_000_000 }
     const m = firstEmergencyMin(w0, 'STEMI')
     const w = run(w0, m)
@@ -294,7 +302,7 @@ describe('수용 — 병동 처치', () => {
     // 세 사람(외래 진행 중 · 외래 대기 · 병동의 응급)만 관측된다.
     let w = place(createWorld(3), { type: 'EXAM', dept: 'CARDIOLOGY', x: 6, y: 6, w: 6, h: 5 })
     w = place(w, WARD_1BED)
-    w = hireDoctor(w, 'CARDIOLOGY')
+    w = hire(w, 'CARDIOLOGY')
     w = run(w, 40)                       // 의사가 책상 앞에 자리잡는다
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
     expect(doc.roomId).toBeDefined()     // 전제: 진료실에 앉았다
@@ -335,7 +343,7 @@ describe('배정·전이 계약', () => {
    *  의사는 **인자 순서대로** 폰 배열에 들어간다(배정이 무엇을 먼저 집는지가 관측 대상이라 중요). */
   function handWorld(ward: typeof WARD_1BED, depts: SimDeptKey[]): SimWorld {
     let w = place(createWorld(3), ward)
-    for (const dept of depts) w = hireDoctor(w, dept)
+    for (const dept of depts) w = hire(w, dept)
     return { ...w, minute: ARRIVAL_WINDOW_MIN }
   }
 
@@ -420,7 +428,7 @@ describe('집계·불변식', () => {
     let w = place(createWorld(seed), { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
     w = place(w, { type: 'EXAM', dept: 'CARDIOLOGY', x: 6, y: 6, w: 6, h: 5 })
     w = place(w, WARD_1BED)
-    return hireDoctor(w, 'CARDIOLOGY')
+    return hire(w, 'CARDIOLOGY')
   }
 
   it('금고 불변식: 금고 = 초기 − 건설비 + Σ byDept(외래 + 응급)', () => {
@@ -458,7 +466,7 @@ describe('집계·불변식', () => {
   it('마감 정산: 처치 중이면 완료 인정, 침대로 가던 중·대기 중이면 이탈 집계', () => {
     // 자연 흐름의 600분에 어떤 스테이지가 남을지는 시드에 달렸다 — 스테이지별 계약은 손으로 잠근다.
     let w = place(createWorld(3), WARD_1BED)
-    w = hireDoctor(w, 'CARDIOLOGY')
+    w = hire(w, 'CARDIOLOGY')
     w = run(w, 5)
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
     const staged = (id: string, stage: Pawn['stage']): Pawn => ({

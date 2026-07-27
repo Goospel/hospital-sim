@@ -72,8 +72,16 @@ function fourDeptWorld(seed: number) {
     if (!r.ok) throw new Error('전제 실패')
     w = r.world
   })
-  for (const dept of [...HIRABLE_DEPTS].reverse()) w = hireDoctor(w, dept)
+  for (const dept of [...HIRABLE_DEPTS].reverse()) w = hire(w, dept)
   return w
+}
+
+/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
+ *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
+function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
+  const r = hireDoctor(w, dept)
+  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
+  return r.world
 }
 
 /** 진료실 하나 + 그 과 의사 하나. **대기실이 없어 자연 도착이 폰을 만들지 않는다** —
@@ -81,7 +89,7 @@ function fourDeptWorld(seed: number) {
 function soloDeptWorld(dept: SimDeptKey, seed = 3) {
   const r = placeRoom(createWorld(seed), { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 })
   if (!r.ok) throw new Error('전제 실패')
-  const w = tick(hireDoctor(r.world, dept), 40) // 의사가 책상 앞에 설 때까지
+  const w = tick(hire(r.world, dept), 40) // 의사가 책상 앞에 설 때까지
   const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
   if (!doc.roomId) throw new Error('전제 실패 — 의사가 진료실에 배정되지 않았다')
   return w

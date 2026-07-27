@@ -136,6 +136,18 @@ export interface Pawn {
    *  있어도 쉬러 가고, emergency를 0으로 내리면 그 과 응급이 통째로 되돌아간다.
    *  하루·주를 넘겨도 유지된다(아침 리셋 없음) — 플레이어의 지시가 밤새 풀리면 손잡이가 아니다. */
   priorities?: { exam: Priority; emergency: Priority; rest: Priority }
+  /**
+   * **포화(`FATIGUE_MAX`)로 마감한 날**의 누적 — 의사만. 채용 시 0에서 시작하고 마감 정산이
+   * 하루에 최대 1 올린다(day.settleDay). 이 값이 `RESIGN_SATURATED_DAYS`에 닿으면 그 사람은
+   * 다음 주에 떠난다(week.resigningSimDoctors).
+   *
+   * ⚠️ **리셋이 없다** — 기존 게임 `src/game/doctor.ts`의 `stepSaturatedDays` 규칙을 그대로
+   * 계승한다: *"회복해도 그 날들은 몸에 남는다"*. 아침 회복도(fatigue.restOvernight) 주 넘김도
+   * (week.startNextWeek) 이 필드를 건드리지 않는다. 리셋 규칙을 두면 "며칠 쉬게 해 되돌리는"
+   * 최적화 표면이 생기고, 그러면 사직은 구조의 결과가 아니라 관리의 실수가 된다.
+   * 옛 주석대로 **완편 병원은 이 카운터가 영원히 0**이다 — 구조적으로 망가진 배치에서만 돈다.
+   */
+  saturatedDays?: number
   /** 오늘 누적 **표준강도분**(소요 분 × 과 강도) — 의사만. 아침에 0으로 리셋된다.
    *  피로 증가가 이 누적치의 함수라(하루 `FATIGUE_FREE_MIN` 초과분만 쌓인다) 하루치를 들고 있어야
    *  한다. 건별로 따로 반올림해 더하면 같은 하루가 쪼개는 방식에 따라 다른 피로를 낳는다. */
@@ -178,9 +190,10 @@ export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
   // "아직 일 안 한 의사"와 "필드가 없는 손세계 폰"을 구별할 수 있다.
   // 허기 0 = 밥을 먹고 출근했다(freshMorning의 아침 리셋과 같은 각색).
   // 우선순위도 같은 이유로 명시한다 — 새 의사는 세 축이 전부 '보통'이다.
+  // 포화 일수도 명시적으로 0이다 — 이 사람은 아직 하루도 갈리지 않았다.
   const p: Pawn = {
     id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept,
-    fatigue: 0, loadMinToday: 0, hungerMin: 0, priorities: freshPriorities(),
+    fatigue: 0, loadMinToday: 0, hungerMin: 0, saturatedDays: 0, priorities: freshPriorities(),
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
 }
@@ -212,12 +225,26 @@ function spawnSpotNear(w: SimWorld, from: Pt): Pt {
   return from
 }
 
-/** 채용 — 그 과 의사 한 명이 정문으로 걸어 들어온다.
+/** 채용의 결과 — 건설(`build.PlaceResult`)과 **같은 모양**이다. 화면이 두 실패를 같은 코드로
+ *  다룰 수 있고, 무엇보다 실패를 "그냥 아무 일도 안 일어난 세계"로 돌려주지 않는다:
+ *  그러면 채용 버튼이 조용히 먹히고 플레이어는 왜 안 뽑히는지 알 길이 없다. */
+export type HireResult =
+  | { ok: true; world: SimWorld }
+  | { ok: false; reason: 'NO_POOL' }
+
+/** 채용 — 그 과 의사 한 명이 정문으로 걸어 들어오고, **전국에 남은 그 과 사람이 하나 줄어든다**.
  *  **일시금이 없다**(금고 무변): 기존 게임의 계약금(DEPARTMENTS.hireCostManwon)은 PR C/D 절단이고,
  *  이 슬라이스에서 채용의 대가는 오직 **주 고정비**(dept.ts weeklyCostManwon)다 — 그래야 "뽑는
- *  순간 아픈" 게 아니라 "주말마다 청구되는" 형태가 되고, 필수과의 적자가 주 단위로 드러난다. */
-export function hireDoctor(w: SimWorld, dept: SimDeptKey): SimWorld {
-  return spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE))
+ *  순간 아픈" 게 아니라 "주말마다 청구되는" 형태가 되고, 필수과의 적자가 주 단위로 드러난다.
+ *
+ *  그 대신 **사람 쪽 대가**가 여기 있다: 풀이 0인 과는 돈이 아무리 많아도 못 뽑는다(응급의
+ *  배후과 하드락과 같은 형태의 비협상 제약이다). 실패한 채용은 세계를 스치지도 않는다 —
+ *  차감만 하고 폰을 안 세우거나 그 반대면 인원과 풀이 조용히 갈린다. */
+export function hireDoctor(w: SimWorld, dept: SimDeptKey): HireResult {
+  const remaining = w.hirePool[dept]
+  if (remaining <= 0) return { ok: false, reason: 'NO_POOL' }
+  const world = spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE))
+  return { ok: true, world: { ...world, hirePool: { ...world.hirePool, [dept]: remaining - 1 } } }
 }
 
 /** 경로를 분 예산만큼 소비 — tick의 이동 절반.

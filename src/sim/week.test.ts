@@ -183,6 +183,14 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
     return r.world
   }
 
+  /** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
+   *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
+  function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
+    const r = hireDoctor(w, dept)
+    if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
+    return r.world
+  }
+
   /** 표준 시나리오 — **과 하나만 다르고 나머지는 완전히 같은** 병원(같은 시드·같은 방 배치·
    *  의사 1명·병동까지 동일). 차이를 과로 좁혀야 순익 차이가 카탈로그에서 왔다고 말할 수 있다. */
   function standardHospital(dept: SimDeptKey, seed: number): SimWorld {
@@ -192,7 +200,7 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
     // 병동은 **양쪽 다** 짓는다 — 순환기만 지어 주면 "응급을 받을 수 있어서" 진 게 아니라
     // "병동을 더 지어서" 진 것이 되어 비교가 과의 비교가 아니게 된다.
     w = place(w, { type: 'WARD', x: 30, y: 20, w: 6, h: 5 })
-    return hireDoctor(w, dept)
+    return hire(w, dept)
   }
 
   function runWeek(dept: SimDeptKey, seed = I_B1_SEED) {

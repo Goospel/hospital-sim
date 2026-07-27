@@ -12,7 +12,7 @@ import { formatClockFromOpen } from "@/game/daysim";
 import { createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { placeRoom, roomCostManwon, COST_PER_TILE_MANWON, MIN_ROOM_W, MIN_ROOM_H, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
-import { hireDoctor } from "@/sim/pawn";
+import { hireDoctor, type HireResult } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
 import { startNextDay } from "@/sim/day";
 import { settleWeek, startNextWeek, weekSummary } from "@/sim/week";
@@ -35,6 +35,11 @@ const REASON_TEXT: Record<Exclude<PlaceResult, { ok: true }>["reason"], string> 
   OUT_OF_BOUNDS: "부지 밖입니다 — 가장자리 한 칸은 비워 둡니다",
   OVERLAP: "다른 방과 겹칩니다",
   NO_MONEY: "자금이 부족합니다",
+};
+
+/** 채용 거부 사유 → 화면 문구. 건설의 REASON_TEXT와 같은 형태다(사유는 코어가, 말은 화면이). */
+const HIRE_REASON_TEXT: Record<Exclude<HireResult, { ok: true }>["reason"], string> = {
+  NO_POOL: "전국에 남은 그 과 의사가 없습니다",
 };
 
 const SPEEDS: Array<{ value: SimSpeed; label: string; title: string }> = [
@@ -184,7 +189,14 @@ export default function SimPage() {
    *  같이 보면 뒤엣것이 앞엣것을 덮어 한 명이 유실된다. 실사용 위험이 낮은 건 클릭이 discrete
    *  이벤트라 React가 각 클릭을 별도 태스크로 갈라 사이에 렌더가 끼기 때문이지, 정지 자체가
    *  막아 주기 때문이 아니다. 업데이터로 옮기려면 StrictMode 이중 채용 검증이 먼저다. */
-  const hire = (dept: SimDeptKey) => setWorld(hireDoctor(world, dept));
+  const hire = (dept: SimDeptKey) => {
+    // 채용도 건설(commit)과 같은 모양으로 실패한다 — 전국에 그 과 사람이 남지 않았으면 거부되고
+    // 세계는 그대로다. 여기서 조용히 삼키면 버튼이 먹통인 것과 구별되지 않는다.
+    // ⓘ 지금은 **최소 배선**이다: 남은 인원 표시·풀 0인 과의 버튼 비활성은 계획 Task 5가 붙인다.
+    const res = hireDoctor(world, dept);
+    if (res.ok) setWorld(res.world);
+    else showToast(HIRE_REASON_TEXT[res.reason]);
+  };
 
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 

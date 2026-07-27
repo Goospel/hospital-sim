@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createWorld, type SimWorld } from './world'
 import { FURNITURE_OF, placeRoom } from './build'
 import { hireDoctor, PAWN_TILES_PER_MIN, type Pawn } from './pawn'
+import type { SimDeptKey } from './dept'
 import { buildBlockedSet, findPath } from './path'
 import { tick } from './tick'
 import { freshMorning } from './day'
@@ -10,6 +11,14 @@ import { furnitureSpot, furnitureSpots } from './spots'
 import { emergencySpec, wardBeds } from './emergency'
 import { FATIGUE_MAX, FATIGUE_RED, FATIGUE_REST, fatigueSlowFactor } from '../game/doctor'
 import { HUNGRY_AFTER_MIN, MEAL_MIN, REST_BREAK_MIN, REST_BREAK_RECOVER, STARVED_SLOW } from './needs'
+
+/** 채용 성공을 전제로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 파일의 관심사가 아니다
+ *  (그 계약은 resignation.test.ts가 잰다). 전제가 깨지면 조용히 통과하지 말고 터진다. */
+function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
+  const r = hireDoctor(w, dept)
+  if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
+  return r.world
+}
 
 /** 순환기 진료실 — 8×8이라 의사가 책상에서 문까지 **여러 분** 방 안에 머문다.
  *  그 구간이 있어야 "방 안에 있는데도 외래 배정에서 빠진다"(activity 제외)가 관측된다:
@@ -96,7 +105,7 @@ function restWorld(
 ): SimWorld {
   let w = place(createWorld(seed), EXAM_CARDIO)
   for (const spec of rooms) w = place(w, spec)
-  w = hireDoctor(w, 'CARDIOLOGY')
+  w = hire(w, 'CARDIOLOGY')
   w = until(w, x => {
     const d = doctorOf(x)
     return !!d.roomId && !!d.dest && d.x === d.dest.x && d.y === d.dest.y
@@ -205,7 +214,7 @@ describe('휴식 — 개시·전이·종료', () => {
 
   it('의자 하나에 둘이 앉지 않는다 — 좌석 점유는 다른 의사의 dest로 판정된다', () => {
     // 둘째 의사는 진료실이 하나뿐이라 방을 못 받는다 — 그래도 쉴 수는 있다(휴식은 방과 무관).
-    const one = tired(hireDoctor(restWorld(), 'CARDIOLOGY'), FATIGUE_RED)
+    const one = tired(hire(restWorld(), 'CARDIOLOGY'), FATIGUE_RED)
     expect(doctors(one)).toHaveLength(2)      // 전제
     expect(loungeSeats(one)).toHaveLength(1)  // 전제: 의자 하나
     const after = tick(one, 1)
@@ -216,7 +225,7 @@ describe('휴식 — 개시·전이·종료', () => {
     expect(seated[0].id).toBe(doctors(one)[0].id)
 
     // 대조 — 의자가 둘이면 둘 다 간다. "한 번에 한 명"이 아니라 **좌석 수**가 한도다.
-    const two = tired(hireDoctor(restWorld({ rooms: [LOUNGE_2] }), 'CARDIOLOGY'), FATIGUE_RED)
+    const two = tired(hire(restWorld({ rooms: [LOUNGE_2] }), 'CARDIOLOGY'), FATIGUE_RED)
     expect(loungeSeats(two)).toHaveLength(2)  // 전제
     const bothGone = tick(two, 1)
     const going = doctors(bothGone).filter(d => d.activity === 'TO_LOUNGE')
@@ -249,7 +258,7 @@ describe('휴식 — 개시·전이·종료', () => {
     // backToDesk의 **폴백 갈래**. 리뷰 실측: 이 테스트가 없을 때 폴백 본문을 `return p`로
     // 바꿔도 869건이 전부 통과했다 — 계약 주석만 있고 계측기가 없던 자리다(T-089).
     let w = place(createWorld(3), LOUNGE_1) // 진료실이 아예 없다 → 의사가 방을 못 받는다
-    w = hireDoctor(w, 'CARDIOLOGY')
+    w = hire(w, 'CARDIOLOGY')
     w = tired({ ...w, minute: ARRIVAL_WINDOW_MIN }, FATIGUE_RED)
     expect(doctorOf(w).roomId).toBeUndefined() // 전제: 돌아갈 책상이 없다
     const seat = loungeSeats(w)[0]
@@ -333,7 +342,7 @@ describe('휴식과 일의 경합', () => {
     // 걸어가던 의사가 **자기 책상에서 RESTING** 이 된다 — 왕복 0분에 회복 15, 좌석 한도 우회,
     // 배치 인과 증발. 전부 에러 없이 일어난다.
     let w = place(createWorld(3), LOUNGE_1) // 진료실 없이 시작 — 의사는 방이 없다
-    w = hireDoctor(w, 'CARDIOLOGY')
+    w = hire(w, 'CARDIOLOGY')
     w = tired({ ...w, minute: ARRIVAL_WINDOW_MIN }, FATIGUE_RED)
     const seat = loungeSeats(w)[0]
 
@@ -783,7 +792,7 @@ describe('식사와 일의 경합', () => {
   })
 
   it('의자 하나에 둘이 앉지 않는다 — 좌석 점유는 휴게실과 같은 기계다', () => {
-    const one = hungryFor(hireDoctor(restWorld({ rooms: [CAFETERIA_1] }), 'CARDIOLOGY'), HUNGRY_AFTER_MIN)
+    const one = hungryFor(hire(restWorld({ rooms: [CAFETERIA_1] }), 'CARDIOLOGY'), HUNGRY_AFTER_MIN)
     expect(doctors(one)).toHaveLength(2)   // 전제
     expect(mealSeats(one)).toHaveLength(1) // 전제: 의자 하나
     const after = tick(one, 1)

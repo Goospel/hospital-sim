@@ -39,6 +39,11 @@ export interface SimDeptSpec {
   /** 피로 강도 계수 — 부하 = 진료 분 × 강도(계획 Task 4가 읽는다). 같은 시간을 일해도
    *  필수과가 더 갈린다는 비대칭이 여기서 온다. */
   intensity: number
+  /** **전국에 남은** 그 과 의사 수 — 한 판 동안 뽑을 수 있는 총량이다(SimWorld.hirePool의 초기값).
+   *  기존 게임의 전국 풀(인력 제로섬)을 계승한다: 사직한 사람은 **돌아오지 않으므로**(week.ts
+   *  startNextWeek) 이 숫자가 곧 "갈아 넣을 수 있는 사람의 한계"다. 그게 없으면 사직은 벌이
+   *  아니라 재채용 버튼 한 번의 절차가 된다. */
+  nationalPool: number
 }
 
 /**
@@ -66,6 +71,9 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
     // 0.3 = `src/game/doctor.ts` FATIGUE_INTENSITY.COSMETIC_WALKIN **그대로**. 예약제 루틴 시술이라
     // 저강도라는 판단은 스케일과 무관해 그대로 옮긴다.
     intensity: 0.3,
+    // 8 — 이 카탈로그에서 **가장 두껍다**. 근거는 절대수가 아니라 대소다: 지원자가 몰리는 과라
+    // 한 명이 떠나도 다음 사람이 있다. 그래서 미용으로만 굴리는 병원은 사직을 사실상 못 느낀다.
+    nationalPool: 8,
   },
   INTERNAL_MEDICINE: {
     key: 'INTERNAL_MEDICINE',
@@ -80,6 +88,8 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
     weeklyCostManwon: 1_500,
     // 1.0 = FATIGUE_INTENSITY.SPECIALIST_ELECTIVE(외래+검사 = 기준선) 그대로.
     intensity: 1.0,
+    // 5 — 필수과 중에서는 가장 두껍다(외래 볼륨 과라 인력 층이 남아 있다). 미용보다는 얇다.
+    nationalPool: 5,
   },
   GENERAL_SURGERY: {
     key: 'GENERAL_SURGERY',
@@ -95,6 +105,9 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
     // 1.2 ← FATIGUE_INTENSITY의 기준선(1.0, 외래)과 응급(1.5~2.0) 사이. 필수과 외래는 기준선보다
     // 무겁지만 응급 수술은 아니다 — 응급 강도(2.0)는 계획 Task 4가 따로 얹는다.
     intensity: 1.2,
+    // 3 — 응급 대기가 붙는 과라 얇다. 외과 의사 셋을 다 갈아 넣으면 그 병원은 남은 판 내내
+    // 급성복증을 받을 수 없다(응급 배후과 하드락과 맞물려 사직이 곧 진료 종목의 상실이 된다).
+    nationalPool: 3,
   },
   CARDIOLOGY: {
     key: 'CARDIOLOGY',
@@ -114,6 +127,10 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
     // 1.2 = 외과와 같은 근거(필수과 외래 — 기준선 1.0과 응급 1.5~2.0 사이). 두 과의 외래는
     // 의사에게 같은 무게라고 본다 — 갈리는 차이는 강도가 아니라 응급(Task 4의 ×2.0)에서 온다.
     intensity: 1.2,
+    // 2 — **가장 얇다**. 이 게임에서 가장 빨리 갈려나가는 과(응급 강도 2.0 + 24시간 대기)에
+    // 사람이 가장 적다는 것이 논지의 인사판이다: 한 명을 태우고 나면 다음 한 명뿐이고, 그마저
+    // 태우면 그 병원엔 STEMI를 받을 사람이 영원히 없다. 값이 아니라 이 대소가 주장이다.
+    nationalPool: 2,
   },
 }
 
@@ -122,6 +139,15 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
  *  카탈로그에 플래그를 판다. 지금은 그런 과가 없어 미리 만들지 않는다.)
  *  순서는 객체 리터럴의 기재 순서 = 미용 → 내과 → 외과 → 순환기(고정비 오름차순)다. */
 export const HIRABLE_DEPTS = Object.keys(SIM_DEPTS) as SimDeptKey[]
+
+/** 한 판의 시작 채용 풀 — **카탈로그에서 파생한다**(`SimWorld.hirePool`의 초기값).
+ *  숫자를 createWorld에 다시 적으면 카탈로그를 튜닝해도 세계가 안 따라오고, 그 어긋남은
+ *  "왜 미용이 8명이 아니지"로만 관측된다(HIRABLE_DEPTS가 카탈로그 파생인 것과 같은 이유). */
+export function freshHirePool(): Record<SimDeptKey, number> {
+  return Object.fromEntries(
+    HIRABLE_DEPTS.map(key => [key, simDept(key).nationalPool]),
+  ) as Record<SimDeptKey, number>
+}
 
 /** EXAM 방에 과가 지정되지 않았을 때의 기본값 — **마이그레이션 절단**이다.
  *  UI(계획 Task 6)는 건설 시 과를 반드시 고르게 하므로 플레이 중에는 도달할 수 없고,
