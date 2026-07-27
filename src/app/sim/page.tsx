@@ -99,13 +99,15 @@ export default function SimPage() {
 
     ⚠️ **정확히 1회**여야 한다 — settleWeek을 두 번 부르면 고정비가 두 번 빠져 멀쩡한
     병원이 장부로만 망한다. 코어가 이중 정산을 throw로 막으므로(weekSettled) 방어를
-    소홀히 하면 no-op이 아니라 **크래시**다. 그래서 가드가 세 겹이고, 각자 다른 경로를 막는다:
-      ① `world.weekSettled` 이른 반환 — 결산이 끝나면 deps가 바뀌어 이펙트가 **다시 돈다**.
-         실제로 가장 먼저 터지는 경로다(실측: 이 줄만 빼도 결산 직후 "이미 결산했다"
-         Uncaught Error로 화면이 통째로 죽는다).
-      ② settlingRef — 같은 국면에서 이펙트가 두 번 세워질 때(StrictMode 마운트).
-      ③ 업데이터 안 재확인 — StrictMode가 업데이터를 두 번 불러도 두 번째는 이미 결산된
-         세계를 받아 그대로 돌려준다.
+    소홀히 하면 no-op이 아니라 **크래시**다. 가드는 세 겹이다:
+      ① `world.weekSettled` 이른 반환  ② settlingRef  ③ 업데이터 안 재확인.
+
+    관측된 재진입 경로는 하나다 — 결산으로 weekSettled가 바뀌며 deps가 재실행되는 것
+    (WEEK_END/true). ①②③은 그 한 경로를 겹쳐 막는 **중복 벨트**이고, 셋 중 하나만 남아도
+    이중 정산은 일어나지 않는다(실측: ①만 제거해도 ②가 잡아 크래시가 없고 고정비도 한 번만
+    빠진다 / 셋 다 제거하면 settleWeek이 throw해 화면이 죽는다). ②는 StrictMode 이중 마운트가
+    WEEK_END 상태에서 일어나는 경우의 대비이며, 정상 흐름(마운트 시 phase=RUNNING)에서는
+    발동하지 않는다.
     1주차의 이중 건설(setState 업데이터 안에서 placeRoom)과 같은 함정이라 같은 자리를 막는다.
   */
   const settlingRef = useRef(false);
