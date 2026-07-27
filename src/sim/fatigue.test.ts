@@ -114,12 +114,20 @@ describe('피로 곡선 — 기존 게임에서 임포트(복제 금지)', () =>
   })
 
   it('계약: 하루 축적 − 아침 회복 == 기존 stepFatigue의 하루 델타(야간 없는 날)', () => {
-    // 새 시뮬은 **축적을 낮 동안, 회복을 아침에** 나눠 하지만 하루를 통으로 보면 옛 층과 같은
-    // 곡선이어야 한다. 이 계약이 없으면 곡선을 임포트해 놓고 공식만 다르게 써도 아무도 모른다.
+    // 새 시뮬은 **축적을 낮 동안(건별), 회복을 아침에** 나눠 하지만 하루를 통으로 보면 옛 층과
+    // 같은 곡선이어야 한다. 그래서 대조는 **실제 합성 경로**로 한다 — 건별 `addWorkLoad`를 쌓고
+    // `restOvernight`로 아침을 지난 값이 옛 `stepFatigue`의 하루 델타와 같아야 한다.
+    // 공식(`fatigueGain`)만 대조하면 곡선은 맞는데 그 공식을 **아무도 안 부르는** 구현도 통과한다.
     // 클램프에 안 걸리는 구간에서만 잰다(양쪽 다 [0,MAX]로 접기 때문).
-    for (const [prev, load] of [[30, 400], [50, 100], [10, 500]]) {
-      const legacy = stepFatigue({ d: prev }, { loadMin: new Map([['d', load]]), nightLoad: new Map() })
-      expect(legacy.d).toBe(prev + fatigueGain(load) - FATIGUE_REST)
+    const days: Array<[number, number[]]> = [[30, [180, 220]], [50, [40, 60]], [10, [250, 150, 100]]]
+    for (const [prev, jobs] of days) {
+      const worked = jobs.reduce((d, load) => addWorkLoad(d, load), doc({ fatigue: prev }))
+      const total = jobs.reduce((a, b) => a + b, 0)
+      const legacy = stepFatigue({ d: prev }, { loadMin: new Map([['d', total]]), nightLoad: new Map() })
+      expect(worked.loadMinToday).toBe(total)
+      expect(restOvernight(worked).fatigue).toBe(legacy.d)
+      // 이 하루가 실제로 클램프 밖이었다(양쪽이 0이나 100에서 우연히 만난 게 아니다).
+      expect(legacy.d).toBe(prev + fatigueGain(total) - FATIGUE_REST)
     }
     // 계측기가 헛돌지 않았다 — 셋 중 하나는 실제로 문턱을 넘겨 피로가 올랐다.
     expect(fatigueGain(500)).toBeGreaterThan(FATIGUE_REST)
@@ -134,6 +142,16 @@ describe('피로 곡선 — 기존 게임에서 임포트(복제 금지)', () =>
     // 정수 분이되 곡선 자체는 기존 함수다 — 반올림 전 값이 어긋나면 여기서 걸린다.
     expect(slowedDurationMin(EMERGENCIES.STEMI.durationMin, FATIGUE_RED))
       .toBe(Math.round(EMERGENCIES.STEMI.durationMin * fatigueSlowFactor(FATIGUE_RED)))
+  })
+
+  it('정수화는 반올림이다 — 올림도 내림도 아니다(소요가 체계적으로 밀리지 않는다)', () => {
+    // ⚠️ 위 표본은 전부 배율이 딱 떨어지는 지점(×1.0·×1.25·×1.5)이라 round·ceil·floor가
+    // **같은 값**을 낸다 — 그래서 `Math.ceil`로 바꿔도 전체 green이었다(리뷰 실측). 즉
+    // slowedDurationMin 독스트링이 한 문단 들여 적은 결정이 무계측으로 남아 있었다.
+    // 딱 떨어지지 않는 두 점을 양방향으로 잡아 그 결정 자체를 잠근다.
+    // 올림이면 배율 1.0 구간을 뺀 **모든** 건에 평균 +0.5분이 얹혀 곡선이 통째로 위로 밀린다.
+    expect(slowedDurationMin(EXAM_DURATION_MIN, 36)).toBe(20) // ×1.0152 → 20.30 (올림이면 21)
+    expect(slowedDurationMin(EXAM_DURATION_MIN, 60)).toBe(24) // ×1.1970 → 23.94 (내림이면 23)
   })
 })
 
