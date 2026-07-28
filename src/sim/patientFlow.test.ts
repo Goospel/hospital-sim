@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, isWalkable, tileIndex, ENTRANCE, type SimWorld } from './world'
-import { computeRegions, regionById } from './regions'
+import { computeRegions } from './regions'
 import type { Pt } from './path'
 import { spawnDoctor, type Pawn } from './pawn'
+import { demolish, placeFurniture } from './build'
+import { ptKey } from './spots'
 import { hire, placeRoom } from './testHelpers'
 import { tick } from './tick'
 import {
@@ -84,8 +86,45 @@ function soloDeptWorld(dept: SimDeptKey, seed = 3) {
   if (!r.ok) throw new Error('전제 실패')
   const w = tick(hire(r.world, dept), 40) // 의사가 책상 앞에 설 때까지
   const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
-  if (!doc.roomId) throw new Error('전제 실패 — 의사가 진료실에 배정되지 않았다')
+  if (!doc.deskAt) throw new Error('전제 실패 — 의사가 진료실에 배정되지 않았다')
   return w
+}
+
+/**
+ * 큰 진료실 하나에 **책상 3개(각각 인접 의자)** + 같은 과 의사 3명 — 이 재설계의 촉발 문제
+ * ("진료실을 크게 지어도 의사 1명")를 겨누는 픽스처다. 대기실이 없어 자연 도착이 폰을 만들지
+ * 않으므로 관측되는 환자는 손으로 앉힌 사람뿐이다(soloDeptWorld와 같은 격리).
+ *
+ * 방 (6,6) 10×7 → 내부 7..14 × 7..11 · 문 (11,12). 자동 가구가 책상(7,7)+의자(8,7)를 놓고,
+ * 아래에서 책상 (10,7)·(13,7)과 그 오른쪽 의자를 덧놓는다.
+ */
+function multiDeskWorld(doctors = 3, seed = 3): SimWorld {
+  const r = placeRoom(createWorld(seed), { type: 'EXAM', dept: 'INTERNAL_MEDICINE', x: 6, y: 6, w: 10, h: 7 })
+  if (!r.ok) throw new Error('전제 실패')
+  let w = furnish(r.world, 'DESK', [{ x: 10, y: 7 }, { x: 13, y: 7 }])
+  w = furnish(w, 'CHAIR', [{ x: 11, y: 7 }, { x: 14, y: 7 }])
+  for (let i = 0; i < doctors; i++) w = hire(w, 'INTERNAL_MEDICINE')
+  return w
+}
+
+function furnish(w: SimWorld, kind: 'DESK' | 'CHAIR', tiles: Pt[]): SimWorld {
+  const r = placeFurniture(w, kind, tiles)
+  if (!r.ok) throw new Error(`전제 실패 — 가구 설치 거부(${r.reason})`)
+  return r.world
+}
+
+/** 진료실 문(11,12) 바로 바깥에 세운 대기 환자 N명 — 대기실 없이 대기열을 만든다. */
+function seatPatientsOutsideBigRoom(w: SimWorld, n: number): SimWorld {
+  const pawns: Pawn[] = []
+  for (let i = 0; i < n; i++) {
+    const at = { x: 10 + i, y: 13 }
+    if (!isWalkable(w, at.x, at.y)) throw new Error('전제 실패 — 앉힐 자리가 막혔다')
+    pawns.push({
+      id: `pat-hand-${i}`, kind: 'PATIENT', x: at.x, y: at.y, path: [], dest: at,
+      stage: 'WAITING', arrivedMin: w.minute, wantsDept: 'INTERNAL_MEDICINE',
+    })
+  }
+  return { ...w, pawns: [...w.pawns, ...pawns] }
 }
 
 /** 진료실 문(9,10) 바로 바깥에 앉은 환자 — 대기실을 짓지 않고 대기 상태를 만든다. */
@@ -344,13 +383,13 @@ describe('대기실 좌석', () => {
 })
 
 describe('진료 배정', () => {
-  it('의사는 빈 EXAM 영역에 배정돼 책상 옆에 선다', () => {
+  it('의사는 빈 진료 슬롯에 배정돼 그 책상 옆에 선다', () => {
     const w = tick(hospitalWorld(3), 5)
-    // 배정의 단위가 **영역**이 됐다 — `roomId`는 그 영역 id의 문자열이다(설계 PR 3에서 deskAt로 대체).
+    // 배정의 단위가 **책상**이다 — `deskAt`은 그 책상의 좌표다(설계 §4).
     const exam = computeRegions(w).find(r => r.type === 'EXAM')!
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
     const desk = w.furniture.find(f => f.kind === 'DESK' && exam.tiles.has(tileIndex(f.x, f.y)))!
-    expect(doc.roomId).toBe(String(exam.id))
+    expect(doc.deskAt).toEqual({ x: desk.x, y: desk.y })
     expect(Math.abs(doc.x - desk.x) + Math.abs(doc.y - desk.y)).toBe(1)
     expect(isWalkable(w, doc.x, doc.y)).toBe(true)
   })
@@ -361,15 +400,52 @@ describe('진료 배정', () => {
     let w = hospitalWorld(3)
     w = spawnDoctor(w, 'INTERNAL_MEDICINE', { x: 9, y: 9 })
     w = tick(w, 5)
-    const rooms = w.pawns.filter(p => p.kind === 'DOCTOR').map(p => p.roomId)
-    expect(rooms.filter(Boolean)).toHaveLength(1) // EXAM 방이 하나뿐이니 한 명만 배정된다
+    const desks = w.pawns.filter(p => p.kind === 'DOCTOR').map(p => p.deskAt)
+    expect(desks.filter(Boolean)).toHaveLength(1) // EXAM 방이 하나뿐이니 한 명만 배정된다
     w = spawnDoctor(w, 'INTERNAL_MEDICINE', { x: 30, y: 30 })
     const r = placeRoom(w, { type: 'EXAM', x: 6, y: 13, w: 6, h: 5 })
     if (!r.ok) throw new Error('전제 실패')
     w = tick(r.world, 30)
-    const assigned = w.pawns.filter(p => p.kind === 'DOCTOR').map(p => p.roomId).filter(Boolean)
-    expect(new Set(assigned).size).toBe(assigned.length)
+    const assigned = w.pawns.filter(p => p.kind === 'DOCTOR').map(p => p.deskAt).filter((d): d is Pt => !!d)
+    expect(new Set(assigned.map(ptKey)).size).toBe(assigned.length)
     expect(assigned).toHaveLength(2)
+  })
+
+  it('책상 3개 = 의사 3명 — 큰 진료실에서 셋이 동시에 진료한다(이 재설계의 촉발 문제)', () => {
+    let w = run(multiDeskWorld(3), 80)
+    const docs = w.pawns.filter(p => p.kind === 'DOCTOR')
+    expect(docs).toHaveLength(3)
+    // 셋 다 앉았고, **서로 다른 책상**이다(점유의 단일 출처가 deskAt이라 이중 배정이 불가능하다).
+    expect(docs.every(d => !!d.deskAt)).toBe(true)
+    expect(new Set(docs.map(d => ptKey(d.deskAt!))).size).toBe(3)
+
+    w = run(seatPatientsOutsideBigRoom(w, 3), 15)
+    expect(w.pawns.filter(p => p.stage === 'IN_EXAM')).toHaveLength(3)
+    // 세 환자가 각자 다른 의자 앞에 앉는다 — 슬롯의 환자의자가 책상마다 배타적이기 때문이다.
+    const seats = w.pawns.filter(p => p.stage === 'IN_EXAM').map(p => ptKey(p.dest!))
+    expect(new Set(seats).size).toBe(3)
+  })
+
+  it('의자 없는 책상은 슬롯이 아니다 — 넷째 의사는 앉지 못한다', () => {
+    let w = multiDeskWorld(4)
+    w = run(furnish(w, 'DESK', [{ x: 7, y: 10 }]), 80) // 의자를 안 붙인 책상
+    expect(w.pawns.filter(p => p.kind === 'DOCTOR' && p.deskAt)).toHaveLength(3)
+    // 계측기가 헛돌지 않았다 — 그 책상에 의자를 붙이면 넷째도 앉는다.
+    const withChair = run(furnish(w, 'CHAIR', [{ x: 8, y: 10 }]), 80)
+    expect(withChair.pawns.filter(p => p.kind === 'DOCTOR' && p.deskAt)).toHaveLength(4)
+  })
+
+  it('앉아 있던 책상을 철거하면 배정이 풀리고 빈 슬롯으로 옮겨 앉는다', () => {
+    // 철거는 이제 플레이어가 언제든 누르는 도구다(설계 §2). 배정을 안 풀면 그 의사는 없는
+    // 책상을 문 채 영원히 놀고(환자도 안 받는다) 되돌릴 방법이 없다.
+    let w = run(multiDeskWorld(1), 80)
+    const before = w.pawns.find(p => p.kind === 'DOCTOR')!
+    expect(before.deskAt).toEqual({ x: 7, y: 7 }) // 전제: 첫 책상에 앉았다
+    const d = demolish(w, [before.deskAt!])
+    if (!d.ok) throw new Error('전제 실패 — 철거 거부')
+    w = run(d.world, 80)
+    const after = w.pawns.find(p => p.kind === 'DOCTOR')!
+    expect(after.deskAt).toEqual({ x: 10, y: 7 }) // 남은 슬롯 중 첫 번째로 옮겨 앉았다
   })
 
   it(`진료는 정확히 ${EXAM_DURATION_MIN}분 걸린다`, () => {
@@ -420,10 +496,10 @@ describe('진료 배정', () => {
     */
     const base = seatPatient(soloDeptWorld('INTERNAL_MEDICINE'), 'INTERNAL_MEDICINE')
     const doc = base.pawns.find(p => p.kind === 'DOCTOR')!
-    const exam = regionById(computeRegions(base), doc.roomId)!
+    const exam = computeRegions(base).find(r => r.tiles.has(tileIndex(doc.deskAt!.x, doc.deskAt!.y)))!
     expect(exam.tiles.has(tileIndex(doc.x, doc.y))).toBe(true) // 전제: 지금은 방 안이다
 
-    // ① 의사만 방 밖(문 앞 복도)으로 옮긴다 — 배정(roomId)은 그대로다.
+    // ① 의사만 방 밖(문 앞 복도)으로 옮긴다 — 배정(deskAt)은 그대로다.
     const outsideAt = { x: 9, y: 12 }
     expect(exam.tiles.has(tileIndex(outsideAt.x, outsideAt.y))).toBe(false) // 전제: 정말 영역 밖이다
     const outside = tick({
@@ -720,8 +796,8 @@ describe('과 라우팅 — 삼중 일치', () => {
     const doctors = w.pawns.filter(p => p.kind === 'DOCTOR')
     expect(doctors).toHaveLength(HIRABLE_DEPTS.length)
     for (const doc of doctors) {
-      expect(doc.roomId).toBeDefined() // 전제: 전원이 방을 얻었다(항진명제 방지)
-      expect(regionById(regions, doc.roomId)!.dept).toBe(doc.dept)
+      expect(doc.deskAt).toBeDefined() // 전제: 전원이 방을 얻었다(항진명제 방지)
+      expect(regions.find(r => r.tiles.has(tileIndex(doc.deskAt!.x, doc.deskAt!.y)))!.dept).toBe(doc.dept)
     }
   })
 
@@ -731,7 +807,7 @@ describe('과 라우팅 — 삼중 일치', () => {
     if (!r.ok) throw new Error('전제 실패')
     const deptless: Pawn = { id: 'doc-x', kind: 'DOCTOR', x: 9, y: 12, path: [] }
     const w = tick({ ...r.world, pawns: [deptless] }, 60)
-    expect(w.pawns[0].roomId).toBeUndefined()
+    expect(w.pawns[0].deskAt).toBeUndefined()
   })
 
   it('방의 과가 다르면 진료가 성립하지 않는다 — 삼중 일치의 방 축', () => {

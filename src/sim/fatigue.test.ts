@@ -63,7 +63,7 @@ function mixedWorld(seed = BOTH_KINDS_SEED): SimWorld {
  *  의사의 피로를 손으로 박아 **감속만** 격리해 관측한다. */
 function fatiguedSoloWorld(dept: SimDeptKey, fatigue: number, seed = 3): SimWorld {
   const w = tick(hire(place(createWorld(seed), { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 }), dept), 40)
-  if (!theDoctor(w).roomId) throw new Error('전제 실패 — 의사가 진료실에 배정되지 않았다')
+  if (!theDoctor(w).deskAt) throw new Error('전제 실패 — 의사가 진료실에 배정되지 않았다')
   return { ...w, pawns: w.pawns.map(p => (p.kind === 'DOCTOR' ? { ...p, fatigue } : p)) }
 }
 

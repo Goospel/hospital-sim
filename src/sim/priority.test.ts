@@ -67,7 +67,7 @@ function deskWorld(
   let w = place(createWorld(seed), EXAM_A)
   for (const spec of rooms) w = place(w, spec)
   for (let i = 0; i < doctors; i++) w = hire(w, 'CARDIOLOGY')
-  w = until(w, x => docs(x).every(d => !!d.roomId && !!d.dest && d.x === d.dest.x && d.y === d.dest.y))
+  w = until(w, x => docs(x).every(d => !!d.deskAt && !!d.dest && d.x === d.dest.x && d.y === d.dest.y))
   return { ...w, minute: ARRIVAL_WINDOW_MIN }
 }
 

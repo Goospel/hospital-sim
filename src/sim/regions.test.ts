@@ -2,7 +2,7 @@
 // 여기서 재는 것은 "무엇이 방인가"의 정의다: 둘러싸였으면 방, 새면 마당.
 import { describe, it, expect } from 'vitest'
 import { createWorld, tileIndex, type SimWorld } from './world'
-import { computeRegions, computeRegionsUncached, regionById } from './regions'
+import { computeRegions, computeRegionsUncached } from './regions'
 
 const idx = (x: number, y: number) => tileIndex(x, y)
 
@@ -183,23 +183,6 @@ describe('computeRegions', () => {
       expect(computeRegions(keyed(WALLS, NO_DOORS, AS_LOUNGE))[0].type).toBe('LOUNGE')
       expect(computeRegions(keyed(WALLS, NO_DOORS, AS_WARD))[0].type).toBe('WARD') // 되돌려도 옛 답이 안 남는다
       expect(computeRegions(keyed(WALLS, NO_DOORS, NO_DESIG))[0].type).toBeUndefined()
-    })
-  })
-
-  describe('regionById — 폰의 roomId가 가리키는 영역', () => {
-    const rs = computeRegions(worldWith({
-      walls: new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h)),
-      designations: [{ at: { x: 12, y: 12 }, type: 'EXAM', dept: 'CARDIOLOGY' }],
-    }))
-
-    it('id 문자열로 그 영역을 찾는다', () => {
-      expect(regionById(rs, String(rs[0].id))?.type).toBe('EXAM')
-    })
-
-    it('배정 전(undefined)이나 없는 id면 undefined — 던지지 않는다', () => {
-      // 벽을 편집해 영역이 갈라지면 저장된 배정이 끊긴다. 그때 던지면 벽 한 장에 세계가 죽는다.
-      expect(regionById(rs, undefined)).toBeUndefined()
-      expect(regionById(rs, '999999')).toBeUndefined()
     })
   })
 

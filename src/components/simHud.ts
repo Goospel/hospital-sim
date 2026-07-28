@@ -13,11 +13,13 @@ import { HIRABLE_DEPTS, simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway, type TurnAwayReason } from '../sim/emergency'
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam } from '../sim/needs'
+import { buildBlockedSet } from '../sim/path'
 import { computeRegions } from '../sim/regions'
+import { examSlots } from '../sim/spots'
 import { TRAITS, type TraitKey } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
 import type { Pt } from '../sim/path'
-import type { FurnitureKind, RoomType, SimWorld } from '../sim/world'
+import { tileIndex, type FurnitureKind, type RoomType, type SimWorld } from '../sim/world'
 
 /**
  * 금액 한 곳 — **|금액| ≥ 1억이면 「N.N억」, 미만이면 「N만원」**(계획 §0-8).
@@ -403,8 +405,10 @@ export function buildBlockReason(
  * 그 표시는 `doctorActivityMark`가 이미 갖고 있다(TileMap에서 그쪽이 우선한다).
  */
 export function doctorRoomlessMark(p: Pawn): ActivityMark | null {
-  return p.kind === 'DOCTOR' && !p.roomId && !p.activity
-    ? { glyph: '?', label: '자기 과 진료실이 없어 대기 중' }
+  // 정원이 방이 아니라 **책상**이 됐으므로(설계 §4) 문구도 일반화한다 — 자기 과 진료실이
+  // 있는데도 빈 책상이 없어 서 있는 의사가 이제 실재한다.
+  return p.kind === 'DOCTOR' && !p.deskAt && !p.activity
+    ? { glyph: '?', label: '빈 진료 책상이 없어 대기 중' }
     : null
 }
 
@@ -433,7 +437,28 @@ export function setupWarningText(w: SimWorld): string | null {
   const sealed = regions.filter(r => r.type && r.doors.size === 0).length
   if (sealed > 0) return `문이 없는 방 ${sealed}개 — 벽 한 칸을 골라 문을 내세요`
   const roomless = doctors.filter(d => !regions.some(r => r.type === 'EXAM' && r.dept === d.dept)).length
-  return roomless > 0 ? `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요` : null
+  if (roomless > 0) return `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요`
+  // 방은 있는데 **앉을 책상**이 모자란 경우(설계 §4) — 정원은 방 크기가 아니라 슬롯 수다.
+  // 과별로 세는 것이 계약이다: 미용 진료실에 책상이 남아돌아도 내과 의사는 못 앉는다.
+  const blocked = buildBlockedSet(w)
+  const byDept = new Map<SimDeptKey | undefined, number>()
+  for (const d of doctors) byDept.set(d.dept, (byDept.get(d.dept) ?? 0) + 1)
+  let missing = 0
+  let lonelyDesks = 0 // 의자를 안 붙여 슬롯이 못 된 책상 — 있으면 할 일이 "책상 추가"가 아니다
+  for (const [dept, count] of byDept) {
+    const exams = regions.filter(r => r.type === 'EXAM' && r.dept === dept)
+    const slots = exams.reduce((n, r) => n + examSlots(w, r, blocked).length, 0)
+    if (slots >= count) continue
+    missing += count - slots
+    const desks = exams.reduce(
+      (n, r) => n + w.furniture.filter(f => f.kind === 'DESK' && r.tiles.has(tileIndex(f.x, f.y))).length, 0,
+    )
+    lonelyDesks += desks - slots
+  }
+  if (missing === 0) return null
+  return lonelyDesks > 0
+    ? `의자 없는 진료 책상 ${lonelyDesks}개 — 책상 옆에 의자를 붙이세요`
+    : `진료 책상이 부족합니다 — 앉지 못한 의사 ${missing}명`
 }
 
 /** 시계를 세운 것이 무엇인가 — 없으면 안 멈춰 있다. */

@@ -31,10 +31,10 @@
 import { FATIGUE_RED } from '../game/doctor'
 import { buildBlockedSet, findPath } from './path'
 import type { FurnitureKind, RoomType, SimWorld } from './world'
-import { computeRegions, regionById, type Region } from './regions'
+import { computeRegions, type Region } from './regions'
 import { priorityOf, type Pawn, type PriorityKind } from './pawn'
 import { fatigueOf, slowedDurationMin } from './fatigue'
-import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
+import { furnitureSpots, ptKey, samePt, standSpot } from './spots'
 
 /** 휴식 한 블록의 길이(분) — 각색·튜닝값. 왕복 보행 시간과 합쳐 "휴게실 하나가 의사를 얼마나
  *  오래 빼가나"를 정한다(그 시간만큼 그 과의 외래가 멎는다). */
@@ -425,11 +425,12 @@ function maybeStartBreak(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
   return p
 }
 
-/** 자기 방 책상 앞으로 복귀 — 방이 없거나 못 가면 dest를 지우고 그 자리에 선다(멈춘 채 두느니).
- *  책상 앞 좌표는 `furnitureSpot`이 **단일 출처**다(day.freshMorning이 아침마다 쓰는 그 함수) —
- *  파생식을 복제하면 복귀 자리와 아침 자리가 갈려 의사가 어제와 다른 칸에 선다. */
+/** 자기 책상 앞으로 복귀 — 책상이 없거나 못 가면 dest를 지우고 그 자리에 선다(멈춘 채 두느니).
+ *  책상 앞 좌표는 `standSpot`이 **단일 출처**다(day.freshMorning이 아침마다 쓰는 그 함수) —
+ *  파생식을 복제하면 복귀 자리와 아침 자리가 갈려 의사가 어제와 다른 칸에 선다.
+ *  ⚠️ 슬롯 점유(`deskAt`)는 쉬러 가도 **유지된다** — 자기 책상으로 돌아온다(옛 roomId 계승). */
 function backToDesk(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
-  const spot = furnitureSpot(w, regionById(ctx.regions, p.roomId), 'DESK', ctx.blocked)
+  const spot = p.deskAt ? standSpot(ctx.blocked, p.deskAt) : null
   const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
   if (!spot || !path) {
     const stay: Pawn = { ...p, path: [] }

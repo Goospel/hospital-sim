@@ -5,8 +5,7 @@ import { freshStats, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { buildBlockedSet } from './path'
 import { examLoadMin, wantsDeptOf } from './patientFlow'
-import { furnitureSpot } from './spots'
-import { computeRegions, regionById } from './regions'
+import { standSpot } from './spots'
 import {
   simDept, addExamToDeptStats, addRevenueToDeptStats, deptRevenueSum, type SimDeptStats,
 } from './dept'
@@ -146,8 +145,6 @@ export function settleDay(world: SimWorld): SimWorld {
  *  어제 목적지를 보고 흔들린다. phase·day·week는 부르는 쪽이 정한다. */
 export function freshMorning(world: SimWorld): SimWorld {
   const blocked = buildBlockedSet(world)
-  // 영역은 폰마다가 아니라 아침마다 한 번 — `blocked`와 같은 자리의 같은 이유다.
-  const regions = computeRegions(world)
   const pawns = world.pawns.map(p => {
     // 하룻밤 회복도 여기 있어야 한다 — 7일차 밤엔 startNextDay가 없어서, 회복을 그쪽에 달면
     // **주의 첫날만** 지친 채로 시작한다(stats 리셋이 여기 있는 것과 같은 이유).
@@ -162,10 +159,8 @@ export function freshMorning(world: SimWorld): SimWorld {
     // 이튿날부터 **첫 진료부터** 영구히 `STARVED_SLOW`(1.3)배가 된다. 리셋 자리가 여기인 이유는 피로 회복과
     // 같다: 7일차 밤엔 startNextDay가 없어 그쪽에 달면 주의 첫날만 굶은 채로 시작한다.
     if (p.kind === 'DOCTOR') next.hungerMin = 0
-    // 방을 못 찾거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
-    const spot = p.kind === 'DOCTOR'
-      ? furnitureSpot(world, regionById(regions, p.roomId), 'DESK', blocked)
-      : null
+    // 책상을 못 받았거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
+    const spot = p.kind === 'DOCTOR' && p.deskAt ? standSpot(blocked, p.deskAt) : null
     return spot ? { ...next, x: spot.x, y: spot.y } : next
   })
   // 어제의 이벤트도 여기서 떨어진다 — **이벤트의 지속은 그날 하루뿐**이다(events.ts). 자리가
