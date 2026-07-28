@@ -4,7 +4,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { FATIGUE_MAX } from "@/game/doctor";
 import { GRID_W, GRID_H, doorTile, type RoomType, type SimWorld } from "@/sim/world";
 import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, PatientSprite } from "./PixelSprite";
-import { busyDoctorIds, doctorActivityMark, fatigueTone, FATIGUE_COLOR, roomLabel } from "./simHud";
+import { busyDoctorIds, doctorActivityMark, fatigueTone, FATIGUE_COLOR, formatManwon, roomLabel } from "./simHud";
 
 /**
  * 타일 병원 맵 — SimWorld를 그대로 그리는 순수 표시층. 세계를 만들지도 고치지도 않는다.
@@ -294,7 +294,7 @@ export default function TileMap({
             }}
           >
             <span className="absolute -top-4 left-0 whitespace-nowrap font-mono text-[10px] tabular-nums text-on-desk">
-              {preview.w}×{preview.h} · {preview.costManwon.toLocaleString()}만원
+              {preview.w}×{preview.h} · {formatManwon(preview.costManwon)}
             </span>
           </div>
         )}

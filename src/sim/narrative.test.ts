@@ -152,7 +152,7 @@ describe('epilogueText — 엔딩 3종의 결말문', () => {
     expect(new Set(texts).size).toBe(ENDINGS.length)
   })
 
-  it('셋 다 누적 지표를 싣는다 — 주차 · 이탈 합 · 마지막 금고', () => {
+  it('셋 다 마지막 주 지표와 금고를 싣는다 — 주차 · 그 주 이탈 합 · 마지막 금고', () => {
     for (const ending of ENDINGS) {
       const text = epilogueText(ending, stats)
       expect(text, ending).toContain('9')
