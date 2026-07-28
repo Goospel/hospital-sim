@@ -1,5 +1,8 @@
 // 방 단위 건설 — 검증·비용·가구 자동 배치. 전부 순수 함수.
-import { GRID_W, GRID_H, doorTile, type Room, type RoomType, type SimWorld, type Furniture } from './world'
+import {
+  GRID_W, GRID_H, doorTile, wallTiles, tileIndex,
+  type Room, type RoomType, type SimWorld, type Furniture,
+} from './world'
 import { DEFAULT_EXAM_DEPT } from './dept'
 
 export const MIN_ROOM_W = 4
@@ -82,6 +85,10 @@ export function placeRoom(world: SimWorld, spec: { type: RoomType; dept?: Room['
     ...geometry,
     ...(spec.type === 'EXAM' ? { dept: specDept ?? DEFAULT_EXAM_DEPT } : {}),
   }
+  // 어댑터 — 선언형 방을 **새 지형 모델(벽·문·용도앵커)로도** 옮겨 담는다.
+  // 통행·영역은 이제 이쪽만 읽으므로(path.buildBlockedSet · regions.computeRegions), 두 표현이
+  // 갈리면 화면의 방과 규칙의 방이 달라진다. 설계 PR 2에서 이 함수가 통째로 사라지면 남는 건 아래뿐.
+  const door = doorTile(room)
   return {
     ok: true,
     world: {
@@ -89,6 +96,11 @@ export function placeRoom(world: SimWorld, spec: { type: RoomType; dept?: Room['
       nextId: world.nextId + 1,
       treasuryManwon: world.treasuryManwon - cost,
       rooms: [...world.rooms, room],
+      walls: new Set([...world.walls, ...wallTiles(room).map(t => tileIndex(t.x, t.y))]),
+      doors: new Set([...world.doors, tileIndex(door.x, door.y)]),
+      // 앵커는 **문 바로 안쪽** 타일 — 방 크기와 무관하게 내부이고(h≥4), autoFurniture가
+      // 통로 확보를 위해 항상 비워 두는 자리라 가구에 덮이지 않는다.
+      designations: [...world.designations, { at: { x: door.x, y: door.y - 1 }, type: room.type, ...(room.dept ? { dept: room.dept } : {}) }],
       furniture: [...world.furniture, ...autoFurniture(room)],
     },
   }
