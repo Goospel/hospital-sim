@@ -13,7 +13,7 @@ import {
   applyEvent, type SimEventKind,
 } from './events'
 import {
-  EVENT_MIX, EVENT_PROB_PER_DAY,
+  EVENT_MIX, EVENT_PROB_PER_DAY, applyMorningEvent,
   eligibleEvents, eventKindSeed, eventRollSeed, fallbackDirectorChoice, pickEventKind,
 } from './director'
 
@@ -374,5 +374,33 @@ describe('폴백 디렉터 — 시드 결정론 가중 랜덤', () => {
     expect(events.size).toBe(2 * 8 * DAYS_PER_WEEK)                  // 계측기 자기검사
     expect(others.size).toBe(3 * 8 * DAYS_PER_WEEK * ARRIVAL_WINDOW_MIN)
     expect([...events].filter(s => others.has(s))).toEqual([])
+  })
+})
+
+describe('applyMorningEvent — 아침 전이와 이벤트를 잇는 **하나뿐인 이음새**', () => {
+  // 화면(page.tsx)이 아침 전이 직후 부르는 자리다. 선택 공급자를 인자로 받는 이유는
+  // 계획 Task 5가 **바로 여기**에 LLM 선택을 끼우기 때문이다 — 배선이 화면 안에 흩어져 있으면
+  // 그 자리가 [다음 날]·[다음 주] 두 곳이 되고, 한 곳만 고치면 요일에 따라 스토리텔러가 꺼진다.
+  it('공급자가 고른 이벤트를 그대로 붙인다 — 판정은 코어(applyEvent)가 한다', () => {
+    const w = richWorld()
+    expect(applyMorningEvent(w, () => 'EPIDEMIC').event).toEqual({ kind: 'EPIDEMIC' })
+  })
+
+  it('공급자가 null이면 **세계가 그대로**다 — 조용한 하루는 손대지 않는다', () => {
+    const w = richWorld()
+    expect(applyMorningEvent(w, () => null)).toBe(w)
+  })
+
+  it('기본 공급자는 폴백 디렉터다 — 아무것도 주입하지 않아도(무키 배포) 이야기가 굴러간다', () => {
+    for (let week = 2; week <= 6; week++) {
+      const w: SimWorld = { ...richWorld(), week, minute: 0 }
+      const expected = fallbackDirectorChoice(w)
+      expect(applyMorningEvent(w).event?.kind ?? null).toBe(expected)
+    }
+  })
+
+  it('전제를 어긴 선택은 **던진다** — 배선 버그를 조용히 삼키지 않는다(applyEvent의 가드 계승)', () => {
+    const noWard: SimWorld = { ...createWorld(5), week: 2 }
+    expect(() => applyMorningEvent(noWard, () => 'MASS_CASUALTY')).toThrow()
   })
 })

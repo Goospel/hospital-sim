@@ -7,11 +7,33 @@
 //
 // ⚠️ 상대 경로 임포트 — 이 파일은 vitest(별칭 미설정)로도 돌기 때문에 `@/`를 쓸 수 없다.
 import { FATIGUE_RED, FATIGUE_SLOW_FROM, RESIGN_SATURATED_DAYS } from '../game/doctor'
+import { formatManwon as absManwon } from '../game/labels'
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway, type TurnAwayReason } from '../sim/emergency'
+import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam } from '../sim/needs'
+import { TRAITS, type TraitKey } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
 import type { RoomType } from '../sim/world'
+
+/**
+ * 금액 한 곳 — **|금액| ≥ 1억이면 「N.N억」, 미만이면 「N만원」**(계획 §0-8).
+ *
+ * 접는 **경계와 자릿수는 `game/labels.formatManwon`이 소유**하고 이 함수는 손대지 않는다.
+ * 여기서 다시 나누면 옛 게임과 이 층의 단위가 갈리고, 갈려도 화면엔 한쪽만 보인다(이 저장소가
+ * 세 번 경고한 이중 기재). 이 함수가 더하는 것은 **음수 부호**뿐이다: 저쪽은 절대값을 찍으므로
+ * (`Math.abs`) 금고가 −1.2억인 판이 화면에서 +1.2억으로 보인다 — 그 판이 이 게임의 절반이다.
+ *
+ * `formatSignedManwon`(game/labels)과의 분담: **부호가 정보인 자리**(순이익·증감)는 여전히
+ * 그쪽이다(0에도 +를 붙여 "적자 아님"을 말한다). 이 함수는 **잔액·비용처럼 부호가 우연인 자리**용이라
+ * 양수에 +를 붙이지 않는다 — HUD 금고에 "+5.0억"이 뜨면 그게 증감으로 읽힌다.
+ *
+ * ⚠️ 억은 소수 한 자리 **반올림**이다(152,340만원 = 15.234억 → 「15.2억」). 표시용이라 억 단위
+ * 금액은 합계와 최대 500만원까지 어긋나 보일 수 있다 — 정산은 언제나 원본 숫자로 한다.
+ */
+export function formatManwon(manwon: number): string {
+  return `${manwon < 0 ? '−' : ''}${absManwon(manwon)}`
+}
 
 export const ROOM_LABEL: Record<RoomType, string> = {
   EXAM: '진료실',
@@ -194,8 +216,14 @@ export function saturationText(p: Pawn): string | null {
   return days >= 1 ? `포화 ${days}/${RESIGN_SATURATED_DAYS}일` : null
 }
 
+/** 결산 화면의 사직 통지 한 줄 — 문장은 `narrative`가, 과 이름은 카탈로그가 준다. */
+export interface ResigningNotice extends ResignationLetter {
+  /** 폰 id — 같은 과·같은 이름이 둘이어도 줄이 구별된다(index key와 달리 명단이 흔들려도 안전). */
+  key: string
+}
+
 /**
- * 이번 주말에 떠나는 사람들의 **과 이름** — 결산 화면의 사직 통지 줄.
+ * 이번 주말에 떠나는 사람들의 **통지와 편지** — 결산 화면의 사직 줄.
  *
  * ⚠️ `doctorDeptOf`를 쓰지 않는다: 그 함수는 과 없는 폰에 **던지고**, 그 예외가 오버레이 렌더
  * 중에 나면 결산 화면이 통째로 죽어 플레이어는 사직 통지가 아니라 흰 화면을 본다. 한 줄을
@@ -203,9 +231,29 @@ export function saturationText(p: Pawn): string | null {
  *
  * 같은 과가 둘이면 **두 줄**이다 — 떠나는 것은 과가 아니라 사람이라, 접으면 몇 명이 나갔는지가
  * 사라진다. 순서는 명단 그대로(코어의 폰 배열 순서)라 화면이 흔들리지 않는다.
+ *
+ * 이름이 없는 폰(손세계·옛 세계)에도 줄은 선다 — `undefined`가 문장에 새는 것이 화면에서는
+ * 크래시보다 나쁘다(버그로 안 읽히고 그냥 이상한 글자로 남는다).
  */
-export function resigningDeptLabels(leaving: readonly Pawn[]): string[] {
-  return leaving.filter(p => !!p.dept).map(p => simDept(p.dept!).label)
+export function resigningNotices(leaving: readonly Pawn[]): ResigningNotice[] {
+  return leaving
+    .filter(p => !!p.dept)
+    .map(p => ({
+      key: p.id,
+      ...resignationLetter({
+        name: p.name ?? '이름 미상',
+        deptLabel: simDept(p.dept!).label,
+        saturatedDays: p.saturatedDays ?? 0,
+        traits: p.traits,
+      }),
+    }))
+}
+
+/** 인사 패널의 특성 배지 — 라벨은 칸에, 사연은 툴팁에. 카탈로그(`traits.TRAITS`)가 단일 출처다.
+ *  ⚠️ **수치 효과가 없다**(traits.ts 머리말) — 이 배지는 사람을 부르는 이름표이지 능력치가 아니다.
+ *  특성이 없는 폰은 빈 배열이라 패널이 죽지 않는다. */
+export function traitBadges(p: Pawn): Array<{ key: TraitKey; label: string; story: string }> {
+  return (p.traits ?? []).map(key => ({ key, label: TRAITS[key].label, story: TRAITS[key].story }))
 }
 
 /** 지금 누군가를 보고 있는 의사들 — 판정의 출처는 **환자의 `doctorId`**다(외래·응급·욕구가 쓰는 그 집합).

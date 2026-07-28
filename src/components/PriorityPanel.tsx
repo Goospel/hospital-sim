@@ -4,7 +4,7 @@ import { simDept } from "@/sim/dept";
 import { priorityOf, type Pawn, type Priority, type PriorityKind } from "@/sim/pawn";
 import {
   busyDoctorIds, doctorActivityMark, fatigueTone, FATIGUE_COLOR, nextPriority, noRestSpotIdle,
-  PRIORITY_LABEL, saturationText,
+  PRIORITY_LABEL, saturationText, traitBadges,
 } from "./simHud";
 import { FATIGUE_MAX } from "@/game/doctor";
 
@@ -72,13 +72,16 @@ export default function PriorityPanel({
               const leaving = resigningIds.has(p.id);
               const idle = noRestSpotIdle(p, busy);
               const fatigue = p.fatigue ?? 0;
+              const traits = traitBadges(p);
               return (
                 <li key={p.id} className="flex flex-col gap-2 py-3">
-                  {/* ① 누구인가 — 과와 사번. 사번을 쓰는 건 같은 과 의사가 둘일 때 줄이 구별되어야
-                      우선순위를 누가 받았는지 알 수 있기 때문이다(사람에게 이름을 주지는 않는다 —
-                      캐릭터 디자인 §익명). */}
+                  {/* ① 누구인가 — 과와 **이름**, 그리고 사번. PR D에서 의사는 익명을 벗는다:
+                      사직 편지가 "내과 1명"이 아니라 사람 하나의 일이 되려면 그 이름이 주중에도
+                      화면에 있어야 한다. 사번은 남긴다 — 이름은 유일하지만(채용 서수 파생) 손세계
+                      폰에는 없을 수 있고, 그때 줄을 구별할 것이 사번뿐이다. */}
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm text-on-desk">{p.dept ? simDept(p.dept).label : "과 없음"}</span>
+                    {p.name && <span className="text-sm font-medium text-on-desk">{p.name}</span>}
                     <span className="font-mono text-[10px] tabular-nums text-on-desk-muted">{p.id}</span>
                     {mark && (
                       <span className="ml-auto font-mono text-[11px] text-on-desk-muted" title={mark.label}>
@@ -86,6 +89,23 @@ export default function PriorityPanel({
                       </span>
                     )}
                   </div>
+
+                  {/* 특성 — 라벨만 놓고 **사연은 툴팁**이다. 두 줄을 다 펴면 의사 하나가 패널
+                      한 화면을 먹어 정작 손잡이(세 칸)가 스크롤 밖으로 밀린다. ⚠️ 수치 효과는
+                      없다(traits.ts 머리말) — 이 배지는 능력치가 아니라 이름표다. */}
+                  {traits.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {traits.map((t) => (
+                        <span
+                          key={t.key}
+                          title={t.story}
+                          className="border border-frame px-1.5 py-0.5 text-[10px] text-on-desk-muted"
+                        >
+                          {t.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   {/* ② 지금 이 사람의 상태 — 피로 막대(TileMap 아바타와 **같은 톤 함수**)와 배지들.
                       색이 아니라 길이·글자가 판정을 진다(색 단독 신호 금지 — 관통 규칙). */}

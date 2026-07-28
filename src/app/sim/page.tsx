@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TileMap, { type BuildPreview } from "@/components/TileMap";
 import DayEndOverlay from "@/components/DayEndOverlay";
+import EventCard from "@/components/EventCard";
 import HirePanel from "@/components/HirePanel";
 import PriorityPanel from "@/components/PriorityPanel";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
-import { ROOM_LABEL, resigningDeptLabels, turnAwayBatchText } from "@/components/simHud";
+import { ROOM_LABEL, formatManwon, resigningNotices, turnAwayBatchText } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, type SimSpeed } from "@/components/useSimClock";
 import { MS_PER_GAME_MIN } from "@/game/hospitalMap";
 import { formatClockFromOpen } from "@/game/daysim";
@@ -16,6 +17,8 @@ import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import { hireDoctor, setDoctorPriority, type HireResult, type Priority, type PriorityKind } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
 import { startNextDay } from "@/sim/day";
+import { applyMorningEvent } from "@/sim/director";
+import { epilogueText, eventNarration } from "@/sim/narrative";
 import { resigningSimDoctors, settleWeek, startNextWeek, weekSummary } from "@/sim/week";
 
 /**
@@ -90,6 +93,11 @@ export default function SimPage() {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [hireOpen, setHireOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
+  /* 이미 읽은 이벤트 카드 — **닫힘을 상태로 두지 않고 "읽은 것"을 기억한다.** 카드가 뜨는
+     조건(`world.event`)은 세계가 정하므로, 열림 플래그를 따로 두면 아침 전이가 그것을 켜 줘야
+     하고 그 자리는 setState 업데이터 안이다(StrictMode 이중 호출 · 상태 두 개가 어긋날 자리).
+     읽은 이벤트의 키만 기억하면 카드 표시는 **순수 파생**이 되어 효과도 플래그도 필요 없다. */
+  const [seenEvent, setSeenEvent] = useState<string | null>(null);
   /* 토스트에 key를 함께 두는 이유: 같은 문구가 잇달아 뜰 수 있다(순환기 없는 병원의 STEMI
      회차는 늘 같은 말이다). 문자열만 상태로 두면 두 번째부터 값이 안 바뀌어 React가 렌더를
      건너뛰고, 그러면 **첫 토스트의 타이머**가 그대로 흘러 두 번째 알림이 곧바로 사라진다. */
@@ -105,7 +113,12 @@ export default function SimPage() {
     인사 패널도 같은 자리에 합류한다: 우선순위를 고르는 동안 세계가 흐르면 표에서 읽은 피로와
     누른 결과가 어긋나고, 무엇보다 **떠나는 사람을 보면서 손을 쓸 시간**이 없어진다.
   */
-  const paused = drag !== null || hireOpen || priorityOpen;
+  /* 오늘의 이벤트 카드 — 세계에 이벤트가 붙어 있고 아직 안 읽었으면 뜬다. 키에 (주,일)을 넣는
+     이유는 같은 종류가 이틀 연속 붙을 수 있어서다(그때도 새 속보다). */
+  const eventKey = world.event ? `${world.week}-${world.day}-${world.event.kind}` : null;
+  const eventOpen = eventKey !== null && seenEvent !== eventKey;
+
+  const paused = drag !== null || hireOpen || priorityOpen || eventOpen;
   const running: SimSpeed = effectiveSpeed(world.phase, paused ? 0 : speed);
   useSimClock(running, setWorld);
 
@@ -220,6 +233,19 @@ export default function SimPage() {
   const resigning = resigningSimDoctors(world);
   const resigningIds = new Set(resigning.map((p) => p.id));
 
+  /* 에필로그 — 판이 끝났을 때만 만든다. 문장은 `narrative.epilogueText`가 소유하고 여기선
+     지표만 모은다: 금액 포맷은 화면 층의 단일 함수(formatManwon)를 지나므로 HUD·결산과 같은
+     단위가 보장된다(계획 §0-8). ⚠️ 이탈 수는 **이 주치**다 — 세계가 주마다 days를 비워
+     판 누적 축이 없다(narrative.EpilogueStats 주석). */
+  const epilogue = world.ending
+    ? epilogueText(world.ending, {
+        week: world.week,
+        leftCount: weekSummary(world).leftCount,
+        resignedNames: resigning.map((p) => p.name).filter((n): n is string => !!n),
+        treasuryText: formatManwon(world.treasuryManwon),
+      })
+    : undefined;
+
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 
   return (
@@ -233,7 +259,9 @@ export default function SimPage() {
         </span>
         <span>
           <span className="text-on-desk-muted">금고 </span>
-          {world.treasuryManwon.toLocaleString()}만원
+          {/* 접는 정책(1억 이상은 「N.N억」)은 화면 층 한 함수가 소유한다 — 여기서 직접 찍으면
+              개원 자본 5억이 "50,000만원"으로 뜨고 결산지와 단위가 갈린다(계획 §0-8). */}
+          {formatManwon(world.treasuryManwon)}
         </span>
         <span>
           <span className="text-on-desk-muted">진료 </span>
@@ -255,7 +283,13 @@ export default function SimPage() {
         <div className="ml-auto flex items-center gap-1">
           {paused && (
             <span className="mr-2 text-xs text-on-desk-muted">
-              {drag ? "건설 중 — 일시정지" : hireOpen ? "채용 중 — 일시정지" : "인사 중 — 일시정지"}
+              {drag
+                ? "건설 중 — 일시정지"
+                : hireOpen
+                  ? "채용 중 — 일시정지"
+                  : priorityOpen
+                    ? "인사 중 — 일시정지"
+                    : "속보 — 일시정지"}
             </span>
           )}
           <button
@@ -414,13 +448,29 @@ export default function SimPage() {
         />
       )}
 
+      {/* 오늘의 속보 — 아침에 붙은 이벤트를 한 장으로 알린다. 떠 있는 동안 시계는 위 `paused`
+          파생이 세운다(건설·채용·인사와 같은 기계). 연출문은 폴백 카탈로그에서 온다 —
+          계획 Task 5의 LLM 텍스트가 도착해 있으면 그것이 이 자리를 대신한다(판정·수치 불변). */}
+      {eventOpen && world.event && (
+        <EventCard
+          kind={world.event.kind}
+          narration={eventNarration(world.event.kind, world.week, world.day)}
+          week={world.week}
+          day={world.day}
+          onClose={() => setSeenEvent(eventKey)}
+        />
+      )}
+
       {world.phase === "DAY_END" && (
         <DayEndOverlay
           week={world.week}
           day={world.day}
           days={world.days}
           turnedAway={turnedAway}
-          onNextDay={() => setWorld((w) => (w.phase === "DAY_END" ? startNextDay(w) : w))}
+          // 아침 전이 **직후**에 오늘의 이벤트가 붙는다 — 합성은 `applyMorningEvent` 한 곳뿐이다
+          // (배선이 [다음 날]·[다음 주]로 흩어지면 한 곳만 고쳐 요일에 따라 스토리텔러가 꺼진다).
+          // 순수 함수라 StrictMode의 이중 호출에도 같은 세계가 나온다.
+          onNextDay={() => setWorld((w) => (w.phase === "DAY_END" ? applyMorningEvent(startNextDay(w)) : w))}
         />
       )}
 
@@ -431,12 +481,15 @@ export default function SimPage() {
           week={world.week}
           days={world.days}
           summary={weekSummary(world)}
-          // 명단도 과 이름 파생도 여기서 끝낸다 — 오버레이는 세계를 통째로 받지 않는다(summary와 같은 관례).
-          leavingDepts={resigningDeptLabels(resigning)}
+          // 명단도 문장 파생도 여기서 끝낸다 — 오버레이는 세계를 통째로 받지 않는다(summary와 같은 관례).
+          leaving={resigningNotices(resigning)}
           treasuryManwon={world.treasuryManwon}
           insolvencyStreak={world.insolvencyStreak}
           closed={world.phase === "CLOSED"}
-          onNextWeek={() => setWorld((w) => (w.phase === "WEEK_END" ? startNextWeek(w) : w))}
+          // 왜 끝났는가는 코어가 이미 판정해 두었다 — 화면이 streak으로 되짚지 않는다.
+          ending={world.ending}
+          epilogue={epilogue}
+          onNextWeek={() => setWorld((w) => (w.phase === "WEEK_END" ? applyMorningEvent(startNextWeek(w)) : w))}
         />
       )}
     </main>

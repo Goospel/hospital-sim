@@ -9,7 +9,7 @@
 // 이 파일은 leaf가 아니고, 그래서 이벤트 효과(events.ts)와 반드시 다른 파일이라야 한다(T-093).
 import { seededUnit } from '../game/daysim'
 import { minuteStreamSeed } from './patientFlow'
-import { EVENT_KINDS, isEligibleEvent, type SimEventKind } from './events'
+import { EVENT_KINDS, applyEvent, isEligibleEvent, type SimEventKind } from './events'
 import type { SimWorld } from './world'
 
 /** 이벤트 **발생** 스트림 전용 salt(43) — 등재처는 `daysim.callSeed` 주석이고 **거기가 레지스트리의
@@ -104,4 +104,24 @@ export function fallbackDirectorChoice(w: SimWorld): SimEventKind | null {
   if (seededUnit(eventRollSeed(w)) >= EVENT_PROB_PER_DAY) return null
   const kind = pickEventKind(seededUnit(eventKindSeed(w)))
   return isEligibleEvent(w, kind) ? kind : null
+}
+
+/** 오늘의 이벤트를 고르는 사람 — 폴백 디렉터이거나(기본) 계획 Task 5의 LLM 선택이다.
+ *  `null`은 "조용한 하루"이고, 반환값의 치역은 `eligibleEvents(w)`여야 한다(어기면 applyEvent가 던진다). */
+export type DirectorChoice = (w: SimWorld) => SimEventKind | null
+
+/**
+ * 아침 전이 직후 세계에 오늘의 이벤트를 붙인다 — **화면이 부르는 하나뿐인 이음새**다.
+ *
+ * `applyEvent(startNextDay(w), choice)` 합성을 화면에 흩어 두면 그 자리가 [다음 날]·[다음 주]
+ * 두 곳이 되고, 한 곳만 고치는 순간 요일에 따라 스토리텔러가 꺼진다(무성 실패). 계획 Task 5는
+ * 이 함수의 `choose`만 갈아 끼워 LLM 선택을 넣는다 — 배선을 다시 만들지 않는다.
+ *
+ * ⚠️ **minute 0 세계에서만** 부른다(기본 공급자가 그 계약을 throw로 세운다 —
+ * `fallbackDirectorChoice`). 순수 함수라 StrictMode의 이중 호출에도 같은 세계가 나온다.
+ * 선택이 없으면 **입력을 그대로** 돌려준다(새 객체를 만들지 않는다 — 화면의 참조 비교가 산다).
+ */
+export function applyMorningEvent(w: SimWorld, choose: DirectorChoice = fallbackDirectorChoice): SimWorld {
+  const kind = choose(w)
+  return kind ? applyEvent(w, kind) : w
 }
