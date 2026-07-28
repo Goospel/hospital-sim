@@ -5,7 +5,7 @@ tags:
 
 # 림월드형 2주차 PR D — AI 스토리텔러 + 판 종결 + 랜딩 스왑·제출물 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 마지막 PR(사수 대상). 결정론 이벤트 엔진 + LLM 디렉터(실호출 · 무키/타임아웃 폴백 강등)로 게임에 스토리텔러를 얹고, 판 종결(인력 종결 + 캠페인 상한)을 넣어 "끝"을 만들고, 랜딩을 새 게임으로 스왑하고, 제출 문서(③④)를 새 게임 기준으로 재작성한다.
 
@@ -180,13 +180,13 @@ autoFurniture가 침대를 반드시 놓으므로 실질 등가다(Task 3 리뷰
 
 **Files:** Modify `src/sim/world.ts`, `src/sim/week.ts` · Test `src/sim/week.test.ts`(추가)
 
-- [ ] **Step 1: 실패하는 테스트** — ⓐ 좀비 반증: 의사 0·풀 전과 0·금고 양수 세계 → `settleWeek` →
+- [x] **Step 1: 실패하는 테스트** — ⓐ 좀비 반증: 의사 0·풀 전과 0·금고 양수 세계 → `settleWeek` →
   `phase === 'CLOSED'` && `ending === 'NO_PEOPLE'` ⓑ 마지막 의사가 이번 주말 사직 예정 + 풀 0 →
   같은 결산에서 `NO_PEOPLE`(선반영) ⓒ 12주차 흑자 결산 → `CAMPAIGN_END` ⓓ 12주차이면서
   insolvencyStreak 2 → `INSOLVENCY`(우선순위) ⓔ 의사 0인데 풀이 남았으면 엔딩 없음(재기 가능) —
   기존 WEEK_END 유지 ⓕ 11주차 정상 결산은 엔딩 없음(경계 — T-085: 기준을 결산 **전** 세계에서 캡처)
-- [ ] **Step 2: Red 확인** — `npx vitest run src/sim/week.test.ts`
-- [ ] **Step 3: 구현**
+- [x] **Step 2: Red 확인** — `npx vitest run src/sim/week.test.ts`
+- [x] **Step 3: 구현**
 
 ```ts
 // world.ts
@@ -212,26 +212,26 @@ function endingOf(w: SimWorld, insolvencyStreak: number): EndingKind | undefined
 //            phase: ending ? 'CLOSED' : 'WEEK_END', ...(ending ? { ending } : {}) }
 ```
 
-- [ ] **Step 4: Green + 기존 회귀** — `npx vitest run src/sim/` (기존 INSOLVENCY 테스트가
+- [x] **Step 4: Green + 기존 회귀** — `npx vitest run src/sim/` (기존 INSOLVENCY 테스트가
   `ending === 'INSOLVENCY'`도 얻는지 확인·보강)
-- [ ] **Step 5: 돌연변이 실측(단독 적용·죽은 테스트 특정 — T-090)** — ① `doctors - leaving` → `doctors`
+- [x] **Step 5: 돌연변이 실측(단독 적용·죽은 테스트 특정 — T-090)** — ① `doctors - leaving` → `doctors`
   (선반영 제거: ⓑ 사살 확인) ② `poolLeft === 0` 조건 삭제(ⓔ 사살) ③ `w.week >= CAMPAIGN_WEEKS` →
   `>`(ⓒ 사살) ④ 우선순위 뒤집기(ⓓ 사살)
-- [ ] **Step 6: 커밋** — `.commit-msg-tmp` + `git commit -F`(T-026), 트레일러 연속(빈 줄 금지)
+- [x] **Step 6: 커밋** — `.commit-msg-tmp` + `git commit -F`(T-026), 트레일러 연속(빈 줄 금지)
 
 ## Task 2: 밸런스 조정 — EMERGENCY_INTENSITY 1.7 · STARVED_SLOW 1.3
 
 **Files:** Modify `src/sim/emergency.ts`, `src/sim/needs.ts` + 값을 잠근 기존 테스트 갱신
 
-- [ ] **Step 1: 값을 잠근 테스트 목록화** — `grep -rn "2\.0\|1\.15\|180\|23" src/sim/*.test.ts`류로
+- [x] **Step 1: 값을 잠근 테스트 목록화** — `grep -rn "2\.0\|1\.15\|180\|23" src/sim/*.test.ts`류로
   INTENSITY·STARVED_SLOW 의존 단언을 전수 확인(눈으로 — 숫자 grep은 오탐 많음)
-- [ ] **Step 2: 상수 변경 + 주석 갱신** — 각 상수 주석에 실측 근거(0-6 표)를 옮겨 적는다.
+- [x] **Step 2: 상수 변경 + 주석 갱신** — 각 상수 주석에 실측 근거(0-6 표)를 옮겨 적는다.
   특히 emergency.ts 108행 근처 주석의 "180 > 상한 160" 산수를 1.7 기준(153 < 160, 2건 306 > 160)으로
   다시 쓴다 — **커밋 메시지에는 실측 전 인과 주장 금지**(T-092)
-- [ ] **Step 3: 테스트 갱신 → green** — 기대값을 새 상수 파생으로 고친다(하드코딩 말고 상수 임포트 곱)
-- [ ] **Step 4: 프로브 실측(스크래치 스크립트 — 커밋 안 함)** — 0-6의 게이트 3종: I-B1 4시드 green ·
+- [x] **Step 3: 테스트 갱신 → green** — 기대값을 새 상수 파생으로 고친다(하드코딩 말고 상수 임포트 곱)
+- [x] **Step 4: 프로브 실측(스크래치 스크립트 — 커밋 안 함)** — 0-6의 게이트 3종: I-B1 4시드 green ·
   응급 1건 날 포화 0 / 2건 날 포화 1 · 식당 유무 대조. 결과 수치를 커밋 메시지에 남긴다
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ## Task 3: 특성·이름 + 이벤트 엔진 코어 (events.ts · director.ts · 훅)
 
@@ -239,7 +239,7 @@ function endingOf(w: SimWorld, insolvencyStreak: number): EndingKind | undefined
 Modify `src/sim/world.ts`, `src/sim/day.ts`, `src/sim/pawn.ts`, `src/sim/patientFlow.ts`, `src/sim/emergency.ts` ·
 Test `src/sim/events.test.ts`(신설)
 
-- [ ] **Step 1: 실패하는 테스트** —
+- [x] **Step 1: 실패하는 테스트** —
   ⓐ `applyEvent` 순수·전제 위반 throw(WARD 없는 세계에 MASS_CASUALTY → throw)
   ⓑ 효과 실측: MASS_CASUALTY 날의 응급 도착 수가 평일의 약 3배(같은 시드 창 비교 — 배율이
   `emergencyArrivalAt` 판정식에 실제로 곱해지는지) / EPIDEMIC 날 내과 비중 급증 / NEARBY 1.4배
@@ -248,8 +248,8 @@ Test `src/sim/events.test.ts`(신설)
   ⓔ 불발: 전제 미달 종류가 뽑히면 null(재추첨 없음)
   ⓕ freshMorning이 event를 지운다 ⓖ turnAway가 turnedAwayTotal을 올리고 주 넘김에도 유지
   ⓗ spawnDoctor가 name·traits를 결정론 부여(같은 nextId → 같은 값·시드 미소비)
-- [ ] **Step 2: Red 확인**
-- [ ] **Step 3: 구현** — 핵심 계약:
+- [x] **Step 2: Red 확인**
+- [x] **Step 3: 구현** — 핵심 계약:
 
 ```ts
 // events.ts (leaf — world·dept 타입만 임포트)
@@ -276,12 +276,12 @@ export function fallbackDirectorChoice(w: SimWorld): SimEventKind | null // salt
   - `day.freshMorning`: `delete next.event` 대신 세계 필드라 `const { event: _e, ...rest }` 형태로 제거.
   - `pawn.spawnDoctor`: `name: DOCTOR_NAMES[w.nextId % DOCTOR_NAMES.length]`,
     `traits: pickTraits(w.nextId)`(traits.ts — 결정론 인덱싱, 두 특성이 항상 서로 다르게).
-- [ ] **Step 4: Green + 전체 회귀** — `npx vitest run` (도착 스트림을 건드렸다 — 기존 도착·응급
+- [x] **Step 4: Green + 전체 회귀** — `npx vitest run` (도착 스트림을 건드렸다 — 기존 도착·응급
   결정론 테스트가 "이벤트 없는 날 배율 1"로 전부 무변경 green이어야 한다)
-- [ ] **Step 5: 돌연변이 실측** — ① 배율 훅 제거(ⓑ 사살) ② 불발을 재추첨으로(ⓔ 사살)
+- [x] **Step 5: 돌연변이 실측** — ① 배율 훅 제거(ⓑ 사살) ② 불발을 재추첨으로(ⓔ 사살)
   ③ freshMorning 클리어 제거(ⓕ 사살) ④ salt 43→29 재사용(결정론 테스트 or 상관 테스트 사살 —
   patientFlow의 salt 비상관 계약 참조)
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ## Task 4: 스토리텔러 표면 — 폴백 문장·이벤트 카드·편지·에필로그·formatManwon
 
@@ -289,20 +289,20 @@ export function fallbackDirectorChoice(w: SimWorld): SimEventKind | null // salt
 Modify `src/components/simHud.ts`, `PriorityPanel.tsx`, `WeekEndOverlay.tsx`, `src/app/sim/page.tsx` ·
 Test `src/components/simHud.test.ts`(추가), `src/sim/narrative.test.ts`(신설)
 
-- [ ] **Step 1: 실패하는 테스트** — ⓐ narrative: 이벤트 연출문 결정론 선택·전 종류 폴백 존재·
+- [x] **Step 1: 실패하는 테스트** — ⓐ narrative: 이벤트 연출문 결정론 선택·전 종류 폴백 존재·
   보간값 뒤 조사 없음(T-094 — 기존 simHud 조사 테스트 형태 계승) ⓑ 사직 편지에 이름·과·포화 일수
   포함 ⓒ 에필로그 3종이 엔딩별로 다른 문장 + 누적 지표 포함 ⓓ `formatManwon`: 9,999만원 → 「9,999만원」·
   10,000 → 「1.0억」· 음수 · 152,340 → 「15.2억」(반올림 정책 명시)
-- [ ] **Step 2: Red 확인**
-- [ ] **Step 3: 구현** — UI 배선: ⓐ 아침 전이 핸들러가 `applyEvent(...(전이)..., choice)` 합성 +
+- [x] **Step 2: Red 확인**
+- [x] **Step 3: 구현** — UI 배선: ⓐ 아침 전이 핸들러가 `applyEvent(...(전이)..., choice)` 합성 +
   새 이벤트가 붙으면 EventCard 오버레이(열려 있는 동안 `paused` 합류 — 건설·채용과 같은 파생) ·
   연출문은 LLM 도착분 우선, 없으면 `narrative` 폴백 ⓑ WeekEndOverlay: 사직 줄에 편지 표시 ·
   CLOSED면 `world.ending` 별 에필로그 ⓒ PriorityPanel: 이름·특성 라벨 표시 ⓓ HUD·오버레이 금액을
   `formatManwon` 하나로 통일
-- [ ] **Step 4: Green + tsc + eslint**
-- [ ] **Step 5: 브라우저 실측(dev)** — 이벤트 카드 발동·일시정지·닫기 재개, 결산 편지, 에필로그
+- [x] **Step 4: Green + tsc + eslint**
+- [x] **Step 5: 브라우저 실측(dev)** — 이벤트 카드 발동·일시정지·닫기 재개, 결산 편지, 에필로그
   3종(콘솔 조작으로 세계 강제 세팅 금지 — 시드 골라 자연 발동, 안 되면 테스트 전용 시드 탐색 스크립트)
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ## Task 5: LLM 프록시 + 실호출 레이어
 
@@ -310,11 +310,11 @@ Test `src/components/simHud.test.ts`(추가), `src/sim/narrative.test.ts`(신설
 Modify `next.config.ts`, `.env.example`, README(env 절), `src/components/SimGame.tsx`(배선 — Task 6 전이면 sim/page.tsx) ·
 Test `src/lib/storyteller.test.ts`(신설 — fetch 모킹)
 
-- [ ] **Step 1: 실패하는 테스트(클라이언트 계약)** — ⓐ 타임아웃/네트워크 오류/HTTP 500 → null(폴백 강등)
+- [x] **Step 1: 실패하는 테스트(클라이언트 계약)** — ⓐ 타임아웃/네트워크 오류/HTTP 500 → null(폴백 강등)
   ⓑ 응답 event가 eligible 밖 → null ⓒ 호출 상한: 10회 이후 fetch 자체를 안 부른다
   ⓓ 성공 경로: {event, narration} 파싱 ⓔ 무키 환경(NEXT_PUBLIC_STORYTELLER_ORIGIN 미설정 + 라우트 404) → 강등
-- [ ] **Step 2: Red 확인**
-- [ ] **Step 3: 라우트 구현** — 핵심 형태(claude-api 스킬 확인 반영 — 함수명·파라미터는 이 코드가 기준):
+- [x] **Step 2: Red 확인**
+- [x] **Step 3: 라우트 구현** — 핵심 형태(claude-api 스킬 확인 반영 — 함수명·파라미터는 이 코드가 기준):
 
 ```ts
 // src/app/api/storyteller/route.ts — Vercel 전용(Pages 빌드는 pageExtensions로 제외)
@@ -361,43 +361,43 @@ export async function POST(req: NextRequest) {
   텍스트만** 갱신할 수 있다(판정·수치 불변).
   - `next.config.ts`: `pageExtensions` 스위치(0-5) — **적용 전 `src/app` 아래 `.ts` page/layout/route
     전수 확인**(route.ts 하나뿐이어야 한다).
-- [ ] **Step 4: Green + 양 빌드** — `npm run build`(Vercel 형태 — 라우트 포함) ·
+- [x] **Step 4: Green + 양 빌드** — `npm run build`(Vercel 형태 — 라우트 포함) ·
   PowerShell에서 PAGES_BASE_PATH 빌드(라우트 제외 export 성공) — T-059
-- [ ] **Step 5: 실호출 실측(로컬 dev · 키는 .env.local)** — director 1회·letter 1회·epilogue 1회 실제
+- [x] **Step 5: 실호출 실측(로컬 dev · 키는 .env.local)** — director 1회·letter 1회·epilogue 1회 실제
   왕복, 지연 실측 기록(④ 문서 재료). 무키로 지우고 폴백 강등 재확인
-- [ ] **Step 6: 커밋** (키·응답 원문은 커밋 금지 — 로그 파일 .gitignore 확인)
+- [x] **Step 6: 커밋** (키·응답 원문은 커밋 금지 — 로그 파일 .gitignore 확인)
 
 ## Task 6: 랜딩 스왑
 
 **Files:** Create `src/components/SimGame.tsx`, `src/app/classic/page.tsx` ·
 Modify `src/app/page.tsx`, `src/app/sim/page.tsx`, `src/app/layout.tsx`(metadata), README
 
-- [ ] **Step 1**: sim/page.tsx 본문을 `SimGame.tsx`로 추출(로직 무변경 — 파일 이동 수준).
+- [x] **Step 1**: sim/page.tsx 본문을 `SimGame.tsx`로 추출(로직 무변경 — 파일 이동 수준).
   `/`·`/sim` 둘 다 `<SimGame />` 렌더. 옛 게임 page.tsx 본문 → `/classic`으로 이동(임포트 경로만 수정)
-- [ ] **Step 2**: metadata title·설명을 새 게임 기준으로. README 진입 경로·스크린샷 서술 갱신
-- [ ] **Step 3**: 게이트 — tsc·eslint·vitest 전체·양 빌드. 브라우저: `/` 새 게임 완주 여정 1회 ·
+- [x] **Step 2**: metadata title·설명을 새 게임 기준으로. README 진입 경로·스크린샷 서술 갱신
+- [x] **Step 3**: 게이트 — tsc·eslint·vitest 전체·양 빌드. 브라우저: `/` 새 게임 완주 여정 1회 ·
   `/classic` 옛 게임 기동 확인 · `/sim` 동일 렌더
-- [ ] **Step 4**: 커밋
+- [x] **Step 4**: 커밋
 
 ## Task 7: 제출 문서 재작성 — ③ game-intro · ④ ai-usage-doc
 
 **Files:** Modify `docs/submission/game-intro.md`, `docs/submission/ai-usage-doc.md`,
 `docs/submission/requirements.md`(체크리스트), `docs/concept/game-concept.md`(전환 배너 정합) · `npm run pdf`
 
-- [ ] **Step 1**: requirements.md 재독(제출물 작업 시작 전 필독 — CLAUDE.md 계약) + `npm run pdf`
+- [x] **Step 1**: requirements.md 재독(제출물 작업 시작 전 필독 — CLAUDE.md 계약) + `npm run pdf`
   콘솔 리마인더 확인
-- [ ] **Step 2**: ③ game-intro — 새 게임(타일 병원·건설·채용·우선순위·사직·스토리텔러·판 종결) 기준
+- [x] **Step 2**: ③ game-intro — 새 게임(타일 병원·건설·채용·우선순위·사직·스토리텔러·판 종결) 기준
   개요·플레이법·실행법 재작성. 진입 URL = Pages `/`(스왑 후). 스크린샷 자리는 표식만(재캡처는 사용자 몫)
-- [ ] **Step 3**: ④ ai-usage-doc — 디렉팅 B축 스파인 유지 + 물증 갱신: 2콜 경계가 스토리텔러에서
+- [x] **Step 3**: ④ ai-usage-doc — 디렉팅 B축 스파인 유지 + 물증 갱신: 2콜 경계가 스토리텔러에서
   어떻게 구현됐나(선택지 enum·전제 코드 가드·폴백 강등 = "AI를 어디까지 믿고 어디서 끊는가"),
   §6-4에 Task 5의 실호출 로그·지연 실측 기입. **집계 의무**(CLAUDE.md): `Skills-used` 트레일러
   `--grep` 집계 + `rtk gain`을 여기서 돌려 §3-1 갱신
-- [ ] **Step 4**: `npm run pdf` 재생성 · requirements.md 체크리스트 상태 갱신(③④ 손질 내용 반영)
-- [ ] **Step 5**: 커밋
+- [x] **Step 4**: `npm run pdf` 재생성 · requirements.md 체크리스트 상태 갱신(③④ 손질 내용 반영)
+- [x] **Step 5**: 커밋
 
 ## Task 8: 문서 스윕 + 최종 게이트
 
-- [ ] plan.md(PR D ✅ + 이월 갱신 — jsdom ⏸ 사유·사직 파동 ⏸·특성 수치 효과 ⏸) ·
+- [x] plan.md(PR D ✅ + 이월 갱신 — jsdom ⏸ 사유·사직 파동 ⏸·특성 수치 효과 ⏸) ·
   changeLog 항목(PR 번호 없이) · **trap 스윕**(SDD 종료 관문 — 서브에이전트가 잡은 1분+ 디버깅
   포함 T-### 신설) · troubleshooting 허브 재생성
 - [ ] 최종 브랜치 리뷰(reviewer · xhigh): 게이트 5종(vitest 전체·tsc·eslint·양 빌드·`src/game` 0줄 —
