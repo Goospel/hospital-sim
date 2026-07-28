@@ -1,15 +1,24 @@
 import { describe, it, expect } from 'vitest'
-import { minutesToTick, effectiveSpeed, type SimSpeed } from './useSimClock'
+import { minutesToTick, effectiveSpeed, SIM_MS_PER_GAME_MIN, type SimSpeed } from './useSimClock'
 import { MS_PER_GAME_MIN } from '../game/hospitalMap'
 import type { SimPhase } from '../sim/world'
 
+describe('SIM_MS_PER_GAME_MIN — 시뮬 전용 페이싱', () => {
+  it('1게임분 = 600ms이고, 클래식 판(50ms/분)과 독립이다', () => {
+    // 페이싱은 체감의 계약이다 — 값이 바뀌면 이 테스트가 "의도한 결정인가"를 묻는다.
+    // 같은 줄에서 클래식 상수도 함께 잠근다: 둘이 다시 얽히면(한쪽만 고쳐도) 여기서 깨진다.
+    expect(SIM_MS_PER_GAME_MIN).toBe(600)
+    expect(MS_PER_GAME_MIN).toBe(50)
+  })
+})
+
 describe('minutesToTick', () => {
-  it('1×: 50ms당 1분, 나머지는 이월', () => {
-    expect(minutesToTick(120, 1)).toEqual({ minutes: 2, carryMs: 20 })
+  it('1×: 600ms당 1분, 나머지는 이월', () => {
+    expect(minutesToTick(1440, 1)).toEqual({ minutes: 2, carryMs: 240 })
   })
 
   it('3×: 같은 실시간에 3배의 게임 분', () => {
-    expect(minutesToTick(100, 3)).toEqual({ minutes: 6, carryMs: 0 })
+    expect(minutesToTick(1200, 3)).toEqual({ minutes: 6, carryMs: 0 })
   })
 
   it('0×(일시정지): 항상 0분, 이월도 0', () => {
@@ -21,32 +30,33 @@ describe('minutesToTick', () => {
   })
 
   it('3×에서 나머지가 남으면 그 나머지가 이월된다', () => {
-    // 3배속 한 게임분 = 50/3 ms. 60ms면 3분(50ms) + 10ms 이월.
-    const r = minutesToTick(60, 3)
+    // 3배속 한 게임분 = 200ms. 700ms면 3분(600ms) + 100ms 이월.
+    const r = minutesToTick(700, 3)
     expect(r.minutes).toBe(3)
-    expect(r.carryMs).toBeCloseTo(10, 10)
+    expect(r.carryMs).toBeCloseTo(100, 10)
   })
 
   it('이월분은 다음 프레임에 합쳐져 잃어버린 분이 없다(누적 보존)', () => {
-    // 30ms 프레임을 5번 = 150ms = 1×에서 정확히 3분이어야 한다.
+    // 300ms 프레임을 5번 = 1500ms = 1×에서 정확히 2분 + 300ms 이월이어야 한다.
     let carry = 0
     let total = 0
     for (let i = 0; i < 5; i++) {
-      const r = minutesToTick(carry + 30, 1)
+      const r = minutesToTick(carry + 300, 1)
       total += r.minutes
       carry = r.carryMs
     }
-    expect(total).toBe(3)
-    expect(carry).toBeCloseTo(150 - 3 * MS_PER_GAME_MIN, 10)
+    expect(total).toBe(2)
+    expect(carry).toBeCloseTo(1500 - 2 * SIM_MS_PER_GAME_MIN, 10)
   })
 
   it('정확히 k분치 실시간은 정확히 k분이다 — 배속 경계에서 분이 사라지지 않게', () => {
-    // 나눗셈 순서를 뒤집으면(`ms / (MS_PER_GAME_MIN / speed)`) 50/3의 부동소수 오차 때문에
-    // 3배속 250ms가 14분, 500ms가 29분으로 떨어진다. 딱 떨어지는 입력에서도 틀리므로
-    // 배속 재생 중 시계가 조용히 뒤처진다 — 그 순서를 이 테스트가 잠근다.
+    // 나눗셈 순서를 뒤집으면(`ms / (SIM_MS_PER_GAME_MIN / speed)`) 나누기가 딱 떨어지지 않는
+    // 배속에서 부동소수 오차 때문에 경계마다 한 분씩 사라진다(50ms/분 시절 실측: 3배속 250ms가
+    // 15분이 아니라 14분). 600/3은 정수로 떨어져 지금은 안 드러나지만, 페이싱 값은 또 바뀔 수
+    // 있으므로 **곱을 먼저 하는 순서 계약**을 계속 잠가 둔다.
     for (const speed of [1, 3] as const) {
       for (let k = 1; k <= 300; k++) {
-        const r = minutesToTick((k * MS_PER_GAME_MIN) / speed, speed)
+        const r = minutesToTick((k * SIM_MS_PER_GAME_MIN) / speed, speed)
         expect(`${speed}× k=${k} → ${r.minutes}분`).toBe(`${speed}× k=${k} → ${k}분`)
         expect(r.carryMs).toBeCloseTo(0, 9)
       }

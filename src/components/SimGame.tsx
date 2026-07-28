@@ -18,8 +18,7 @@ import {
   turnAwayBatchText,
   type PauseCause,
 } from "@/components/simHud";
-import { effectiveSpeed, useSimClock, type SimSpeed } from "@/components/useSimClock";
-import { MS_PER_GAME_MIN } from "@/game/hospitalMap";
+import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
 import { createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { placeRoom, roomCostManwon, COST_PER_TILE_MANWON, MIN_ROOM_W, MIN_ROOM_H, type PlaceResult } from "@/sim/build";
@@ -98,8 +97,8 @@ function rectOf(d: Drag) {
 
 export default function SimGame() {
   const [world, setWorld] = useState<SimWorld>(initialWorld);
-  /* 첫 판은 **일시정지로 시작한다** — 하루가 1배속 30초라(MS_PER_GAME_MIN) 처음 여는 사람이
-     화면을 파악하는 동안 하루가 끝나 버린다. 개원 시점을 플레이어가 정하게 두면 방을 짓고
+  /* 첫 판은 **일시정지로 시작한다** — 하루가 1배속 약 6분이라(SIM_MS_PER_GAME_MIN) 처음 여는
+     사람이 화면을 파악하는 동안 하루가 흘러 버린다. 개원 시점을 플레이어가 정하게 두면 방을 짓고
      의사를 뽑은 뒤 1×를 누르는 것이 곧 "개원"이 된다(그 안내는 footer 상태줄이 맡는다). */
   const [speed, setSpeed] = useState<SimSpeed>(0);
   const [selected, setSelected] = useState<RoomType | null>(null);
@@ -480,7 +479,7 @@ export default function SimGame() {
         world={world}
         preview={preview}
         // 폰은 게임 1분마다 2타일을 건너뛴다 — 그 1분의 실시간 길이가 곧 전환 시간이다.
-        stepMs={running > 0 ? MS_PER_GAME_MIN / running : 0}
+        stepMs={running > 0 ? SIM_MS_PER_GAME_MIN / running : 0}
         // 열려 있으면 드래그, 아니면 **왜 안 열리는지를 말한다** — 조용히 무시하면 부지를
         // 끌어도 미리보기도 토스트도 없어 플레이어에게는 판이 죽은 것으로 보인다.
         // 방 타입 자체를 안 골랐을 때만 조용하다(그 클릭은 탐색이다 — buildBlockReason).

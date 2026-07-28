@@ -2,12 +2,23 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 // ⚠️ 상대 경로 임포트 — 이 파일은 vitest(별칭 미설정)로도 돌기 때문에 `@/`를 쓸 수 없다.
-import { MS_PER_GAME_MIN } from "../game/hospitalMap";
 import { tick } from "../sim/tick";
 import type { SimPhase, SimWorld } from "../sim/world";
 
 /** 배속 — 0은 일시정지. 시간 조작 UI가 고르는 값의 전부다(1주차). */
 export type SimSpeed = 0 | 1 | 3;
+
+/**
+ * 시뮬 판(`/sim`)의 실시간 ↔ 게임분 환율. **페이싱 튜닝은 이 한 줄이다.**
+ *
+ * 600ms/분이면 폰이 분당 2타일이므로 1배속에서 초당 약 3.3타일 — 사람이 걷는 속도로 읽힌다.
+ * 하루 600분은 1배속 약 6분, 3배속 약 2분.
+ *
+ * 클래식 판의 `MS_PER_GAME_MIN`(50)과 **일부러 분리했다** — 그쪽은 통화 재생 페이싱이자
+ * `flowStepCount`의 불변식(`MS_PER_GAME_MIN < CLOCK_TICK_MS`)이 걸린 상수라, 체감 속도를
+ * 고치려고 건드리면 관계없는 화면이 함께 망가진다.
+ */
+export const SIM_MS_PER_GAME_MIN = 600;
 
 /**
  * 실제로 흐르는 배속 — 마감·결산 국면에서는 플레이어가 고른 배속과 **무관하게** 0이다.
@@ -33,18 +44,19 @@ export function effectiveSpeed(phase: SimPhase, speed: SimSpeed): SimSpeed {
  * 아니라 "시간을 덜" 도는 게 된다. 남는 ms를 돌려주는 이유가 그것이다 — 호출부가 다음
  * 프레임 경과에 더해 주면 손실이 0이 된다.
  *
- * ⚠️ 나눗셈 순서가 계약의 일부다. `elapsedMs / (MS_PER_GAME_MIN / speed)`로 쓰면 50/3이
- * 부동소수에서 살짝 커져 **경계에서만 한 분씩 사라진다** — 3배속 250ms가 15분이 아니라 14분,
- * 500ms가 30분이 아니라 29분이 된다(실측: k=1..300 중 135개가 틀린다. 250·500처럼 딱 떨어지는
- * 입력도 틀리므로 "드문 값"이 아니다). 곱을 먼저 하는 `elapsedMs * speed / MS_PER_GAME_MIN`
- * 형태는 같은 범위에서 전부 맞는다. 아래 '정확히 k분치' 테스트가 이 순서를 잠근다.
+ * ⚠️ 나눗셈 순서가 계약의 일부다. `elapsedMs / (SIM_MS_PER_GAME_MIN / speed)`로 쓰면 환율이
+ * 배속으로 딱 나뉘지 않을 때 몫이 부동소수에서 살짝 커져 **경계에서만 한 분씩 사라진다**
+ * (50ms/분 시절 실측: 3배속 250ms가 15분이 아니라 14분, k=1..300 중 135개가 틀렸다).
+ * 지금 값 600은 3으로 정확히 떨어져 그 증상이 드러나지 않지만, 페이싱은 또 바뀔 수 있으므로
+ * 곱을 먼저 하는 `elapsedMs * speed / SIM_MS_PER_GAME_MIN` 형태를 유지한다.
+ * 아래 '정확히 k분치' 테스트가 이 순서를 잠근다.
  */
 export function minutesToTick(elapsedMs: number, speed: number): { minutes: number; carryMs: number } {
   // 일시정지는 이월도 0이다 — 멈춘 동안 쌓아 뒀다가 재개 순간에 한꺼번에 쏟으면 정지가 아니다.
   if (speed <= 0) return { minutes: 0, carryMs: 0 };
   const ms = Math.max(0, elapsedMs);
-  const minutes = Math.floor((ms * speed) / MS_PER_GAME_MIN);
-  return { minutes, carryMs: ms - (minutes * MS_PER_GAME_MIN) / speed };
+  const minutes = Math.floor((ms * speed) / SIM_MS_PER_GAME_MIN);
+  return { minutes, carryMs: ms - (minutes * SIM_MS_PER_GAME_MIN) / speed };
 }
 
 /**
