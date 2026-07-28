@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { SIM_DEPTS, simDept, HIRABLE_DEPTS, DEFAULT_EXAM_DEPT, type SimDeptKey } from './dept'
-import { createWorld, isWalkable, ENTRANCE } from './world'
+import { createWorld, isWalkable, ENTRANCE, type SimWorld } from './world'
 import { placeRoom } from './build'
 import { hireDoctor } from './pawn'
 import { hire } from './testHelpers'
@@ -134,6 +134,29 @@ describe('hireDoctor', () => {
     const at = { x: w.pawns[0].x, y: w.pawns[0].y }
     expect(isWalkable(w, at.x, at.y)).toBe(true)
     expect(manhattan(at, ENTRANCE)).toBe(1) // 정문 바로 옆 — "입구 부근"을 지킨다
+  })
+
+  it('연속 채용은 **서로 다른 타일**에 선다 — 겹쳐 세우면 세 명이 화면에서 한 명으로 보인다', () => {
+    // 스프라이트는 타일 하나를 꽉 채우므로 같은 칸의 폰은 위엣것만 보인다. 채용 패널에는
+    // 3명인데 부지에는 1명이 서 있는 화면이 되고, 그 어긋남은 "채용이 안 먹혔다"로 읽힌다
+    // (사용자 신고의 한 갈래였다 — 실제로는 세 명이 정확히 겹쳐 있었다).
+    const w = hire(hire(hire(createWorld(1), 'AESTHETICS'), 'CARDIOLOGY'), 'INTERNAL_MEDICINE')
+    expect(new Set(w.pawns.map(p => `${p.x},${p.y}`)).size).toBe(3)
+  })
+
+  it('분산해도 전부 통행 타일이고 정문 부근이다 — 흩어지느라 벽에 끼거나 멀리 가지 않는다', () => {
+    const w = hire(hire(createWorld(1), 'AESTHETICS'), 'CARDIOLOGY')
+    for (const p of w.pawns) {
+      expect(isWalkable(w, p.x, p.y)).toBe(true)
+      expect(manhattan({ x: p.x, y: p.y }, ENTRANCE)).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('분산도 결정론 — 같은 순서로 뽑으면 같은 좌표다(BFS 순서·방향 순서 불변)', () => {
+    const spots = (w: SimWorld) => w.pawns.map(p => ({ x: p.x, y: p.y }))
+    const a = hire(hire(createWorld(3), 'AESTHETICS'), 'CARDIOLOGY')
+    const b = hire(hire(createWorld(3), 'AESTHETICS'), 'CARDIOLOGY')
+    expect(spots(a)).toEqual(spots(b))
   })
 
   it('두 번 채용하면 두 명이 남고 id가 겹치지 않는다', () => {

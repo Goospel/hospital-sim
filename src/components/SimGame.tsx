@@ -7,7 +7,17 @@ import EventCard from "@/components/EventCard";
 import HirePanel from "@/components/HirePanel";
 import PriorityPanel from "@/components/PriorityPanel";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
-import { ROOM_LABEL, formatManwon, resigningNotices, traitBadges, turnAwayBatchText } from "@/components/simHud";
+import {
+  ROOM_LABEL,
+  buildBlockReason,
+  formatManwon,
+  resigningNotices,
+  setupWarningText,
+  statusLineText,
+  traitBadges,
+  turnAwayBatchText,
+  type PauseCause,
+} from "@/components/simHud";
 import { effectiveSpeed, useSimClock, type SimSpeed } from "@/components/useSimClock";
 import { MS_PER_GAME_MIN } from "@/game/hospitalMap";
 import { formatClockFromOpen } from "@/game/daysim";
@@ -88,7 +98,10 @@ function rectOf(d: Drag) {
 
 export default function SimGame() {
   const [world, setWorld] = useState<SimWorld>(initialWorld);
-  const [speed, setSpeed] = useState<SimSpeed>(1);
+  /* 첫 판은 **일시정지로 시작한다** — 하루가 1배속 30초라(MS_PER_GAME_MIN) 처음 여는 사람이
+     화면을 파악하는 동안 하루가 끝나 버린다. 개원 시점을 플레이어가 정하게 두면 방을 짓고
+     의사를 뽑은 뒤 1×를 누르는 것이 곧 "개원"이 된다(그 안내는 footer 상태줄이 맡는다). */
+  const [speed, setSpeed] = useState<SimSpeed>(0);
   const [selected, setSelected] = useState<RoomType | null>(null);
   /** 지을 진료실의 과 — EXAM을 고른 뒤 **한 번 더** 고르게 한다(과 없는 진료실은 못 짓는다).
    *  EXAM 선택을 풀면 같이 비운다: 다음에 다시 고를 때 지난 선택이 몰래 남아 있으면
@@ -178,7 +191,10 @@ export default function SimGame() {
   const eventKey = world.event ? `${world.week}-${world.day}-${world.event.kind}` : null;
   const eventOpen = eventKey !== null && seenEvent !== eventKey;
 
-  const paused = drag !== null || hireOpen || priorityOpen || eventOpen;
+  /* 무엇이 시계를 세웠는가 — 사유까지 남기는 이유는 상태줄이 그걸 문구로 쓰기 때문이다.
+     불리언 하나로 접으면 "왜 멈췄나"가 화면에서 사라진다(넷은 할 일이 서로 다르다). */
+  const pause: PauseCause = drag !== null ? "BUILD" : hireOpen ? "HIRE" : priorityOpen ? "PRIORITY" : eventOpen ? "EVENT" : null;
+  const paused = pause !== null;
   const running: SimSpeed = effectiveSpeed(world.phase, paused ? 0 : speed);
   useSimClock(running, setWorld);
 
@@ -415,18 +431,11 @@ export default function SimGame() {
         >
           {llmLive ? "AI 서사" : "기본 서사"}
         </span>
+        {/* ⚠️ 정지 사유 문구는 여기 없다 — footer 상태줄에 있다. 한때 이 자리에 있었는데,
+            드래그를 **시작하는 순간** 문구가 생겨 헤더가 한 줄 늘고 맵이 32px 내려가
+            드래그 좌표가 두 타일 어긋났다(7×6을 그렸는데 7×4가 지어졌다). 맵 위의 높이는
+            드래그 중에 변하면 안 된다 — 상태 문구는 맵 아래 예약된 줄에서만 바뀐다. */}
         <div className="ml-auto flex items-center gap-1">
-          {paused && (
-            <span className="mr-2 text-xs text-on-desk-muted">
-              {drag
-                ? "건설 중 — 일시정지"
-                : hireOpen
-                  ? "채용 중 — 일시정지"
-                  : priorityOpen
-                    ? "인사 중 — 일시정지"
-                    : "속보 — 일시정지"}
-            </span>
-          )}
           <button
             type="button"
             onClick={() => setHireOpen(true)}
@@ -472,7 +481,14 @@ export default function SimGame() {
         preview={preview}
         // 폰은 게임 1분마다 2타일을 건너뛴다 — 그 1분의 실시간 길이가 곧 전환 시간이다.
         stepMs={running > 0 ? MS_PER_GAME_MIN / running : 0}
-        onTileDown={(t) => ready && setDrag({ start: t, cur: t })}
+        // 열려 있으면 드래그, 아니면 **왜 안 열리는지를 말한다** — 조용히 무시하면 부지를
+        // 끌어도 미리보기도 토스트도 없어 플레이어에게는 판이 죽은 것으로 보인다.
+        // 방 타입 자체를 안 골랐을 때만 조용하다(그 클릭은 탐색이다 — buildBlockReason).
+        onTileDown={(t) => {
+          if (ready) return setDrag({ start: t, cur: t });
+          const reason = buildBlockReason(selected, examDept);
+          if (reason) showToast(reason);
+        }}
         onTileMove={(t) => setDrag((d) => (d ? { ...d, cur: t } : d))}
         onTileUp={(t) => {
           // 확정은 setState **바깥**에서 한다 — 업데이터 안에서 건설하면 StrictMode가
@@ -535,21 +551,22 @@ export default function SimGame() {
           </div>
         )}
 
+        {/* 상태줄 — **화면에서 유일하게 문구가 바뀌는 자리**이자 맵 아래 예약된 한 줄(min-h-5)이다.
+            무엇을 쓸지는 simHud.statusLineText(우선순위 체인)가 정하고 여기선 칠만 한다:
+            판정이 JSX 안에 있으면 그 우선순위를 겨눌 수 있는 테스트가 하나도 없다. */}
         <p className="min-h-5 text-xs">
-          {toast ? (
-            <span className="text-alarm">{toast.text}</span>
-          ) : ready && selected ? (
-            <span className="text-on-desk-muted">
-              {selected === "EXAM" && examDept ? `${ROOM_LABEL[selected]} · ${simDept(examDept).label}` : ROOM_LABEL[selected]}
-              {" — 부지를 드래그해 크기를 정하세요. 건설하는 동안 시간이 멈춥니다."}
-            </span>
-          ) : selected === "EXAM" ? (
-            <span className="text-on-desk-muted">진료실은 과를 골라야 지을 수 있습니다.</span>
-          ) : (
-            <span className="text-on-desk-muted">
-              방 타입을 고르면 건설할 수 있습니다. 환자는 대기실 의자에 앉고, 자기 과 진료실의 의사가 차례로 부릅니다.
-            </span>
-          )}
+          <span className={toast ? "text-alarm" : "text-on-desk-muted"}>
+            {statusLineText({
+              toast: toast?.text ?? null,
+              pause,
+              // 플레이어가 스스로 멈춰 둔 상태 — 마감·결산 국면의 정지는 여기 해당하지 않는다
+              // (그때는 오버레이가 이미 다음 행동을 말한다).
+              idle: speed === 0 && world.phase === "RUNNING",
+              warning: setupWarningText(world),
+              selected,
+              examDept,
+            })}
+          </span>
         </p>
       </footer>
 

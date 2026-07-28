@@ -14,7 +14,7 @@ import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam } from '../sim/needs'
 import { TRAITS, type TraitKey } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
-import type { RoomType } from '../sim/world'
+import type { RoomType, SimWorld } from '../sim/world'
 
 /**
  * 금액 한 곳 — **|금액| ≥ 1억이면 「N.N억」, 미만이면 「N만원」**(계획 §0-8).
@@ -278,4 +278,114 @@ export function busyDoctorIds(pawns: readonly Pawn[]): Set<string> {
  */
 export function noRestSpotIdle(p: Pawn, busy: ReadonlySet<string>): boolean {
   return prefersRestOverExam(p) && p.activity === undefined && !busy.has(p.id)
+}
+
+/*
+  ── 온보딩 판정 3종 + 상태줄 ───────────────────────────────────────────────
+  이 게임이 첫 화면에서 무너진 자리는 규칙이 아니라 **침묵**이었다(사용자 신고: "캐릭터가
+  안 움직이고 방이 안 보인다" — 시뮬은 정상이었고 건설 성공이 0회였다). 아래 넷은 전부
+  "왜 아무 일도 안 일어나는가"를 문장으로 만드는 판정이다. JSX가 아니라 여기 있는 이유는
+  이 파일 머리말 그대로다 — 문구와 **우선순위**가 화면 계약인데, JSX 안에 있으면 그 계약을
+  겨눌 수 있는 테스트가 하나도 없다.
+*/
+
+/**
+ * 지금 드래그가 거부되는 **말할 수 있는 사유** — 없으면 `null`.
+ *
+ * 진료실은 과까지 골라야 열리는데(SimGame의 `ready`), 안 고른 채로 부지를 끌면 코어에 닿기도
+ * 전에 화면에서 삼켜져 미리보기도 토스트도 없다 — 플레이어에게는 **판이 죽은 것**으로 보인다.
+ *
+ * ⚠️ 방 타입을 아예 안 골랐을 때는 `null`이다: 그 클릭은 실패가 아니라 맵을 둘러보는 동작이라,
+ * 여기에 사유를 붙이면 부지를 누를 때마다 토스트가 떠 진짜 사유가 묻힌다.
+ */
+export function buildBlockReason(selected: RoomType | null, examDept: SimDeptKey | null): string | null {
+  return selected === 'EXAM' && examDept === null
+    ? '진료실은 과를 골라야 지을 수 있습니다 — 아래에서 과를 고르세요'
+    : null
+}
+
+/**
+ * 자기 과 진료실이 없어 서 있는 의사의 표시 — 아니면 `null`.
+ *
+ * 방 배정은 **같은 과 EXAM**에만 붙으므로(patientFlow), 그 방이 없는 의사는 첫 분부터 마지막
+ * 분까지 입구 앞에 서 있다. 규칙대로의 결과지만 화면에는 흔적이 없어 "폰이 멈췄다"로 읽힌다 —
+ * `noRestSpotIdle`이 태업에 한 줄을 준 것과 같은 자리다.
+ *
+ * 활동(휴식·식사) 중이면 안 붙인다: 그건 자리가 없는 게 아니라 스스로 자리를 뜬 것이고,
+ * 그 표시는 `doctorActivityMark`가 이미 갖고 있다(TileMap에서 그쪽이 우선한다).
+ */
+export function doctorRoomlessMark(p: Pawn): ActivityMark | null {
+  return p.kind === 'DOCTOR' && !p.roomId && !p.activity
+    ? { glyph: '?', label: '자기 과 진료실이 없어 대기 중' }
+    : null
+}
+
+/**
+ * 이 배치가 **구조적으로 아무 일도 안 일어나는** 상태면 그 사유 — 아니면 `null`.
+ *
+ * 둘 다 코어에서는 조용한 사실이다: 대기실이 없으면 환자가 아예 도착하지 않고(patientFlow는
+ * 의자를 목적지로 잡는다), 자기 과 진료실이 없는 의사는 배정 후보에서 빠진다. 어느 쪽도
+ * 에러가 아니라 **아무것도 안 보이는 화면**으로만 나타나 시뮬 고장과 구별되지 않는다.
+ *
+ * 순서가 계약이다 — 대기실이 먼저다: 대기실이 없으면 진료실을 아무리 지어도 환자가 안 오므로,
+ * 두 경고가 겹칠 때 진료실을 먼저 말하면 플레이어가 엉뚱한 것을 짓는다.
+ *
+ * 의사가 0명이면 `null`이다 — 아직 아무것도 안 한 첫 판은 "잘못된 배치"가 아니다(그 자리는
+ * 상태줄의 개원 안내가 맡는다).
+ */
+export function setupWarningText(w: SimWorld): string | null {
+  const doctors = w.pawns.filter(p => p.kind === 'DOCTOR')
+  if (doctors.length === 0) return null
+  if (!w.rooms.some(r => r.type === 'WAITING')) return '대기실이 없습니다 — 환자가 들어오지 못합니다'
+  const roomless = doctors.filter(d => !w.rooms.some(r => r.type === 'EXAM' && r.dept === d.dept)).length
+  return roomless > 0 ? `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요` : null
+}
+
+/** 시계를 세운 것이 무엇인가 — 없으면 안 멈춰 있다. */
+export type PauseCause = 'BUILD' | 'HIRE' | 'PRIORITY' | 'EVENT' | null
+
+/** 정지 사유별 문구 — 넷을 한 문구로 접으면 "왜 멈췄나"가 사라진다(`Record`라 갈래가 늘면 tsc가 막는다). */
+const PAUSE_TEXT: Record<NonNullable<PauseCause>, string> = {
+  BUILD: '건설 중 — 일시정지',
+  HIRE: '채용 중 — 일시정지',
+  PRIORITY: '인사 중 — 일시정지',
+  EVENT: '속보 — 일시정지',
+}
+
+export interface StatusLineInput {
+  /** 지금 떠 있는 토스트 문구 — 방금 일어난 일이라 무엇보다 먼저다. */
+  toast: string | null
+  pause: PauseCause
+  /** 플레이어가 **스스로** 멈춰 둔 상태인가(배속 0 + 운영 중). */
+  idle: boolean
+  /** `setupWarningText`의 결과 — 이 배치에서 아무 일도 안 일어나는 이유. */
+  warning: string | null
+  selected: RoomType | null
+  examDept: SimDeptKey | null
+}
+
+/**
+ * footer 상태줄 한 줄 — **위가 이기는 우선순위 체인**.
+ *
+ * 이 줄이 헤더가 아니라 footer에 있는 것이 이 함수의 존재 이유다. 한때 정지 사유가 헤더에
+ * 끼어들었는데, 드래그를 시작하는 **그 순간** 문구가 생겨 헤더가 한 줄 늘고 맵이 32px 내려가
+ * 드래그 좌표가 두 타일 어긋났다(합성 포인터 실측: 7×6을 그렸는데 7×4가 지어졌다). 맵 아래의
+ * 높이 고정 줄(min-h-5)로 옮기면 문구가 어떻게 바뀌어도 맵이 안 움직인다.
+ *
+ * 체인 순서의 근거: ① 토스트(방금 일어난 일) ② 정지 사유(지금 화면이 안 도는 이유) ③ 스스로
+ * 멈춤(그 상태에서 할 일 = 개원) ④ 배치 경고(시계는 도는데 아무 일이 없는 이유) ⑤ 선택 안내.
+ * ②가 ③보다 위인 이유는 건설 중에 "1×를 누르세요"가 뜨면 지금 할 일이 뒤집히기 때문이고,
+ * ③이 ④보다 위인 이유는 멈춰 있으면 무엇을 지어도 아무 일이 안 일어나기 때문이다.
+ */
+export function statusLineText(s: StatusLineInput): string {
+  if (s.toast) return s.toast
+  if (s.pause) return PAUSE_TEXT[s.pause]
+  if (s.idle) return '일시정지 — 방을 짓고 의사를 뽑은 뒤 1×를 눌러 개원하세요'
+  if (s.warning) return s.warning
+  const blocked = buildBlockReason(s.selected, s.examDept)
+  if (blocked) return blocked
+  if (s.selected === null) {
+    return '방 타입을 고르면 건설할 수 있습니다. 환자는 대기실 의자에 앉고, 자기 과 진료실의 의사가 차례로 부릅니다.'
+  }
+  return `${roomLabel({ type: s.selected, dept: s.examDept ?? undefined })} — 부지를 드래그해 크기를 정하세요. 건설하는 동안 시간이 멈춥니다.`
 }

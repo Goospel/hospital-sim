@@ -232,16 +232,28 @@ export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
 /** 스폰 탐색의 4방향 순서 — findPath의 DIRS와 같은 (위·우·아래·좌). 이 순서가 동률 타이브레이크다. */
 const SPAWN_DIRS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
 
-/** 정문에서 가까운 순서로 통행 가능한 첫 타일 — 채용한 의사가 설 자리.
+/** 정문에서 가까운 순서로 통행 가능하고 **비어 있는** 첫 타일 — 채용한 의사가 설 자리.
  *  BFS라 거리순이 보장되고, 방향 순서(위·우·아래·좌)가 findPath와 같아 동률도 결정론이다.
- *  ⚠️ 정문 자체는 방을 지을 수 없는 마지막 줄이라(placeRoom 경계) 보통 여기서 곧바로 끝난다 —
- *  탐색이 도는 건 손으로 세운 세계처럼 정문이 막힌 경우뿐이다. */
+ *
+ *  ⚠️ 폰이 선 타일을 건너뛰는 것이 계약이다. 통행 판정(isWalkable)은 폰을 안 보므로 — 폰끼리는
+ *  서로 통과한다(경로가 폰 때문에 막히면 병원이 교착한다) — 이 함수까지 그러면 연속 채용이
+ *  전원 같은 칸에 겹쳐 서고, 스프라이트가 타일을 꽉 채우는 탓에 **세 명이 화면에서 한 명**이 된다.
+ *  이동 규칙은 그대로 두고 **설 자리만** 비켜 두는 자리라 여기서만 점유를 본다.
+ *
+ *  ⚠️ 정문 자체는 방을 지을 수 없는 마지막 줄이라(placeRoom 경계) 첫 채용은 보통 곧바로 끝난다 —
+ *  탐색이 도는 건 정문이 이미 찼거나 손으로 세운 세계처럼 막힌 경우다. */
 function spawnSpotNear(w: SimWorld, from: Pt): Pt {
+  const taken = new Set(w.pawns.map(p => `${p.x},${p.y}`))
+  // 통행은 되는데 사람이 서 있던 첫 타일 — 부지가 통째로 찼을 때의 폴백이다(겹침이 봉쇄보다 낫다).
+  let occupied: Pt | null = null
   const seen = new Set<string>([`${from.x},${from.y}`])
   const queue: Pt[] = [from]
   while (queue.length > 0) {
     const cur = queue.shift()!
-    if (isWalkable(w, cur.x, cur.y)) return cur
+    if (isWalkable(w, cur.x, cur.y)) {
+      if (!taken.has(`${cur.x},${cur.y}`)) return cur
+      occupied ??= cur
+    }
     for (const d of SPAWN_DIRS) {
       const nx = { x: cur.x + d.x, y: cur.y + d.y }
       const key = `${nx.x},${nx.y}`
@@ -251,9 +263,10 @@ function spawnSpotNear(w: SimWorld, from: Pt): Pt {
       queue.push(nx)
     }
   }
-  // 세계에 통행 타일이 하나도 없다 — 채용을 조용히 삼키느니 정문에 세운다.
+  // 빈 통행 타일이 없다 — 사람이 서 있더라도 통행 타일이면 거기(겹쳐 서는 것이 못 뽑는 것보다 낫다),
+  // 통행 타일 자체가 하나도 없으면 정문에 세운다. 채용을 조용히 삼키지 않는 것이 요점이다.
   // 막힌 칸에 낀 폰도 findPath가 출발지를 선검사하지 않아 스스로 걸어 나올 수 있다(의도된 비대칭).
-  return from
+  return occupied ?? from
 }
 
 /** 채용의 결과 — 건설(`build.PlaceResult`)과 **같은 모양**이다. 화면이 두 실패를 같은 코드로
