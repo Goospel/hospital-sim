@@ -6,12 +6,11 @@
 // "0으로 껐는데 어딘가에서는 여전히 일한다"가 조용히 산다 — 그래서 토글의 계약만 이 파일에 모은다.
 import { describe, it, expect } from 'vitest'
 import { createWorld, ENTRANCE, type SimWorld } from './world'
-import { placeRoom } from './build'
 import {
   priorityOf, setDoctorPriority, spawnDoctor,
   type Pawn, type Priority, type PriorityKind,
 } from './pawn'
-import { hire } from './testHelpers'
+import { hire, placeRoom } from './testHelpers'
 import { tick } from './tick'
 import { ARRIVAL_WINDOW_MIN, PATIENCE_MIN } from './patientFlow'
 import { EMERGENCY_WINDOW_MIN, emergencyArrivalAt, wardBeds, type EmergencyKind } from './emergency'

@@ -1,107 +1,187 @@
-// 방 단위 건설 — 검증·비용·가구 자동 배치. 전부 순수 함수.
-import {
-  GRID_W, GRID_H, doorTile, wallTiles, tileIndex,
-  type Room, type RoomType, type SimWorld, type Furniture,
-} from './world'
-import { DEFAULT_EXAM_DEPT } from './dept'
+// 건설 도구 — 벽·문·가구·용도·철거. 전부 순수 함수(세계를 새로 만들어 돌려준다).
+//
+// 사각형 방(placeRoom)이 여기 없는 것이 이 파일의 요지다: 방은 이제 **결과**이지 명령이 아니다.
+// 플레이어는 벽을 두르고 문을 내고 용도를 지정하고 가구를 놓으며, "방"은 그 지형에서 파생된다
+// (regions.computeRegions). 옛 사각 방 헬퍼는 테스트 픽스처로만 남아 있다(testHelpers.placeRoom).
+import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld } from './world'
+import { computeRegions } from './regions'
+import type { SimDeptKey } from './dept'
+import type { Pt } from './path'
 
-export const MIN_ROOM_W = 4
-export const MIN_ROOM_H = 4
-export const COST_PER_TILE_MANWON = 50
+/**
+ * 건설비 **단일 출처**(만원). 밸런스 튜닝은 이 표 한 곳에서만 한다 — 값이 두 곳에 적히면
+ * 화면이 말하는 값과 금고에서 빠지는 값이 갈리고, 그 어긋남은 에러 없이 숫자로만 나타난다.
+ * 가구 키는 `FurnitureKind`와 같은 이름이라 종류가 늘면 tsc가 여기서 막는다.
+ */
+export const BUILD_COST = {
+  WALL: 30, DOOR: 50, DESK: 100, CHAIR: 20, BED: 300, COUNTER: 100,
+} as const satisfies Record<FurnitureKind | 'WALL' | 'DOOR', number>
 
-/** 격자 자동 배치(한 칸 걸러)로 채우는 방과 그 가구 — `autoFurniture`의 else 갈래가 읽는 표다.
- *  식당이 대기실과 **같은 CHAIR 격자**인 것이 계약이다: 좌석 수 = 의자 수라는 성질(furnitureSpots
- *  주석)이 식사 좌석 점유에도 그대로 성립해야 두 의사가 한 의자에 겹치지 않는다. */
-export const FURNITURE_OF: Partial<Record<RoomType, 'CHAIR' | 'BED'>> = {
-  WAITING: 'CHAIR', WARD: 'BED', CAFETERIA: 'CHAIR',
-}
+export type BuildCostKey = keyof typeof BUILD_COST
 
-export function roomCostManwon(w: number, h: number): number {
-  return w * h * COST_PER_TILE_MANWON
-}
+/** 철거 환불 — 건설비의 절반(내림). 표에서 파생하므로 비용을 튜닝하면 환불이 저절로 따라온다. */
+export const refundOf = (kind: BuildCostKey): number => Math.floor(BUILD_COST[kind] / 2)
 
+export type BuildReason =
+  /** 실제로 건드릴 타일이 하나도 없다(전부 이미 차 있거나, 부술 것이 없다). */
+  | 'NOTHING'
+  | 'NO_MONEY'
+  /** 문은 벽 위에만 낼 수 있다. */
+  | 'NOT_WALL'
+  /** 둘러싸인 실내가 아니다(마당·벽·문 위). */
+  | 'OUTDOORS'
+
+/**
+ * 건설 한 번의 결과.
+ *
+ * 실패해도 `tiles`·`deltaManwon`이 실리는 것이 계약이다 — **미리보기가 같은 값을 읽기** 때문이다:
+ * 화면은 판정을 베끼지 않고 이 함수를 그대로 한 번 돌려 하이라이트와 금액을 그린다(옛 placeRoom
+ * 미리보기 관례 계승). 거부될 때의 금액이 없으면 "붉게 얼마"를 그릴 수가 없다.
+ */
 export type PlaceResult =
-  | { ok: true; world: SimWorld }
-  | { ok: false; reason: 'TOO_SMALL' | 'OUT_OF_BOUNDS' | 'OVERLAP' | 'NO_MONEY' }
+  | { ok: true; world: SimWorld; tiles: readonly number[]; skipped: number; deltaManwon: number }
+  | { ok: false; reason: BuildReason; tiles: readonly number[]; skipped: number; deltaManwon: number }
 
-function overlaps(a: Room, b: Omit<Room, 'id'>): boolean {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+const inBounds = (t: Pt): boolean => t.x >= 0 && t.y >= 0 && t.x < GRID_W && t.y < GRID_H
+
+/** 이미 무언가 서 있는 타일 — 벽 ∪ 문 ∪ 가구. 설치 도구는 전부 이 집합을 건너뛴다. */
+function occupied(w: SimWorld): Set<number> {
+  const out = new Set<number>(w.walls)
+  for (const d of w.doors) out.add(d)
+  for (const f of w.furniture) out.add(tileIndex(f.x, f.y))
+  return out
 }
 
-/** 내부 타일에 가구를 자동 배치한다.
- *  EXAM: 좌상단 내부에 DESK+CHAIR / RECEPTION: COUNTER 1
- *  WAITING·CAFETERIA: 내부를 한 칸 걸러 CHAIR / WARD: 한 칸 걸러 BED
- *  LOUNGE: CHAIR 2 (휴게) */
-function autoFurniture(room: Room): Furniture[] {
-  const ix = room.x + 1, iy = room.y + 1 // 내부 좌상단
-  const iw = room.w - 2, ih = room.h - 2
-  const out: Furniture[] = []
-  if (room.type === 'EXAM') {
-    out.push({ kind: 'DESK', x: ix, y: iy })
-    out.push({ kind: 'CHAIR', x: ix + 1, y: iy })
-  } else if (room.type === 'RECEPTION') {
-    out.push({ kind: 'COUNTER', x: ix, y: iy })
-  } else if (room.type === 'LOUNGE') {
-    out.push({ kind: 'CHAIR', x: ix, y: iy })
-    // 둘째 의자는 한 칸 띄워 놓을 자리가 있을 때만 — 좁은 휴게실이면 하나로 끝낸다.
-    // (자리가 없을 때 첫 의자 위에 겹쳐 놓으면 한 타일에 두 좌석이 생겨 뒤 태스크의 좌석 점유가 어긋난다)
-    if (ix + 2 <= room.x + room.w - 2) out.push({ kind: 'CHAIR', x: ix + 2, y: iy })
-  } else {
-    // 오른쪽에 설 자리가 남는 열까지만 놓는다(`dx + 1 < iw`) — 벽에 딱 붙은 마지막 열은
-    // 앞 타일이 "오른쪽"이 아니라 "아래"로 떨어지는데, 그 타일은 한 줄 아래 의자가 "위"로
-    // 쓰는 자리라 둘이 좌석 하나를 나눠 갖는다. 그러면 **화면에 그려진 의자 수와 실제 수용
-    // 용량이 어긋난다**(11×7 대기실: 의자 14개인데 앉을 수 있는 자리는 13개).
-    // 한 칸 비우면 모든 의자가 자기 오른쪽/위 타일을 독점해 "의자 1개 = 좌석 1개"가 성립한다.
-    const kind = FURNITURE_OF[room.type]!
-    for (let dx = 0; dx + 1 < iw; dx += 2) for (let dy = 0; dy < ih; dy += 2) {
-      out.push({ kind, x: ix + dx, y: iy + dy })
-    }
+/**
+ * 설치 도구의 공통 뼈대 — 벽·가구가 **같은 규칙**을 쓴다는 것이 여기 한 곳에 적혀 있다.
+ *
+ * 순서가 계약이다: ① 점유 타일을 건너뛰어 대상만 추리고 ② 대상이 0이면 NOTHING ③ **설치 전에**
+ * 값을 판정한다. ③이 뒤로 밀리면 부분 설치가 금고를 조금씩 긁고 나서 거부되는 세계가 생긴다.
+ */
+function install(
+  w: SimWorld,
+  tiles: readonly Pt[],
+  cost: BuildCostKey,
+  apply: (world: SimWorld, targets: readonly number[]) => SimWorld,
+): PlaceResult {
+  const taken = occupied(w)
+  const seen = new Set<number>()
+  const targets: number[] = []
+  let skipped = 0
+  for (const t of tiles) {
+    if (!inBounds(t)) { skipped += 1; continue }
+    const i = tileIndex(t.x, t.y)
+    if (seen.has(i)) continue // 같은 타일을 두 번 요청한 것은 건너뜀이 아니다(드래그 모서리)
+    seen.add(i)
+    if (taken.has(i)) { skipped += 1; continue }
+    targets.push(i)
   }
-  // 문 앞 타일을 가구가 막지 않게 — 문 바로 안쪽 칸은 비운다.
-  // 문 위치는 doorTile이 단일 출처다 — 여기서 공식을 다시 유도하면 홀수 폭 방에서
-  // 둘이 갈려(floor vs ceil) 유일 통로에 가구가 남고 방이 통째로 고립된다.
-  const door = doorTile(room)
-  return out.filter(f => !(f.x === door.x && f.y === door.y - 1))
-}
-
-export function placeRoom(world: SimWorld, spec: { type: RoomType; dept?: Room['dept']; x: number; y: number; w: number; h: number }): PlaceResult {
-  if (spec.w < MIN_ROOM_W || spec.h < MIN_ROOM_H) return { ok: false, reason: 'TOO_SMALL' }
-  if (spec.x < 1 || spec.y < 1 || spec.x + spec.w > GRID_W - 1 || spec.y + spec.h > GRID_H - 1)
-    return { ok: false, reason: 'OUT_OF_BOUNDS' }
-  if (world.rooms.some(r => overlaps(r, spec))) return { ok: false, reason: 'OVERLAP' }
-  const cost = roomCostManwon(spec.w, spec.h)
-  if (cost > world.treasuryManwon) return { ok: false, reason: 'NO_MONEY' }
-  // 진료실은 **반드시 과를 갖는다** — 과 없는 EXAM이 남으면 라우팅(계획 Task 2)이 "아무 환자나
-  // 받는 방"으로 새고, 그건 이 슬라이스의 논지(과가 없으면 그 환자를 놓친다)를 통째로 무력화한다.
-  // 미지정은 내과로 접는다: **1주차 테스트·저장 세계용 마이그레이션 절단**이고, UI(Task 6)는 건설 시
-  // 과를 반드시 고르게 하므로 플레이 중에는 도달하지 않는다.
-  //
-  // 반대로 **EXAM이 아닌 방은 과를 떨군다**(그대로 싣지 않는다). 대기실·병동에는 과 개념이 없어서,
-  // 실려 온 dept는 읽는 쪽에서 뜻을 만들어낸다 — 예컨대 라우팅이 방 종류를 안 보고 dept만 보면
-  // "순환기 대기실"이 진료실 행세를 한다. 무의미한 값을 보존하느니 없애는 편이 안전하다.
-  const { dept: specDept, ...geometry } = spec
-  const room: Room = {
-    id: `room-${world.nextId}`,
-    ...geometry,
-    ...(spec.type === 'EXAM' ? { dept: specDept ?? DEFAULT_EXAM_DEPT } : {}),
-  }
-  // 어댑터 — 선언형 방을 **새 지형 모델(벽·문·용도앵커)로도** 옮겨 담는다.
-  // 통행·영역은 이제 이쪽만 읽으므로(path.buildBlockedSet · regions.computeRegions), 두 표현이
-  // 갈리면 화면의 방과 규칙의 방이 달라진다. 설계 PR 2에서 이 함수가 통째로 사라지면 남는 건 아래뿐.
-  const door = doorTile(room)
+  if (targets.length === 0) return { ok: false, reason: 'NOTHING', tiles: [], skipped, deltaManwon: 0 }
+  const price = BUILD_COST[cost] * targets.length
+  if (price > w.treasuryManwon) return { ok: false, reason: 'NO_MONEY', tiles: targets, skipped, deltaManwon: -price }
   return {
     ok: true,
-    world: {
-      ...world,
-      nextId: world.nextId + 1,
-      treasuryManwon: world.treasuryManwon - cost,
-      rooms: [...world.rooms, room],
-      walls: new Set([...world.walls, ...wallTiles(room).map(t => tileIndex(t.x, t.y))]),
-      doors: new Set([...world.doors, tileIndex(door.x, door.y)]),
-      // 앵커는 **문 바로 안쪽** 타일 — 방 크기와 무관하게 내부이고(h≥4), autoFurniture가
-      // 통로 확보를 위해 항상 비워 두는 자리라 가구에 덮이지 않는다.
-      designations: [...world.designations, { at: { x: door.x, y: door.y - 1 }, type: room.type, ...(room.dept ? { dept: room.dept } : {}) }],
-      furniture: [...world.furniture, ...autoFurniture(room)],
-    },
+    world: { ...apply(w, targets), treasuryManwon: w.treasuryManwon - price },
+    tiles: targets, skipped, deltaManwon: -price,
+  }
+}
+
+/** 벽 — 이미 벽·문·가구가 선 타일은 건너뛰고 나머지만 세운다(부분 설치). */
+export function buildWalls(w: SimWorld, tiles: readonly Pt[]): PlaceResult {
+  return install(w, tiles, 'WALL', (world, targets) => ({
+    ...world,
+    walls: new Set([...world.walls, ...targets]),
+  }))
+}
+
+/** 가구 — 벽과 같은 부분 설치 규칙. 마당에도 놓인다(기능은 용도 영역 안에서만 — 경고가 잡는다). */
+export function placeFurniture(w: SimWorld, kind: FurnitureKind, tiles: readonly Pt[]): PlaceResult {
+  return install(w, tiles, kind, (world, targets) => ({
+    ...world,
+    // 요청 순서를 그대로 유지한다 — 가구 배열 순서가 스팟 선택의 타이브레이크다(spots.ts).
+    furniture: [...world.furniture, ...targets.map(i => ({ kind, x: i % GRID_W, y: (i - (i % GRID_W)) / GRID_W }))],
+  }))
+}
+
+/**
+ * 문 — **벽 타일만** 전환한다. 벽에서 빼고 문에 넣으므로 통행이 열리고 영역 경계는 남는다.
+ * 벽값을 환불하지 않는 것이 계약이다(설계 §2): 문은 벽을 허무는 게 아니라 벽 위에 다는 것이다.
+ */
+export function placeDoor(w: SimWorld, at: Pt): PlaceResult {
+  const i = tileIndex(at.x, at.y)
+  if (!inBounds(at) || !w.walls.has(i)) {
+    return { ok: false, reason: 'NOT_WALL', tiles: [], skipped: 0, deltaManwon: 0 }
+  }
+  const price = BUILD_COST.DOOR
+  if (price > w.treasuryManwon) {
+    return { ok: false, reason: 'NO_MONEY', tiles: [i], skipped: 0, deltaManwon: -price }
+  }
+  const walls = new Set(w.walls)
+  walls.delete(i)
+  return {
+    ok: true,
+    world: { ...w, walls, doors: new Set([...w.doors, i]), treasuryManwon: w.treasuryManwon - price },
+    tiles: [i], skipped: 0, deltaManwon: -price,
+  }
+}
+
+/**
+ * 용도 — 클릭한 타일이 속한 **실내 영역**에 앵커를 심는다. 비용은 0이다(지정은 공사가 아니다).
+ *
+ * 그 영역 안의 옛 앵커를 먼저 걷어내는 것이 교체 규약이다(설계 §2). 안 걷어내면 `computeRegions`의
+ * "먼저 지정이 이긴다"에 걸려 **재지정이 영영 먹히지 않는다** — 화면에서는 클릭이 먹통으로 보인다.
+ *
+ * 진료실인데 과가 없으면 던진다: 과 없는 EXAM 영역은 라우팅이 "아무 환자나 받는 방"으로 새게
+ * 만든다. 화면이 과 선택 전에는 클릭을 막으므로(simHud.buildBlockReason) 여기는 도달 불가다.
+ */
+export function designateRegion(w: SimWorld, at: Pt, type: RoomType, dept?: SimDeptKey): PlaceResult {
+  if (type === 'EXAM' && dept === undefined) throw new Error('진료실 용도에는 과가 필요하다')
+  const i = tileIndex(at.x, at.y)
+  const region = inBounds(at) ? computeRegions(w).find(r => r.tiles.has(i)) : undefined
+  if (!region) return { ok: false, reason: 'OUTDOORS', tiles: [], skipped: 0, deltaManwon: 0 }
+  // EXAM이 아니면 과를 떨군다 — 대기실·병동에 실려 온 과는 읽는 쪽에서 뜻을 만들어낸다.
+  const anchor = { at: { x: at.x, y: at.y }, type, ...(type === 'EXAM' && dept ? { dept } : {}) }
+  const kept = w.designations.filter(d => !region.tiles.has(tileIndex(d.at.x, d.at.y)))
+  return {
+    ok: true,
+    world: { ...w, designations: [...kept, anchor] },
+    tiles: [...region.tiles], skipped: 0, deltaManwon: 0,
+  }
+}
+
+/**
+ * 철거 — 훑은 타일의 벽·문·가구를 없애고 환불을 합산한다.
+ *
+ * 앵커(용도)는 건드리지 않는다: 벽이 뚫려 마당이 되면 그 좌표를 담은 영역이 사라지므로
+ * 영역 인식이 알아서 무효화하고, 다시 벽을 두르면 그대로 되살아난다(좌표가 앵커인 이유).
+ */
+export function demolish(w: SimWorld, tiles: readonly Pt[]): PlaceResult {
+  const wanted = new Set<number>()
+  for (const t of tiles) if (inBounds(t)) wanted.add(tileIndex(t.x, t.y))
+
+  const walls = new Set(w.walls)
+  const doors = new Set(w.doors)
+  const hit = new Set<number>()
+  let refund = 0
+  for (const i of wanted) {
+    if (walls.delete(i)) { refund += refundOf('WALL'); hit.add(i) }
+    if (doors.delete(i)) { refund += refundOf('DOOR'); hit.add(i) }
+  }
+  const furniture = w.furniture.filter(f => {
+    const i = tileIndex(f.x, f.y)
+    if (!wanted.has(i)) return true
+    refund += refundOf(f.kind)
+    hit.add(i)
+    return false
+  })
+
+  const targets = [...hit].sort((a, b) => a - b)
+  if (targets.length === 0) {
+    return { ok: false, reason: 'NOTHING', tiles: [], skipped: wanted.size, deltaManwon: 0 }
+  }
+  return {
+    ok: true,
+    world: { ...w, walls, doors, furniture, treasuryManwon: w.treasuryManwon + refund },
+    tiles: targets, skipped: wanted.size - targets.length, deltaManwon: refund,
   }
 }

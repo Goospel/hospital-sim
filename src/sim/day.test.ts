@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { placeRoom } from './testHelpers'
 import { createWorld, tileIndex, INITIAL_TREASURY_MANWON } from './world'
-import { placeRoom } from './build'
 import { computeRegions, regionById } from './regions'
 import { spawnDoctor, type Pawn, type PatientStage } from './pawn'
 import { tick } from './tick'

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, isWalkable, wallTiles, tileIndex, GRID_W, GRID_H, type SimWorld } from './world'
-import { placeRoom } from './build'
+import { placeRoom } from './testHelpers'
+import { buildWalls, placeFurniture } from './build'
+import { createWorld, isWalkable, tileIndex, GRID_W, GRID_H, type SimWorld } from './world'
 import { findPath, buildBlockedSet, type Pt } from './path'
 
 /** 경로가 폰이 실제로 밟을 수 있는 걸음인지 — Task 4 이동이 의존하는 계약.
@@ -109,24 +110,17 @@ describe('buildBlockedSet', () => {
       expect(!blocked.has(y * GRID_W + x)).toBe(isWalkable(placed.world, x, y))
     }
   })
-  it('벽 모델로 옮겨도 막힌 타일이 옛 규칙(방 테두리 − 문 ∪ 가구)과 **완전히 같다**', () => {
-    // 이 단계의 계약은 "게임이 한 픽셀도 안 바뀐다"다. 통행이 rooms에서 walls로 넘어갔으므로
-    // 두 규칙이 같은 집합을 낸다는 것을 못박는 계측기가 필요하다 — 어댑터가 벽 하나를 흘리거나
-    // 문을 벽으로 굳히면 여기서 깨진다(폰이 방에 갇히거나 벽을 통과한다).
-    let w = createWorld(1)
-    for (const spec of [
-      { type: 'EXAM' as const, x: 10, y: 10, w: 7, h: 5 }, // 홀수 폭 — 문 위치가 갈리는 크기
-      { type: 'WAITING' as const, x: 20, y: 4, w: 8, h: 6 },
-      { type: 'WARD' as const, x: 4, y: 20, w: 4, h: 4 },
-    ]) {
-      const r = placeRoom(w, spec)
-      if (!r.ok) throw new Error('전제 실패')
-      w = r.world
-    }
-    const legacy = new Set<number>()
-    for (const r of w.rooms) for (const t of wallTiles(r)) legacy.add(tileIndex(t.x, t.y))
-    for (const f of w.furniture) legacy.add(tileIndex(f.x, f.y))
+  it('방에 속하지 않는 **자유 벽**도 그대로 막는다 — 통행은 방이 아니라 타일이 정한다', () => {
+    // 벽 도구는 사각형을 요구하지 않는다(설계 PR 2). 통행 판정이 방 사각형을 되짚는 구현으로
+    // 되돌아가면 여기서 깨진다: 홀로 선 벽 한 줄이 아무것도 막지 않게 된다.
+    const walls = buildWalls(createWorld(1), [{ x: 10, y: 10 }, { x: 11, y: 10 }, { x: 12, y: 10 }])
+    if (!walls.ok) throw new Error('전제 실패 — 벽')
+    const chair = placeFurniture(walls.world, 'CHAIR', [{ x: 10, y: 12 }])
+    if (!chair.ok) throw new Error('전제 실패 — 의자')
+    const w = chair.world
     const asc = (s: Set<number>) => [...s].sort((a, b) => a - b)
-    expect(asc(buildBlockedSet(w))).toEqual(asc(legacy))
+    expect(asc(buildBlockedSet(w))).toEqual(asc(new Set([
+      tileIndex(10, 10), tileIndex(11, 10), tileIndex(12, 10), tileIndex(10, 12),
+    ])))
   })
 })

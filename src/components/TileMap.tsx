@@ -11,7 +11,6 @@ import {
   doctorRoomlessMark,
   fatigueTone,
   FATIGUE_COLOR,
-  formatManwon,
   roomLabel,
 } from "./simHud";
 
@@ -88,14 +87,13 @@ function FatigueBar({ fatigue }: { fatigue: number }) {
 }
 
 export interface BuildPreview {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  type: RoomType;
-  /** 지금 손을 떼면 지어지는가 — 판정은 placeRoom(단일 출처)이 하고 여기선 색만 고른다. */
+  /** 지금 손을 떼면 **실제로** 서거나 사라질 타일. 드래그 사각형이 아니다 — 이미 벽이 선 칸은
+   *  건너뛰므로, 사각형을 그대로 칠하면 미리보기가 결과보다 넓어진다(설치 후 "왜 덜 지어졌지"). */
+  tiles: readonly number[];
+  /** 지금 손을 떼면 성사되는가 — 판정은 코어(build.ts)가 하고 여기선 색만 고른다. */
   ok: boolean;
-  costManwon: number;
+  /** 칸 수와 금액 한 줄 — 문구는 simHud.previewLabel이 소유한다(철거는 환불로 뒤집힌다). */
+  label: string;
 }
 
 export interface TileMapProps {
@@ -361,24 +359,37 @@ export default function TileMap({
           );
         })}
 
-        {/* 건설 미리보기 — 지금 손을 떼면 무엇이 생기는지. 거부될 사각형은 붉게 남아 사유 토스트와 짝이 된다. */}
-        {preview && (
+        {/* 건설 미리보기 — 지금 손을 떼면 **정확히 어느 칸이** 생기고 사라지는지. 거부되면 붉게
+            남아 사유 토스트와 짝이 된다. 타일 단위인 이유는 위 BuildPreview 주석에 있다. */}
+        {preview?.tiles.map((t) => (
           <div
-            className="pointer-events-none absolute border-2 border-dashed"
+            key={`pv${t}`}
+            className="pointer-events-none absolute"
             style={{
-              left: preview.x * TILE,
-              top: preview.y * TILE,
-              width: preview.w * TILE,
-              height: preview.h * TILE,
-              borderColor: preview.ok ? ROOM_STYLE[preview.type].wall : "var(--alarm)",
-              backgroundColor: preview.ok ? "rgba(216,207,175,0.10)" : "rgba(229,72,77,0.14)",
+              left: (t % GRID_W) * TILE,
+              top: Math.floor(t / GRID_W) * TILE,
+              width: TILE,
+              height: TILE,
+              backgroundColor: preview.ok ? "rgba(216,207,175,0.22)" : "rgba(229,72,77,0.28)",
+              boxShadow: `inset 0 0 0 1px ${preview.ok ? "var(--on-desk-muted)" : "var(--alarm)"}`,
               zIndex: 3,
             }}
+            aria-hidden
+          />
+        ))}
+        {preview && preview.tiles.length > 0 && (
+          <span
+            className="pointer-events-none absolute whitespace-nowrap font-mono text-[10px] tabular-nums"
+            style={{
+              // 대상 타일의 좌상단 — 인덱스 최소값이 곧 그 자리다(regions.id와 같은 규약).
+              left: (Math.min(...preview.tiles) % GRID_W) * TILE,
+              top: Math.floor(Math.min(...preview.tiles) / GRID_W) * TILE - 14,
+              color: preview.ok ? "var(--on-desk)" : "var(--alarm)",
+              zIndex: 4,
+            }}
           >
-            <span className="absolute -top-4 left-0 whitespace-nowrap font-mono text-[10px] tabular-nums text-on-desk">
-              {preview.w}×{preview.h} · {formatManwon(preview.costManwon)}
-            </span>
-          </div>
+            {preview.label}
+          </span>
         )}
       </div>
     </div>

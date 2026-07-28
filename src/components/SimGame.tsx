@@ -8,21 +8,30 @@ import HirePanel from "@/components/HirePanel";
 import PriorityPanel from "@/components/PriorityPanel";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
 import {
+  BUILD_TOOLS,
   ROOM_LABEL,
+  TOOL_LABEL,
   buildBlockReason,
+  buildResultText,
   formatManwon,
+  isDragTool,
+  previewLabel,
+  rectModeOf,
+  rectTiles,
   resigningNotices,
   setupWarningText,
   statusLineText,
+  toolCostText,
   traitBadges,
   turnAwayBatchText,
+  type BuildTool,
   type PauseCause,
 } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
 import { createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions } from "@/sim/regions";
-import { placeRoom, roomCostManwon, COST_PER_TILE_MANWON, MIN_ROOM_W, MIN_ROOM_H, type PlaceResult } from "@/sim/build";
+import { buildWalls, demolish, designateRegion, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import { hireDoctor, setDoctorPriority, type HireResult, type Priority, type PriorityKind } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
@@ -36,9 +45,9 @@ import { newLlmBudget, requestDirector, requestNarrativeText, type DirectorReply
  * 타일 병원 본편. 시뮬 코어(src/sim)를 **읽고 그리기만** 한다.
  *
  * 여기가 가진 상태는 셋뿐이다: 세계 · 배속 · 건설 드래그. 게임 규칙은 하나도 없다 —
- * 지을 수 있는지는 placeRoom이, 시간이 흐르는 건 useSimClock+tick이 정한다.
- * 미리보기 색조차 placeRoom을 **그대로 한 번 돌려** 정한다(검증 규칙을 여기 베끼면
- * 미리보기는 초록인데 손을 떼면 거부되는 어긋남이 생긴다 — 규칙의 단일 출처는 build.ts다).
+ * 지을 수 있는지는 건설 도구(build.ts)가, 시간이 흐르는 건 useSimClock+tick이 정한다.
+ * 미리보기조차 그 도구를 **그대로 한 번 돌려** 정한다(검증 규칙을 여기 베끼면 미리보기는
+ * 초록인데 손을 떼면 거부되는 어긋남이 생긴다 — 규칙의 단일 출처는 build.ts다).
  *
  * **컴포넌트이지 라우트가 아니다.** `/`와 `/sim`이 둘 다 이것을 렌더한다 — 랜딩이 이 게임으로
  * 바뀐 뒤에도 옛 링크·문서가 가리키는 `/sim`이 같은 화면을 내야 하고, 그러려면 본문이 어느 한
@@ -46,19 +55,12 @@ import { newLlmBudget, requestDirector, requestNarrativeText, type DirectorReply
  * 서버 기능을 쓰지 않아 Pages 정적 export에 그대로 실린다.
  */
 
-/** 지을 수 있는 방 — **식당(CAFETERIA)이 여기 없으면 그 방은 존재하지 않는 것과 같다**.
- *  코어는 이미 식당을 알고(build·needs) 굶주림 감속도 돌지만, 이 배열에 줄이 없으면 플레이어는
- *  영영 못 짓는다 — 그러면 "밥을 못 먹어 오후가 느려진다"가 규칙이 아니라 버그로 보인다. */
+/** 지정할 수 있는 용도 — **식당(CAFETERIA)이 여기 없으면 그 방은 존재하지 않는 것과 같다**.
+ *  코어는 이미 식당을 알고(needs) 굶주림 감속도 돌지만, 이 배열에 줄이 없으면 플레이어는
+ *  영영 못 만든다 — 그러면 "밥을 못 먹어 오후가 느려진다"가 규칙이 아니라 버그로 보인다. */
 const ROOM_TYPES: RoomType[] = ["EXAM", "WAITING", "WARD", "RECEPTION", "LOUNGE", "CAFETERIA"];
 
-const REASON_TEXT: Record<Exclude<PlaceResult, { ok: true }>["reason"], string> = {
-  TOO_SMALL: `너무 좁습니다 — 최소 ${MIN_ROOM_W}×${MIN_ROOM_H}`,
-  OUT_OF_BOUNDS: "부지 밖입니다 — 가장자리 한 칸은 비워 둡니다",
-  OVERLAP: "다른 방과 겹칩니다",
-  NO_MONEY: "자금이 부족합니다",
-};
-
-/** 채용 거부 사유 → 화면 문구. 건설의 REASON_TEXT와 같은 형태다(사유는 코어가, 말은 화면이). */
+/** 채용 거부 사유 → 화면 문구. 건설 쪽 대응물은 simHud.buildResultText다(사유는 코어가, 말은 화면이). */
 const HIRE_REASON_TEXT: Record<Exclude<HireResult, { ok: true }>["reason"], string> = {
   NO_POOL: "전국에 남은 그 과 의사가 없습니다",
 };
@@ -86,26 +88,18 @@ interface Drag {
   cur: { x: number; y: number };
 }
 
-/** 두 타일이 만드는 사각형 — 어느 방향으로 끌든 같은 결과가 되게 정규화한다. */
-function rectOf(d: Drag) {
-  return {
-    x: Math.min(d.start.x, d.cur.x),
-    y: Math.min(d.start.y, d.cur.y),
-    w: Math.abs(d.cur.x - d.start.x) + 1,
-    h: Math.abs(d.cur.y - d.start.y) + 1,
-  };
-}
-
 export default function SimGame() {
   const [world, setWorld] = useState<SimWorld>(initialWorld);
   /* 첫 판은 **일시정지로 시작한다** — 하루가 1배속 약 6분이라(SIM_MS_PER_GAME_MIN) 처음 여는
      사람이 화면을 파악하는 동안 하루가 흘러 버린다. 개원 시점을 플레이어가 정하게 두면 방을 짓고
      의사를 뽑은 뒤 1×를 누르는 것이 곧 "개원"이 된다(그 안내는 footer 상태줄이 맡는다). */
   const [speed, setSpeed] = useState<SimSpeed>(0);
-  const [selected, setSelected] = useState<RoomType | null>(null);
-  /** 지을 진료실의 과 — EXAM을 고른 뒤 **한 번 더** 고르게 한다(과 없는 진료실은 못 짓는다).
-   *  EXAM 선택을 풀면 같이 비운다: 다음에 다시 고를 때 지난 선택이 몰래 남아 있으면
-   *  "과를 골랐다"는 사실 없이 드래그가 열린다. */
+  /** 손에 든 건설 도구 — 벽·문·가구 4종·용도·철거. 없으면 맵은 구경거리다(클릭이 조용히 지나간다). */
+  const [tool, setTool] = useState<BuildTool | null>(null);
+  /** 용도 도구가 지정할 방 종류. 도구를 바꾸면 함께 비운다 — 남겨 두면 다음에 용도를 고르는
+   *  순간 고르지도 않은 방으로 클릭이 열린다(옛 examDept와 같은 함정). */
+  const [roomType, setRoomType] = useState<RoomType | null>(null);
+  /** 지정할 진료실의 과 — 진료실을 고른 뒤 **한 번 더** 고르게 한다(과 없는 진료실은 코어가 던진다). */
   const [examDept, setExamDept] = useState<SimDeptKey | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [hireOpen, setHireOpen] = useState(false);
@@ -256,27 +250,40 @@ export default function SimGame() {
     setWorld((w) => (w.phase === "WEEK_END" && !w.weekSettled ? settleWeek(w) : w));
   }, [world.phase, world.weekSettled]);
 
-  /** 지금 드래그를 시작할 수 있는가 — 진료실은 **과까지 골라야** 열린다.
-   *  코어(placeRoom)는 과 없는 EXAM을 내과로 접지만(마이그레이션 절단), 그 기본값이 화면에서
-   *  도달 가능해지면 플레이어는 고르지도 않은 과의 진료실을 짓게 된다. */
-  const ready = selected !== null && (selected !== "EXAM" || examDept !== null);
-  /** 이번 건설의 과 — 진료실이 아니면 없다(placeRoom이 어차피 떨군다). */
-  const buildDept = selected === "EXAM" && examDept ? examDept : undefined;
+  /** 지금 부지를 눌러 무언가 할 수 있는가 — 용도는 **방 종류(진료실이면 과까지)**를 골라야 열린다. */
+  const ready = tool !== null && buildBlockReason(tool, roomType, examDept) === null;
+
+  /**
+   * 도구 한 번 — 판정도 세계 생성도 전부 코어가 한다. 여기는 **어느 함수에 넘길지**만 고른다.
+   * 순수 함수라 미리보기가 결과 세계를 버리고 같은 호출을 그대로 써도 안전하다(옛 관례 계승).
+   */
+  const runTool = (t: BuildTool, tiles: Array<{ x: number; y: number }>): PlaceResult => {
+    if (t === "WALL") return buildWalls(world, tiles);
+    if (t === "DEMOLISH") return demolish(world, tiles);
+    if (t === "DOOR") return placeDoor(world, tiles[0]);
+    if (t === "DESIGNATE") {
+      // roomType은 `ready`가 보장한다 — 진료실이면 과까지(코어는 과 없는 EXAM에 던진다).
+      return designateRegion(world, tiles[0], roomType!, examDept ?? undefined);
+    }
+    return placeFurniture(world, t, tiles);
+  };
+
+  /** 드래그가 낳는 타일 — 벽만 테두리다(simHud.rectModeOf). */
+  const dragTiles = (d: Drag, t: BuildTool) => rectTiles(d.start, d.cur, rectModeOf(t));
 
   const preview: BuildPreview | null = useMemo(() => {
-    if (!drag || !selected) return null;
-    const rect = rectOf(drag);
-    // 판정을 베끼지 않고 실제 placeRoom을 돌려 본다 — 결과 세계는 버린다(순수 함수라 안전).
-    const res = placeRoom(world, { type: selected, dept: buildDept, ...rect });
-    return { ...rect, type: selected, ok: res.ok, costManwon: roomCostManwon(rect.w, rect.h) };
-  }, [drag, selected, buildDept, world]);
+    if (!drag || !tool || !ready) return null;
+    const res = runTool(tool, dragTiles(drag, tool));
+    return { tiles: res.tiles, ok: res.ok, label: previewLabel(tool, res) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runTool은 아래 값들의 파생이다
+  }, [drag, tool, ready, roomType, examDept, world]);
 
-  const commit = (d: Drag) => {
-    if (!selected) return;
-    // 진료실은 고른 과를 그대로 싣는다 — 여기서 기본값으로 접으면 화면이 고른 것과 세계가 갈린다.
-    const res = placeRoom(world, { type: selected, dept: buildDept, ...rectOf(d) });
+  /** 확정 — 성공하면 세계를 갈아 끼우고, 말할 것이 있으면(거부·부분 설치) 토스트로 말한다. */
+  const commit = (t: BuildTool, tiles: Array<{ x: number; y: number }>) => {
+    const res = runTool(t, tiles);
     if (res.ok) setWorld(res.world);
-    else showToast(REASON_TEXT[res.reason]);
+    const said = buildResultText(t, res);
+    if (said) showToast(said);
   };
 
   /** 채용 — 확정은 setState **바깥**에서 한다(건설 commit과 같은 이유: 업데이터 안에서 부르면
@@ -483,56 +490,89 @@ export default function SimGame() {
         preview={preview}
         // 폰은 게임 1분마다 2타일을 건너뛴다 — 그 1분의 실시간 길이가 곧 전환 시간이다.
         stepMs={running > 0 ? SIM_MS_PER_GAME_MIN / running : 0}
-        // 열려 있으면 드래그, 아니면 **왜 안 열리는지를 말한다** — 조용히 무시하면 부지를
-        // 끌어도 미리보기도 토스트도 없어 플레이어에게는 판이 죽은 것으로 보인다.
-        // 방 타입 자체를 안 골랐을 때만 조용하다(그 클릭은 탐색이다 — buildBlockReason).
+        // 열려 있으면 도구가 듣고, 아니면 **왜 안 되는지를 말한다** — 조용히 무시하면 부지를
+        // 눌러도 미리보기도 토스트도 없어 플레이어에게는 판이 죽은 것으로 보인다.
+        // 도구 자체를 안 골랐을 때만 조용하다(그 클릭은 탐색이다 — buildBlockReason).
         onTileDown={(t) => {
-          if (ready) return setDrag({ start: t, cur: t });
-          const reason = buildBlockReason(selected, examDept);
-          if (reason) showToast(reason);
+          if (!ready || !tool) {
+            const reason = buildBlockReason(tool, roomType, examDept);
+            if (reason) showToast(reason);
+            return;
+          }
+          // 문·용도는 한 칸을 겨누는 클릭이다 — 드래그를 열면 사각형이 뜻 없이 따라다닌다.
+          if (isDragTool(tool)) setDrag({ start: t, cur: t });
+          else commit(tool, [t]);
         }}
         onTileMove={(t) => setDrag((d) => (d ? { ...d, cur: t } : d))}
         onTileUp={(t) => {
           // 확정은 setState **바깥**에서 한다 — 업데이터 안에서 건설하면 StrictMode가
-          // 업데이터를 두 번 불러 방이 두 번 지어지고 비용도 두 번 빠진다.
-          if (drag) commit({ ...drag, cur: t });
+          // 업데이터를 두 번 불러 벽이 두 번 서고 비용도 두 번 빠진다.
+          if (drag && tool) commit(tool, dragTiles({ ...drag, cur: t }, tool));
           setDrag(null);
         }}
         // 취소는 아무것도 짓지 않고 사각형만 버린다(시계는 drag가 비면 저절로 재개된다).
         onTileCancel={() => setDrag(null)}
       />
 
-      {/* ── 하단 바 — 방 타입 선택. 고른 뒤 부지를 드래그하면 그 사각형이 방이 된다. ── */}
+      {/* ── 하단 바 — 건설 도구 팔레트. 벽을 두르고 → 문을 내고 → 용도를 정하고 → 가구를 놓는다. ── */}
       <footer className="flex flex-col gap-2 border border-frame bg-desk-2 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          {ROOM_TYPES.map((t) => (
+          {BUILD_TOOLS.map((t) => (
             <button
               key={t}
               type="button"
-              aria-pressed={selected === t}
+              aria-pressed={tool === t}
               onClick={() => {
-                setSelected((cur) => (cur === t ? null : t));
-                // 방 타입을 바꾸거나 선택을 풀면 과 선택도 함께 비운다 — 남겨 두면 다음에 EXAM을
-                // 고르는 순간 고르지도 않은 과로 드래그가 열린다.
+                setTool((cur) => (cur === t ? null : t));
+                // 도구를 바꾸거나 놓으면 용도 선택도 함께 비운다 — 남겨 두면 다음에 용도 도구를
+                // 고르는 순간 고르지도 않은 방 종류로 클릭이 열린다.
+                setRoomType(null);
                 setExamDept(null);
               }}
               className={`border px-3 py-1.5 text-sm transition-colors ${
-                selected === t
+                tool === t
                   ? "border-on-desk-muted bg-frame text-on-desk"
                   : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
               }`}
             >
-              {ROOM_LABEL[t]}
+              {TOOL_LABEL[t]}
             </button>
           ))}
+          {/* 가격표는 **고른 도구의 값**이다 — 값 자체는 코어 표에서 온다(simHud.toolCostText). */}
           <span className="ml-auto font-mono text-xs tabular-nums text-on-desk-muted">
-            타일당 {COST_PER_TILE_MANWON}만원 · 최소 {MIN_ROOM_W}×{MIN_ROOM_H}
+            {tool ? toolCostText(tool) : "도구를 고르면 비용이 표시됩니다"}
           </span>
         </div>
 
-        {/* 진료실의 과 — EXAM을 고르면 한 줄이 더 열린다. 진료가 성립하려면 환자·진료실·의사의
-            과가 셋 다 같아야 하므로(코어의 삼중 일치), 무슨 과로 짓는지가 건설의 절반이다. */}
-        {selected === "EXAM" && (
+        {/* 용도 6종 — [용도]를 고르면 한 줄이 더 열린다. 벽이 방을 만드는 게 아니라 **용도가**
+            만든다는 것을 이 줄이 말한다(둘러싸인 실내 + 용도 = 규칙이 보는 방). */}
+        {tool === "DESIGNATE" && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-frame pt-2">
+            <span className="text-xs text-on-desk-muted">용도</span>
+            {ROOM_TYPES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                aria-pressed={roomType === t}
+                onClick={() => {
+                  setRoomType((cur) => (cur === t ? null : t));
+                  setExamDept(null); // 방 종류를 바꾸면 과 선택은 뜻을 잃는다
+                }}
+                className={`border px-2.5 py-1 text-xs transition-colors ${
+                  roomType === t
+                    ? "border-on-desk-muted bg-frame text-on-desk"
+                    : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+                }`}
+              >
+                {ROOM_LABEL[t]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 진료실의 과 — 진료가 성립하려면 환자·진료실·의사의 과가 셋 다 같아야 하므로
+            (코어의 삼중 일치), 무슨 과로 지정하는지가 건설의 절반이다. */}
+        {tool === "DESIGNATE" && roomType === "EXAM" && (
           <div className="flex flex-wrap items-center gap-2 border-t border-frame pt-2">
             <span className="text-xs text-on-desk-muted">과</span>
             {HIRABLE_DEPTS.map((d) => (
@@ -565,8 +605,9 @@ export default function SimGame() {
               // (그때는 오버레이가 이미 다음 행동을 말한다).
               idle: speed === 0 && world.phase === "RUNNING",
               warning: setupWarningText(world),
-              selected,
-              examDept,
+              tool,
+              roomType,
+              dept: examDept,
             })}
           </span>
         </p>
