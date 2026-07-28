@@ -407,6 +407,21 @@ describe('판 종결 — 엔딩 3종', () => {
     expect(settled.phase).toBe('CLOSED')
     expect(settled.ending).toBe('NO_PEOPLE')
   })
+
+  it('ⓗ 전국 풀이 비어도 우리 병원에 의사가 있으면 끝나지 않는다', () => {
+    // NO_PEOPLE의 **왼쪽 항**을 재는 유일한 자리. ⓐⓑⓖ는 전부 풀 0 **그리고** 의사 0이라
+    // 왼쪽 항을 통째로 지워도(= 풀만 보고 판정) 전부 통과한다.
+    // 이 세계는 자연 경로로 도달한다 — 전국 풀은 과마다 2~8명뿐이라(dept.nationalPool) 열심히
+    // 뽑으면 실제로 바닥난다. 왼쪽 항이 없으면 **의사를 다 뽑아 병원이 가장 붐비는 순간**
+    // 판이 "사람이 없어서" 끝난다.
+    const w = weekEndWorld({ hirePool: emptyPool(), treasuryManwon: 100_000, week: 3 })
+    // 전제 — 풀은 비었고 의사는 남았다(둘 중 하나라도 틀리면 이 테스트는 다른 걸 잰다).
+    expect(Object.values(w.hirePool).reduce((s, n) => s + n, 0)).toBe(0)
+    expect(w.pawns.filter(p => p.kind === 'DOCTOR')).toHaveLength(2)
+    const settled = settleWeek(w)
+    expect(settled.phase).toBe('WEEK_END')
+    expect(settled.ending).toBeUndefined()
+  })
 })
 
 describe('다음 주', () => {

@@ -2,6 +2,8 @@
 // 하루가 수익을 벌어들이는 자리라면, 주는 **비용이 청구되는** 자리다: 고정비를 여기서 한 번에
 // 빼고, 금고가 음수로 끝난 주가 연속되면 병원이 닫힌다. 하루만 있으면 돈이 늘기만 해서 게임에
 // 실패가 없다 — 폐업이 있어야 "한 판"이 성립한다.
+// 판이 끝나는 길은 폐업만이 아니다 — 사람(NO_PEOPLE)·시간(CAMPAIGN_END) 종결이 함께 있다.
+// 셋 다 이 파일의 `endingOf` 한 곳에서만 판정된다(정산의 단일 출처 계승).
 import type { EndingKind, SimWorld } from './world'
 import { freshMorning } from './day'
 import { doctorDeptOf, type Pawn } from './pawn'
@@ -100,7 +102,10 @@ function weekDeptTable(w: SimWorld): Partial<Record<SimDeptKey, WeekDeptLine>> {
   return table
 }
 
-/** 주간 결산 — 고정비 차감·insolvencyStreak 갱신·연속 문턱을 채우면 CLOSED.
+/** 주간 결산 — 고정비 차감·insolvencyStreak 갱신·**판 종결 판정**(endingOf 3종).
+ *  종결이면 `phase: 'CLOSED'` + `ending`이 함께 실린다: 돈(INSOLVENCY)·사람(NO_PEOPLE)·
+ *  시간(CAMPAIGN_END). 판정이 여기 있는 이유는 셋 다 주간 축의 값(고정비 결과·주말 사직 명단·
+ *  주차)을 읽기 때문이다 — 다른 곳에서 또 판정하면 끝난 판이 두 번 끝난다.
  *  수익은 진료가 끝난 그 순간 이미 금고에 들어와 있다(settleDay) — 여기서 또 더하면 이중 지급이다.
  *  ⚠️ 이중 정산 가드: 두 번 부르면 고정비가 두 번 빠져 멀쩡한 병원이 장부로만 망한다.
  *  phase는 결산 화면을 유지해야 해서 못 쓰므로(world.weekSettled 주석) 표시로 막는다. */
@@ -117,7 +122,7 @@ export function settleWeek(w: SimWorld): SimWorld {
     insolvencyStreak,
     weekSettled: true,
     phase: ending ? 'CLOSED' : 'WEEK_END',
-    ...(ending ? { ending } : {}),
+    ending,
   }
 }
 

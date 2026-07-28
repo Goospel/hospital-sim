@@ -3,7 +3,7 @@
 import { formatManwon, formatSignedManwon } from "@/game/labels";
 import type { DayRecord } from "@/sim/day";
 import { simDept, type SimDeptKey } from "@/sim/dept";
-import type { WeekDeptLine, WeekSummary } from "@/sim/week";
+import { INSOLVENCY_WEEKS_TO_CLOSE, type WeekDeptLine, type WeekSummary } from "@/sim/week";
 
 /**
  * 주간 결산 오버레이 — 7일이 끝나고 **비용이 청구되는** 자리.
@@ -44,6 +44,19 @@ export default function WeekEndOverlay({
   onNextWeek: () => void;
 }) {
   const warning = !closed && insolvencyStreak > 0;
+  /** 이 판이 **돈 때문에** 끝났는가 — CLOSED 세 종류(돈·사람·시간) 중 폐업만 고른다.
+   *  `ending`을 받지 않고 streak으로 되짚는 이유는 이 오버레이가 세계를 통째로 받지 않기
+   *  때문이고(leavingDepts와 같은 관례), 되짚기가 정확한 이유는 폐업 판정이 곧 이 문턱이라서다.
+   *  ⚠️ **스톱갭**: 엔딩별 본 에필로그(계획 Task 4)가 이 두 문구를 통째로 교체한다. 그때까지
+   *  최소한 **거짓말은 하지 않게** 갈라 둔다 — 12주 흑자 완주에도 "두 주 연속 적자입니다"가
+   *  뜨고 있었다. */
+  const insolvent = insolvencyStreak >= INSOLVENCY_WEEKS_TO_CLOSE;
+  const bankNotice = closed
+    ? insolvent
+      ? "은행: 두 주 연속 적자입니다. 병원은 폐업합니다."
+      // 끝난 판에는 "다음 주"가 없다 — 경고 문구를 그대로 쓰면 없는 다음 주를 약속하게 된다.
+      : `은행: 잔고 ${formatSignedManwon(treasuryManwon)}.`
+    : `은행: 잔고 ${formatSignedManwon(treasuryManwon)}. 다음 주도 적자면 폐업합니다.`;
 
   return (
     <div
@@ -187,15 +200,15 @@ export default function WeekEndOverlay({
         {(warning || closed) && (
           // 은행 통지 — 규칙의 사실만(해석 0). 색 단독 신호 금지: 붉은 잉크 + 글자가 함께 판정을 진다.
           <p className="rounded-xs border border-stamp bg-stamp-field px-4 py-3 text-center text-sm font-medium text-stamp-ink">
-            {closed
-              ? "은행: 두 주 연속 적자입니다. 병원은 폐업합니다."
-              : `은행: 잔고 ${formatSignedManwon(treasuryManwon)}. 다음 주도 적자면 폐업합니다.`}
+            {bankNotice}
           </p>
         )}
 
-        {/* 조작 UI는 종이에 얹지 않는다(§6). 폐업이면 버튼 자체가 없다 — 이 판은 여기서 끝난다. */}
+        {/* 조작 UI는 종이에 얹지 않는다(§6). 판이 끝났으면 버튼 자체가 없다 — 여기서 끝난다. */}
         {closed ? (
-          <p className="text-center text-sm text-on-desk-muted">병원 문을 닫았습니다. 새로고침하면 다시 개원합니다.</p>
+          <p className="text-center text-sm text-on-desk-muted">
+            {insolvent ? "병원 문을 닫았습니다." : "이 판은 여기서 끝납니다."} 새로고침하면 다시 개원합니다.
+          </p>
         ) : (
           <button
             type="button"
