@@ -7,7 +7,7 @@ import EventCard from "@/components/EventCard";
 import HirePanel from "@/components/HirePanel";
 import PriorityPanel from "@/components/PriorityPanel";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
-import { ROOM_LABEL, formatManwon, resigningNotices, turnAwayBatchText } from "@/components/simHud";
+import { ROOM_LABEL, formatManwon, resigningNotices, traitBadges, turnAwayBatchText } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, type SimSpeed } from "@/components/useSimClock";
 import { MS_PER_GAME_MIN } from "@/game/hospitalMap";
 import { formatClockFromOpen } from "@/game/daysim";
@@ -17,9 +17,10 @@ import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import { hireDoctor, setDoctorPriority, type HireResult, type Priority, type PriorityKind } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
 import { startNextDay } from "@/sim/day";
-import { applyMorningEvent } from "@/sim/director";
+import { applyMorningEvent, eligibleEvents, fallbackDirectorChoice, type DirectorChoice } from "@/sim/director";
 import { epilogueText, eventNarration } from "@/sim/narrative";
 import { resigningSimDoctors, settleWeek, startNextWeek, weekSummary } from "@/sim/week";
+import { newLlmBudget, requestDirector, requestNarrativeText, type DirectorReply } from "@/lib/storyteller";
 
 /**
  * /sim — 타일 병원의 첫 화면. 시뮬 코어(src/sim)를 **읽고 그리기만** 한다.
@@ -103,6 +104,62 @@ export default function SimPage() {
      건너뛰고, 그러면 **첫 토스트의 타이머**가 그대로 흘러 두 번째 알림이 곧바로 사라진다. */
   const [toast, setToast] = useState<{ text: string; key: number } | null>(null);
   const showToast = (text: string) => setToast((t) => ({ text, key: (t?.key ?? 0) + 1 }));
+
+  /*
+    ── 스토리텔러(LLM) 배선 ───────────────────────────────────────────────
+    계약은 계획 §0-5 그대로다: **선택은 클릭 시점에 1회 확정**되고, 늦게 도착한 응답은
+    **연출문 텍스트만** 갈아 끼운다(판정·수치 불변). 그래서 아래 상태는 전부 "문장" 아니면
+    "아직 안 쓴 선택"이고, 세계를 바꾸는 값은 하나도 없다.
+
+    예산이 ref인 이유: 새로고침이 곧 새 판이라 컴포넌트 수명과 판 수명이 같다. 모듈 전역에
+    두면 판이 끝나도 소모가 남는다(storyteller.LlmBudget 주석).
+  */
+  const llmBudget = useRef(newLlmBudget());
+  /* 다음 아침에 쓸 선택 — 오버레이가 떠 있는 동안 미리 발사해 클릭 시점의 지연을 0으로 만든다.
+     상태가 아니라 ref인 것이 요점이다: 도착이 렌더를 유발하면 오버레이가 깜빡이고, 무엇보다
+     클릭 핸들러는 **그 순간의 값**을 읽어야 하는데 상태는 렌더 시점에 고정된 스냅샷이다. */
+  const directorSlot = useRef<{ key: string; reply: DirectorReply | null } | null>(null);
+  /* 도착한 문장들 — 키(이벤트는 주-일-종류, 편지는 폰 id, 결말문은 주차)가 지금 화면과 맞을 때만
+     쓰인다. 키가 어긋나면 그냥 안 쓰이고 폴백 문장이 그대로 선다 — 버리는 분기를 따로 안 짜도 된다. */
+  const [llmNarration, setLlmNarration] = useState<{ key: string; text: string } | null>(null);
+  const [llmLetter, setLlmLetter] = useState<{ key: string; text: string } | null>(null);
+  const [llmEpilogue, setLlmEpilogue] = useState<{ key: string; text: string } | null>(null);
+  /* HUD 배지 — 마지막 호출이 성공했는가. 「AI 서사」/「기본 서사」 두 글자가 폴백 강등을 눈에
+     보이게 만든다(무키 배포본에서 게임이 멀쩡히 도는 것이 버그가 아니라 설계임을 화면이 말한다). */
+  const [llmLive, setLlmLive] = useState(false);
+
+  /* 아침 전이가 열려 있는 동안(마감·결산 오버레이) 다음 날의 이벤트를 미리 묻는다.
+     ⚠️ 전이 세계를 **한 번 더 계산해서 버린다**(startNextDay/startNextWeek은 순수 함수라 안전).
+     후보 목록(eligible)은 아침 세계 기준이라 그 세계 없이는 물어볼 수가 없다. */
+  useEffect(() => {
+    if (world.phase !== "DAY_END" && !(world.phase === "WEEK_END" && world.weekSettled)) return;
+    const morning = world.phase === "DAY_END" ? startNextDay(world) : startNextWeek(world);
+    const key = `${morning.week}-${morning.day}`;
+    if (directorSlot.current?.key === key) return; // StrictMode 이중 실행·재렌더에서 두 번 묻지 않는다
+    const slot: { key: string; reply: DirectorReply | null } = { key, reply: null };
+    directorSlot.current = slot;
+    const eligible = eligibleEvents(morning);
+    void requestDirector(
+      llmBudget.current,
+      {
+        week: morning.week,
+        day: morning.day,
+        eligible,
+        doctors: morning.pawns.filter((p) => p.kind === "DOCTOR").length,
+        treasuryManwon: morning.treasuryManwon,
+        turnedAwayTotal: morning.turnedAwayTotal,
+        wards: morning.rooms.filter((r) => r.type === "WARD").length,
+      },
+      eligible,
+    ).then((reply) => {
+      setLlmLive(reply !== null);
+      if (!reply) return;
+      slot.reply = reply;
+      // 종류까지 키에 넣는다 — 늦게 도착한 응답이 폴백이 고른 **다른** 이벤트의 카드에
+      // 남의 연출문을 씌우는 일이 구조적으로 불가능해진다(키가 안 맞으면 그냥 안 쓰인다).
+      if (reply.kind) setLlmNarration({ key: `${key}-${reply.kind}`, text: reply.narration });
+    });
+  }, [world]);
 
   /*
     건설·채용 중 자동 일시정지 — 드래그 시작부터 확정·파기까지, 그리고 채용 패널이 떠 있는 동안
@@ -233,18 +290,82 @@ export default function SimPage() {
   const resigning = resigningSimDoctors(world);
   const resigningIds = new Set(resigning.map((p) => p.id));
 
+  /* 오늘의 선택 — **클릭 시점에 한 번** 불린다. 도착해 있으면 LLM의 선택, 아니면 폴백.
+     기다리지 않는 것이 핵심이다: 여기서 await 하면 [다음 날] 버튼이 최대 10초 먹통이 되고,
+     그건 폴백이 있는데도 게임을 LLM 지연에 묶는 것이다.
+     도착분도 치역을 **다시** 확인한다 — 후보는 요청 시점 세계에서 냈고 확정은 지금이라,
+     그 사이가 벌어질 수 있는 배선이 생기면 applyEvent의 throw(= 흰 화면)로 나타난다. */
+  const chooseToday: DirectorChoice = (w) => {
+    const ready = directorSlot.current;
+    if (ready?.key === `${w.week}-${w.day}` && ready.reply) {
+      const kind = ready.reply.kind;
+      if (kind === null) return null; // LLM이 고른 조용한 하루 — 폴백으로 되묻지 않는다
+      if (eligibleEvents(w).includes(kind)) return kind;
+    }
+    return fallbackDirectorChoice(w);
+  };
+
+  /* 결산에 들어서면 편지·결말문을 발사한다 — 폴백 문장이 이미 그려진 뒤라 도착하면 갈아 끼울 뿐이다.
+     주차 키 하나로 한 번만 보낸다(결산 화면은 여러 번 렌더된다). */
+  const settledKey =
+    world.weekSettled && (world.phase === "WEEK_END" || world.phase === "CLOSED") ? `w${world.week}` : null;
+  const sentSettleRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (settledKey === null || sentSettleRef.current === settledKey) return;
+    sentSettleRef.current = settledKey;
+
+    // 편지는 **한 명분**만 청한다. 여러 명이 떠나는 주에 사람 수만큼 호출하면 판당 상한이
+    // 한 주에 소진되고, 그렇다고 한 번에 몰아 쓰게 하면 문장이 명단 낭독이 된다.
+    const leaver = resigning[0];
+    if (leaver?.dept) {
+      void requestNarrativeText(llmBudget.current, "letter", {
+        name: leaver.name,
+        deptLabel: simDept(leaver.dept).label,
+        saturatedDays: leaver.saturatedDays ?? 0,
+        traits: traitBadges(leaver).map((t) => t.label),
+        week: world.week,
+      }).then((text) => {
+        setLlmLive(text !== null);
+        if (text) setLlmLetter({ key: leaver.id, text });
+      });
+    }
+
+    if (world.ending) {
+      void requestNarrativeText(llmBudget.current, "epilogue", {
+        ending: world.ending,
+        week: world.week,
+        leftCount: weekSummary(world).leftCount,
+        resignedNames: resigning.map((p) => p.name).filter(Boolean),
+        treasuryManwon: world.treasuryManwon,
+      }).then((text) => {
+        setLlmLive(text !== null);
+        if (text) setLlmEpilogue({ key: `w${world.week}`, text });
+      });
+    }
+  }, [settledKey, world, resigning]);
+
   /* 에필로그 — 판이 끝났을 때만 만든다. 문장은 `narrative.epilogueText`가 소유하고 여기선
      지표만 모은다: 금액 포맷은 화면 층의 단일 함수(formatManwon)를 지나므로 HUD·결산과 같은
      단위가 보장된다(계획 §0-8). ⚠️ 이탈 수는 **이 주치**다 — 세계가 주마다 days를 비워
      판 누적 축이 없다(narrative.EpilogueStats 주석). */
   const epilogue = world.ending
-    ? epilogueText(world.ending, {
-        week: world.week,
-        leftCount: weekSummary(world).leftCount,
-        resignedNames: resigning.map((p) => p.name).filter((n): n is string => !!n),
-        treasuryText: formatManwon(world.treasuryManwon),
-      })
+    ? // LLM 결말문이 이 주차로 도착해 있으면 그것, 아니면 폴백 원고. 지표는 어느 쪽이든 같은 세계에서 왔다.
+      llmEpilogue?.key === `w${world.week}`
+      ? llmEpilogue.text
+      : epilogueText(world.ending, {
+          week: world.week,
+          leftCount: weekSummary(world).leftCount,
+          resignedNames: resigning.map((p) => p.name).filter((n): n is string => !!n),
+          treasuryText: formatManwon(world.treasuryManwon),
+        })
     : undefined;
+
+  /* 사직 통지 — 편지 본문(body)만 LLM 문장으로 갈아 끼운다. 머리줄(head: 누가 떠나는가)은
+     세계에서 파생된 **사실**이라 손대지 않는다: LLM이 이름이나 과를 잘못 쓰면 화면이 거짓말을 한다. */
+  const leavingNotices = resigningNotices(resigning);
+  const leaving = llmLetter
+    ? leavingNotices.map((n) => (n.key === llmLetter.key ? { ...n, body: llmLetter.text } : n))
+    : leavingNotices;
 
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 
@@ -280,6 +401,14 @@ export default function SimPage() {
           <span className={turnedAway.length > 0 ? "text-alarm" : undefined}>{turnedAway.length}</span>
         </span>
         {closed && <span className="text-on-desk-muted">접수 마감</span>}
+        {/* 서사 출처 배지 — 지금 화면의 문장이 LLM인지 폴백인지. 키 없는 배포본에서 게임이
+            멀쩡히 도는 것이 고장이 아니라 설계임을 두 글자로 말한다(계획 §0-5). */}
+        <span
+          className="text-on-desk-muted"
+          title={llmLive ? "LLM 스토리텔러가 문장을 씁니다" : "사전 작성 문장으로 진행합니다 (키 없음·지연·실패)"}
+        >
+          {llmLive ? "AI 서사" : "기본 서사"}
+        </span>
         <div className="ml-auto flex items-center gap-1">
           {paused && (
             <span className="mr-2 text-xs text-on-desk-muted">
@@ -454,7 +583,13 @@ export default function SimPage() {
       {eventOpen && world.event && (
         <EventCard
           kind={world.event.kind}
-          narration={eventNarration(world.event.kind, world.week, world.day)}
+          // LLM 연출문이 이 카드(주-일-종류)로 도착해 있으면 그것, 아니면 폴백 원고.
+          // 늦게 도착해도 카드가 아직 떠 있으면 이 자리에서 바로 교체된다(판정·수치는 불변).
+          narration={
+            llmNarration?.key === eventKey
+              ? llmNarration.text
+              : eventNarration(world.event.kind, world.week, world.day)
+          }
           week={world.week}
           day={world.day}
           onClose={() => setSeenEvent(eventKey)}
@@ -470,7 +605,7 @@ export default function SimPage() {
           // 아침 전이 **직후**에 오늘의 이벤트가 붙는다 — 합성은 `applyMorningEvent` 한 곳뿐이다
           // (배선이 [다음 날]·[다음 주]로 흩어지면 한 곳만 고쳐 요일에 따라 스토리텔러가 꺼진다).
           // 순수 함수라 StrictMode의 이중 호출에도 같은 세계가 나온다.
-          onNextDay={() => setWorld((w) => (w.phase === "DAY_END" ? applyMorningEvent(startNextDay(w)) : w))}
+          onNextDay={() => setWorld((w) => (w.phase === "DAY_END" ? applyMorningEvent(startNextDay(w), chooseToday) : w))}
         />
       )}
 
@@ -482,14 +617,14 @@ export default function SimPage() {
           days={world.days}
           summary={weekSummary(world)}
           // 명단도 문장 파생도 여기서 끝낸다 — 오버레이는 세계를 통째로 받지 않는다(summary와 같은 관례).
-          leaving={resigningNotices(resigning)}
+          leaving={leaving}
           treasuryManwon={world.treasuryManwon}
           insolvencyStreak={world.insolvencyStreak}
           closed={world.phase === "CLOSED"}
           // 왜 끝났는가는 코어가 이미 판정해 두었다 — 화면이 streak으로 되짚지 않는다.
           ending={world.ending}
           epilogue={epilogue}
-          onNextWeek={() => setWorld((w) => (w.phase === "WEEK_END" ? applyMorningEvent(startNextWeek(w)) : w))}
+          onNextWeek={() => setWorld((w) => (w.phase === "WEEK_END" ? applyMorningEvent(startNextWeek(w), chooseToday) : w))}
         />
       )}
     </main>

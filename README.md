@@ -87,6 +87,14 @@ npm install
 npm run dev
 ```
 
+### 변수 목록 (값·설명의 단일 출처는 `.env.example`)
+
+| 변수 | 필수 | 역할 |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | 스토리텔러를 켤 때 | `/api/storyteller` 프록시가 쓰는 서버 전용 키. **Vercel 대시보드에도 등록**해야 배포본에서 LLM 서사가 켜진다. 없으면 사전 작성 문장(폴백)으로 정상 완주한다. |
+| `LLM_MODEL` | 선택 | 스토리텔러 모델 id. 미설정 시 코드 기본값(`claude-opus-5`). |
+| `NEXT_PUBLIC_STORYTELLER_ORIGIN` | Pages 빌드만 | 게임이 프록시를 부를 오리진. 비우면 같은 오리진(Vercel·로컬 dev). Pages는 정적 export라 라우트를 담지 못해 CI가 Vercel 오리진을 넣어 준다. |
+
 ### 시크릿(API 키) 규칙
 - **서버 전용**: 시크릿에는 `NEXT_PUBLIC_`을 붙이지 않는다. 붙이면 빌드 시 브라우저 번들에 인라인되어 노출된다. (LLM 키는 서버 API 라우트에서만 사용.)
 - **기기 간 값 이동**: git이 아니라 **비밀번호 관리자** 또는 **발급처에서 재복사**(Anthropic Console). 배포 후에는 Vercel에 값을 한 번 등록하고 각 기기에서 `vercel env pull .env.local`로 당겨오면 단일 소스로 동기화된다.
