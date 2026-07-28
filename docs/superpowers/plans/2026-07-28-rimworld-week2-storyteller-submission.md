@@ -41,7 +41,9 @@ tags:
 ### 0-2. 이벤트 엔진 — 카탈로그 4종 (결정론)
 
 새 파일 `src/sim/events.ts`(효과·카탈로그 — **leaf**: world·dept 타입만 임포트)와
-`src/sim/director.ts`(전제 판정·폴백 선택 — patientFlow의 시드 폴딩·emergency의 wardBeds를 쓴다).
+`src/sim/director.ts`(전제 판정·폴백 선택 — patientFlow의 시드 폴딩을 쓴다). MASS_CASUALTY 전제는
+`rooms.some(WARD)`로 본다 — wardBeds(emergency)를 쓰면 events가 leaf가 아니게 되고, 최소 방(4×4)은
+autoFurniture가 침대를 반드시 놓으므로 실질 등가다(Task 3 리뷰에서 확정).
 **둘을 가르는 이유는 T-093(값 임포트 순환)**: patientFlow가 이벤트 배율을 읽어야 하는데(`events.ts`),
 폴백 디렉터는 patientFlow의 `minuteStreamSeed`를 써야 한다 — 한 파일이면 순환이다.
 
@@ -79,7 +81,11 @@ tags:
 ### 0-3. 특성·사연·이름 — 서사 재료 (수치 효과 없음)
 
 - `Pawn.name?: string` + `Pawn.traits?: readonly [TraitKey, TraitKey]` 신설(의사만). `spawnDoctor`가
-  `nextId` 인덱싱으로 결정론 부여(RNG 불필요 — 시드 소비 없음이 계약).
+  결정론 부여(RNG 불필요 — 시드 소비 없음이 계약). **이름은 풀 소진량 파생 서수**
+  (Σ(초기 풀 − 현재 풀) — 단조 증가·판 내 유일) × 이름 18개(= 전국 풀 총합 = 한 판 최대 채용)로
+  **동명이인이 구조적으로 불가능**하다. ⚠️ 최초 설계는 nextId 인덱싱이었으나 nextId는 방·환자까지
+  올리는 전역 카운터라 이름이 실제로 겹쳤다(스펙 리뷰 실측: 8명 중 「최민서」 2회) — Task 3 리뷰에서
+  교체. traits는 nextId 인덱싱 유지(특성은 유형이라 겹쳐도 자연스럽다).
 - **수치 효과는 ⏸ 본선**(스펙 §2의 "수치 효과는 결정론"은 개성 상호작용이 붙는 본선 재료 —
   PR C가 스트레스를 절단한 것과 같은 근거: 효과 없는 셋째 축은 새 결정을 안 낳는다).
   이번 PR에서 특성은 **사직 편지·연출문의 재료**이고 PriorityPanel에 표시된다.
@@ -349,6 +355,10 @@ export async function POST(req: NextRequest) {
   - DIRECTOR_SCHEMA: `{ event: enum(4종+'NONE'), narration: string }` · `additionalProperties: false`.
   - 클라이언트(`src/lib/storyteller.ts`): base = 같은 오리진, Pages에선 `NEXT_PUBLIC_STORYTELLER_ORIGIN`.
     AbortController 10초 · 판당 카운터 · 실패 전부 null 한 경로.
+  ⚠️ **선택 확정은 아침 전이 클릭 시점 1회다**: `fallbackDirectorChoice`가 minute 0 밖 호출에
+  throw하므로(Task 3에서 승격), 늦게 도착한 LLM 응답으로 이벤트를 **재적용하지 않는다** —
+  클릭 시점에 도착해 있으면 그 선택, 아니면 폴백으로 즉시 확정하고, 이후 도착분은 **연출문
+  텍스트만** 갱신할 수 있다(판정·수치 불변).
   - `next.config.ts`: `pageExtensions` 스위치(0-5) — **적용 전 `src/app` 아래 `.ts` page/layout/route
     전수 확인**(route.ts 하나뿐이어야 한다).
 - [ ] **Step 4: Green + 양 빌드** — `npm run build`(Vercel 형태 — 라우트 포함) ·
