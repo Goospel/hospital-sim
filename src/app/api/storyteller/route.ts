@@ -28,6 +28,26 @@ const EFFORT = 'low' as const
  *  TS SDK의 timeout 단위는 **밀리초**다(Python은 초 — 여기서 틀리면 9ms가 되어 전부 타임아웃). */
 const SDK_TIMEOUT_MS = 9_000
 
+/** 최대 출력 토큰 — **사고(thinking)와 본문을 합산해서** 먹는 캡이다.
+ *  claude-opus-5는 `thinking`을 생략하면 adaptive 사고가 켜지므로(Opus 4.8에서 바뀐 기본값)
+ *  1024로는 사고가 먼저 먹고 산문이 잘릴 수 있다. 잘린 director는 JSON 파싱 실패로 저절로
+ *  강등되지만 **잘린 편지·결말문은 빈 문자열이 아니라 '그럴듯한 반 토막'이라 그대로 통과**한다 —
+ *  그게 이 값이 여유로워야 하는 이유이고, 아래 `max_tokens` 강등이 남은 절반을 막는다. */
+const MAX_TOKENS = 4096
+
+/**
+ * 브라우저에서 이 프록시를 부를 수 있는 오리진.
+ *
+ * ⚠️ **이건 CORS이지 인증이 아니다.** Origin 헤더는 브라우저가 붙이는 값이라 `curl -H Origin:`
+ * 한 줄로 위조된다 — 아래 403은 *브라우저에 심어진 남의 페이지*가 이 프록시를 지갑처럼 쓰는
+ * 것을 막을 뿐, 작정한 스크립트는 못 막는다. **최종 방어선은 코드 밖에 있다**(사용자 몫):
+ *   ① Vercel Firewall 의 rate-limit 룰(`/api/storyteller`)  ② Anthropic 콘솔의 지출 상한.
+ * 둘 다 대시보드에서 1회 설정이고, 그게 서지 않는 한 이 라우트는 무인증 공개 지출 경로다.
+ *
+ * `http://localhost:3000`이 목록에 남아 있는 이유: dev 서버가 다른 포트로 뜨면 아래 같은-오리진
+ * 규칙이 덮지만, **Pages 빌드를 로컬에서 띄워 Vercel 프록시로 쏘는 대조 실험**은 오리진이
+ * 갈리므로 이 줄이 없으면 못 한다.
+ */
 const ALLOWED_ORIGINS = new Set(['https://goospel.github.io', 'http://localhost:3000'])
 
 const TASKS = ['director', 'letter', 'epilogue'] as const
@@ -37,10 +57,28 @@ function isTask(value: unknown): value is StorytellerTask {
   return typeof value === 'string' && (TASKS as readonly string[]).includes(value)
 }
 
+/**
+ * 이 요청을 받아 줄 오리진인가 — 아니면 `null`.
+ *
+ * 목록(위)에 더해 **같은 오리진**을 반드시 허용해야 한다: Vercel 배포본은 게임과 프록시가 한
+ * 도메인에 있어 브라우저가 `Origin: https://<그 배포>`를 붙여 보낸다. 목록만 보면 **자기 자신을
+ * 403으로 막는** 배포가 되고, 그건 주 배포 경로가 통째로 죽는 것이다.
+ */
+function allowedOrigin(req: NextRequest): string | null {
+  const origin = req.headers.get('origin')
+  if (origin === null) return null // 브라우저는 POST에 항상 붙인다 — 없으면 브라우저가 아니다
+  if (ALLOWED_ORIGINS.has(origin)) return origin
+  const host = req.headers.get('host')
+  return host !== null && (origin === `https://${host}` || origin === `http://${host}`) ? origin : null
+}
+
 const cors = (origin: string | null) => ({
-  'Access-Control-Allow-Origin': origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://goospel.github.io',
+  'Access-Control-Allow-Origin': origin ?? 'https://goospel.github.io',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'content-type',
+  // 응답이 Origin에 따라 갈리므로 캐시 키에도 Origin이 들어가야 한다 — 없으면 CDN이 한 오리진의
+  // 허용 헤더를 다른 오리진에 먹여, 통과하거나 막히는 것이 **누가 먼저 왔는가**로 정해진다.
+  Vary: 'Origin',
 })
 
 /**
@@ -96,11 +134,20 @@ const SYSTEM_PROMPTS: Record<StorytellerTask, string> = {
 }
 
 export async function OPTIONS(req: NextRequest) {
-  return new Response(null, { status: 204, headers: cors(req.headers.get('origin')) })
+  return new Response(null, { status: 204, headers: cors(allowedOrigin(req)) })
 }
 
 export async function POST(req: NextRequest) {
-  const headers = cors(req.headers.get('origin'))
+  const origin = allowedOrigin(req)
+  const headers = cors(origin)
+
+  // 프리플라이트만으로는 막을 수 없는 것을 여기서 막는다: 단순 요청(`content-type` 없이 보낸
+  // POST 등)은 OPTIONS를 거치지 않고 곧장 도착하고, 브라우저는 **응답이 온 뒤에야** CORS로
+  // 결과를 가린다 — 그때는 이미 우리 돈이 나갔다. 위조 가능한 신호지만(allowedOrigin 주석)
+  // 남의 페이지가 무심코 지갑을 쓰는 경로는 이 한 줄이 끊는다.
+  if (origin === null) {
+    return NextResponse.json({ error: 'FORBIDDEN_ORIGIN' }, { status: 403, headers })
+  }
 
   // 키가 없으면 여기서 끝난다 — 클라이언트는 비200을 전부 폴백으로 읽으므로(storyteller.ts)
   // 키 미등록 배포본도 게임은 폴백 문장으로 정상 완주한다(계획 §0-5의 최종 안전망).
@@ -119,22 +166,42 @@ export async function POST(req: NextRequest) {
   }
   const task = body.task
 
-  const client = new Anthropic({ timeout: SDK_TIMEOUT_MS })
-  const res = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    output_config: task === 'director'
-      ? { effort: EFFORT, format: { type: 'json_schema', schema: DIRECTOR_SCHEMA } }
-      : { effort: EFFORT },
-    system: SYSTEM_PROMPTS[task],
-    messages: [{ role: 'user', content: JSON.stringify(body.state ?? {}) }],
-  })
+  // `maxRetries: 0` — SDK 기본값 2는 **타임아웃마다 재시도**하므로 9초 타임아웃이 실제로는
+  // 최대 3회 = 28초가 된다(리뷰 실측: 재시도 3회·28.45초). 그러면 클라이언트(10초)가 먼저
+  // 끊고 그 뒤로 20초간 우리 돈만 나간다 — 게임에는 이미 폴백이 있으니 재시도가 살 이유가 없다.
+  // 재시도를 되살리려면 `timeout`을 **합계가 9초 안에 들어오도록**(예: 3초 × 3회) 줄여야 한다.
+  const client = new Anthropic({ timeout: SDK_TIMEOUT_MS, maxRetries: 0 })
+
+  let res
+  try {
+    res = await client.messages.create({
+      model: MODEL,
+      max_tokens: MAX_TOKENS,
+      output_config: task === 'director'
+        ? { effort: EFFORT, format: { type: 'json_schema', schema: DIRECTOR_SCHEMA } }
+        : { effort: EFFORT },
+      system: SYSTEM_PROMPTS[task],
+      messages: [{ role: 'user', content: JSON.stringify(body.state ?? {}) }],
+    })
+  } catch (err) {
+    // 던지게 두면 Next의 기본 500에는 **CORS 헤더가 없어**, Pages(크로스오리진)에서는 상태
+    // 코드조차 못 읽고 fetch가 통째로 reject된다 — 502·429·타임아웃이 전부 "네트워크 오류"로
+    // 뭉개져 디버깅이 불가능해진다. 여기서 잡아 같은 headers로 내려보내면 강등 경로가 하나다.
+    console.error('[storyteller]', task, err instanceof Error ? err.message : String(err))
+    return NextResponse.json({ error: 'UPSTREAM' }, { status: 502, headers })
+  }
 
   // 거절은 502로 내려보내 **앱 폴백으로 강등**한다. 서버측 fallbacks 베타를 쓰지 않는 이유:
   // 게임에 이미 폴백 문장 카탈로그(narrative.ts)라는 최종 안전망이 있어, 베타 의존을 하나 더
   // 늘려도 얻는 것이 없다(계획 §0-5).
-  if (res.stop_reason === 'refusal') {
-    return NextResponse.json({ error: 'REFUSAL' }, { status: 502, headers })
+  //
+  // `max_tokens`도 같은 자리에서 막는다: 캡에 걸린 응답은 **문장이 중간에 끊긴 것**이다.
+  // director는 JSON이 깨져 클라이언트가 알아서 버리지만, 편지·결말문은 반 토막이어도
+  // "빈 문자열이 아닌 문자열"이라 그대로 화면에 선다 — 폴백이 있는데 잘린 문장을 보여 주는
+  // 것은 강등의 실패다. 잘렸다는 사실을 아는 유일한 자리가 여기라 여기서 끊는다.
+  if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens') {
+    console.warn('[storyteller]', task, `강등: stop_reason=${res.stop_reason}`)
+    return NextResponse.json({ error: res.stop_reason.toUpperCase() }, { status: 502, headers })
   }
 
   // 사용량 로그 — ④ 제출 문서(§6-4)의 실측 재료다. 응답 본문은 찍지 않는다(로그가 곧 유출 면).

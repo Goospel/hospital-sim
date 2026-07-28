@@ -97,6 +97,11 @@ describe('전송 실패는 전부 한 경로(null)로 내려간다', () => {
     expect(await requestDirector(newLlmBudget(), STATE, ELIGIBLE)).toBeNull()
   })
 
+  it('HTTP 403 → null (라우트의 Origin 가드에 막혀도 게임은 폴백으로 완주한다)', async () => {
+    stubFetch(async () => jsonRes({ error: 'FORBIDDEN_ORIGIN' }, 403))
+    expect(await requestDirector(newLlmBudget(), STATE, ELIGIBLE)).toBeNull()
+  })
+
   it('HTTP 503 NO_KEY → null (키 미등록 배포본은 폴백으로 완주한다)', async () => {
     stubFetch(async () => jsonRes({ error: 'NO_KEY' }, 503))
     expect(await requestNarrativeText(newLlmBudget(), 'letter', STATE)).toBeNull()

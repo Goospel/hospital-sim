@@ -336,7 +336,10 @@ export default function SimPage() {
         week: world.week,
         leftCount: weekSummary(world).leftCount,
         resignedNames: resigning.map((p) => p.name).filter(Boolean),
-        treasuryManwon: world.treasuryManwon,
+        // **이미 포맷된 금액**을 넘긴다 — 폴백 경로(epilogueText)와 같은 값이라야 두 결말문이
+        // 같은 단위를 말한다. 원본 숫자를 넘기면 LLM이 「3200만원」이라 쓰고 폴백은 「3,200만원」,
+        // 억 단위에선 아예 갈린다. narrative.EpilogueStats 주석이 경고한 그 우회다.
+        treasuryText: formatManwon(world.treasuryManwon),
       }).then((text) => {
         setLlmLive(text !== null);
         if (text) setLlmEpilogue({ key: `w${world.week}`, text });

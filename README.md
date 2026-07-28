@@ -95,6 +95,12 @@ npm run dev
 | `LLM_MODEL` | 선택 | 스토리텔러 모델 id. 미설정 시 코드 기본값(`claude-opus-5`). |
 | `NEXT_PUBLIC_STORYTELLER_ORIGIN` | Pages 빌드만 | 게임이 프록시를 부를 오리진. 비우면 같은 오리진(Vercel·로컬 dev). Pages는 정적 export라 라우트를 담지 못해 CI가 Vercel 오리진을 넣어 준다. |
 
+> ⚠️ **`/api/storyteller`는 무인증 공개 엔드포인트다.** 코드는 브라우저 `Origin`이 허용 목록·같은 오리진이 아니면 403으로 막지만, `Origin`은 `curl` 한 줄로 위조되므로 **인증이 아니다**. 키를 등록해 실제로 지출이 발생하는 순간부터 **최종 방어선은 대시보드 두 곳(사용자 몫)**이다:
+> 1. **Vercel Firewall** — `/api/storyteller` 경로에 rate-limit 룰(예: IP당 분당 N회).
+> 2. **Anthropic 콘솔** — 워크스페이스 지출 상한(spend limit).
+>
+> 둘 중 하나라도 없으면 누군가 이 주소를 찾는 순간 우리 계정으로 무제한 호출할 수 있다. 키를 등록하기 **전에** 걸어 두는 것이 순서다.
+
 ### 시크릿(API 키) 규칙
 - **서버 전용**: 시크릿에는 `NEXT_PUBLIC_`을 붙이지 않는다. 붙이면 빌드 시 브라우저 번들에 인라인되어 노출된다. (LLM 키는 서버 API 라우트에서만 사용.)
 - **기기 간 값 이동**: git이 아니라 **비밀번호 관리자** 또는 **발급처에서 재복사**(Anthropic Console). 배포 후에는 Vercel에 값을 한 번 등록하고 각 기기에서 `vercel env pull .env.local`로 당겨오면 단일 소스로 동기화된다.
