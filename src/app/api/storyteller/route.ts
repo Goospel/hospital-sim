@@ -19,8 +19,12 @@ import { EVENT_KINDS } from '@/sim/events'
  * 닿는다 — 프롬프트는 지시라 어길 수 있지만 그 두 관문은 못 어긴다.
  */
 
-/** 모델은 env로 갈아 끼울 수 있다 — 비용·지연을 배포에서 조정하되 코드 기본값은 최상위 모델. */
-const MODEL = process.env.LLM_MODEL ?? 'claude-opus-5'
+/** 모델은 env(`LLM_MODEL`)로 갈아 끼울 수 있다 — 비용·지연을 배포에서 조정한다.
+ *  기본값이 Sonnet인 이유(실측 2026-07-28): claude-opus-5는 letter·epilogue가 9초 타임아웃을
+ *  넘겨(9,045ms·9,025ms → 502) 세 작업 중 둘이 항상 폴백으로 강등된다 — 최상위 모델이
+ *  이 라우트에서는 작동하지 않는 기본값이었다. claude-sonnet-5는 셋 다 3.3~4.7초.
+ *  claude-haiku-4-5는 effort 파라미터 미지원(400)이라 이 라우트에서 못 쓴다. */
+const MODEL = process.env.LLM_MODEL ?? 'claude-sonnet-5'
 
 /** 연출문은 짧다 — 깊게 생각할수록 지연만 늘고 문장은 나아지지 않는다(계획 §0-5). */
 const EFFORT = 'low' as const
@@ -30,7 +34,7 @@ const EFFORT = 'low' as const
 const SDK_TIMEOUT_MS = 9_000
 
 /** 최대 출력 토큰 — **사고(thinking)와 본문을 합산해서** 먹는 캡이다.
- *  claude-opus-5는 `thinking`을 생략하면 adaptive 사고가 켜지므로(Opus 4.8에서 바뀐 기본값)
+ *  claude-sonnet-5도 claude-opus-5와 마찬가지로 `thinking`을 생략하면 adaptive 사고가 켜지므로
  *  1024로는 사고가 먼저 먹고 산문이 잘릴 수 있다. 잘린 director는 JSON 파싱 실패로 저절로
  *  강등되지만 **잘린 편지·결말문은 빈 문자열이 아니라 '그럴듯한 반 토막'이라 그대로 통과**한다 —
  *  그게 이 값이 여유로워야 하는 이유이고, 아래 `max_tokens` 강등이 남은 절반을 막는다. */

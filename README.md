@@ -106,7 +106,7 @@ npm run dev
 | 변수 | 필수 | 역할 |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | 스토리텔러를 켤 때 | `/api/storyteller` 프록시가 쓰는 서버 전용 키. **Vercel 대시보드에도 등록**해야 배포본에서 LLM 서사가 켜진다. 없으면 사전 작성 문장(폴백)으로 정상 완주한다. |
-| `LLM_MODEL` | 선택 | 스토리텔러 모델 id. 미설정 시 코드 기본값(`claude-opus-5`). |
+| `LLM_MODEL` | 선택 | 스토리텔러 모델 id. 미설정 시 코드 기본값(`claude-sonnet-5`). |
 | `NEXT_PUBLIC_STORYTELLER_ORIGIN` | Pages 빌드만 | 게임이 프록시를 부를 오리진. 비우면 같은 오리진(Vercel·로컬 dev). Pages는 정적 export라 라우트를 담지 못해 CI가 Vercel 오리진을 넣어 준다. |
 
 > ⚠️ **`/api/storyteller`는 무인증 공개 엔드포인트다.** 코드는 브라우저 `Origin`이 허용 목록·같은 오리진이 아니면 403으로 막지만, `Origin`은 `curl` 한 줄로 위조되므로 **인증이 아니다**. 키를 등록해 실제로 지출이 발생하는 순간부터 **최종 방어선은 대시보드 두 곳(사용자 몫)**이다:
