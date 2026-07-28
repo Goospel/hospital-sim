@@ -140,6 +140,13 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
  *  순서는 객체 리터럴의 기재 순서 = 미용 → 내과 → 외과 → 순환기(고정비 오름차순)다. */
 export const HIRABLE_DEPTS = Object.keys(SIM_DEPTS) as SimDeptKey[]
 
+/** 과별 **누적 상한** 표 — `[과, 그 구간의 위쪽 경계]`의 배열이고 배열 순서가 곧 구간 순서다.
+ *  평시 도착 분포(`patientFlow.ARRIVAL_DEPT_MIX`)와 이벤트가 갈아 끼우는 분포
+ *  (`events.EPIDEMIC_DEPT_MIX`)가 **같은 모양**이라야 `pickWantsDept` 하나가 둘 다 읽는다.
+ *  타입 자리가 여기(카탈로그 leaf)인 이유: 양쪽이 이미 `SimDeptKey`를 여기서 가져간다 —
+ *  한쪽 파일에 두면 다른 쪽이 그 파일을 타입 때문에 임포트하게 되어 위상이 흐려진다. */
+export type DeptMix = ReadonlyArray<readonly [SimDeptKey, number]>
+
 /** 한 판의 시작 채용 풀 — **카탈로그에서 파생한다**(`SimWorld.hirePool`의 초기값).
  *  숫자를 createWorld에 다시 적으면 카탈로그를 튜닝해도 세계가 안 따라오고, 그 어긋남은
  *  "왜 미용이 8명이 아니지"로만 관측된다(HIRABLE_DEPTS가 카탈로그 파생인 것과 같은 이유). */

@@ -21,6 +21,7 @@ export function seededUnit(seed: number): number {
  * salt 사용처: 1·2·3(daysim) 7(구 attrition) 11·12·15(world 드리프트) 13(채용) 17·19(콜 발신) 23(사직)
  *              29(sim 환자 도착)·31(sim 희망 과) — `src/sim/patientFlow.ts`가 이 함수를 재사용한다.
  *              37(sim 응급 도착)·41(sim 응급 종류) — `src/sim/emergency.ts`.
+ *              43(sim 이벤트 발생)·47(sim 이벤트 종류) — `src/sim/director.ts`.
  * 📌 이 목록이 **레지스트리의 단일 출처**다. 새 축을 열 때 여기 없는 값을 고르고 여기 등재한다 —
  *    다른 층(src/sim)이 쓰는 값이 빠져 있으면 다음 사람이 이미 쓰인 salt를 "비었다"고 고르고,
  *    그 결과는 두 스트림이 같아지는 무성 분포 붕괴다(에러가 안 난다).

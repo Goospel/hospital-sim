@@ -14,11 +14,16 @@ import { ENTRANCE, type Room, type SimWorld } from './world'
 // 상위를 값으로 당겨 needs ⇄ patientFlow 순환이 된다 — spots.ts 머리말.
 import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
 import { priorityOf, type Pawn, type PatientStage } from './pawn'
-import { simDept, addExamToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
+import {
+  simDept, addExamToDeptStats, type DeptMix, type SimDeptKey, type SimDeptStats,
+} from './dept'
 import { applyWorkLoads } from './fatigue'
 // 작업 소요식(피로 × 허기 감속)은 needs.ts가 **단일 출처**다(응급도 같은 함수를 부른다) —
 // 여기서 식을 다시 적으면 진료만 느려지고 처치는 그대로인 병원이 조용히 생긴다.
 import { prefersRestOverExam, workDurationMin } from './needs'
+// events.ts는 **leaf**다(world·dept 타입만 본다) — 값으로 당겨도 순환이 없다. 폴백 디렉터는
+// 반대로 이 파일의 시드 폴딩을 쓰므로 director.ts에 따로 산다(T-093 · events.ts 머리말).
+import { arrivalDeptMixOf, arrivalProbMulOf } from './events'
 
 export const EXAM_DURATION_MIN = 20
 /** 대기 인내 — 이만큼 앉아 있었는데 안 불리면 떠난다(수익 0). */
@@ -81,7 +86,7 @@ export function wantsDeptSeed(w: SimWorld): number {
  *  값은 각 구간의 **누적 상한**이고, 배열 순서가 곧 구간 순서라 결정론의 일부다.
  *  왜 누적으로 적나: 개별 확률로 두면 합이 1인지 눈으로 확인할 수 없고, 한 과를 조정할 때
  *  나머지를 손으로 맞춰야 한다. 마지막 값 1.00이 곧 "합계 1" 검사다. */
-export const ARRIVAL_DEPT_MIX: ReadonlyArray<readonly [SimDeptKey, number]> = [
+export const ARRIVAL_DEPT_MIX: DeptMix = [
   ['INTERNAL_MEDICINE', 0.45],
   ['GENERAL_SURGERY', 0.65],
   ['CARDIOLOGY', 0.80],
@@ -90,9 +95,12 @@ export const ARRIVAL_DEPT_MIX: ReadonlyArray<readonly [SimDeptKey, number]> = [
 
 /** [0,1) 난수 → 희망 과. 구간은 아래가 닫히고 위가 열린다(`u < upper`).
  *  치역 밖 값이 오면 마지막 과로 접지 않고 던진다 — 접으면 상한 표가 틀려도(마지막이 0.9 따위)
- *  미용이 조용히 늘어날 뿐 아무도 모른다. */
-export function pickWantsDept(u: number): SimDeptKey {
-  if (u >= 0) for (const [dept, upper] of ARRIVAL_DEPT_MIX) if (u < upper) return dept
+ *  미용이 조용히 늘어날 뿐 아무도 모른다.
+ *
+ *  `mix` 인자는 이벤트(전염병)가 분포를 통째로 갈아 끼우기 위한 자리다 — **기계는 하나**이고
+ *  표만 바뀐다. 기본값이 평시 표라 기존 호출부는 한 글자도 안 바뀐다. */
+export function pickWantsDept(u: number, mix: DeptMix = ARRIVAL_DEPT_MIX): SimDeptKey {
+  if (u >= 0) for (const [dept, upper] of mix) if (u < upper) return dept
   throw new Error(`pickWantsDept: [0,1) 밖의 값(${u}) — seededUnit의 치역을 벗어났다`)
 }
 
@@ -158,7 +166,11 @@ function maybeArrive(w: SimWorld): SimWorld {
   // 480분은 창이 닫힌 쪽이다(경계 테스트가 이 두 끝을 잠근다).
   if (w.minute >= ARRIVAL_WINDOW_MIN) return w
   // 분마다 독립 판정 — 이래야 도착이 몰릴 때 몰리고(대기열이 생기고) 빌 때 빈다.
-  if (seededUnit(arrivalSeed(w)) >= ARRIVAL_PROB_PER_MIN) return w
+  // 오늘의 이벤트 배율이 여기서 곱해진다(events.arrivalProbMulOf) — 이벤트가 없으면 1이라
+  // **평일의 도착 스트림은 이 훅이 붙기 전과 완전히 같다**(기존 결정론 테스트가 그걸 잠근다).
+  // 시드가 아니라 **문턱**을 곱하는 것이 핵심이다: 시드를 흔들면 이벤트 유무가 도착 시각의
+  // 배열 자체를 바꿔 "평일 대비 몇 배"를 잴 수 없고, 문턱을 올리면 평일 도착이 부분집합으로 남는다.
+  if (seededUnit(arrivalSeed(w)) >= ARRIVAL_PROB_PER_MIN * arrivalProbMulOf(w)) return w
   const seat = freeSeat(w, buildBlockedSet(w))
   // 앉을 데가 없거나 거기까지 갈 수 없으면 문간에서 발길을 돌린다 — 폰을 만들지도 않는다.
   if (!seat) return { ...w, stats: { ...w.stats, leftCount: w.stats.leftCount + 1 } }
@@ -169,7 +181,8 @@ function maybeArrive(w: SimWorld): SimWorld {
     // 이 환자는 아무리 기다려도 못 본다(인내 초과 이탈). 시드는 (판·주·날·분)의 순수 함수라
     // **호출 순서에 의존하지 않는다** — 자리가 없어 발길을 돌린 사람 몫을 건너뛰어도 뒤 환자의
     // 과가 밀리지 않는다(순차 소비형 RNG였다면 좌석 수가 과 분포를 흔들었을 것이다).
-    wantsDept: pickWantsDept(seededUnit(wantsDeptSeed(w))),
+    // 전염병 날은 표가 내과 중심으로 갈린다(events.arrivalDeptMixOf) — 없으면 평시 표다.
+    wantsDept: pickWantsDept(seededUnit(wantsDeptSeed(w)), arrivalDeptMixOf(w) ?? ARRIVAL_DEPT_MIX),
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, patient] }
 }

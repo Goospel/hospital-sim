@@ -163,7 +163,15 @@ export function freshMorning(world: SimWorld): SimWorld {
     const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null
     return spot ? { ...next, x: spot.x, y: spot.y } : next
   })
-  return { ...world, minute: 0, pawns, stats: freshStats() }
+  // 어제의 이벤트도 여기서 떨어진다 — **이벤트의 지속은 그날 하루뿐**이다(events.ts). 자리가
+  // 여기인 이유는 stats·허기 리셋과 같다: 7일차 밤엔 startNextDay가 없어서, 클리어를 그쪽에
+  // 달면 **주의 첫날만** 지난주 마지막 날의 이벤트를 물고 시작한다(에러 없이 배율만 틀린다).
+  // **필드 자체를 없앤다** — `event: undefined`로 두면 직렬화·구조 비교에서 "이벤트 없는
+  // 아침"이 두 모양으로 갈린다. 갓 만든 복사본만 건드리므로 입력 세계는 그대로다(위의
+  // `delete next.dest`와 같은 형태 — 이 파일이 이미 쓰는 이디엄이다).
+  const morning: SimWorld = { ...world, minute: 0, pawns, stats: freshStats() }
+  delete morning.event
+  return morning
 }
 
 /** 하루 넘기기 — DAY_END에서만(시계가 아니라 플레이어가 부른다).

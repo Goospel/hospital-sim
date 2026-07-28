@@ -2,6 +2,7 @@
 // dept.ts는 world를 모른다(단방향) — 그래서 값(freshHirePool)까지 당겨도 순환이 없다.
 import { freshHirePool, type SimDeptKey, type SimDeptStats } from './dept'
 import type { EmergencyTurnAway } from './emergency' // 타입 전용 — emergency.ts가 world를 되받아도 런타임 순환 없음
+import type { SimEventKind } from './events' // 타입 전용 — events.ts는 leaf라 값도 순환은 없지만 필요한 건 타입뿐이다
 import type { Pawn } from './pawn' // 타입 전용 임포트 — pawn.ts가 world를 되받아도 순환 무해
 import type { DayRecord } from './day' // 타입 전용 — day.ts가 SimWorld를 되받아도 런타임 순환 없음
 import type { Pt } from './path' // 타입 전용 — path.ts가 world의 격자 상수를 되받아도 런타임 순환 없음
@@ -70,6 +71,16 @@ export interface SimWorld {
   /** 판을 끝낸 결말 — **`phase: 'CLOSED'`와 항상 함께** 세팅된다(settleWeek 한 곳).
    *  살아 있는 세계에는 없다(optional인 이유): 있으면 끝난 판이고, 없으면 아직 굴러가는 판이다. */
   ending?: EndingKind
+  /** 오늘 붙은 이벤트 — **하루짜리다.** 아침 전이 직후에 세팅되고(`events.applyEvent`)
+   *  다음 아침이 지운다(`day.freshMorning`). 효과는 여기에 저장되지 않는다: 판정식이 그때그때
+   *  배율 함수로 읽어 간다(events.arrivalProbMulOf 등) — "오늘의 보정치"를 따로 들면 이 필드와
+   *  갈릴 수 있다. 객체로 감싼 이유는 연출문·LLM 텍스트가 나중에 같은 자리에 붙기 때문이다. */
+  event?: { kind: SimEventKind }
+  /** **판 전체**에서 되돌아간 응급의 누적 건수 — 의료소송(LAWSUIT) 전제의 유일한 근거다.
+   *  기존 `stats.emergencyTurnedAway`는 아침마다 비워지고 `days`는 주마다 비워져 "이 판에서
+   *  몇 명을 돌려보냈나"를 읽을 축이 없었다. 단조 증가하고 하루·주 리셋이 없다
+   *  (`saturatedDays`와 같은 계약 — *돌려보낸 일은 남는다*). */
+  turnedAwayTotal: number
 }
 
 export interface SimStats {
@@ -98,7 +109,7 @@ export function createWorld(seed: number): SimWorld {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
     rooms: [], furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
-    hirePool: freshHirePool(),
+    hirePool: freshHirePool(), turnedAwayTotal: 0,
   }
 }
 

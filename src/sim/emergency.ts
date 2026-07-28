@@ -24,6 +24,7 @@ import { ARRIVAL_WINDOW_MIN, minuteStreamSeed, toExit } from './patientFlow'
 import { furnitureSpots, ptKey, samePt } from './spots'
 import { interruptActivity, workDurationMin } from './needs'
 import { applyWorkLoads } from './fatigue'
+import { emergencyProbMulOf } from './events' // leaf — 값으로 당겨도 순환 없음(events.ts 머리말)
 
 /** 응급 도착 스트림 전용 salt — `daysim.callSeed` 주석의 **레지스트리에 등재된 값**이다.
  *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23·29·31, 이 파일에서 37·41.) */
@@ -166,7 +167,10 @@ export function emergencyKindSeed(w: SimWorld): number {
  *  "누가 왔는가"와 "받을 수 있는가"가 섞이지 않는다: 받을 수 없어도 **응급은 온다**. */
 export function emergencyArrivalAt(w: SimWorld): EmergencyKind | null {
   if (w.minute >= EMERGENCY_WINDOW_MIN) return null
-  if (seededUnit(emergencyArrivalSeed(w)) >= EMERGENCY_PROB_PER_MIN) return null
+  // 대량 응급(MASS_CASUALTY) 날은 문턱이 3배가 된다 — 이벤트가 없으면 배율이 1이라 평일
+  // 스트림은 이 훅이 붙기 전과 완전히 같다. 시드가 아니라 문턱을 곱하는 이유는 외래와 같다
+  // (patientFlow.maybeArrive): 평일 도착이 이벤트 날의 부분집합으로 남아 "몇 배"가 관측된다.
+  if (seededUnit(emergencyArrivalSeed(w)) >= EMERGENCY_PROB_PER_MIN * emergencyProbMulOf(w)) return null
   return pickEmergencyKind(seededUnit(emergencyKindSeed(w)))
 }
 
@@ -205,9 +209,14 @@ export function stepEmergencies(world: SimWorld): SimWorld {
   return assignEmergencyDoctors(progressEmergencies(arrived))
 }
 
+/** 되돌려 보낸다 — **두 축에 동시에 적힌다.** `stats.emergencyTurnedAway`는 오늘의 내역이라
+ *  아침마다 비워지고, `turnedAwayTotal`은 **판 누적**이라 리셋이 없다(world.ts). 회차가 그날의
+ *  메시지로 끝나지 않고 나중에 의료소송(events.LAWSUIT)의 전제로 돌아오는 자리가 이 카운터다 —
+ *  둘을 한 곳에서 함께 올리는 이유는, 갈라 두면 한쪽만 올리는 경로가 조용히 생기기 때문이다. */
 function turnAway(w: SimWorld, kind: EmergencyKind, reason: TurnAwayReason): SimWorld {
   return {
     ...w,
+    turnedAwayTotal: w.turnedAwayTotal + 1,
     stats: { ...w.stats, emergencyTurnedAway: [...w.stats.emergencyTurnedAway, { kind, reason }] },
   }
 }
