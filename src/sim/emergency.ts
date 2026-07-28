@@ -163,8 +163,11 @@ export function emergencyKindSeed(w: SimWorld): number {
 }
 
 /** 이 분에 응급이 오는가 — 온다면 그 종류. 도착 판정의 **단일 출처**다(테스트의 전제도 이걸
- *  부른다 — 판정식을 손으로 다시 쓰면 한쪽이 조용히 낡는다). 세계 상태를 안 보고 시각만 보므로
- *  "누가 왔는가"와 "받을 수 있는가"가 섞이지 않는다: 받을 수 없어도 **응급은 온다**. */
+ *  부른다 — 판정식을 손으로 다시 쓰면 한쪽이 조용히 낡는다).
+ *
+ *  세계의 **용량**(병상·의사)은 안 보고 **시각과 오늘의 이벤트**만 본다 — 그래서 "누가 왔는가"와
+ *  "받을 수 있는가"가 섞이지 않는다: 받을 수 없어도 **응급은 온다**(수용 판정은 maybeEmergency).
+ *  대량 응급 날 문턱이 3배가 되는 것은 도착 쪽 사실이라 여기 있는 것이 맞다. */
 export function emergencyArrivalAt(w: SimWorld): EmergencyKind | null {
   if (w.minute >= EMERGENCY_WINDOW_MIN) return null
   // 대량 응급(MASS_CASUALTY) 날은 문턱이 3배가 된다 — 이벤트가 없으면 배율이 1이라 평일

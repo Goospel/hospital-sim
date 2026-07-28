@@ -97,9 +97,12 @@ export const ARRIVAL_DEPT_MIX: DeptMix = [
  *  치역 밖 값이 오면 마지막 과로 접지 않고 던진다 — 접으면 상한 표가 틀려도(마지막이 0.9 따위)
  *  미용이 조용히 늘어날 뿐 아무도 모른다.
  *
- *  `mix` 인자는 이벤트(전염병)가 분포를 통째로 갈아 끼우기 위한 자리다 — **기계는 하나**이고
- *  표만 바뀐다. 기본값이 평시 표라 기존 호출부는 한 글자도 안 바뀐다. */
-export function pickWantsDept(u: number, mix: DeptMix = ARRIVAL_DEPT_MIX): SimDeptKey {
+ *  `mix`는 이벤트(전염병)가 분포를 통째로 갈아 끼우기 위한 자리다 — **기계는 하나**이고 표만
+ *  바뀐다. **기본값을 두지 않는다**: 유일한 호출부가 이미 `?? ARRIVAL_DEPT_MIX`로 폴백을
+ *  적으므로 기본값은 두 벌째 벨트이고, 두 벌이 되는 순간 어느 쪽이 이기는지가 계약이 된다.
+ *  게다가 아무도 안 밟는 기본값은 표가 갈리는 날 조용히 낡는다 — 부를 때마다 어느 표인지
+ *  적게 해서 그 선택을 호출부에 남긴다. */
+export function pickWantsDept(u: number, mix: DeptMix): SimDeptKey {
   if (u >= 0) for (const [dept, upper] of mix) if (u < upper) return dept
   throw new Error(`pickWantsDept: [0,1) 밖의 값(${u}) — seededUnit의 치역을 벗어났다`)
 }

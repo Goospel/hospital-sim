@@ -29,15 +29,37 @@ const EVENT_KIND_SALT = 47
  *  종류를 다 못 본다. */
 export const EVENT_PROB_PER_DAY = 0.25
 
-/** 이벤트 종류 분포 — 값은 각 구간의 **누적 상한**이고 배열 순서가 곧 구간 순서라 결정론의
- *  일부다(`patientFlow.ARRIVAL_DEPT_MIX`·`emergency.EMERGENCY_KIND_MIX`와 같은 형태).
- *  마지막 값 1.00이 곧 "합계 1" 검사다. */
-export const EVENT_MIX: ReadonlyArray<readonly [SimEventKind, number]> = [
-  ['MASS_CASUALTY', 0.30],
-  ['EPIDEMIC', 0.60],
-  ['NEARBY_CLOSURE', 0.85],
-  ['LAWSUIT', 1.00],
-]
+/**
+ * 이벤트 종류별 **가중치**(백분율 · 각색·튜닝값) — 분포의 단일 출처다.
+ *
+ * ⚠️ `Record<SimEventKind, number>`인 것이 이 절의 요점이다: 종류를 하나 늘리면 **여기서
+ * 컴파일이 막힌다**(실측: 한 종류를 빼니 `TS2741: Property 'NEARBY_CLOSURE' is missing`). 형제 표들(ARRIVAL_DEPT_MIX·EMERGENCY_KIND_MIX)처럼 누적 상한을
+ * 손으로 적으면, 새 종류를 events·applyEvent·전제까지 전부 배선해 놓고 이 표에서만 빠뜨려도
+ * tsc도 테스트도 전부 green이다(리뷰 실측). 그러면 **LLM은 고를 수 있는데 폴백은 영영 못 뽑아**,
+ * "무키여도 완전히 같은 전이"라는 이 슬라이스의 핵심 주장이 조용히 무너진다.
+ *
+ * 정수인 이유는 부동소수 누적 오차다 — 0.3+0.3+0.25+0.15가 1.0이 아닐 수 있고, 그러면
+ * 마지막 구간 언저리 난수가 `pickEventKind`에서 던진다. 정수로 합산해 마지막에 한 번 나누면
+ * 마지막 상한이 **정확히 1**이다.
+ */
+export const EVENT_WEIGHTS: Record<SimEventKind, number> = {
+  MASS_CASUALTY: 30,
+  EPIDEMIC: 30,
+  NEARBY_CLOSURE: 25,
+  LAWSUIT: 15,
+}
+
+/** 이벤트 종류 분포 — 값은 각 구간의 **누적 상한**이고 배열 순서(= `EVENT_KINDS` 순서)가 곧
+ *  구간 순서라 결정론의 일부다(`patientFlow.ARRIVAL_DEPT_MIX`와 같은 형태).
+ *  **가중치에서 파생한다** — 손으로 적은 누적값과 가중치가 갈리는 일이 구조적으로 없다. */
+export const EVENT_MIX: ReadonlyArray<readonly [SimEventKind, number]> = (() => {
+  const total = EVENT_KINDS.reduce((sum, kind) => sum + EVENT_WEIGHTS[kind], 0)
+  let acc = 0
+  return EVENT_KINDS.map(kind => {
+    acc += EVENT_WEIGHTS[kind]
+    return [kind, acc / total] as const
+  })
+})()
 
 /** [0,1) 난수 → 이벤트 종류. 구간은 아래가 닫히고 위가 열린다(`u < upper`).
  *  치역 밖이면 마지막으로 접지 않고 던진다 — 접으면 상한 표가 틀려도(마지막이 0.9 따위)

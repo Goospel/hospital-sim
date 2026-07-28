@@ -575,20 +575,20 @@ describe('희망 과 배정 — 분포와 스트림 축', () => {
     // 경계 바로 앞/뒤를 쌍으로 잰다(T-085). 한쪽만 재면 `<`를 `<=`로 바꿔도 안 걸린다.
     expect(ARRIVAL_DEPT_MIX.map(([dept]) => dept))
       .toEqual(['INTERNAL_MEDICINE', 'GENERAL_SURGERY', 'CARDIOLOGY', 'AESTHETICS'])
-    expect(pickWantsDept(0)).toBe('INTERNAL_MEDICINE')
-    expect(pickWantsDept(0.4499999)).toBe('INTERNAL_MEDICINE')
-    expect(pickWantsDept(0.45)).toBe('GENERAL_SURGERY')      // 45%가 내과의 상한(닫힌 쪽)
-    expect(pickWantsDept(0.6499999)).toBe('GENERAL_SURGERY')
-    expect(pickWantsDept(0.65)).toBe('CARDIOLOGY')
-    expect(pickWantsDept(0.7999999)).toBe('CARDIOLOGY')
-    expect(pickWantsDept(0.8)).toBe('AESTHETICS')
-    expect(pickWantsDept(0.9999999)).toBe('AESTHETICS')
+    expect(pickWantsDept(0, ARRIVAL_DEPT_MIX)).toBe('INTERNAL_MEDICINE')
+    expect(pickWantsDept(0.4499999, ARRIVAL_DEPT_MIX)).toBe('INTERNAL_MEDICINE')
+    expect(pickWantsDept(0.45, ARRIVAL_DEPT_MIX)).toBe('GENERAL_SURGERY')      // 45%가 내과의 상한(닫힌 쪽)
+    expect(pickWantsDept(0.6499999, ARRIVAL_DEPT_MIX)).toBe('GENERAL_SURGERY')
+    expect(pickWantsDept(0.65, ARRIVAL_DEPT_MIX)).toBe('CARDIOLOGY')
+    expect(pickWantsDept(0.7999999, ARRIVAL_DEPT_MIX)).toBe('CARDIOLOGY')
+    expect(pickWantsDept(0.8, ARRIVAL_DEPT_MIX)).toBe('AESTHETICS')
+    expect(pickWantsDept(0.9999999, ARRIVAL_DEPT_MIX)).toBe('AESTHETICS')
   })
 
   it('[0,1) 밖의 값은 조용히 마지막 과로 접히지 않고 던진다', () => {
     // 폴백으로 접으면 상한 표가 틀려도(예: 마지막이 0.9) 아무도 모른 채 미용이 늘어난다.
-    expect(() => pickWantsDept(1)).toThrow()
-    expect(() => pickWantsDept(-0.1)).toThrow()
+    expect(() => pickWantsDept(1, ARRIVAL_DEPT_MIX)).toThrow()
+    expect(() => pickWantsDept(-0.1, ARRIVAL_DEPT_MIX)).toThrow()
   })
 
   it('실제 스트림의 분포가 45/20/15/20에 붙는다 — 표만 맞고 시드가 쏠리면 여기서 걸린다', () => {
@@ -598,7 +598,7 @@ describe('희망 과 배정 — 분포와 스트림 축', () => {
     for (let week = 1; week <= 8; week++) {
       for (let day = 1; day <= DAYS_PER_WEEK; day++) {
         for (let minute = 0; minute < ARRIVAL_WINDOW_MIN; minute++) {
-          const d = pickWantsDept(seededUnit(wantsDeptSeed({ ...w0, week, day, minute })))
+          const d = pickWantsDept(seededUnit(wantsDeptSeed({ ...w0, week, day, minute })), ARRIVAL_DEPT_MIX)
           counts.set(d, counts.get(d)! + 1)
           n++
         }
@@ -654,7 +654,7 @@ describe('희망 과 배정 — 분포와 스트림 축', () => {
     const streamOf = (seed: number) => {
       const w0 = createWorld(seed)
       return Array.from({ length: 200 }, (_, minute) =>
-        pickWantsDept(seededUnit(wantsDeptSeed({ ...w0, minute }))))
+        pickWantsDept(seededUnit(wantsDeptSeed({ ...w0, minute })), ARRIVAL_DEPT_MIX))
     }
     expect(streamOf(3)).not.toEqual(streamOf(4))
   })
