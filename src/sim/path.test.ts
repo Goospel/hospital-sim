@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, isWalkable, GRID_W, GRID_H, type SimWorld } from './world'
+import { createWorld, isWalkable, wallTiles, tileIndex, GRID_W, GRID_H, type SimWorld } from './world'
 import { placeRoom } from './build'
 import { findPath, buildBlockedSet, type Pt } from './path'
 
@@ -108,5 +108,25 @@ describe('buildBlockedSet', () => {
     for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
       expect(!blocked.has(y * GRID_W + x)).toBe(isWalkable(placed.world, x, y))
     }
+  })
+  it('벽 모델로 옮겨도 막힌 타일이 옛 규칙(방 테두리 − 문 ∪ 가구)과 **완전히 같다**', () => {
+    // 이 단계의 계약은 "게임이 한 픽셀도 안 바뀐다"다. 통행이 rooms에서 walls로 넘어갔으므로
+    // 두 규칙이 같은 집합을 낸다는 것을 못박는 계측기가 필요하다 — 어댑터가 벽 하나를 흘리거나
+    // 문을 벽으로 굳히면 여기서 깨진다(폰이 방에 갇히거나 벽을 통과한다).
+    let w = createWorld(1)
+    for (const spec of [
+      { type: 'EXAM' as const, x: 10, y: 10, w: 7, h: 5 }, // 홀수 폭 — 문 위치가 갈리는 크기
+      { type: 'WAITING' as const, x: 20, y: 4, w: 8, h: 6 },
+      { type: 'WARD' as const, x: 4, y: 20, w: 4, h: 4 },
+    ]) {
+      const r = placeRoom(w, spec)
+      if (!r.ok) throw new Error('전제 실패')
+      w = r.world
+    }
+    const legacy = new Set<number>()
+    for (const r of w.rooms) for (const t of wallTiles(r)) legacy.add(tileIndex(t.x, t.y))
+    for (const f of w.furniture) legacy.add(tileIndex(f.x, f.y))
+    const asc = (s: Set<number>) => [...s].sort((a, b) => a - b)
+    expect(asc(buildBlockedSet(w))).toEqual(asc(legacy))
   })
 })

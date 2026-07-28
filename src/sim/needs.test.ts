@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, type SimWorld } from './world'
+import { createWorld, tileIndex, type SimWorld } from './world'
 import { FURNITURE_OF, placeRoom } from './build'
+import { computeRegions, regionById } from './regions'
 import { PAWN_TILES_PER_MIN, type Pawn } from './pawn'
 import { hire } from './testHelpers'
 import { buildBlockedSet, findPath } from './path'
@@ -68,7 +69,7 @@ const at = (p: { x: number; y: number }) => ({ x: p.x, y: p.y })
 
 /** 그 의사의 책상 앞 자리 — 파생식을 테스트가 다시 쓰지 않도록 구현의 단일 출처를 부른다. */
 function deskSpot(w: SimWorld, p: Pawn = doctorOf(w)) {
-  const spot = furnitureSpot(w, p.roomId!, 'DESK', buildBlockedSet(w))
+  const spot = furnitureSpot(w, regionById(computeRegions(w), p.roomId), 'DESK', buildBlockedSet(w))
   if (!spot) throw new Error('전제 실패 — 책상 앞 자리가 없다')
   return spot
 }
@@ -84,8 +85,9 @@ function findable(w: SimWorld, p: Pawn, to: { x: number; y: number }): boolean {
 /** 그 폰이 자기 진료실 **안**에 서 있는가 — 외래 배정의 유휴 판정이 보는 축이다.
  *  activity 제외를 겨눈 테스트는 이 값이 참인 순간에 재야 계측력이 있다. */
 function insideOwnRoom(w: SimWorld, p: Pawn): boolean {
-  const r = w.rooms.find(x => x.id === p.roomId)
-  return !!r && p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h
+  // 사각형 포함이 아니라 **영역 소속**이다 — 구현(patientFlow.insideRegion)이 보는 그 축이다.
+  const r = regionById(computeRegions(w), p.roomId)
+  return !!r && r.tiles.has(tileIndex(p.x, p.y))
 }
 
 /** 순환기 의사 1명이 자기 책상 앞에 자리잡은 병원. 도착 창이 닫힌 뒤로 시계를 옮겨

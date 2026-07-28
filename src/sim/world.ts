@@ -17,7 +17,15 @@ export const INITIAL_TREASURY_MANWON = 50_000 // 개원 자본 5억(기존 경�
  *  patientFlow가 pawn의 값을 하나라도 쓰는 순간 실제 순환이 된다. */
 export const ENTRANCE: Pt = { x: 24, y: GRID_H - 1 }
 
+/** 타일 인덱스의 **단일 출처** — 벽·문 집합, 경로 blocked 집합, 영역 계산이 전부 이 공식을 쓴다.
+ *  호출부가 `y * GRID_W + x`를 다시 쓰면 어느 한 곳이 바뀌는 날 조용히 갈린다. */
+export const tileIndex = (x: number, y: number): number => y * GRID_W + x
+
 export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION' | 'CAFETERIA'
+
+/** 용도 앵커 — "이 좌표가 속한 방은 이 용도다". 방이 아니라 **타일**을 가리키는 것이 핵심이다:
+ *  벽을 허물어 영역이 병합·분리돼도 앵커는 좌표라 저절로 승계된다(영역 id는 파생값이라 못 쓴다). */
+export interface Designation { at: Pt; type: RoomType; dept?: SimDeptKey }
 
 export interface Room {
   id: string
@@ -30,7 +38,11 @@ export interface Room {
 }
 
 export type FurnitureKind = 'DESK' | 'CHAIR' | 'BED' | 'COUNTER'
-export interface Furniture { kind: FurnitureKind; x: number; y: number; roomId: string }
+/** 집기 한 점 — **소속 필드가 없다**(설계 §1-1). 이 가구가 어느 방의 것인지는 좌표가 말한다:
+ *  `regions.computeRegions`가 낳은 영역 중 이 타일을 담은 것이 곧 이 가구의 방이다.
+ *  옛 `roomId`를 지운 이유는 이중 기재다 — 벽을 옮겨 영역이 갈라지거나 합쳐지면 그 필드는
+ *  갱신할 자리가 없어 조용히 낡고, 그때부터 화면의 방과 규칙의 방이 달라진다. */
+export interface Furniture { kind: FurnitureKind; x: number; y: number }
 
 /** 세계의 진행 국면 — RUNNING일 때만 시간이 흐른다.
  *  마감·결산 화면 동안 세계가 계속 굴러가면 플레이어가 읽는 숫자와 세계가 어긋난다. */
@@ -47,6 +59,15 @@ export interface SimWorld {
   phase: SimPhase
   treasuryManwon: number
   rooms: Room[]
+  /** 벽 타일(tileIndex) — **통행 판정의 단일 출처**다. 방 사각형에서 유도하지 않는다:
+   *  자유 건설(설계 PR 2)에서는 벽이 방에 속하지 않고 홀로 서기 때문이다.
+   *  지금은 placeRoom 어댑터가 방 테두리를 여기로 옮겨 담는다. */
+  walls: ReadonlySet<number>
+  /** 문 타일 — **통행 가능하되 영역 경계다**(벽 집합에는 없다). 이 이중성이 문의 정의다:
+   *  막으면 못 드나들고, 경계가 아니면 두 방이 하나로 붙는다. */
+  doors: ReadonlySet<number>
+  /** 용도 앵커 — 배열 순서 = 지정 순서 = 충돌 시 우선순위(먼저가 이긴다). */
+  designations: ReadonlyArray<Designation>
   furniture: Furniture[]
   pawns: Pawn[]
   nextId: number
@@ -107,7 +128,8 @@ export function freshStats(): SimStats {
 export function createWorld(seed: number): SimWorld {
   return {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
-    rooms: [], furniture: [], pawns: [], nextId: 1, seed,
+    rooms: [], walls: new Set(), doors: new Set(), designations: [],
+    furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
     hirePool: freshHirePool(), turnedAwayTotal: 0,
   }
@@ -117,7 +139,9 @@ export function doorTile(r: Room): { x: number; y: number } {
   return { x: r.x + Math.floor(r.w / 2), y: r.y + r.h - 1 }
 }
 
-export function blockedPerimeter(r: Room): Array<{ x: number; y: number }> {
+/** 방 사각형이 낳는 **벽 타일** — 테두리에서 문 하나를 뺀다. placeRoom 어댑터가 `walls`를
+ *  채우는 유일한 경로다(설계 PR 2에서 자유 벽 도구로 대체되며 함께 사라진다). */
+export function wallTiles(r: Room): Array<{ x: number; y: number }> {
   const door = doorTile(r)
   const out: Array<{ x: number; y: number }> = []
   for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y; y < r.y + r.h; y++) {
@@ -127,11 +151,11 @@ export function blockedPerimeter(r: Room): Array<{ x: number; y: number }> {
   return out
 }
 
+/** 통행 판정 — 벽 ∪ 가구. **문은 벽이 아니므로 통행 가능**하다.
+ *  경로탐색의 `buildBlockedSet`(path.ts)과 같은 규칙을 봐야 한다(path.test.ts가 전 타일에서 대조). */
 export function isWalkable(w: SimWorld, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) return false
-  for (const r of w.rooms) {
-    for (const t of blockedPerimeter(r)) if (t.x === x && t.y === y) return false
-  }
+  if (w.walls.has(tileIndex(x, y))) return false
   for (const f of w.furniture) if (f.x === x && f.y === y) return false
   return true
 }

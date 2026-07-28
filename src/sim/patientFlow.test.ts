@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, isWalkable, ENTRANCE, type SimWorld } from './world'
+import { createWorld, isWalkable, tileIndex, ENTRANCE, type SimWorld } from './world'
 import { placeRoom } from './build'
+import { computeRegions, regionById } from './regions'
 import type { Pt } from './path'
 import { spawnDoctor, type Pawn } from './pawn'
 import { hire } from './testHelpers'
@@ -306,13 +307,12 @@ describe('대기실 좌석', () => {
     // 그래서 여기서만 "의자 수 == 좌석 수" 등식이 의도적으로 깨진 입력을 쓴다.
     const r = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w: 8, h: 6 })
     if (!r.ok) throw new Error('전제 실패')
-    const roomId = r.world.rooms[0].id
     // (10,5)는 위·오른쪽이 벽이라 앞이 (10,6)으로 떨어지고, (10,7)은 위가 곧 (10,6)이다.
     const collided = {
       ...r.world,
       furniture: [
-        { kind: 'CHAIR' as const, x: 10, y: 5, roomId },
-        { kind: 'CHAIR' as const, x: 10, y: 7, roomId },
+        { kind: 'CHAIR' as const, x: 10, y: 5 },
+        { kind: 'CHAIR' as const, x: 10, y: 7 },
       ],
     }
     expect(waitingSeats(collided)).toEqual([{ x: 10, y: 6 }])
@@ -329,7 +329,11 @@ describe('대기실 좌석', () => {
 
   it('좌석 수보다 많이 받지 않는다 — 자리 없으면 발길을 돌린다', () => {
     let w = hospitalWorld(3)
-    const seats = w.furniture.filter(f => f.kind === 'CHAIR' && f.roomId === w.rooms[0].id).length
+    // 좌석 수는 **대기실 영역 안의** 의자 수다 — 가구에 소속 필드가 없어 좌표로 센다.
+    const waiting = computeRegions(w).find(r => r.type === 'WAITING')!
+    const seats = w.furniture.filter(
+      f => f.kind === 'CHAIR' && waiting.tiles.has(tileIndex(f.x, f.y)),
+    ).length
     for (let i = 0; i < DAY_TICKS; i++) {
       w = tick(w, 1)
       const seated = w.pawns.filter(p => p.stage === 'ENTERING' || p.stage === 'WAITING')
@@ -341,12 +345,13 @@ describe('대기실 좌석', () => {
 })
 
 describe('진료 배정', () => {
-  it('의사는 빈 EXAM 방에 배정돼 책상 옆에 선다', () => {
+  it('의사는 빈 EXAM 영역에 배정돼 책상 옆에 선다', () => {
     const w = tick(hospitalWorld(3), 5)
-    const exam = w.rooms.find(r => r.type === 'EXAM')!
+    // 배정의 단위가 **영역**이 됐다 — `roomId`는 그 영역 id의 문자열이다(설계 PR 3에서 deskAt로 대체).
+    const exam = computeRegions(w).find(r => r.type === 'EXAM')!
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
-    const desk = w.furniture.find(f => f.roomId === exam.id && f.kind === 'DESK')!
-    expect(doc.roomId).toBe(exam.id)
+    const desk = w.furniture.find(f => f.kind === 'DESK' && exam.tiles.has(tileIndex(f.x, f.y)))!
+    expect(doc.roomId).toBe(String(exam.id))
     expect(Math.abs(doc.x - desk.x) + Math.abs(doc.y - desk.y)).toBe(1)
     expect(isWalkable(w, doc.x, doc.y)).toBe(true)
   })
@@ -401,6 +406,39 @@ describe('진료 배정', () => {
       expect(w.pawns.every(p => p.stage !== 'TO_EXAM' && p.stage !== 'IN_EXAM')).toBe(true)
     }
     expect(sawWaitingWhileOutside).toBe(true) // 계측기가 헛돌지 않았다 — 실제로 기다린 환자가 있었다
+  })
+
+  it('진료실 **영역 밖**에 선 의사는 그 방 환자를 못 받는다 — 손으로 세운 계측기', () => {
+    /*
+      바로 위 자연 흐름 테스트는 이 규칙을 **관측하지 못한다**(돌연변이 실측 2026-07-28):
+      `insideRegion`을 항상 참으로 바꿔도 통과한다 — 의사가 걷는 동안 마침 *그 과* 대기 환자가
+      앉아 있어야 하는데 그건 시드에 달렸기 때문이다. 전환 **전**의 `insideRoom`도 똑같이
+      살아남았으므로 이건 이번 전환이 만든 구멍이 아니라 물려받은 구멍이고, 소속 판정이
+      사각형에서 영역으로 바뀐 김에 여기서 막는다.
+
+      대조군을 함께 두는 것이 핵심이다: "안 받는다"만 재면 **아무도 안 받는 세계**(자리가 없거나
+      과가 안 맞는)에서도 통과한다. 같은 세계에서 의사를 방 안으로 되돌리면 실제로 받아야 한다.
+    */
+    const base = seatPatient(soloDeptWorld('INTERNAL_MEDICINE'), 'INTERNAL_MEDICINE')
+    const doc = base.pawns.find(p => p.kind === 'DOCTOR')!
+    const exam = regionById(computeRegions(base), doc.roomId)!
+    expect(exam.tiles.has(tileIndex(doc.x, doc.y))).toBe(true) // 전제: 지금은 방 안이다
+
+    // ① 의사만 방 밖(문 앞 복도)으로 옮긴다 — 배정(roomId)은 그대로다.
+    const outsideAt = { x: 9, y: 12 }
+    expect(exam.tiles.has(tileIndex(outsideAt.x, outsideAt.y))).toBe(false) // 전제: 정말 영역 밖이다
+    const outside = tick({
+      ...base,
+      pawns: base.pawns.map(p => (p.id === doc.id ? { ...p, ...outsideAt, path: [], dest: undefined } : p)),
+    }, 1)
+    expect(outside.pawns.find(p => p.id === 'pat-hand')!.stage).toBe('WAITING')
+
+    // ② 같은 세계, 의사만 방 안에 그대로 — 이쪽은 실제로 불려 간다(계측기가 헛돌지 않았다).
+    const inside = tick({
+      ...base,
+      pawns: base.pawns.map(p => (p.id === doc.id ? { ...p, path: [], dest: undefined } : p)),
+    }, 1)
+    expect(inside.pawns.find(p => p.id === 'pat-hand')!.stage).toBe('TO_EXAM')
   })
 
   it('먼저 앉은 환자가 먼저 불린다 — 폰 배열 순서가 아니라 도착 시각순', () => {
@@ -679,12 +717,12 @@ describe('과 라우팅 — 삼중 일치', () => {
 
   it('의사는 자기 과 진료실에만 배정된다', () => {
     const w = tick(fourDeptWorld(3), 60)
-    const rooms = new Map(w.rooms.map(r => [r.id, r]))
+    const regions = computeRegions(w)
     const doctors = w.pawns.filter(p => p.kind === 'DOCTOR')
     expect(doctors).toHaveLength(HIRABLE_DEPTS.length)
     for (const doc of doctors) {
       expect(doc.roomId).toBeDefined() // 전제: 전원이 방을 얻었다(항진명제 방지)
-      expect(rooms.get(doc.roomId!)!.dept).toBe(doc.dept)
+      expect(regionById(regions, doc.roomId)!.dept).toBe(doc.dept)
     }
   })
 
@@ -699,8 +737,16 @@ describe('과 라우팅 — 삼중 일치', () => {
 
   it('방의 과가 다르면 진료가 성립하지 않는다 — 삼중 일치의 방 축', () => {
     // 의사(내과) == 환자(내과)인데 방만 순환기다. 방 조건을 빼면 여기서 진료가 돈다.
+    // ⚠️ 방의 과를 바꾸는 자리가 `rooms`에서 **`designations`(용도 앵커)**로 옮겨왔다 — 규칙이
+    //    읽는 곳이 거기이기 때문이다. 옛 자리(`rooms`)를 고치면 이 테스트는 아무것도 안 바꾼 채
+    //    통과하고, 삼중 일치의 방 축을 지워도 죽지 않는 계측기가 된다.
     const base = soloDeptWorld('INTERNAL_MEDICINE')
-    const mismatched = { ...base, rooms: base.rooms.map(r => ({ ...r, dept: 'CARDIOLOGY' as const })) }
+    const mismatched = {
+      ...base,
+      designations: base.designations.map(
+        d => (d.type === 'EXAM' ? { ...d, dept: 'CARDIOLOGY' as const } : d),
+      ),
+    }
     const w = run(seatPatient(mismatched, 'INTERNAL_MEDICINE'), 120)
     expect(w.stats.examsDone).toBe(0)
     expect(w.stats.byDept).toEqual({})

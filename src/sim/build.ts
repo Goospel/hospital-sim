@@ -1,5 +1,8 @@
 // 방 단위 건설 — 검증·비용·가구 자동 배치. 전부 순수 함수.
-import { GRID_W, GRID_H, doorTile, type Room, type RoomType, type SimWorld, type Furniture } from './world'
+import {
+  GRID_W, GRID_H, doorTile, wallTiles, tileIndex,
+  type Room, type RoomType, type SimWorld, type Furniture,
+} from './world'
 import { DEFAULT_EXAM_DEPT } from './dept'
 
 export const MIN_ROOM_W = 4
@@ -34,15 +37,15 @@ function autoFurniture(room: Room): Furniture[] {
   const iw = room.w - 2, ih = room.h - 2
   const out: Furniture[] = []
   if (room.type === 'EXAM') {
-    out.push({ kind: 'DESK', x: ix, y: iy, roomId: room.id })
-    out.push({ kind: 'CHAIR', x: ix + 1, y: iy, roomId: room.id })
+    out.push({ kind: 'DESK', x: ix, y: iy })
+    out.push({ kind: 'CHAIR', x: ix + 1, y: iy })
   } else if (room.type === 'RECEPTION') {
-    out.push({ kind: 'COUNTER', x: ix, y: iy, roomId: room.id })
+    out.push({ kind: 'COUNTER', x: ix, y: iy })
   } else if (room.type === 'LOUNGE') {
-    out.push({ kind: 'CHAIR', x: ix, y: iy, roomId: room.id })
+    out.push({ kind: 'CHAIR', x: ix, y: iy })
     // 둘째 의자는 한 칸 띄워 놓을 자리가 있을 때만 — 좁은 휴게실이면 하나로 끝낸다.
     // (자리가 없을 때 첫 의자 위에 겹쳐 놓으면 한 타일에 두 좌석이 생겨 뒤 태스크의 좌석 점유가 어긋난다)
-    if (ix + 2 <= room.x + room.w - 2) out.push({ kind: 'CHAIR', x: ix + 2, y: iy, roomId: room.id })
+    if (ix + 2 <= room.x + room.w - 2) out.push({ kind: 'CHAIR', x: ix + 2, y: iy })
   } else {
     // 오른쪽에 설 자리가 남는 열까지만 놓는다(`dx + 1 < iw`) — 벽에 딱 붙은 마지막 열은
     // 앞 타일이 "오른쪽"이 아니라 "아래"로 떨어지는데, 그 타일은 한 줄 아래 의자가 "위"로
@@ -51,7 +54,7 @@ function autoFurniture(room: Room): Furniture[] {
     // 한 칸 비우면 모든 의자가 자기 오른쪽/위 타일을 독점해 "의자 1개 = 좌석 1개"가 성립한다.
     const kind = FURNITURE_OF[room.type]!
     for (let dx = 0; dx + 1 < iw; dx += 2) for (let dy = 0; dy < ih; dy += 2) {
-      out.push({ kind, x: ix + dx, y: iy + dy, roomId: room.id })
+      out.push({ kind, x: ix + dx, y: iy + dy })
     }
   }
   // 문 앞 타일을 가구가 막지 않게 — 문 바로 안쪽 칸은 비운다.
@@ -82,6 +85,10 @@ export function placeRoom(world: SimWorld, spec: { type: RoomType; dept?: Room['
     ...geometry,
     ...(spec.type === 'EXAM' ? { dept: specDept ?? DEFAULT_EXAM_DEPT } : {}),
   }
+  // 어댑터 — 선언형 방을 **새 지형 모델(벽·문·용도앵커)로도** 옮겨 담는다.
+  // 통행·영역은 이제 이쪽만 읽으므로(path.buildBlockedSet · regions.computeRegions), 두 표현이
+  // 갈리면 화면의 방과 규칙의 방이 달라진다. 설계 PR 2에서 이 함수가 통째로 사라지면 남는 건 아래뿐.
+  const door = doorTile(room)
   return {
     ok: true,
     world: {
@@ -89,6 +96,11 @@ export function placeRoom(world: SimWorld, spec: { type: RoomType; dept?: Room['
       nextId: world.nextId + 1,
       treasuryManwon: world.treasuryManwon - cost,
       rooms: [...world.rooms, room],
+      walls: new Set([...world.walls, ...wallTiles(room).map(t => tileIndex(t.x, t.y))]),
+      doors: new Set([...world.doors, tileIndex(door.x, door.y)]),
+      // 앵커는 **문 바로 안쪽** 타일 — 방 크기와 무관하게 내부이고(h≥4), autoFurniture가
+      // 통로 확보를 위해 항상 비워 두는 자리라 가구에 덮이지 않는다.
+      designations: [...world.designations, { at: { x: door.x, y: door.y - 1 }, type: room.type, ...(room.dept ? { dept: room.dept } : {}) }],
       furniture: [...world.furniture, ...autoFurniture(room)],
     },
   }

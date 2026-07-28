@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, isWalkable, doorTile, GRID_W, GRID_H, type FurnitureKind, type RoomType } from './world'
+import { createWorld, isWalkable, doorTile, tileIndex, GRID_W, GRID_H, type FurnitureKind, type RoomType } from './world'
 import { placeRoom, roomCostManwon, MIN_ROOM_W, MIN_ROOM_H, FURNITURE_OF } from './build'
+import { computeRegions } from './regions'
 
 const KINDS: FurnitureKind[] = ['DESK', 'CHAIR', 'BED', 'COUNTER']
 
@@ -79,15 +80,26 @@ describe('placeRoom', () => {
     if (!res.ok) return
     expect(res.world.treasuryManwon).toBe(0)
   })
-  it('방마다 고유 id를 받고 가구가 그 id를 가리킨다', () => {
+  it('방마다 고유 id를 받고, 가구는 **좌표로** 제 방 영역에 속한다', () => {
+    // 옛 계약은 "가구가 방 id를 가리킨다"였다. 그 필드는 사라졌다(설계 §1-1) — 소속을 말하는
+    // 것은 이제 좌표뿐이라, 재는 방식도 "그 가구 타일이 그 방 영역 안에 있는가"로 바뀐다.
     const first = placeRoom(createWorld(1), { type: 'EXAM', x: 4, y: 4, w: 6, h: 5 })
     if (!first.ok) throw new Error('전제 실패')
     const second = placeRoom(first.world, { type: 'WARD', x: 20, y: 4, w: 6, h: 5 })
     if (!second.ok) throw new Error('전제 실패')
     const [a, b] = second.world.rooms
     expect(a.id).not.toBe(b.id)
-    const owners = new Set(second.world.furniture.map(f => f.roomId))
-    expect(owners).toEqual(new Set([a.id, b.id]))
+    const regions = computeRegions(second.world)
+    expect(regions).toHaveLength(2)
+    // 가구가 하나도 남김없이 어느 한 영역에 담긴다 — 벽 위·문 위에 놓인 가구가 없다는 뜻이다.
+    for (const f of second.world.furniture) {
+      const owners = regions.filter(r => r.tiles.has(tileIndex(f.x, f.y)))
+      expect(owners).toHaveLength(1)
+    }
+    // 그리고 두 영역 다 제 몫을 받았다(한쪽이 통째로 비어 위 단언이 헛돌지 않았다).
+    for (const r of regions) {
+      expect(second.world.furniture.some(f => r.tiles.has(tileIndex(f.x, f.y)))).toBe(true)
+    }
   })
   it('WAITING은 내부에 의자를 깔고, WARD는 침대를 놓는다', () => {
     expect(FURNITURE_OF.WAITING).toBe('CHAIR')
@@ -133,5 +145,52 @@ describe('placeRoom', () => {
     const inside = { x: door.x, y: door.y - 1 }
     expect(res.world.furniture).not.toContainEqual(expect.objectContaining(inside))
     expect(isWalkable(res.world, inside.x, inside.y)).toBe(true)
+  })
+})
+
+// 어댑터 — 선언형 방(rooms)이 새 지형 모델(벽·문·용도앵커)도 함께 낳는다.
+// 이 겹치기가 스트랭글러의 전부다: 소비자를 하나씩 영역 기반으로 옮기는 동안 두 모델이 같은
+// 세계를 말해야 한다. 여기가 깨지면 "방은 있는데 영역이 없는" 세계가 조용히 생긴다.
+describe('placeRoom — 새 지형 모델 어댑터', () => {
+  it('벽·문·앵커를 낳아 computeRegions가 그 방을 그대로 인식한다', () => {
+    const res = placeRoom(createWorld(1), { type: 'EXAM', dept: 'CARDIOLOGY', x: 4, y: 4, w: 6, h: 5 })
+    if (!res.ok) throw new Error('전제 실패')
+    const rs = computeRegions(res.world)
+    expect(rs).toHaveLength(1)
+    expect(rs[0].tiles.size).toBe((6 - 2) * (5 - 2)) // 내부 타일 = (w-2)*(h-2)
+    expect(rs[0].type).toBe('EXAM')
+    expect(rs[0].dept).toBe('CARDIOLOGY')
+    const door = doorTile(res.world.rooms[0])
+    expect([...rs[0].doors]).toEqual([tileIndex(door.x, door.y)]) // 문은 정확히 하나
+    expect(res.world.walls.has(tileIndex(door.x, door.y))).toBe(false) // 문은 벽이 아니다
+  })
+  it('EXAM이 아닌 방의 앵커에는 과가 실리지 않는다 — 방과 같은 규칙이다', () => {
+    const res = placeRoom(createWorld(1), { type: 'WAITING', dept: 'CARDIOLOGY', x: 4, y: 4, w: 6, h: 5 })
+    if (!res.ok) throw new Error('전제 실패')
+    expect(res.world.designations[0].dept).toBeUndefined()
+    expect(computeRegions(res.world)[0].dept).toBeUndefined()
+  })
+  it('방을 여럿 지으면 영역도 그만큼 — 벽 집합이 방마다 누적된다', () => {
+    let w = createWorld(1)
+    for (const spec of [
+      { type: 'EXAM' as const, x: 4, y: 4, w: 6, h: 5 },
+      { type: 'WAITING' as const, x: 20, y: 4, w: 8, h: 6 },
+      { type: 'WARD' as const, x: 4, y: 20, w: 4, h: 4 },
+    ]) {
+      const r = placeRoom(w, spec)
+      if (!r.ok) throw new Error('전제 실패')
+      w = r.world
+    }
+    expect(computeRegions(w).map(r => r.type)).toEqual(['EXAM', 'WAITING', 'WARD'])
+  })
+  it('용도 앵커는 문 바로 안쪽 타일 — 가구가 절대 안 놓이는 자리라 항상 유효하다', () => {
+    // 홀수 폭까지 — 문 위치를 재유도하면 앵커가 벽 위로 새고 영역이 용도를 잃는다.
+    for (const [w, h] of [[MIN_ROOM_W, MIN_ROOM_H], [6, 5], [7, 5], [8, 6]]) {
+      const res = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w, h })
+      if (!res.ok) throw new Error(`전제 실패 ${w}x${h}`)
+      const door = doorTile(res.world.rooms[0])
+      expect(res.world.designations[0].at).toEqual({ x: door.x, y: door.y - 1 })
+      expect(computeRegions(res.world)[0].type).toBe('WAITING')
+    }
   })
 })

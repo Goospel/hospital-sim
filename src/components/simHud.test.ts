@@ -5,8 +5,9 @@ import {
   roomLabel, saturationText, setupWarningText, statusLineText, traitBadges,
   turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
 } from './simHud'
-import { createWorld, type Room, type SimWorld } from '../sim/world'
-import { simDept } from '../sim/dept'
+import { createWorld, type RoomType, type SimWorld } from '../sim/world'
+import { placeRoom } from '../sim/build'
+import { simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
 import { TRAITS } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
@@ -440,11 +441,26 @@ describe('buildBlockReason — 과 미선택 드래그의 침묵을 깬다', () 
   })
 })
 
-/** 손으로 세운 방 한 칸 — 이 판정이 읽는 건 `type`·`dept`뿐이라 좌표는 아무 값이어도 된다. */
-let roomSeq = 0
-const room = (type: Room['type'], dept?: Room['dept']): Room =>
-  ({ id: `r${++roomSeq}`, type, dept, x: 0, y: 0, w: 5, h: 5 })
-const worldOf = (pawns: Pawn[], rooms: Room[]): SimWorld => ({ ...createWorld(1), pawns, rooms })
+/**
+ * 방 명세 한 줄 — 좌표가 없다. 이 판정이 읽는 것은 `type`·`dept`뿐이라 자리는 아무 데나 좋다.
+ *
+ * ⚠️ 그렇다고 **방 객체를 손으로 세울 수는 없다**: 경고는 이제 `w.rooms`가 아니라 **영역**을
+ * 센다(벽·문·용도 앵커에서 파생). 지형 없이 `rooms` 배열만 채우면 영역이 0개라 경고가 늘
+ * "대기실이 없습니다"로 나온다 — 그래서 여기서는 실제 건설(placeRoom)을 지나 지형을 만든다.
+ * 부수 효과로 이 픽스처는 화면과 코어가 **같은 방**을 보는지까지 함께 잰다.
+ */
+const room = (type: RoomType, dept?: SimDeptKey) => ({ type, dept })
+
+/** 명세를 왼쪽부터 한 칸씩 떼어 놓아 짓는다(겹치면 placeRoom이 거부한다). */
+const worldOf = (pawns: Pawn[], rooms: Array<ReturnType<typeof room>>): SimWorld => {
+  let w = createWorld(1)
+  rooms.forEach((r, i) => {
+    const res = placeRoom(w, { ...r, x: 1 + i * 7, y: 1, w: 6, h: 5 })
+    if (!res.ok) throw new Error(`전제 실패 — 건설 거부(${res.reason})`)
+    w = res.world
+  })
+  return { ...w, pawns }
+}
 
 describe('setupWarningText — 왜 아무 일도 안 일어나는가', () => {
   it('의사도 방도 없는 첫 판엔 경고가 없다 — 아직 아무것도 안 한 사람에게 경고부터 띄우지 않는다', () => {

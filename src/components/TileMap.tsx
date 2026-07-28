@@ -1,8 +1,9 @@
 "use client";
 
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { useMemo, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { FATIGUE_MAX } from "@/game/doctor";
-import { GRID_W, GRID_H, doorTile, type RoomType, type SimWorld } from "@/sim/world";
+import { GRID_W, GRID_H, type RoomType, type SimWorld } from "@/sim/world";
+import { computeRegions, type Region } from "@/sim/regions";
 import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, PatientSprite } from "./PixelSprite";
 import {
   busyDoctorIds,
@@ -50,6 +51,15 @@ export const ROOM_STYLE: Record<RoomType, { floor: string; wall: string }> = {
 
 const OUTSIDE_FLOOR = "#0d0d11"; // 부지 바닥(방 밖) — 복도이자 마당
 const GRID_LINE = "rgba(216,207,175,0.045)"; // 격자 — 타일 경계를 겨우 읽을 만큼만
+
+/** 용도 없는 영역·용도 영역에 안 닿은 벽의 색. 벽을 세웠지만 아직 무슨 방인지 안 정한 상태가
+ *  화면에 **보여야** 한다 — 안 그리면 플레이어는 벽이 안 세워진 줄 안다(설계 PR 2의 도구 흐름). */
+const NEUTRAL_STYLE = { floor: "#131318", wall: "#33333d" };
+
+/** 진료실 바닥에 얹는 과 색의 알파 — 8자리 hex의 끝 두 자리(0x24 ≈ 14%).
+ *  옛 렌더가 별도 오버레이 div에 `opacity: 0.14`로 주던 값과 같은 농도이고, 타일당 div를
+ *  하나로 유지한다(영역은 임의 모양이라 사각형 오버레이를 덮을 수 없다). */
+const DEPT_TINT_ALPHA = "24";
 
 /** 접수 카운터 — PixelSprite에 없는 유일한 가구라 여기서만 쓰는 8×8 격자로 둔다. */
 function CounterSprite() {
@@ -125,6 +135,120 @@ export default function TileMap({
   // 여기서 따로 적으면 두 화면이 각자의 "바쁨"을 갖게 된다.
   const busyDoctors = busyDoctorIds(world.pawns);
 
+  /*
+    지형 — 벽·문·영역을 **타일 단위**로 그린다. 사각형 방(world.rooms)을 그리던 자리이고,
+    바뀐 이유는 규칙이 이미 영역을 보기 때문이다: 화면이 사각형을 계속 그리면 벽이 뚫린 방을
+    멀쩡한 방으로 보여 주고("왜 환자가 안 오지"), 자유 벽(설계 PR 2)은 아예 안 보인다.
+
+    memo 키가 walls·doors·designations **셋뿐**인 것이 성능 계약이다 — 이 셋은 건설에서만
+    새 객체로 갈리므로, 폰이 매 프레임 움직여도 수백 개의 타일 div가 다시 만들어지지 않는다.
+    (그래서 computeRegions가 SimWorld 전체가 아니라 이 세 필드를 받는다 — regions.ts 주석.)
+  */
+  const { walls, doors, designations } = world;
+  const { terrain, roomCount } = useMemo(() => {
+    const regions = computeRegions({ walls, doors, designations });
+    // 타일 → 그 타일을 담은 영역. 벽·문의 색을 이웃 영역에서 빌려 올 때 쓴다.
+    const regionAt = new Map<number, Region>();
+    for (const r of regions) for (const t of r.tiles) regionAt.set(t, r);
+    /** 이 타일에 닿은 첫 **용도 있는** 영역 — 벽 하나가 두 방 사이에 서면 먼저 만난 쪽을
+     *  따른다(둘 다 그릴 수는 없다). 용도 없는 이웃뿐이면 중립색이다.
+     *
+     *  ⚠️ **대각까지 보는 이유는 방의 네 모서리다**: 모서리 벽은 4방 이웃이 전부 벽·바깥이라
+     *  (안쪽 칸이 대각선에만 있다) 4방만 보면 방마다 회색 모서리 네 개가 남는다 — 실측으로
+     *  잡은 실제 결함이다(브라우저에서 모서리 4곳이 전부 중립색으로 그려졌다). 옛 렌더는
+     *  사각형에 테두리를 둘러 이 문제가 없었다.
+     *  4방을 **먼저** 훑는 순서가 계약이다: 두 방이 벽을 맞대면 맞닿은 쪽(4방)이 이기고,
+     *  대각은 어느 방도 4방으로 닿지 않을 때만 쓰이는 폴백이다. */
+    const AROUND = [
+      [0, -1], [1, 0], [0, 1], [-1, 0],
+      [-1, -1], [1, -1], [1, 1], [-1, 1],
+    ] as const;
+    const neighborStyle = (t: number) => {
+      const x = t % GRID_W;
+      const y = (t - x) / GRID_W;
+      for (const [dx, dy] of AROUND) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) continue;
+        const r = regionAt.get(ny * GRID_W + nx);
+        if (r?.type) return ROOM_STYLE[r.type];
+      }
+      return NEUTRAL_STYLE;
+    };
+    const at = (t: number) => ({ left: (t % GRID_W) * TILE, top: Math.floor(t / GRID_W) * TILE });
+
+    const nodes: ReactNode[] = [];
+    // ① 바닥 — 영역 타일마다 한 칸. 진료실은 과 색을 옅게 얹는다(색 단독 신호 금지: 아래 라벨이
+    //    과 이름을 함께 쓴다 — 옛 렌더에서 이어받은 관통 규칙).
+    for (const r of regions) {
+      const style = r.type ? ROOM_STYLE[r.type] : NEUTRAL_STYLE;
+      const tint = r.type === "EXAM" && r.dept ? `${DEPT_COLOR[r.dept]}${DEPT_TINT_ALPHA}` : null;
+      for (const t of r.tiles) {
+        nodes.push(
+          <div
+            key={`f${t}`}
+            className="pointer-events-none absolute"
+            style={{
+              ...at(t),
+              width: TILE,
+              height: TILE,
+              backgroundColor: style.floor,
+              // 과 색은 배경 **위에** 한 겹 더 — 단색 그라디언트라 오버레이 div가 필요 없다.
+              backgroundImage: tint ? `linear-gradient(${tint}, ${tint})` : undefined,
+            }}
+            aria-hidden
+          />,
+        );
+      }
+    }
+    // ② 벽 — 타일 한 칸을 통째로 채운다(옛 렌더의 inset 그림자와 같은 두께). 얇은 선으로 그리면
+    //    안쪽이 실제보다 넓어 보여, 왜 여기 못 서는지 설명이 안 된다.
+    for (const t of walls) {
+      nodes.push(
+        <div
+          key={`w${t}`}
+          className="pointer-events-none absolute"
+          style={{ ...at(t), width: TILE, height: TILE, backgroundColor: neighborStyle(t).wall }}
+          aria-hidden
+        />,
+      );
+    }
+    // ③ 문 — 벽줄을 끊는 바닥 칸. 통행이 전부 여기를 지나므로 벽과 확실히 달라 보여야 한다.
+    for (const t of doors) {
+      const style = neighborStyle(t);
+      nodes.push(
+        <div
+          key={`d${t}`}
+          className="pointer-events-none absolute"
+          style={{
+            ...at(t),
+            width: TILE,
+            height: TILE,
+            backgroundColor: style.floor,
+            boxShadow: `inset 0 -2px 0 ${style.wall}`,
+          }}
+          aria-hidden
+        />,
+      );
+    }
+    // ④ 라벨 — 영역 id가 곧 성분의 최소 타일 인덱스라(regions.ts) 왼쪽 위 칸에 선다. 옛 렌더가
+    //    (방 좌상단 + 1칸)에 놓던 그 자리다(벽이 테두리라 내부 좌상단 = 최소 인덱스).
+    for (const r of regions) {
+      if (!r.type) continue;
+      const p = at(r.id);
+      nodes.push(
+        <span
+          key={`l${r.id}`}
+          className="pointer-events-none absolute font-mono text-[9px] leading-none text-on-desk/45"
+          style={{ left: p.left + 1, top: p.top + 1 }}
+        >
+          {roomLabel({ type: r.type, dept: r.dept })}
+        </span>,
+      );
+    }
+    return { terrain: nodes, roomCount: regions.filter((r) => r.type).length };
+  }, [walls, doors, designations]);
+
   return (
     <div className="overflow-x-auto">
       <div
@@ -136,7 +260,7 @@ export default function TileMap({
           backgroundImage: `repeating-linear-gradient(90deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px), repeating-linear-gradient(180deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px)`,
         }}
         role="img"
-        aria-label={`병원 부지 ${GRID_W}×${GRID_H} 타일 — 방 ${world.rooms.length}개, 인원 ${world.pawns.length}명`}
+        aria-label={`병원 부지 ${GRID_W}×${GRID_H} 타일 — 방 ${roomCount}개, 인원 ${world.pawns.length}명`}
         onPointerDown={(e) => {
           // 순서가 의미를 갖는다 — 캡처가 먼저면 setPointerCapture가 던질 때(이미 끝난
           // 포인터 등 NotFoundError) 드래그가 아예 시작되지 않는다. 시작을 먼저 알리면
@@ -156,68 +280,15 @@ export default function TileMap({
         // 손을 떼지도 않은 사각형이 그대로 지어진다 — 철거 수단이 없어 비가역이다.
         onPointerCancel={() => onTileCancel?.()}
       >
-        {/* 방 — 벽은 **테두리 한 타일 전체**다(blockedPerimeter). 얇은 선으로 그리면 안쪽이 실제보다
-            넓어 보여, 왜 여기 못 서는지 설명이 안 된다. inset 그림자로 타일 두께 그대로 두른다. */}
-        {world.rooms.map((r) => {
-          const style = ROOM_STYLE[r.type];
-          const door = doorTile(r);
-          return (
-            <div key={r.id}>
-              <div
-                className="absolute"
-                style={{
-                  left: r.x * TILE,
-                  top: r.y * TILE,
-                  width: r.w * TILE,
-                  height: r.h * TILE,
-                  backgroundColor: style.floor,
-                  boxShadow: `inset 0 0 0 ${TILE}px ${style.wall}`,
-                }}
-              />
-              {/* 문 — 벽 한 칸을 뚫는다. 유일한 출입구라 통행 전체가 여기를 지난다. */}
-              <div
-                className="absolute"
-                style={{
-                  left: door.x * TILE,
-                  top: door.y * TILE,
-                  width: TILE,
-                  height: TILE,
-                  backgroundColor: style.floor,
-                  boxShadow: `inset 0 -2px 0 ${style.wall}`,
-                }}
-              />
-              {/* 과 표시 — 진료실만. 바닥에 과 색을 옅게 깔아 **어느 방이 무슨 과인지 한눈에**
-                  갈리게 한다(환자는 자기 과 진료실에만 들어간다 — 그 규칙이 안 보이면 이탈이
-                  설명되지 않는다). 색만으로는 판정을 지지 않는다: 아래 라벨이 과 이름을 함께 쓴다
-                  (색 단독 신호 금지 — 기존 게임의 관통 규칙). */}
-              {r.type === "EXAM" && r.dept && (
-                <div
-                  className="pointer-events-none absolute"
-                  style={{
-                    left: (r.x + 1) * TILE,
-                    top: (r.y + 1) * TILE,
-                    width: (r.w - 2) * TILE,
-                    height: (r.h - 2) * TILE,
-                    backgroundColor: DEPT_COLOR[r.dept],
-                    opacity: 0.14,
-                  }}
-                  aria-hidden
-                />
-              )}
-              <span
-                className="pointer-events-none absolute font-mono text-[9px] leading-none text-on-desk/45"
-                style={{ left: r.x * TILE + TILE + 1, top: r.y * TILE + TILE + 1 }}
-              >
-                {roomLabel(r)}
-              </span>
-            </div>
-          );
-        })}
+        {/* 지형(벽·문·영역 바닥·라벨) — 위 useMemo가 만든다. */}
+        {terrain}
 
-        {/* 가구 — 집기라 상호작용이 없다. 타일 자체가 막혀 있어(buildBlockedSet) 폰이 그 위에 못 선다. */}
+        {/* 가구 — 집기라 상호작용이 없다. 타일 자체가 막혀 있어(buildBlockedSet) 폰이 그 위에 못 선다.
+            key가 좌표인 것은 이제 필연이다: 가구에 소속 필드가 없고(world.Furniture) 한 타일에
+            둘을 놓을 수 없으므로 좌표가 곧 신원이다. */}
         {world.furniture.map((f) => (
           <div
-            key={`${f.roomId}-${f.kind}-${f.x}-${f.y}`}
+            key={`${f.kind}-${f.x}-${f.y}`}
             className="pointer-events-none absolute"
             style={{ left: f.x * TILE, top: f.y * TILE, width: TILE, height: TILE }}
             aria-hidden
