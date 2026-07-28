@@ -5,6 +5,7 @@ import {
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
+  clampCamera, pannedCamera, zoomedCamera, ZOOM_MAX, type Camera,
 } from './simHud'
 import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
 import { createWorld, GRID_W, GRID_H, type RoomType, type SimWorld } from '../sim/world'
@@ -764,5 +765,91 @@ describe('tileFromPoint — 포인터 위치 → 타일 좌표', () => {
       x: GRID_W - 1,
       y: GRID_H - 1,
     })
+  })
+})
+
+describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () => {
+  /** 부지 원본 크기(타일 16px) — TileMap의 TILE을 임포트하면 React가 딸려 온다(위 rectAt와 같은 관례). */
+  const BASE = { w: GRID_W * 16, h: GRID_H * 16 }
+  /** 뷰포트. 부지보다 가로가 살짝 넓어 fit이 가로에 안 걸리게 잡았다(세로가 짧은 쪽). */
+  const VIEW = { w: 800, h: 600 }
+  const FIT = Math.min(VIEW.w / BASE.w, VIEW.h / BASE.h)
+  /** 그 배율에서 화면에 그려지는 맵 크기 — 클램프의 경계는 전부 이 값에서 나온다. */
+  const content = (zoom: number) => ({ w: BASE.w * FIT * zoom, h: BASE.h * FIT * zoom })
+  /** 앵커 아래에 있는 **맵 좌표** — 줌의 유일한 계약이 이 값의 불변성이다. */
+  const under = (cam: Camera, anchor: { x: number; y: number }) => ({
+    x: (anchor.x - cam.x) / (FIT * cam.zoom),
+    y: (anchor.y - cam.y) / (FIT * cam.zoom),
+  })
+
+  it('콘텐츠가 뷰포트보다 작으면 **중앙 정렬**이다 — 팬 입력은 무시된다', () => {
+    // zoom 1 = 부지 전체가 들어오는 배율이라 짧은 쪽엔 늘 여백이 남는다. 그 축을 밀 수 있으면
+    // 부지가 뷰포트 밖으로 흘러가고 화면 절반이 빈 배경이 된다.
+    const c = clampCamera({ zoom: 1, x: -400, y: 250 }, VIEW, content(1))
+    expect(c.x).toBeCloseTo((VIEW.w - content(1).w) / 2)
+    expect(c.y).toBeCloseTo((VIEW.h - content(1).h) / 2)
+  })
+
+  it('줌 상태에서는 [view − content, 0]으로 잘린다 — 맵 가장자리가 뷰포트 안으로 못 들어온다', () => {
+    const big = content(2)
+    // 오른쪽·아래로 아무리 끌어도 맵 좌상단은 뷰포트 좌상단을 못 넘어선다(넘으면 왼쪽에 빈틈).
+    expect(clampCamera({ zoom: 2, x: 999, y: 999 }, VIEW, big)).toMatchObject({ x: 0, y: 0 })
+    // 반대쪽도 같다 — 맵 우하단이 뷰포트 우하단 안쪽으로 들어오면 그쪽에 빈틈이 생긴다.
+    const c = clampCamera({ zoom: 2, x: -99_999, y: -99_999 }, VIEW, big)
+    expect(c.x).toBeCloseTo(VIEW.w - big.w)
+    expect(c.y).toBeCloseTo(VIEW.h - big.h)
+  })
+
+  it('zoom은 [1, ZOOM_MAX] 밖으로 못 나간다 — 1보다 작으면 부지가 화면보다 작아진다', () => {
+    const at = (cam: Camera, factor: number) =>
+      zoomedCamera(cam, { x: 400, y: 300 }, factor, VIEW, BASE, FIT).zoom
+    expect(at({ zoom: 1, x: 0, y: 0 }, 0.1)).toBe(1)
+    expect(at({ zoom: 2, x: -200, y: -200 }, 100)).toBe(ZOOM_MAX)
+  })
+
+  it('**앵커 불변식** — 줌 전후로 커서 아래 맵 좌표가 그대로다(클램프에 안 걸리는 중간 줌)', () => {
+    const anchor = { x: 400, y: 300 }
+    const before: Camera = { zoom: 1.5, x: -200, y: -100 }
+    const after = zoomedCamera(before, anchor, 1.2, VIEW, BASE, FIT)
+    expect(after.zoom).toBeCloseTo(1.8)
+    expect(under(after, anchor).x).toBeCloseTo(under(before, anchor).x)
+    expect(under(after, anchor).y).toBeCloseTo(under(before, anchor).y)
+    // 클램프에 걸리면 위 단언이 우연히 통과할 수 없으므로, 경계 안임을 함께 못박는다.
+    expect(after.x).toBeGreaterThan(VIEW.w - content(1.8).w)
+    expect(after.x).toBeLessThan(0)
+  })
+
+  it('앵커 산술의 기준은 저장값이 아니라 **클램프된 유효 팬**이다 — zoom 1에서 첫 줌인이 튀지 않는다', () => {
+    const anchor = { x: 100, y: 500 }
+    // 같은 화면(zoom 1은 언제나 중앙 정렬)인데 저장된 팬만 다른 두 카메라.
+    const a = zoomedCamera({ zoom: 1, x: 0, y: 0 }, anchor, 1.5, VIEW, BASE, FIT)
+    const b = zoomedCamera({ zoom: 1, x: -777, y: 555 }, anchor, 1.5, VIEW, BASE, FIT)
+    expect(b).toEqual(a)
+    // 그리고 그 화면의 앵커 아래 지점이 유지된다.
+    const shown = clampCamera({ zoom: 1, x: 0, y: 0 }, VIEW, content(1))
+    expect(under(a, anchor).x).toBeCloseTo(under(shown, anchor).x)
+    expect(under(a, anchor).y).toBeCloseTo(under(shown, anchor).y)
+  })
+
+  it('ZOOM_MAX에서 더 줌인하면 카메라가 통째로 그대로다 — 앵커만 옮겨도 화면이 안 흔들린다', () => {
+    const at: Camera = zoomedCamera({ zoom: ZOOM_MAX, x: -300, y: -200 }, { x: 400, y: 300 }, 1, VIEW, BASE, FIT)
+    expect(zoomedCamera(at, { x: 10, y: 590 }, 1.4, VIEW, BASE, FIT)).toEqual(at)
+  })
+
+  it('pannedCamera — 델타를 그대로 더하고 가장자리에서 잘린다', () => {
+    const cam: Camera = { zoom: 2, x: -300, y: -200 }
+    expect(pannedCamera(cam, 40, -25, VIEW, BASE, FIT)).toMatchObject({ zoom: 2, x: -260, y: -225 })
+    // 위·왼쪽으로 끝까지 밀면 맵 우하단이 뷰포트 우하단에 붙는다.
+    const edge = pannedCamera(cam, -9999, -9999, VIEW, BASE, FIT)
+    expect(edge.x).toBeCloseTo(VIEW.w - content(2).w)
+    expect(edge.y).toBeCloseTo(VIEW.h - content(2).h)
+  })
+
+  it('줌아웃으로 zoom 1로 돌아오면 중앙 정렬로 수렴한다 — [⌂]가 없어도 화면이 복구된다', () => {
+    const zoomed: Camera = { zoom: 2.5, x: -900, y: -600 }
+    const home = zoomedCamera(zoomed, { x: 0, y: 0 }, 1 / 2.5, VIEW, BASE, FIT)
+    expect(home.zoom).toBeCloseTo(1)
+    expect(home.x).toBeCloseTo((VIEW.w - content(1).w) / 2)
+    expect(home.y).toBeCloseTo((VIEW.h - content(1).h) / 2)
   })
 })
