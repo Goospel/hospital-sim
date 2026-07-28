@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { placeRoom } from './testHelpers'
 import { createWorld, isWalkable, type SimWorld } from './world'
-import { placeRoom } from './build'
 import { spawnDoctor, stepMove, PAWN_TILES_PER_MIN } from './pawn'
 import { tick } from './tick'
 import { findPath, type Pt } from './path'

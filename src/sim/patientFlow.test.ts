@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, isWalkable, tileIndex, ENTRANCE, type SimWorld } from './world'
-import { placeRoom } from './build'
 import { computeRegions, regionById } from './regions'
 import type { Pt } from './path'
 import { spawnDoctor, type Pawn } from './pawn'
-import { hire } from './testHelpers'
+import { hire, placeRoom } from './testHelpers'
 import { tick } from './tick'
 import {
   EXAM_DURATION_MIN, PATIENCE_MIN,
@@ -395,7 +394,7 @@ describe('진료 배정', () => {
     const r2 = placeRoom(r1.world, { type: 'EXAM', x: 6, y: 6, w: 6, h: 5 })
     if (!r2.ok) throw new Error('전제 실패')
     let w = spawnDoctor(r2.world, 'INTERNAL_MEDICINE', { x: 44, y: 29 }) // 대각선 반대편
-    const exam = w.rooms.find(r => r.type === 'EXAM')!
+    const exam = { x: 6, y: 6, w: 6, h: 5 } // 위에서 지은 진료실 — 방 객체가 없으니 좌표가 곧 방이다
     let sawWaitingWhileOutside = false
     for (let i = 0; i < 120; i++) {
       w = tick(w, 1)
@@ -584,7 +583,7 @@ describe('좌초 해소', () => {
     const examsAfterSeal = w.stats.examsDone
     w = run(w, 300)
     expect(w.nextId).toBeGreaterThan(idAfterSeal) // 신규 도착이 이어진다
-    const b = w.rooms[1]
+    const b = { x: 30, y: 20, w: 8, h: 6 } // twoWaitingWorld의 둘째 대기실(B) — 봉인 대상이 아니다
     const inB = w.pawns.filter(p => p.stage === 'WAITING'
       && p.x >= b.x && p.x < b.x + b.w && p.y >= b.y && p.y < b.y + b.h)
     expect(inB.length).toBeGreaterThan(0)                      // B에 실제로 앉는다

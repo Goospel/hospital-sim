@@ -8,6 +8,7 @@
 // ⚠️ 상대 경로 임포트 — 이 파일은 vitest(별칭 미설정)로도 돌기 때문에 `@/`를 쓸 수 없다.
 import { FATIGUE_RED, FATIGUE_SLOW_FROM, RESIGN_SATURATED_DAYS } from '../game/doctor'
 import { formatManwon as absManwon } from '../game/labels'
+import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway, type TurnAwayReason } from '../sim/emergency'
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
@@ -15,7 +16,8 @@ import { prefersRestOverExam } from '../sim/needs'
 import { computeRegions } from '../sim/regions'
 import { TRAITS, type TraitKey } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
-import type { RoomType, SimWorld } from '../sim/world'
+import type { Pt } from '../sim/path'
+import type { FurnitureKind, RoomType, SimWorld } from '../sim/world'
 
 /**
  * 금액 한 곳 — **|금액| ≥ 1억이면 「N.N억」, 미만이면 「N만원」**(계획 §0-8).
@@ -290,19 +292,104 @@ export function noRestSpotIdle(p: Pawn, busy: ReadonlySet<string>): boolean {
   겨눌 수 있는 테스트가 하나도 없다.
 */
 
+/*
+  ── 건설 도구 팔레트 ────────────────────────────────────────────────────────
+  방을 통째로 짓던 자리가 여덟 도구로 갈렸다(설계 §2). 화면이 알아야 할 것은 셋이다:
+  **이름**(버튼) · **값**(가격표) · **조작**(드래그인가 클릭인가). 셋 다 여기 있는 이유는
+  이 파일 머리말 그대로다 — JSX 안에 있으면 그 계약을 겨눌 테스트가 하나도 없다.
+*/
+
+/** 가구 4종은 이름이 곧 `FurnitureKind`다 — 도구에서 종류로 옮길 때 표를 하나 더 두지 않는다. */
+export type BuildTool = FurnitureKind | 'WALL' | 'DOOR' | 'DESIGNATE' | 'DEMOLISH'
+
+/** 팔레트에 서는 순서 — 벽 → 문 → 가구 → 용도 → 철거(건설 순서를 그대로 읽는다). */
+export const BUILD_TOOLS: readonly BuildTool[] = [
+  'WALL', 'DOOR', 'DESK', 'CHAIR', 'BED', 'COUNTER', 'DESIGNATE', 'DEMOLISH',
+]
+
+export const TOOL_LABEL: Record<BuildTool, string> = {
+  WALL: '벽', DOOR: '문', DESK: '책상', CHAIR: '의자', BED: '침대', COUNTER: '카운터',
+  DESIGNATE: '용도', DEMOLISH: '철거',
+}
+
+/** 드래그로 쓰는 도구인가 — 문·용도는 한 칸을 겨누는 클릭이라 사각형이 뜻을 갖지 않는다. */
+export const isDragTool = (tool: BuildTool): boolean => tool !== 'DOOR' && tool !== 'DESIGNATE'
+
+/** 팔레트 오른쪽 가격표 — 값은 **코어 표**(build.BUILD_COST)에서 온다.
+ *  여기서 숫자를 다시 적으면 화면이 말하는 값과 금고에서 빠지는 값이 갈린다. */
+export function toolCostText(tool: BuildTool): string {
+  if (tool === 'DESIGNATE') return '용도 지정 — 무료'
+  if (tool === 'DEMOLISH') return '철거 — 건설비의 50% 환불'
+  return `${TOOL_LABEL[tool]} 개당 ${BUILD_COST[tool]}만원`
+}
+
+/** 드래그 사각형이 낳는 타일 — 가구·철거는 **채움**, 벽은 **테두리**다(1줄이면 곧 직선 벽). */
+export function rectTiles(a: Pt, b: Pt, mode: 'FILL' | 'BORDER'): Pt[] {
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x)
+  const y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y)
+  const out: Pt[] = []
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+    if (mode === 'FILL' || x === x0 || x === x1 || y === y0 || y === y1) out.push({ x, y })
+  }
+  return out
+}
+
+/** 드래그 도구별 사각형 해석 — 벽만 테두리다. */
+export const rectModeOf = (tool: BuildTool): 'FILL' | 'BORDER' => (tool === 'WALL' ? 'BORDER' : 'FILL')
+
+/** 드래그 미리보기에 뜨는 한 줄 — **철거는 환불**이라 부호가 뒤집힌다.
+ *  이 한 곳에서 갈라 두지 않으면 "50만원이 나간다"와 "50만원이 들어온다"가 같은 문장으로 뜬다. */
+export function previewLabel(tool: BuildTool, res: PlaceResult): string {
+  const n = res.tiles.length
+  if (tool === 'DESIGNATE') return `${n}칸 — 용도 지정`
+  const money = formatManwon(Math.abs(res.deltaManwon))
+  return tool === 'DEMOLISH' ? `${n}칸 철거 · 환불 ${money}` : `${n}칸 · ${money}`
+}
+
 /**
- * 지금 드래그가 거부되는 **말할 수 있는 사유** — 없으면 `null`.
+ * 건설 한 번의 결과를 토스트 한 줄로 — 말할 게 없으면 `null`.
  *
- * 진료실은 과까지 골라야 열리는데(SimGame의 `ready`), 안 고른 채로 부지를 끌면 코어에 닿기도
- * 전에 화면에서 삼켜져 미리보기도 토스트도 없다 — 플레이어에게는 **판이 죽은 것**으로 보인다.
+ * 성공까지 떠들지 않는 것이 계약이다(잘된 일마다 토스트가 뜨면 진짜 사유가 묻힌다). 다만
+ * **부분 설치**는 예외다: 건너뛴 칸은 화면에 아무 흔적이 없어서, 5칸을 끌었는데 2칸만 선 이유를
+ * 말해 줄 자리가 여기밖에 없다.
+ */
+export function buildResultText(tool: BuildTool, res: PlaceResult): string | null {
+  if (res.ok) {
+    if (res.skipped === 0) return null
+    return tool === 'DEMOLISH'
+      ? `${res.skipped}칸은 부술 것이 없어 지나갔습니다`
+      : `${res.skipped}칸은 이미 차 있어 건너뛰었습니다`
+  }
+  return REASON_TEXT[res.reason](tool)
+}
+
+/** 코어 사유 → 화면 문구. 사유는 코어가, 말은 화면이 갖는다(옛 REASON_TEXT 관례 계승).
+ *  NOTHING만 도구를 본다 — 철거의 "부술 게 없다"와 설치의 "놓을 자리가 없다"는 다른 상황이고,
+ *  한 문구로 접으면 무엇을 고쳐야 하는지가 사라진다. */
+const REASON_TEXT: Record<BuildReason, (tool: BuildTool) => string> = {
+  NOTHING: tool => (tool === 'DEMOLISH' ? '부술 것이 없습니다' : '놓을 자리가 없습니다 — 이미 차 있습니다'),
+  NO_MONEY: () => '자금이 부족합니다',
+  NOT_WALL: () => '문은 벽 위에만 낼 수 있습니다',
+  OUTDOORS: () => '둘러싸인 실내가 아닙니다 — 벽으로 두르고 문을 내세요',
+}
+
+/**
+ * 지금 클릭이 거부되는 **말할 수 있는 사유** — 없으면 `null`.
  *
- * ⚠️ 방 타입을 아예 안 골랐을 때는 `null`이다: 그 클릭은 실패가 아니라 맵을 둘러보는 동작이라,
+ * 용도 도구는 무슨 방인지(진료실이면 과까지) 골라야 열리는데, 안 고른 채로 부지를 누르면 코어에
+ * 닿기도 전에 화면에서 삼켜져 미리보기도 토스트도 없다 — 플레이어에게는 **판이 죽은 것**으로
+ * 보인다. 과 없는 EXAM은 코어가 아예 던지므로(build.designateRegion) 이 줄이 그 앞을 막는다.
+ *
+ * ⚠️ 도구를 아예 안 골랐을 때는 `null`이다: 그 클릭은 실패가 아니라 맵을 둘러보는 동작이라,
  * 여기에 사유를 붙이면 부지를 누를 때마다 토스트가 떠 진짜 사유가 묻힌다.
  */
-export function buildBlockReason(selected: RoomType | null, examDept: SimDeptKey | null): string | null {
-  return selected === 'EXAM' && examDept === null
-    ? '진료실은 과를 골라야 지을 수 있습니다 — 아래에서 과를 고르세요'
-    : null
+export function buildBlockReason(
+  tool: BuildTool | null, roomType: RoomType | null, dept: SimDeptKey | null,
+): string | null {
+  if (tool !== 'DESIGNATE') return null
+  if (roomType === null) return '지정할 용도를 고르세요 — 아래 줄에서 방 종류를 고릅니다'
+  if (roomType === 'EXAM' && dept === null) return '진료실은 과를 골라야 지정할 수 있습니다 — 아래에서 과를 고르세요'
+  return null
 }
 
 /**
@@ -341,6 +428,10 @@ export function setupWarningText(w: SimWorld): string | null {
   // 좌석이 안 열린다)에서 "대기실은 있는데 환자가 안 온다"가 되어 경고가 정확히 거짓말을 한다.
   const regions = computeRegions(w)
   if (!regions.some(r => r.type === 'WAITING')) return '대기실이 없습니다 — 환자가 들어오지 못합니다'
+  // 문 없는 밀실 — 벽만 두르면 영역은 인식되지만 통로가 없어 아무도 못 들어간다(설계 §7).
+  // 버그가 아니라 배치의 결과지만, 화면에는 멀쩡한 방으로 보여 이유를 영영 못 찾는다.
+  const sealed = regions.filter(r => r.type && r.doors.size === 0).length
+  if (sealed > 0) return `문이 없는 방 ${sealed}개 — 벽 한 칸을 골라 문을 내세요`
   const roomless = doctors.filter(d => !regions.some(r => r.type === 'EXAM' && r.dept === d.dept)).length
   return roomless > 0 ? `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요` : null
 }
@@ -364,8 +455,22 @@ export interface StatusLineInput {
   idle: boolean
   /** `setupWarningText`의 결과 — 이 배치에서 아무 일도 안 일어나는 이유. */
   warning: string | null
-  selected: RoomType | null
-  examDept: SimDeptKey | null
+  tool: BuildTool | null
+  /** 용도 도구가 지정할 방 종류 — 다른 도구에서는 뜻이 없다. */
+  roomType: RoomType | null
+  dept: SimDeptKey | null
+}
+
+/** 도구별 조작 안내 — 드래그인지 클릭인지가 첫 문장이다(조작을 모르면 도구가 없는 것과 같다). */
+const TOOL_HINT: Record<BuildTool, string> = {
+  WALL: '벽 — 부지를 드래그하면 사각형 테두리로 벽이 섭니다(한 줄이면 직선 벽).',
+  DOOR: '문 — 벽 한 칸을 클릭해 문을 냅니다. 문이 없으면 아무도 드나들지 못합니다.',
+  DESK: '책상 — 드래그한 사각형을 채웁니다. 진료실엔 책상 옆에 의자가 필요합니다.',
+  CHAIR: '의자 — 드래그한 사각형을 채웁니다. 대기실 의자가 곧 좌석 수입니다.',
+  BED: '침대 — 드래그한 사각형을 채웁니다. 응급은 병동 침대에 눕습니다.',
+  COUNTER: '카운터 — 드래그한 사각형을 채웁니다. 접수처의 표시물입니다.',
+  DESIGNATE: '용도 — 벽으로 둘러싸인 실내를 클릭해 무슨 방인지 정합니다.',
+  DEMOLISH: '철거 — 드래그한 사각형의 벽·문·가구를 없애고 절반을 돌려받습니다.',
 }
 
 /**
@@ -386,10 +491,14 @@ export function statusLineText(s: StatusLineInput): string {
   if (s.pause) return PAUSE_TEXT[s.pause]
   if (s.idle) return '일시정지 — 방을 짓고 의사를 뽑은 뒤 1×를 눌러 개원하세요'
   if (s.warning) return s.warning
-  const blocked = buildBlockReason(s.selected, s.examDept)
+  const blocked = buildBlockReason(s.tool, s.roomType, s.dept)
   if (blocked) return blocked
-  if (s.selected === null) {
-    return '방 타입을 고르면 건설할 수 있습니다. 환자는 대기실 의자에 앉고, 자기 과 진료실의 의사가 차례로 부릅니다.'
+  if (s.tool === null) {
+    return '벽으로 공간을 두르고 → 문을 내고 → 용도를 지정하고 → 가구를 놓으세요. 진료실엔 책상+의자, 대기실엔 의자가 필요합니다.'
   }
-  return `${roomLabel({ type: s.selected, dept: s.examDept ?? undefined })} — 부지를 드래그해 크기를 정하세요. 건설하는 동안 시간이 멈춥니다.`
+  // 용도는 무슨 방인지까지 정해져야 뜻이 선다 — 그 이름을 문장에 실어 클릭 전에 확인시킨다.
+  if (s.tool === 'DESIGNATE' && s.roomType) {
+    return `${roomLabel({ type: s.roomType, dept: s.dept ?? undefined })}로 지정합니다 — 둘러싸인 실내를 클릭하세요.`
+  }
+  return TOOL_HINT[s.tool]
 }

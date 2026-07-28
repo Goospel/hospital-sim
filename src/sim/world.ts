@@ -11,7 +11,7 @@ export const GRID_W = 48
 export const GRID_H = 32
 export const INITIAL_TREASURY_MANWON = 50_000 // 개원 자본 5억(기존 경제와 동일 단위)
 
-/** 정문 — 그리드 아래 변 중앙. 방은 y=GRID_H-1에 지을 수 없어(placeRoom 경계) 항상 통행 가능하다.
+/** 정문 — 그리드 아래 변 중앙. 여기에 벽을 세우면 아무도 못 들어오지만 그건 플레이어의 선택이다.
  *  **환자가 들어오는 문과 의사가 출근하는 문은 같은 문이다.** 격자에서 파생하는 상수라 자리는
  *  여기다 — 라이프사이클 모듈(patientFlow)에 두면 그 아래층인 pawn이 상위를 값으로 당기게 되고,
  *  patientFlow가 pawn의 값을 하나라도 쓰는 순간 실제 순환이 된다. */
@@ -26,16 +26,6 @@ export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION' | 'C
 /** 용도 앵커 — "이 좌표가 속한 방은 이 용도다". 방이 아니라 **타일**을 가리키는 것이 핵심이다:
  *  벽을 허물어 영역이 병합·분리돼도 앵커는 좌표라 저절로 승계된다(영역 id는 파생값이라 못 쓴다). */
 export interface Designation { at: Pt; type: RoomType; dept?: SimDeptKey }
-
-export interface Room {
-  id: string
-  type: RoomType
-  /** EXAM만 갖는다(과 지정). 다른 방 종류에는 **없다** — placeRoom이 떨군다(build.ts).
-   *  타입이 `DeptKey`가 아니라 `SimDeptKey`인 이유: 카탈로그 밖 과(예: 'CHECKUP')를 넣은
-   *  방은 라우팅이 `simDept`에서 **런타임에** 터진다. 좁혀 두면 그 실수가 컴파일로 당겨진다. */
-  dept?: SimDeptKey
-  x: number; y: number; w: number; h: number
-}
 
 export type FurnitureKind = 'DESK' | 'CHAIR' | 'BED' | 'COUNTER'
 /** 집기 한 점 — **소속 필드가 없다**(설계 §1-1). 이 가구가 어느 방의 것인지는 좌표가 말한다:
@@ -58,10 +48,8 @@ export interface SimWorld {
   week: number     // 1부터
   phase: SimPhase
   treasuryManwon: number
-  rooms: Room[]
   /** 벽 타일(tileIndex) — **통행 판정의 단일 출처**다. 방 사각형에서 유도하지 않는다:
-   *  자유 건설(설계 PR 2)에서는 벽이 방에 속하지 않고 홀로 서기 때문이다.
-   *  지금은 placeRoom 어댑터가 방 테두리를 여기로 옮겨 담는다. */
+   *  자유 건설에서는 벽이 방에 속하지 않고 홀로 선다(건설 도구는 build.ts). */
   walls: ReadonlySet<number>
   /** 문 타일 — **통행 가능하되 영역 경계다**(벽 집합에는 없다). 이 이중성이 문의 정의다:
    *  막으면 못 드나들고, 경계가 아니면 두 방이 하나로 붙는다. */
@@ -128,27 +116,11 @@ export function freshStats(): SimStats {
 export function createWorld(seed: number): SimWorld {
   return {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
-    rooms: [], walls: new Set(), doors: new Set(), designations: [],
+    walls: new Set(), doors: new Set(), designations: [],
     furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
     hirePool: freshHirePool(), turnedAwayTotal: 0,
   }
-}
-
-export function doorTile(r: Room): { x: number; y: number } {
-  return { x: r.x + Math.floor(r.w / 2), y: r.y + r.h - 1 }
-}
-
-/** 방 사각형이 낳는 **벽 타일** — 테두리에서 문 하나를 뺀다. placeRoom 어댑터가 `walls`를
- *  채우는 유일한 경로다(설계 PR 2에서 자유 벽 도구로 대체되며 함께 사라진다). */
-export function wallTiles(r: Room): Array<{ x: number; y: number }> {
-  const door = doorTile(r)
-  const out: Array<{ x: number; y: number }> = []
-  for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y; y < r.y + r.h; y++) {
-    const onEdge = x === r.x || x === r.x + r.w - 1 || y === r.y || y === r.y + r.h - 1
-    if (onEdge && !(x === door.x && y === door.y)) out.push({ x, y })
-  }
-  return out
 }
 
 /** 통행 판정 — 벽 ∪ 가구. **문은 벽이 아니므로 통행 가능**하다.

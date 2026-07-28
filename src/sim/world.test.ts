@@ -1,17 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import {
-  GRID_W, GRID_H, createWorld, isWalkable, wallTiles, doorTile,
-  type Room, type SimWorld,
-} from './world'
-import { placeRoom } from './build'
+import { GRID_W, GRID_H, createWorld, isWalkable, type SimWorld } from './world'
+import { placeRoom, wallTiles, doorTile, type RoomSpec } from './testHelpers'
 
-const room = (over: Partial<Room> = {}): Room => ({
-  id: 'r1', type: 'EXAM', x: 4, y: 4, w: 6, h: 5, ...over,
+const room = (over: Partial<RoomSpec> = {}): RoomSpec => ({
+  type: 'EXAM', x: 4, y: 4, w: 6, h: 5, ...over,
 })
 
-/** 통행 판정은 `walls`를 읽는다 — 방을 `rooms`에 손으로 꽂으면 벽이 없는 세계가 된다.
- *  픽스처는 반드시 어댑터(placeRoom)를 경유한다(설계 PR 1 어댑터가 벽·문의 단일 출처). */
-function withRoom(over: Partial<Room> = {}): SimWorld {
+/** 통행 판정은 `walls`를 읽는다 — 세계에 방 목록 같은 건 없다(벽·문 타일이 전부다).
+ *  픽스처는 반드시 건설 도구를 경유한다(테스트 헬퍼 placeRoom이 그 조합이다). */
+function withRoom(over: Partial<RoomSpec> = {}): SimWorld {
   const r = room(over)
   const res = placeRoom(createWorld(1), { type: r.type, x: r.x, y: r.y, w: r.w, h: r.h })
   if (!res.ok) throw new Error(`전제 실패 — 건설 거부(${res.reason})`)
@@ -19,9 +16,8 @@ function withRoom(over: Partial<Room> = {}): SimWorld {
 }
 
 describe('createWorld', () => {
-  it('빈 부지로 시작한다 — 방 0, 벽·문·용도 0, 가구 0, 폰 0, 개원 자본 5억(만원 단위)', () => {
+  it('빈 부지로 시작한다 — 벽·문·용도 0, 가구 0, 폰 0, 개원 자본 5억(만원 단위)', () => {
     const w = createWorld(7)
-    expect(w.rooms).toEqual([])
     expect(w.walls.size).toBe(0)
     expect(w.doors.size).toBe(0)
     expect(w.designations).toEqual([])

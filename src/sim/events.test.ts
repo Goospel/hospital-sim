@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { placeRoom } from './testHelpers'
 import { createWorld, type SimWorld } from './world'
-import { placeRoom } from './build'
 import { tick } from './tick'
 import { DAYS_PER_WEEK, freshMorning, startNextDay } from './day'
 import { startNextWeek } from './week'

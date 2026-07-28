@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest'
+import { placeRoom } from '../sim/testHelpers'
 import {
-  buildBlockReason, busyDoctorIds, doctorActivityMark, doctorCountByDept, doctorRoomlessMark,
-  fatigueTone, formatManwon, nextPriority, noRestSpotIdle, PRIORITY_LABEL, resigningNotices,
-  roomLabel, saturationText, setupWarningText, statusLineText, traitBadges,
-  turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
+  buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
+  doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
+  previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
+  toolCostText, traitBadges, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
 } from './simHud'
+import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
 import { createWorld, type RoomType, type SimWorld } from '../sim/world'
-import { placeRoom } from '../sim/build'
 import { simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
 import { TRAITS } from '../sim/traits'
@@ -412,32 +413,151 @@ describe('noRestSpotIdle — 태업 힌트(쉬라고 했는데 쉴 자리가 없
   보인다(사용자 신고: 캐릭터가 안 움직이고 방이 안 지어진다 — 실제로는 건설 성공 0회였다).
   아래 셋은 그 침묵을 문장으로 바꾸는 판정이고, 문구와 **우선순위**가 곧 화면 계약이다.
 */
-describe('buildBlockReason — 과 미선택 드래그의 침묵을 깬다', () => {
-  it('진료실인데 과를 안 골랐으면 **왜 안 되는지**를 말한다 — 이 한 줄이 없으면 드래그가 조용히 먹힌다', () => {
-    const text = buildBlockReason('EXAM', null)
+describe('buildBlockReason — 용도 지정의 침묵을 깬다', () => {
+  it('용도 도구인데 무슨 방인지 안 골랐으면 말한다 — 클릭이 조용히 먹히면 판이 죽은 것으로 보인다', () => {
+    const text = buildBlockReason('DESIGNATE', null, null)
+    expect(text).not.toBeNull()
+    expect(text).toContain('용도')
+  })
+
+  it('진료실인데 과를 안 골랐으면 **왜 안 되는지**를 말한다 — 과 없는 진료실은 코어가 던진다', () => {
+    const text = buildBlockReason('DESIGNATE', 'EXAM', null)
     expect(text).not.toBeNull()
     expect(text).toContain('과')
   })
 
   it('과를 골랐으면 사유가 없다 — 지을 수 있는 상태에 경고를 켜 두지 않는다', () => {
-    expect(buildBlockReason('EXAM', 'CARDIOLOGY')).toBeNull()
+    expect(buildBlockReason('DESIGNATE', 'EXAM', 'CARDIOLOGY')).toBeNull()
   })
 
-  it('진료실이 아닌 방은 과가 없어도 사유가 없다 — 과 개념 자체가 없는 방이다(placeRoom이 떨군다)', () => {
+  it('진료실이 아닌 용도는 과가 없어도 사유가 없다 — 과 개념 자체가 없는 방이다', () => {
     for (const t of ['WAITING', 'WARD', 'LOUNGE', 'RECEPTION', 'CAFETERIA'] as const) {
-      expect(buildBlockReason(t, null), `${t}에 사유가 붙었다`).toBeNull()
+      expect(buildBlockReason('DESIGNATE', t, null), `${t}에 사유가 붙었다`).toBeNull()
     }
   })
 
-  it('아무 방도 안 고른 맵 클릭은 **조용히** 지나간다 — 그건 탐색이지 실패가 아니다', () => {
-    expect(buildBlockReason(null, null)).toBeNull()
-    // 남아 있던 과 선택이 사유를 되살리면 맵을 누를 때마다 토스트가 뜬다.
-    expect(buildBlockReason(null, 'CARDIOLOGY')).toBeNull()
+  it('용도 말고 다른 도구는 방 종류를 안 본다 — 벽을 세우는 데 과가 필요할 리 없다', () => {
+    for (const tool of ['WALL', 'DOOR', 'DESK', 'CHAIR', 'BED', 'COUNTER', 'DEMOLISH'] as const) {
+      expect(buildBlockReason(tool, null, null), `${tool}에 사유가 붙었다`).toBeNull()
+    }
+  })
+
+  it('아무 도구도 안 고른 맵 클릭은 **조용히** 지나간다 — 그건 탐색이지 실패가 아니다', () => {
+    expect(buildBlockReason(null, null, null)).toBeNull()
+    // 남아 있던 선택이 사유를 되살리면 맵을 누를 때마다 토스트가 뜬다.
+    expect(buildBlockReason(null, 'EXAM', null)).toBeNull()
   })
 
   it('톤 가드레일 — 비난 카피 금지(사실과 다음 행동만)', () => {
-    const text = buildBlockReason('EXAM', null)!
+    const text = buildBlockReason('DESIGNATE', 'EXAM', null)!
     for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) expect(text).not.toContain(word)
+  })
+})
+
+/*
+  ── 건설 도구 팔레트 ────────────────────────────────────────────────────────
+  도구가 여덟이고 조작이 둘(드래그·클릭)이라, "무엇이 얼마이고 어떻게 쓰는가"가 화면 계약이다.
+  값·라벨·문구를 JSX가 각자 적으면 팔레트의 가격표와 실제 차감이 갈려도 아무도 모른다.
+*/
+describe('건설 도구 — 라벨·비용·조작', () => {
+  it('여덟 도구가 전부 이름을 갖는다 — 이름 없는 버튼이 팔레트에 서지 않는다', () => {
+    expect(BUILD_TOOLS).toHaveLength(8)
+    for (const t of BUILD_TOOLS) expect(TOOL_LABEL[t].length).toBeGreaterThan(0)
+    expect(new Set(BUILD_TOOLS.map(t => TOOL_LABEL[t])).size).toBe(8) // 두 도구가 같은 이름을 쓰지 않는다
+  })
+
+  it('비용 문구는 **코어 표에서** 온다 — 팔레트 가격과 금고 차감이 갈리지 않는다', () => {
+    expect(toolCostText('WALL')).toContain(String(BUILD_COST.WALL))
+    expect(toolCostText('BED')).toContain(String(BUILD_COST.BED))
+    expect(toolCostText('DESIGNATE')).toContain('무료') // 용도 지정은 공사가 아니다
+    expect(toolCostText('DEMOLISH')).toContain('환불')
+  })
+
+  it('문·용도는 클릭 도구, 나머지는 드래그 도구다 — 조작이 갈리면 미리보기가 안 뜬다', () => {
+    expect(isDragTool('DOOR')).toBe(false)
+    expect(isDragTool('DESIGNATE')).toBe(false)
+    for (const t of ['WALL', 'DESK', 'CHAIR', 'BED', 'COUNTER', 'DEMOLISH'] as const) {
+      expect(isDragTool(t), `${t}`).toBe(true)
+    }
+  })
+})
+
+describe('rectTiles — 드래그 사각형이 낳는 타일', () => {
+  it('채움은 사각형 전부다 — 가구·철거가 읽는다', () => {
+    const tiles = rectTiles({ x: 2, y: 2 }, { x: 4, y: 3 }, 'FILL').map(t => `${t.x},${t.y}`)
+    expect(tiles.sort()).toEqual(['2,2', '2,3', '3,2', '3,3', '4,2', '4,3'].sort())
+  })
+
+  it('테두리는 둘레만이다 — 벽 도구가 방을 두른다', () => {
+    const tiles = rectTiles({ x: 2, y: 2 }, { x: 4, y: 4 }, 'BORDER').map(t => `${t.x},${t.y}`)
+    expect(tiles).not.toContain('3,3') // 가운데는 비운다
+    expect(tiles).toHaveLength(8)
+  })
+
+  it('한 줄 드래그는 테두리여도 **직선 벽**이다 — 폭 1짜리 사각형에 안쪽이 없다', () => {
+    expect(rectTiles({ x: 2, y: 2 }, { x: 5, y: 2 }, 'BORDER')).toHaveLength(4)
+    expect(rectTiles({ x: 2, y: 2 }, { x: 2, y: 2 }, 'BORDER')).toHaveLength(1)
+  })
+
+  it('어느 방향으로 끌든 같은 사각형이다 — 좌상단에서만 끌게 만들지 않는다', () => {
+    const a = rectTiles({ x: 5, y: 5 }, { x: 3, y: 3 }, 'FILL').map(t => `${t.x},${t.y}`).sort()
+    const b = rectTiles({ x: 3, y: 3 }, { x: 5, y: 5 }, 'FILL').map(t => `${t.x},${t.y}`).sort()
+    expect(a).toEqual(b)
+  })
+})
+
+describe('previewLabel — 나갈 돈과 들어올 돈', () => {
+  const res = (over: Partial<PlaceResult & { ok: true }> = {}) =>
+    ({ ok: true as const, world: createWorld(1), tiles: [1, 2, 3], skipped: 0, deltaManwon: -90, ...over })
+
+  it('설치는 나갈 금액을, 철거는 **환불**을 말한다 — 부호가 접히면 두 문장이 같아진다', () => {
+    expect(previewLabel('WALL', res())).toContain('3')
+    expect(previewLabel('DEMOLISH', res({ deltaManwon: 45 }))).toContain('환불')
+    expect(previewLabel('WALL', res())).not.toContain('환불')
+  })
+
+  it('금액은 화면 층의 단일 포맷을 지난다 — 헤더 금고와 단위가 갈리지 않는다', () => {
+    expect(previewLabel('WALL', res({ deltaManwon: -90 }))).toContain(formatManwon(90))
+  })
+})
+
+describe('buildResultText — 거부 사유와 건너뛴 칸을 말한다', () => {
+  const fail = (reason: BuildReason) => ({ ok: false as const, reason, tiles: [], skipped: 0, deltaManwon: 0 })
+
+  it('사유마다 **다른** 말을 한다 — 한 문구로 접히면 무엇을 고쳐야 할지가 사라진다', () => {
+    const texts = (['NOTHING', 'NO_MONEY', 'NOT_WALL', 'OUTDOORS'] as const).map(r => buildResultText('WALL', fail(r)))
+    expect(new Set(texts).size).toBe(4)
+  })
+
+  it('문은 벽 위에만 — 거부 문구가 **다음 행동**을 말한다', () => {
+    expect(buildResultText('DOOR', fail('NOT_WALL'))).toContain('벽')
+  })
+
+  it('마당 클릭은 둘러싸라고 말한다 — "안 됩니다"만으로는 무엇이 문제인지 모른다', () => {
+    const text = buildResultText('DESIGNATE', fail('OUTDOORS'))!
+    expect(text).toContain('벽')
+    expect(text).toContain('문')
+  })
+
+  it('철거가 아무것도 못 부수면 그렇게 말한다 — 설치의 "자리가 없다"와 다른 상황이다', () => {
+    expect(buildResultText('DEMOLISH', fail('NOTHING'))).not.toBe(buildResultText('WALL', fail('NOTHING')))
+  })
+
+  it('성공했는데 건너뛴 칸이 있으면 **그 사실만** 말한다 — 부분 설치는 화면에 흔적이 없다', () => {
+    const partial = { ok: true as const, world: createWorld(1), tiles: [1], skipped: 3, deltaManwon: -30 }
+    expect(buildResultText('WALL', partial)).toContain('3')
+  })
+
+  it('말끔히 성공했으면 조용하다 — 잘된 일마다 토스트가 뜨면 진짜 사유가 묻힌다', () => {
+    const clean = { ok: true as const, world: createWorld(1), tiles: [1], skipped: 0, deltaManwon: -30 }
+    expect(buildResultText('WALL', clean)).toBeNull()
+  })
+
+  it('톤 가드레일 — 비난 카피 금지', () => {
+    for (const r of ['NOTHING', 'NO_MONEY', 'NOT_WALL', 'OUTDOORS'] as const) {
+      const text = buildResultText('WALL', fail(r))!
+      for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) expect(text).not.toContain(word)
+    }
   })
 })
 
@@ -496,6 +616,16 @@ describe('setupWarningText — 왜 아무 일도 안 일어나는가', () => {
     const w = worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')])
     expect(setupWarningText(w)).toBeNull()
   })
+
+  it('문 없는 밀실은 그 사실을 말한다 — 영역은 인식되는데 아무도 못 들어가는 방이다', () => {
+    // 벽만 두르고 문을 안 내면 용도까지 지정돼도 통로가 없다. 규칙대로의 결과지만 화면에는
+    // 멀쩡한 방으로 보여, 플레이어는 "왜 아무도 안 오지"를 영영 못 푼다(설계 §7).
+    const w = worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')])
+    // 문 자리를 **벽으로 메운다** — 그냥 지우면 구멍이 되어 방이 마당에 이어져 버린다.
+    const sealed = { ...w, walls: new Set([...w.walls, ...w.doors]), doors: new Set<number>() }
+    const text = setupWarningText(sealed)!
+    expect(text).toContain('문')
+  })
 })
 
 describe('doctorRoomlessMark — 서 있는 의사 머리 위의 이유', () => {
@@ -523,7 +653,7 @@ describe('doctorRoomlessMark — 서 있는 의사 머리 위의 이유', () => 
 describe('statusLineText — footer 상태줄의 우선순위 체인', () => {
   /** 아무 일도 없는 판(방 타입 미선택) — 각 테스트가 필요한 칸만 덮어 쓴다. */
   const line = (over: Partial<Parameters<typeof statusLineText>[0]> = {}) =>
-    statusLineText({ toast: null, pause: null, idle: false, warning: null, selected: null, examDept: null, ...over })
+    statusLineText({ toast: null, pause: null, idle: false, warning: null, tool: null, roomType: null, dept: null, ...over })
 
   it('토스트가 최우선 — 방금 일어난 일이 배경 안내에 묻히면 안 된다', () => {
     expect(line({ toast: '자금이 부족합니다', pause: 'BUILD', idle: true, warning: '대기실이 없습니다' }))
@@ -555,17 +685,20 @@ describe('statusLineText — footer 상태줄의 우선순위 체인', () => {
     expect(line({ idle: true, warning: '대기실이 없습니다' })).toContain('1×')
   })
 
-  it('아무 경고도 없으면 고른 방 안내가 선다 — 진료실은 과 이름까지 달고 나온다', () => {
-    const text = line({ selected: 'EXAM', examDept: 'CARDIOLOGY' })
+  it('아무 경고도 없으면 고른 도구 안내가 선다 — 도구마다 조작이 다르다(드래그 · 클릭)', () => {
+    expect(line({ tool: 'WALL' })).toContain('드래그')
+    expect(line({ tool: 'DOOR' })).toContain('클릭')
+    // 용도는 무슨 방인지까지 골라야 뜻이 선다 — 진료실은 과 이름까지 달고 나온다.
+    const text = line({ tool: 'DESIGNATE', roomType: 'EXAM', dept: 'CARDIOLOGY' })
     expect(text).toContain(simDept('CARDIOLOGY').label)
-    expect(text).toContain('드래그')
   })
 
-  it('진료실인데 과가 없으면 그 사유가 안내를 대신한다 — buildBlockReason과 **같은 문장**이다', () => {
-    expect(line({ selected: 'EXAM' })).toBe(buildBlockReason('EXAM', null))
+  it('용도 도구인데 과가 없으면 그 사유가 안내를 대신한다 — buildBlockReason과 **같은 문장**이다', () => {
+    expect(line({ tool: 'DESIGNATE', roomType: 'EXAM' })).toBe(buildBlockReason('DESIGNATE', 'EXAM', null))
   })
 
-  it('아무것도 안 골랐으면 기본 안내 — 빈 줄로 두면 처음 여는 사람이 무엇부터 할지 모른다', () => {
-    expect(line().length).toBeGreaterThan(0)
+  it('아무것도 안 골랐으면 **건설 순서**를 알려 준다 — 벽부터라는 걸 모르면 첫 5분이 통째로 막힌다', () => {
+    const text = line()
+    for (const word of ['벽', '문', '용도', '가구']) expect(text).toContain(word)
   })
 })

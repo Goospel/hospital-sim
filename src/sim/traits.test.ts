@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, ENTRANCE, type SimWorld } from './world'
 import { spawnDoctor } from './pawn'
-import { placeRoom } from './build'
 import { tick } from './tick'
 import { HIRABLE_DEPTS, simDept } from './dept'
-import { hire } from './testHelpers'
+import { hire, placeRoom } from './testHelpers'
 import { DOCTOR_NAMES, TRAITS, TRAIT_KEYS, pickTraits } from './traits'
 
 /** 한 판에 뽑을 수 있는 인원의 상한 — 전국 풀의 합(카탈로그 파생이라 튜닝을 따라온다). */
