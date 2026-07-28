@@ -339,11 +339,11 @@ function progressStages(w: SimWorld): SimWorld {
           // 감속식(곱 순서·이중 반올림)은 `needs.workDurationMin`이 **단일 출처**다 — 응급
           // 처치(emergency.assignEmergencyDoctors)가 부르는 그 함수다. 식을 여기 다시 적으면
           // 같은 상태의 의사가 진료와 처치에서 다른 배율을 받는다.
-          // ⚠️ **곱 순서는 외래에서 계측되지 않는다**(등가 돌연변이): 20분은 순서를 뒤집어도
-          //    FATIGUE_RED에서 29분으로 일치한다(전수 실측 — 피로 0..100 중 갈리는 값 21개뿐).
-          //    그 계약을 잠그는 것은 응급 90분 경로다(needs.test.ts 「곱이 쌓인다 — 응급」이
-          //    130 vs 129로 잡는다) — 두 자리가 **한 함수를 공유하게 된 지금** 그 계측 하나가
-          //    이 경로까지 함께 덮는다.
+          // ⚠️ **곱 순서는 외래에서 계측되지 않는다**(등가 돌연변이 · STARVED_SLOW 1.3 기준으로
+          //    재측정 2026-07-28): 20분은 순서를 뒤집어도 FATIGUE_RED에서 33분으로 일치한다
+          //    (전수 실측 — 피로 0..100 중 갈리는 값 23개뿐). 그 계약을 잠그는 것은 응급 90분
+          //    경로다(needs.test.ts 「곱이 쌓인다 — 응급」이 147 vs 146으로 잡는다) — 두 자리가
+          //    **한 함수를 공유하게 된 지금** 그 계측 하나가 이 경로까지 함께 덮는다.
           const doc = w.pawns.find(d => d.id === p.doctorId)
           const workMin = workDurationMin(EXAM_DURATION_MIN, doc)
           keep({ ...p, stage: 'IN_EXAM', examUntilMin: w.minute + workMin, workMin })
