@@ -562,10 +562,23 @@ export default function SimGame() {
           </span>
         </div>
 
-        {/* 용도 6종 — [용도]를 고르면 한 줄이 더 열린다. 벽이 방을 만드는 게 아니라 **용도가**
-            만든다는 것을 이 줄이 말한다(둘러싸인 실내 + 용도 = 규칙이 보는 방). */}
-        {tool === "DESIGNATE" && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-frame pt-2">
+        {/*
+          용도 6종 — [용도]를 고르면 한 줄이 열린다. 벽이 방을 만드는 게 아니라 **용도가** 만든다는
+          것을 이 줄이 말한다(둘러싸인 실내 + 용도 = 규칙이 보는 방).
+
+          ⚠️ **조건부로 렌더하지 않고 `invisible`로 숨긴다** — 이 줄과 아래 과 줄은 **자리를 늘 차지해야
+          한다.** 접었다 펴면 footer 높이가 86→170px로 오르내리고, 맵은 남은 공간을 받아 통째로 확대되므로
+          (grid 1fr + useFitScale) 도구를 고를 때마다 **화면 전체의 배율이 바뀐다** — 사용자 보고: *"하단
+          메뉴를 클릭하면 메인 게임 화면의 해상도가 바뀌어 어지럽다."* 고정 px(min-height)로 막지 않는 이유는
+          그 값이 글꼴·폭에 따라 달라져 좁은 화면에서 다시 어긋나기 때문이다. 자리를 실제 내용으로 예약하면
+          높이가 **무엇이 열려 있든 항상 같다**. `visibility:hidden`이라 숨은 동안 클릭도 포커스도 안 받고
+          접근성 트리에서도 빠진다.
+        */}
+        <div
+          className={`flex flex-wrap items-center gap-2 border-t border-frame pt-2 ${
+            tool === "DESIGNATE" ? "" : "invisible"
+          }`}
+        >
             <span className="text-xs text-on-desk-muted">용도</span>
             {ROOM_TYPES.map((t) => (
               <button
@@ -585,13 +598,16 @@ export default function SimGame() {
                 {ROOM_LABEL[t]}
               </button>
             ))}
-          </div>
-        )}
+        </div>
 
         {/* 진료실의 과 — 진료가 성립하려면 환자·진료실·의사의 과가 셋 다 같아야 하므로
-            (코어의 삼중 일치), 무슨 과로 지정하는지가 건설의 절반이다. */}
-        {tool === "DESIGNATE" && roomType === "EXAM" && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-frame pt-2">
+            (코어의 삼중 일치), 무슨 과로 지정하는지가 건설의 절반이다.
+            위 용도 줄과 **같은 이유로** 조건부 렌더가 아니라 `invisible`이다(자리 고정). */}
+        <div
+          className={`flex flex-wrap items-center gap-2 border-t border-frame pt-2 ${
+            tool === "DESIGNATE" && roomType === "EXAM" ? "" : "invisible"
+          }`}
+        >
             <span className="text-xs text-on-desk-muted">과</span>
             {HIRABLE_DEPTS.map((d) => (
               <button
@@ -608,8 +624,7 @@ export default function SimGame() {
                 {simDept(d).label}
               </button>
             ))}
-          </div>
-        )}
+        </div>
 
         {/* 상태줄 — **화면에서 유일하게 문구가 바뀌는 자리**이자 맵 아래 예약된 한 줄(min-h-5)이다.
             무엇을 쓸지는 simHud.statusLineText(우선순위 체인)가 정하고 여기선 칠만 한다:
