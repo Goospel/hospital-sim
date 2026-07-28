@@ -394,6 +394,19 @@ describe('판 종결 — 엔딩 3종', () => {
     expect(settled.phase).toBe('WEEK_END')
     expect(settled.ending).toBeUndefined()
   })
+
+  it(`ⓖ ${CAMPAIGN_WEEKS}주차에 사람까지 바닥나면 NO_PEOPLE — 사람이 시간을 이긴다`, () => {
+    // 우선순위의 **가운데 축**. ⓓ가 잠그는 것은 맨 위(돈 > 시간)뿐이라, CAMPAIGN_END 검사를
+    // INSOLVENCY와 NO_PEOPLE **사이**로 옮기는 변조는 ⓓ를 통과한다 — 그러면 마지막 의사가
+    // 떠나며 끝난 판이 "12주 완주"로 보고되고, 이 게임이 하려는 말(사람이 바닥나서 끝난다)이
+    // 하필 그 말이 가장 크게 들려야 할 판에서만 사라진다.
+    const settled = settleWeek(weekEndWorld({
+      week: CAMPAIGN_WEEKS, pawns: [], hirePool: emptyPool(), treasuryManwon: 100_000,
+    }))
+    expect(settled.insolvencyStreak).toBe(0) // 돈으로 끝난 게 아니다 — 위 두 축을 분리해 둔다
+    expect(settled.phase).toBe('CLOSED')
+    expect(settled.ending).toBe('NO_PEOPLE')
+  })
 })
 
 describe('다음 주', () => {
