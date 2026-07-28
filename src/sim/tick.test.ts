@@ -59,9 +59,9 @@ describe('폰 이동', () => {
     let w = createWorld(1)
     w = spawnDoctor(w, 'CARDIOLOGY', { x: 2, y: 2 })
     const path = findPath(w, { x: 2, y: 2 }, { x: 4, y: 2 })!
-    w = { ...w, pawns: [{ ...w.pawns[0], path, roomId: 'room-9' }] }
+    w = { ...w, pawns: [{ ...w.pawns[0], path, saturatedDays: 7 }] }
     const after = tick(w, 1)
-    expect(after.pawns[0]).toMatchObject({ id: 'doc-1', kind: 'DOCTOR', dept: 'CARDIOLOGY', roomId: 'room-9' })
+    expect(after.pawns[0]).toMatchObject({ id: 'doc-1', kind: 'DOCTOR', dept: 'CARDIOLOGY', saturatedDays: 7 })
   })
   it('여러 폰이 각자 자기 경로를 소비한다 — 하나만 움직이지 않는다', () => {
     let w = createWorld(1)

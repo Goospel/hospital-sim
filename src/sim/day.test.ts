@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { placeRoom } from './testHelpers'
 import { createWorld, tileIndex, INITIAL_TREASURY_MANWON } from './world'
-import { computeRegions, regionById } from './regions'
+import { computeRegions } from './regions'
 import { spawnDoctor, type Pawn, type PatientStage } from './pawn'
 import { tick } from './tick'
 import { DAY_END_MIN, DAYS_PER_WEEK, settleDay, startNextDay } from './day'
@@ -209,11 +209,11 @@ describe('다음 날', () => {
     expect(next.pawns.some(p => p.kind === 'PATIENT')).toBe(false)
     const doc = next.pawns.find(p => p.kind === 'DOCTOR')!
     expect(doc.path).toEqual([])
-    expect(doc.roomId).toBeDefined()
+    expect(doc.deskAt).toBeDefined()
     // "책상 앞"을 파생식이 아니라 눈에 보이는 관계로 잰다 — 책상과 맞닿아 있고 제 방 안이다.
     // 제 방은 이제 **영역**이고, 그 방의 책상은 좌표로 고른다(가구에 소속 필드가 없다).
-    const room = regionById(computeRegions(next), doc.roomId)!
-    const desk = next.furniture.find(f => f.kind === 'DESK' && room.tiles.has(tileIndex(f.x, f.y)))!
+    const room = computeRegions(next).find(r => r.tiles.has(tileIndex(doc.deskAt!.x, doc.deskAt!.y)))!
+    const desk = doc.deskAt!
     expect(Math.abs(doc.x - desk.x) + Math.abs(doc.y - desk.y)).toBe(1)
     expect(room.tiles.has(tileIndex(doc.x, doc.y))).toBe(true)
     // dest가 남아 있으면 다음 날 첫 틱의 도착 판정(위치 == dest)이 어제 목적지를 보고 흔들린다.
@@ -226,8 +226,7 @@ describe('다음 날', () => {
     const walking = tick(hospitalWorld(3), 1)
     const before = walking.pawns.find(p => p.kind === 'DOCTOR')!
     expect(before.path.length).toBeGreaterThan(0) // 전제: 아직 책상으로 가는 중
-    const room = regionById(computeRegions(walking), before.roomId)!
-    const desk = walking.furniture.find(f => f.kind === 'DESK' && room.tiles.has(tileIndex(f.x, f.y)))!
+    const desk = before.deskAt!
     expect(Math.abs(before.x - desk.x) + Math.abs(before.y - desk.y)).toBeGreaterThan(1) // 전제: 책상 앞이 아니다
 
     const doc = startNextDay(settleDay(walking)).pawns.find(p => p.kind === 'DOCTOR')!

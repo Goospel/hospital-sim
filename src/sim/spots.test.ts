@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, tileIndex, type Furniture, type SimWorld } from './world'
 import { computeRegions } from './regions'
-import { furnitureSpot, furnitureSpots } from './spots'
+import { examSlots, furnitureSpots, standSpot } from './spots'
 import { buildBlockedSet } from './path'
 
 /** 사각 테두리 벽 — regions.test.ts와 같은 도구(공식을 테스트마다 다시 쓰지 않는다) */
@@ -65,19 +65,82 @@ describe('furnitureSpots — 영역 안의 가구를 좌표로 연다', () => {
   })
 })
 
-describe('furnitureSpot — 그 영역의 첫 가구 앞자리', () => {
-  it('영역이 주어지면 그 안의 가구만 본다', () => {
-    const w = twoRooms([
-      { kind: 'DESK', x: 22, y: 12 }, // 병동 쪽 책상이 배열에서 먼저다
-      { kind: 'DESK', x: 12, y: 12 },
-    ])
-    const regions = computeRegions(w)
-    const waiting = regions.find(r => r.type === 'WAITING')
-    expect(furnitureSpot(w, waiting, 'DESK', buildBlockedSet(w))).toEqual({ x: 12, y: 11 })
+describe('standSpot — 가구 앞에 설 자리', () => {
+  it('막히지 않은 첫 이웃(위·우·아래·좌)이다 — 위가 벽이면 오른쪽이다', () => {
+    const w = twoRooms([{ kind: 'CHAIR', x: 12, y: 11 }]) // 위(12,10)가 벽
+    expect(standSpot(buildBlockedSet(w), { x: 12, y: 11 })).toEqual({ x: 13, y: 11 })
   })
 
-  it('영역이 없으면(배정 전·철거된 방) null이다 — 던지지 않는다', () => {
-    const w = twoRooms([{ kind: 'DESK', x: 12, y: 12 }])
-    expect(furnitureSpot(w, undefined, 'DESK', buildBlockedSet(w))).toBeNull()
+  it('사방이 막혔으면 null이다 — 던지지 않는다', () => {
+    const w = twoRooms([
+      { kind: 'CHAIR', x: 11, y: 11 }, // 왼쪽·위가 벽인 내부 모서리
+      { kind: 'CHAIR', x: 12, y: 11 },
+      { kind: 'CHAIR', x: 11, y: 12 },
+    ])
+    expect(standSpot(buildBlockedSet(w), { x: 11, y: 11 })).toBeNull()
+  })
+})
+
+/** 진료실 한 칸 — (10,10) 6×5(내부 11..14 × 11..13).
+ *  `examSlots`는 용도를 **보지 않지만**(그 필터는 호출부의 몫이다) 픽스처는 실제 용도로 세운다. */
+function examRoom(furniture: Furniture[]): SimWorld {
+  return {
+    ...createWorld(1),
+    walls: new Set(rectWalls(10, 10, 6, 5)),
+    designations: [{ at: { x: 12, y: 12 }, type: 'EXAM', dept: 'INTERNAL_MEDICINE' }],
+    furniture,
+  }
+}
+
+const slotsOf = (w: SimWorld) => examSlots(w, computeRegions(w).find(r => r.type === 'EXAM')!)
+
+describe('examSlots — 진료 슬롯(책상·환자의자·의사스팟)', () => {
+  it('책상 하나 + 인접 의자 하나 = 슬롯 하나 — 네 좌표가 다 나온다', () => {
+    const slots = slotsOf(examRoom([{ kind: 'DESK', x: 12, y: 12 }, { kind: 'CHAIR', x: 13, y: 12 }]))
+    expect(slots).toEqual([{
+      desk: { x: 12, y: 12 },
+      chair: { x: 13, y: 12 },
+      doctorSpot: { x: 12, y: 11 },  // 책상 앞 통행 타일(위가 비었다)
+      patientSpot: { x: 13, y: 11 }, // 의자 앞 통행 타일
+    }])
+  })
+
+  it('의자 없는 책상은 슬롯이 아니다 — 책상만 놓으면 진료가 안 열린다', () => {
+    expect(slotsOf(examRoom([{ kind: 'DESK', x: 12, y: 12 }]))).toEqual([])
+  })
+
+  it('의자 하나를 두 책상이 나눠 갖지 않는다 — 먼저 놓인 책상이 가져간다', () => {
+    const slots = slotsOf(examRoom([
+      { kind: 'DESK', x: 12, y: 12 },
+      { kind: 'DESK', x: 14, y: 12 }, // 같은 의자(13,12)에 인접하지만 이미 짝지어졌다
+      { kind: 'CHAIR', x: 13, y: 12 },
+    ]))
+    expect(slots.map(s => s.desk)).toEqual([{ x: 12, y: 12 }])
+  })
+
+  it('인접 의자가 둘이면 DIRS 순서(위·우·아래·좌)로 첫 의자다', () => {
+    const slots = slotsOf(examRoom([
+      { kind: 'DESK', x: 12, y: 12 },
+      { kind: 'CHAIR', x: 13, y: 12 }, // 오른쪽 — 배열에서는 이쪽이 먼저다
+      { kind: 'CHAIR', x: 12, y: 11 }, // 위 — DIRS 순서로는 이쪽이 먼저다
+    ]))
+    expect(slots.map(s => s.chair)).toEqual([{ x: 12, y: 11 }])
+  })
+
+  it('의사가 설 자리가 없는 책상은 슬롯이 아니다 — 사방이 막힌 모서리 책상', () => {
+    expect(slotsOf(examRoom([
+      { kind: 'DESK', x: 11, y: 11 },  // 위·왼쪽이 벽
+      { kind: 'CHAIR', x: 12, y: 11 },
+      { kind: 'CHAIR', x: 11, y: 12 },
+    ]))).toEqual([])
+  })
+
+  it('열거 순서는 furniture 배열 순서다 — 좌표 정렬로 뒤집히지 않는다(배정 결정론의 축)', () => {
+    const slots = slotsOf(examRoom([
+      { kind: 'DESK', x: 11, y: 13 }, { kind: 'CHAIR', x: 12, y: 13 },
+      { kind: 'DESK', x: 13, y: 11 }, { kind: 'CHAIR', x: 14, y: 11 },
+    ]))
+    // 좌표 오름차순이라면 (13,11)이 먼저다(y가 위쪽) — 설치 순서를 보면 이 순서다.
+    expect(slots.map(s => s.desk)).toEqual([{ x: 11, y: 13 }, { x: 13, y: 11 }])
   })
 })

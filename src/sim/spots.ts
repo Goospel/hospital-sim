@@ -29,8 +29,10 @@ export const ptKey = (p: Pt) => `${p.x},${p.y}`
 const NEIGHBORS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
 
 /** 가구 앞 통행 타일 — 가구 타일 자체는 막혀 있어 폰이 설 수 없다.
- *  그래서 "의자에 앉는다"는 실제로는 **의자에 인접한 첫 통행 타일에 선다**로 구현된다. */
-function frontTile(blocked: Set<number>, at: Pt): Pt | null {
+ *  그래서 "의자에 앉는다"는 실제로는 **의자에 인접한 첫 통행 타일에 선다**로 구현된다.
+ *  의사의 정위치(책상 앞)도 같은 함수다 — 아침 복귀(day.freshMorning)·휴식 복귀(needs.backToDesk)·
+ *  슬롯의 의사스팟이 파생식을 복제하면 의사가 자리마다 다른 칸에 선다. */
+export function standSpot(blocked: Set<number>, at: Pt): Pt | null {
   for (const d of NEIGHBORS) {
     const t = { x: at.x + d.x, y: at.y + d.y }
     if (t.x < 0 || t.y < 0 || t.x >= GRID_W || t.y >= GRID_H) continue
@@ -39,17 +41,51 @@ function frontTile(blocked: Set<number>, at: Pt): Pt | null {
   return null
 }
 
-/** 방 안 가구 앞에 설 자리 — 의사의 정위치(책상 앞)와 진료 좌석(의자 앞)의 **단일 출처**다.
- *  하루를 넘길 때(day.startNextDay) 의사를 제자리로 되돌리는 것도 여기를 본다 — 파생식을
- *  복제하면 "책상 앞"이 배정과 복귀에서 갈라져 의사가 어제와 다른 칸에 선다. */
-/** 인자가 **영역**인 것이 전환의 요지다: 가구는 소속 필드를 갖지 않으므로(world.Furniture)
- *  "이 방의 책상"은 좌표 포함 관계로만 물을 수 있다. 영역이 `undefined`(배정 전이거나 벽 편집으로
- *  끊긴 id)면 `null`이다 — 호출부가 전부 "없으면 다음 분에 다시"를 이미 쓰고 있어 던질 자리가 없다. */
-export function furnitureSpot(
-  w: SimWorld, region: Region | undefined, kind: 'DESK' | 'CHAIR', blocked: Set<number>,
-): Pt | null {
-  const f = region && w.furniture.find(x => x.kind === kind && region.tiles.has(tileIndex(x.x, x.y)))
-  return f ? frontTile(blocked, f) : null
+/** 진료 슬롯 하나 — **책상 하나에 의사 하나**의 담지자다(설계 §4).
+ *  네 좌표를 한 값으로 묶는 이유는 배정(의사스팟)과 라우팅(환자의자 앞)이 **같은 짝짓기**를
+ *  봐야 하기 때문이다: 따로 계산하면 의사가 앉은 책상과 환자가 앉는 의자가 서로 다른 짝이 된다. */
+export interface ExamSlot { desk: Pt; chair: Pt; doctorSpot: Pt; patientSpot: Pt }
+
+/**
+ * 그 영역 안의 진료 슬롯들 — **책상 수가 곧 그 진료실의 정원**이다(설계 §4).
+ *
+ * 슬롯의 성립 조건은 셋이다: ① 아직 짝이 없는 4방 인접 CHAIR(DIRS 순서 = 위·우·아래·좌)
+ * ② 책상 앞에 의사가 설 통행 타일 ③ 그 의자 앞에 환자가 설 통행 타일. 하나라도 없으면
+ * 그 책상은 슬롯이 **아니다** — "책상만 놓으면 안 되고 의자를 붙여야 한다"가 배치 인과로
+ * 드러나는 자리다(에러가 아니라 배치의 결과이고, HUD 경고가 그 사실을 말한다).
+ *
+ * 열거는 **furniture 배열 순서**(= 설치 순서)다. 좌표 정렬로 바꾸면 의자가 모자랄 때 어느
+ * 책상이 가져가는지가 조용히 달라진다(furnitureSpots와 같은 계약).
+ *
+ * ⚠️ 용도(EXAM)를 **여기서 보지 않는다** — 인자로 받은 영역만 훑는다. 방 종류의 의미는
+ * 호출부의 몫이라는 이 파일 머리말의 경계 그대로다(이름이 exam인 것은 유일 소비자가 진료실이기 때문).
+ */
+export function examSlots(
+  w: SimWorld, region: Region, blocked: Set<number> = buildBlockedSet(w),
+): ExamSlot[] {
+  const chairs = new Map<string, Pt>()
+  for (const f of w.furniture) {
+    if (f.kind === 'CHAIR' && region.tiles.has(tileIndex(f.x, f.y))) chairs.set(ptKey(f), { x: f.x, y: f.y })
+  }
+  const paired = new Set<string>()
+  const out: ExamSlot[] = []
+  for (const f of w.furniture) {
+    if (f.kind !== 'DESK' || !region.tiles.has(tileIndex(f.x, f.y))) continue
+    const desk = { x: f.x, y: f.y }
+    const doctorSpot = standSpot(blocked, desk)
+    if (!doctorSpot) continue
+    for (const d of NEIGHBORS) {
+      const key = ptKey({ x: desk.x + d.x, y: desk.y + d.y })
+      const chair = chairs.get(key)
+      if (!chair || paired.has(key)) continue
+      const patientSpot = standSpot(blocked, chair)
+      if (!patientSpot) continue // 앞이 막힌 의자는 짝으로 잡지 않는다 — 다음 의자를 본다
+      paired.add(key)
+      out.push({ desk, chair, doctorSpot, patientSpot })
+      break
+    }
+  }
+  return out
 }
 
 /** 그 종류의 방에 놓인 그 가구 앞에 설 수 있는 타일들. **가구 하나당 자리 하나**가 이 함수의
@@ -74,7 +110,7 @@ export function furnitureSpots(
   // 모으면 순서가 좌표 정렬로 바뀌어, 좌석이 모자랄 때 누가 먼저 앉는지가 조용히 달라진다.
   for (const f of w.furniture) {
     if (f.kind !== kind || !inType.has(tileIndex(f.x, f.y))) continue
-    const spot = frontTile(blocked, f)
+    const spot = standSpot(blocked, f)
     if (!spot || seen.has(ptKey(spot))) continue
     seen.add(ptKey(spot))
     out.push(spot)

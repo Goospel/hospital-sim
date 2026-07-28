@@ -617,6 +617,27 @@ describe('setupWarningText — 왜 아무 일도 안 일어나는가', () => {
     expect(setupWarningText(w)).toBeNull()
   })
 
+  it('진료실은 있는데 책상이 모자라면 그렇게 말한다 — 방 크기가 아니라 **책상 수**가 정원이다', () => {
+    // 설계 §4: 슬롯(책상+의자) 하나에 의사 한 명. 방은 자기 과인데 둘째 의사는 앉을 데가 없다.
+    const w = worldOf(
+      [doctor({ id: 'd1' }), doctor({ id: 'd2' })],
+      [room('WAITING'), room('EXAM', 'CARDIOLOGY')],
+    )
+    const text = setupWarningText(w)!
+    expect(text).toContain('책상')
+    expect(text).toContain('1') // 한 명이 못 앉는다
+  })
+
+  it('의자 없는 책상만 늘렸으면 **의자를 붙이라고** 말한다 — 책상을 더 놓아도 안 풀린다', () => {
+    const base = worldOf(
+      [doctor({ id: 'd1' }), doctor({ id: 'd2' })],
+      [room('WAITING'), room('EXAM', 'CARDIOLOGY')],
+    )
+    // 진료실(내부 9..12 × 2..4) 안에 의자를 안 붙인 책상 하나.
+    const w = { ...base, furniture: [...base.furniture, { kind: 'DESK' as const, x: 9, y: 4 }] }
+    expect(setupWarningText(w)).toContain('의자')
+  })
+
   it('문 없는 밀실은 그 사실을 말한다 — 영역은 인식되는데 아무도 못 들어가는 방이다', () => {
     // 벽만 두르고 문을 안 내면 용도까지 지정돼도 통로가 없다. 규칙대로의 결과지만 화면에는
     // 멀쩡한 방으로 보여, 플레이어는 "왜 아무도 안 오지"를 영영 못 푼다(설계 §7).
@@ -633,11 +654,11 @@ describe('doctorRoomlessMark — 서 있는 의사 머리 위의 이유', () => 
     const mark = doctorRoomlessMark(doctor())
     expect(mark).not.toBeNull()
     expect(mark!.glyph.length).toBeGreaterThan(0)
-    expect(mark!.label).toContain('진료실')
+    expect(mark!.label).toContain('책상')
   })
 
   it('방을 받았으면 표시가 없다 — 자리를 찾은 사람에게 경고를 달지 않는다', () => {
-    expect(doctorRoomlessMark(doctor({ roomId: 'r1' }))).toBeNull()
+    expect(doctorRoomlessMark(doctor({ deskAt: { x: 9, y: 9 } }))).toBeNull()
   })
 
   it('쉬거나 먹으러 갔으면 표시가 없다 — 그건 자리 없음이 아니라 스스로 자리를 뜬 것이다', () => {

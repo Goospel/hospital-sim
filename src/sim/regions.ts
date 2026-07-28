@@ -17,19 +17,6 @@ export interface Region {
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const
 
 /**
- * 폰의 `roomId`가 가리키는 영역 — 없으면 `undefined`.
- *
- * `Pawn.roomId`는 이제 **영역 id의 문자열**이다(`String(region.id)`). 필드 이름을 안 바꾼 것은
- * 절충이다: 설계 PR 3이 이 필드를 `deskAt: Pt`로 통째로 대체하므로, 그 전에 이름만 옮기면
- * 같은 자리를 두 번 고치게 된다. **id가 파생값(성분 최소 타일 인덱스)이라 저장된 배정은 벽을
- * 편집하면 끊길 수 있다** — 그때 이 함수가 `undefined`를 내고, 배정은 다음 분에 다시 붙는다
- * (던지지 않는 것이 계약이다: 던지면 벽 한 장에 세계가 죽는다).
- */
-export function regionById(regions: readonly Region[], id: string | undefined): Region | undefined {
-  return id === undefined ? undefined : regions.find(r => String(r.id) === id)
-}
-
-/**
  * 벽·문이 아닌 타일의 4방 연결 성분 중 **격자 가장자리에 닿지 않는 것**이 영역이다.
  * 가장자리에 닿으면 바깥과 이어진 마당이라 방이 아니다 — 이 한 줄이 "둘러싸였는가"의 정의다.
  *

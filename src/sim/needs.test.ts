@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, tileIndex, type SimWorld } from './world'
-import { computeRegions, regionById } from './regions'
+import { computeRegions } from './regions'
 import { PAWN_TILES_PER_MIN, type Pawn } from './pawn'
 import { hire, FURNITURE_OF, placeRoom } from './testHelpers'
 import { buildBlockedSet, findPath } from './path'
 import { tick } from './tick'
 import { freshMorning } from './day'
 import { ARRIVAL_WINDOW_MIN, EXAM_DURATION_MIN } from './patientFlow'
-import { furnitureSpot, furnitureSpots } from './spots'
+import { furnitureSpots, standSpot } from './spots'
 import { emergencySpec, wardBeds } from './emergency'
 import { FATIGUE_MAX, FATIGUE_RED, FATIGUE_REST, fatigueSlowFactor } from '../game/doctor'
 import { HUNGRY_AFTER_MIN, MEAL_MIN, REST_BREAK_MIN, REST_BREAK_RECOVER, STARVED_SLOW } from './needs'
@@ -68,7 +68,7 @@ const at = (p: { x: number; y: number }) => ({ x: p.x, y: p.y })
 
 /** 그 의사의 책상 앞 자리 — 파생식을 테스트가 다시 쓰지 않도록 구현의 단일 출처를 부른다. */
 function deskSpot(w: SimWorld, p: Pawn = doctorOf(w)) {
-  const spot = furnitureSpot(w, regionById(computeRegions(w), p.roomId), 'DESK', buildBlockedSet(w))
+  const spot = p.deskAt ? standSpot(buildBlockedSet(w), p.deskAt) : null
   if (!spot) throw new Error('전제 실패 — 책상 앞 자리가 없다')
   return spot
 }
@@ -85,7 +85,7 @@ function findable(w: SimWorld, p: Pawn, to: { x: number; y: number }): boolean {
  *  activity 제외를 겨눈 테스트는 이 값이 참인 순간에 재야 계측력이 있다. */
 function insideOwnRoom(w: SimWorld, p: Pawn): boolean {
   // 사각형 포함이 아니라 **영역 소속**이다 — 구현(patientFlow.insideRegion)이 보는 그 축이다.
-  const r = regionById(computeRegions(w), p.roomId)
+  const r = p.deskAt && computeRegions(w).find(x => x.tiles.has(tileIndex(p.deskAt!.x, p.deskAt!.y)))
   return !!r && r.tiles.has(tileIndex(p.x, p.y))
 }
 
@@ -101,7 +101,7 @@ function restWorld(
   w = hire(w, 'CARDIOLOGY')
   w = until(w, x => {
     const d = doctorOf(x)
-    return !!d.roomId && !!d.dest && d.x === d.dest.x && d.y === d.dest.y
+    return !!d.deskAt && !!d.dest && d.x === d.dest.x && d.y === d.dest.y
   }, 90)
   return { ...w, minute: ARRIVAL_WINDOW_MIN }
 }
@@ -253,7 +253,7 @@ describe('휴식 — 개시·전이·종료', () => {
     let w = place(createWorld(3), LOUNGE_1) // 진료실이 아예 없다 → 의사가 방을 못 받는다
     w = hire(w, 'CARDIOLOGY')
     w = tired({ ...w, minute: ARRIVAL_WINDOW_MIN }, FATIGUE_RED)
-    expect(doctorOf(w).roomId).toBeUndefined() // 전제: 돌아갈 책상이 없다
+    expect(doctorOf(w).deskAt).toBeUndefined() // 전제: 돌아갈 책상이 없다
     const seat = loungeSeats(w)[0]
 
     w = until(w, x => doctorOf(x).activity === 'RESTING')
@@ -347,12 +347,12 @@ describe('휴식과 일의 경합', () => {
 
     w = run(w, 3)
     expect(doctorOf(w).dest).toEqual(seat)         // 목적지는 여전히 의자다
-    expect(doctorOf(w).roomId).toBeUndefined()     // 배정은 미뤄진다(사라지지 않는다)
+    expect(doctorOf(w).deskAt).toBeUndefined()     // 배정은 미뤄진다(사라지지 않는다)
     w = until(w, x => doctorOf(x).activity === 'RESTING')
     expect(at(doctorOf(w))).toEqual(seat)          // 책상이 아니라 **의자**에서 쉰다
 
     // 휴식이 끝나면 미뤄졌던 배정이 온다 — 가드는 영구 봉인이 아니다.
-    w = until(w, x => !!doctorOf(x).roomId, 200)
+    w = until(w, x => !!doctorOf(x).deskAt, 200)
     expect(doctorOf(w).fatigue).toBe(FATIGUE_RED - REST_BREAK_RECOVER)
   })
 

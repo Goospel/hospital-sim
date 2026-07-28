@@ -297,7 +297,7 @@ describe('수용 — 병동 처치', () => {
     w = hire(w, 'CARDIOLOGY')
     w = run(w, 40)                       // 의사가 책상 앞에 자리잡는다
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
-    expect(doc.roomId).toBeDefined()     // 전제: 진료실에 앉았다
+    expect(doc.deskAt).toBeDefined()     // 전제: 진료실에 앉았다
     w = { ...w, minute: ARRIVAL_WINDOW_MIN }
     const bed = wardBeds(w)[0]
     const outpatient = (id: string, x: number): Pawn => ({
