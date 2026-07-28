@@ -12,8 +12,10 @@ import { minuteStreamSeed } from './patientFlow'
 import { EVENT_KINDS, isEligibleEvent, type SimEventKind } from './events'
 import type { SimWorld } from './world'
 
-/** 이벤트 **발생** 스트림 전용 salt — `daysim.callSeed` 주석의 레지스트리에 등재된 값이다.
- *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23·29·31·37·41, 이 파일에서 43·47.) */
+/** 이벤트 **발생** 스트림 전용 salt(43) — 등재처는 `daysim.callSeed` 주석이고 **거기가 레지스트리의
+ *  단일 출처**다. 사용 중인 값 목록을 여기 복제하지 않는다: 복제본은 다른 파일이 새 salt를 열 때
+ *  갱신되지 않아 조용히 낡고, 그걸 믿고 고른 값이 이미 쓰인 salt와 겹치면 두 스트림이 통째로
+ *  같아진다(에러 없는 분포 붕괴 — 이 저장소가 세 번 경고한 이중 기재). */
 const EVENT_ROLL_SALT = 43
 
 /** 이벤트 **종류** 스트림 전용 salt — 발생 판정(43)과 반드시 다른 축이다.
