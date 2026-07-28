@@ -9,7 +9,9 @@ import { seededUnit, callSeed } from '../game/daysim'
 import { buildBlockedSet, findPath, type Pt } from './path'
 // ENTRANCE(정문)는 world가 단일 출처다 — 격자에서 파생하는 상수이고, 의사의 출근(pawn.hireDoctor)도
 // 같은 문을 쓴다. 여기 두면 하위 모듈인 pawn이 이 파일을 값으로 당겨 레이어가 뒤집힌다.
-import { ENTRANCE, type Room, type SimWorld } from './world'
+import { ENTRANCE, tileIndex, type SimWorld } from './world'
+// 방은 이제 **파생값**이다 — 선언형 사각형(w.rooms)이 아니라 벽·문이 낳은 영역이 규칙의 방이다.
+import { computeRegions, regionById, type Region } from './regions'
 // 좌표 파생은 spots.ts가 **단일 출처**다(leaf). 이 파일에 두면 욕구(needs)가 좌석을 찾느라
 // 상위를 값으로 당겨 needs ⇄ patientFlow 순환이 된다 — spots.ts 머리말.
 import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
@@ -125,29 +127,39 @@ export function examLoadMin(p: Pawn, dept: SimDeptKey): number {
   return (p.workMin ?? EXAM_DURATION_MIN) * simDept(dept).intensity
 }
 
-export function stepPatients(world: SimWorld): SimWorld {
-  let w = maybeArrive(world)
-  w = assignDoctorRooms(w)
-  w = assignWaitingToExam(w)
+/** `regions`는 **호출부가 한 틱에 1회 계산해 넘긴다**(tick.ts · 설계 §1-2). 세 단계가 각자
+ *  flood fill을 돌면 같은 답을 분마다 여러 번 다시 계산한다. 기본값은 테스트·단발 호출용이고,
+ *  벽·문·용도는 틱 안에서 바뀌지 않으므로(건설은 UI 경로다) 답은 어느 쪽이든 같다. */
+export function stepPatients(
+  world: SimWorld, regions: readonly Region[] = computeRegions(world),
+): SimWorld {
+  let w = maybeArrive(world, regions)
+  w = assignDoctorRooms(w, regions)
+  w = assignWaitingToExam(w, regions)
   return progressStages(w)
 }
 
-const insideRoom = (r: Room, p: { x: number; y: number }) =>
-  p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h
+/** 이 폰이 그 영역 **안**에 서 있는가 — 옛 `insideRoom(rect, p)`의 자리다.
+ *  사각형 포함이 아니라 타일 소속인 것이 요지다: 영역은 임의 모양이라 사각형으로 물을 수 없다. */
+const insideRegion = (r: Region, p: { x: number; y: number }) => r.tiles.has(tileIndex(p.x, p.y))
 
 // ─── 도착 ────────────────────────────────────────────────────────────────────
 
 /** 대기실 좌석 = 의자 앞에 설 수 있는 타일들(자리 계약은 spots.furnitureSpots 주석).
  *  **좌표 파생과 달리 이 함수는 방 종류의 의미를 안다**("대기실") — 그래서 spots.ts로 내리지
  *  않고 여기 남는다(spots.ts 머리말의 경계). */
-export function waitingSeats(w: SimWorld, blocked: Set<number> = buildBlockedSet(w)): Pt[] {
-  return furnitureSpots(w, 'WAITING', 'CHAIR', blocked)
+export function waitingSeats(
+  w: SimWorld, blocked: Set<number> = buildBlockedSet(w), regions?: readonly Region[],
+): Pt[] {
+  return furnitureSpots(w, 'WAITING', 'CHAIR', blocked, regions)
 }
 
 /** 비어 있고 **입구에서 닿을 수 있는** 첫 좌석과 거기까지의 경로.
  *  좌석 점유는 환자의 dest로 표현된다 — 별도 점유 테이블을 두면 폰 제거·이동과 어긋날 수 있고,
  *  dest는 어차피 재탐색용으로 이미 있다. */
-function freeSeat(w: SimWorld, blocked: Set<number>): { spot: Pt; path: Pt[] } | null {
+function freeSeat(
+  w: SimWorld, blocked: Set<number>, regions: readonly Region[],
+): { spot: Pt; path: Pt[] } | null {
   const taken = new Set(
     w.pawns
       .filter(p => (p.stage === 'ENTERING' || p.stage === 'WAITING') && p.dest)
@@ -156,7 +168,7 @@ function freeSeat(w: SimWorld, blocked: Set<number>): { spot: Pt; path: Pt[] } |
   // 첫 후보가 도달 불가라고 여기서 끝내면 안 된다 — 봉인된 대기실의 의자 하나가 멀쩡한
   // 다른 대기실 전체를 가려 신규 도착이 영원히 0이 된다(철거가 없어 세션 내 비가역).
   // 정상 상황에선 첫 후보가 곧바로 닿아 findPath 호출 수가 지금까지와 같다 — 성능 계약 유지.
-  for (const spot of waitingSeats(w, blocked)) {
+  for (const spot of waitingSeats(w, blocked, regions)) {
     if (taken.has(ptKey(spot))) continue
     const path = findPath(w, ENTRANCE, spot)
     if (path) return { spot, path }
@@ -164,7 +176,7 @@ function freeSeat(w: SimWorld, blocked: Set<number>): { spot: Pt; path: Pt[] } |
   return null
 }
 
-function maybeArrive(w: SimWorld): SimWorld {
+function maybeArrive(w: SimWorld, regions: readonly Region[]): SimWorld {
   // 실효 구간은 분 1~479다 — tick이 minute을 먼저 올리고 부르므로 0분은 판정 자체가 없고,
   // 480분은 창이 닫힌 쪽이다(경계 테스트가 이 두 끝을 잠근다).
   if (w.minute >= ARRIVAL_WINDOW_MIN) return w
@@ -174,7 +186,7 @@ function maybeArrive(w: SimWorld): SimWorld {
   // 시드가 아니라 **문턱**을 곱하는 것이 핵심이다: 시드를 흔들면 이벤트 유무가 도착 시각의
   // 배열 자체를 바꿔 "평일 대비 몇 배"를 잴 수 없고, 문턱을 올리면 평일 도착이 부분집합으로 남는다.
   if (seededUnit(arrivalSeed(w)) >= ARRIVAL_PROB_PER_MIN * arrivalProbMulOf(w)) return w
-  const seat = freeSeat(w, buildBlockedSet(w))
+  const seat = freeSeat(w, buildBlockedSet(w), regions)
   // 앉을 데가 없거나 거기까지 갈 수 없으면 문간에서 발길을 돌린다 — 폰을 만들지도 않는다.
   if (!seat) return { ...w, stats: { ...w.stats, leftCount: w.stats.leftCount + 1 } }
   const patient: Pawn = {
@@ -192,12 +204,17 @@ function maybeArrive(w: SimWorld): SimWorld {
 
 // ─── 배정 ────────────────────────────────────────────────────────────────────
 
-/** 방 없는 의사를 **자기 과의** 빈 EXAM 방에 배정하고 책상 옆으로 보낸다(폰 순서 × 방 순서 = 결정론).
+/** 방 없는 의사를 **자기 과의** 빈 EXAM 영역에 배정하고 책상 옆으로 보낸다(폰 순서 × 영역 순서 = 결정론).
  *  과가 다른 방에 앉히면 그 의사는 영원히 놀면서 방 하나를 물고 있고(라우팅의 삼중 일치가 막는다),
- *  같은 과 의사가 뒤에 와도 그 방을 못 쓴다 — 배정 단계에서 미리 거른다. */
-function assignDoctorRooms(w: SimWorld): SimWorld {
+ *  같은 과 의사가 뒤에 와도 그 방을 못 쓴다 — 배정 단계에서 미리 거른다.
+ *
+ *  ⚠️ **영역당 의사는 여전히 1명이다**(`taken`) — 책상 수만큼 받는 다의사는 설계 PR 3이다.
+ *  ⚠️ 순회 순서가 **건설 순서에서 좌표 순서로 바뀌었다**: 영역 배열은 id(성분 최소 타일 인덱스)
+ *     오름차순이라 "먼저 지은 방"이 아니라 "왼쪽 위 방"이 먼저다. 같은 과 진료실이 둘 이상일 때만
+ *     보이는 차이이고, 어느 쪽이든 결정론이며 처리량은 같다(누가 어느 방에 앉느냐만 갈린다). */
+function assignDoctorRooms(w: SimWorld, regions: readonly Region[]): SimWorld {
   const taken = new Set(w.pawns.map(p => p.roomId).filter((id): id is string => !!id))
-  const examRooms = w.rooms.filter(r => r.type === 'EXAM' && !taken.has(r.id))
+  const examRooms = regions.filter(r => r.type === 'EXAM' && !taken.has(String(r.id)))
   if (examRooms.length === 0) return w
   if (!w.pawns.some(p => p.kind === 'DOCTOR' && !p.roomId)) return w
   const blocked = buildBlockedSet(w)
@@ -210,15 +227,16 @@ function assignDoctorRooms(w: SimWorld): SimWorld {
     // 배정은 사라지지 않고 **미뤄질 뿐**이다: 휴식이 끝나면 다음 분에 다시 후보가 된다.
     if (p.kind !== 'DOCTOR' || p.roomId || p.activity) return p
     for (const room of examRooms) {
-      if (taken.has(room.id)) continue
+      const id = String(room.id)
+      if (taken.has(id)) continue
       // 과 없는 의사(손세계 폰)는 어떤 방과도 같지 않아 여기서 전부 걸러진다 — 의도된 결과다.
       if (room.dept !== p.dept) continue
-      const spot = furnitureSpot(w, room.id, 'DESK', blocked)
+      const spot = furnitureSpot(w, room, 'DESK', blocked)
       if (!spot) continue
       const path = findPath(w, { x: p.x, y: p.y }, spot)
       if (!path) continue // 못 가는 방은 다른 방을 본다 — 배정은 다음 분에 다시 시도된다
-      taken.add(room.id)
-      return { ...p, roomId: room.id, dest: spot, path }
+      taken.add(id)
+      return { ...p, roomId: id, dest: spot, path }
     }
     return p
   })
@@ -233,7 +251,7 @@ function assignDoctorRooms(w: SimWorld): SimWorld {
  *  의미(그 과가 없으면 그 환자를 놓친다)가 통째로 사라진다 — 게임은 계속 돌고 숫자만 거짓이 된다.
  *  방 축이 남아 있는 이유: 배정(assignDoctorRooms)이 이미 같은 과로 앉히지만, 그건 **다른 함수의
  *  성질**이라 여기서 다시 확인하지 않으면 그쪽이 느슨해지는 순간 조용히 새는 통로가 된다. */
-function assignWaitingToExam(w: SimWorld): SimWorld {
+function assignWaitingToExam(w: SimWorld, regions: readonly Region[]): SimWorld {
   const waiting = w.pawns
     .map((p, i) => ({ p, i }))
     .filter(({ p }) => p.stage === 'WAITING')
@@ -250,9 +268,9 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
     // `exam === 0`은 **금지**다 — 이 의사는 대기 환자를 영원히 안 받는다(그 과에 다른 의사가
     // 없으면 그 환자들은 인내를 넘겨 떠난다). 플레이어가 고른 대가이고, 장부에 그대로 실린다.
     if (priorityOf(p, 'exam') === 0) continue
-    const room = w.rooms.find(r => r.id === p.roomId)
-    if (!room || !insideRoom(room, p)) continue // 아직 방으로 걸어가는 중이면 진료를 못 받는다
-    if (room.dept !== p.dept) continue          // 삼중 일치의 방 축
+    const room = regionById(regions, p.roomId)
+    if (!room || !insideRegion(room, p)) continue // 아직 방으로 걸어가는 중이면 진료를 못 받는다
+    if (room.dept !== p.dept) continue            // 삼중 일치의 방 축
     // 휴식을 진료보다 높게 매긴 지친 의사는 **환자가 줄 서 있어도** 유휴 풀에서 빠진다.
     // (`needs.prefersRestOverExam`이 단일 출처다 — 식을 여기 복제하면 욕구 기계의 판정과 갈려,
     //  안 쉬는데 환자도 안 받는 구간이 생긴다. 순서상 삼중 일치 뒤에 두어 "라우팅이 성립하는가"와
@@ -290,7 +308,7 @@ function assignWaitingToExam(w: SimWorld): SimWorld {
     const queue = p.wantsDept ? idleByDept.get(p.wantsDept) : undefined
     const doc = queue?.shift()?.doc
     if (!doc) continue
-    const spot = furnitureSpot(w, doc.roomId!, 'CHAIR', blocked)
+    const spot = furnitureSpot(w, regionById(regions, doc.roomId), 'CHAIR', blocked)
     const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
     // 갈 수 없으면 그 의사를 건너뛴다(이미 줄에서 뺐다). ⚠️ 도달 가능성은 **환자 위치에도**
     // 달렸으므로 다른 환자라면 갈 수 있었을 수 있다 — 즉 이건 공평한 판정이 아니라 재시도

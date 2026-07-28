@@ -38,7 +38,11 @@ export interface Room {
 }
 
 export type FurnitureKind = 'DESK' | 'CHAIR' | 'BED' | 'COUNTER'
-export interface Furniture { kind: FurnitureKind; x: number; y: number; roomId: string }
+/** 집기 한 점 — **소속 필드가 없다**(설계 §1-1). 이 가구가 어느 방의 것인지는 좌표가 말한다:
+ *  `regions.computeRegions`가 낳은 영역 중 이 타일을 담은 것이 곧 이 가구의 방이다.
+ *  옛 `roomId`를 지운 이유는 이중 기재다 — 벽을 옮겨 영역이 갈라지거나 합쳐지면 그 필드는
+ *  갱신할 자리가 없어 조용히 낡고, 그때부터 화면의 방과 규칙의 방이 달라진다. */
+export interface Furniture { kind: FurnitureKind; x: number; y: number }
 
 /** 세계의 진행 국면 — RUNNING일 때만 시간이 흐른다.
  *  마감·결산 화면 동안 세계가 계속 굴러가면 플레이어가 읽는 숫자와 세계가 어긋난다. */

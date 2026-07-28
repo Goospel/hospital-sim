@@ -2,7 +2,7 @@
 // 여기서 재는 것은 "무엇이 방인가"의 정의다: 둘러싸였으면 방, 새면 마당.
 import { describe, it, expect } from 'vitest'
 import { createWorld, tileIndex, type SimWorld } from './world'
-import { computeRegions } from './regions'
+import { computeRegions, computeRegionsUncached, regionById } from './regions'
 
 const idx = (x: number, y: number) => tileIndex(x, y)
 
@@ -123,6 +123,84 @@ describe('computeRegions', () => {
       ],
     })
     expect(computeRegions(w)[0].type).toBe('LOUNGE')
+  })
+
+  /*
+    캐시(한 칸 memo) — 답을 **바꾸지 않는가**만 잰다. 속도는 여기서 못 재고(측정이 흔들린다),
+    캐시가 틀리는 방식은 하나뿐이다: 입력 셋 중 하나가 갈렸는데 옛 답을 그대로 돌려주는 것.
+    그래서 세 필드를 각각 혼자 바꿔 보고, 매번 **캐시를 안 거친 계산**과 나란히 놓는다.
+  */
+  describe('캐시는 답을 바꾸지 않는다', () => {
+    /*
+      캐시(한 칸 memo)는 **입력 세 필드의 identity**로 맞춘다. 그래서 한 축을 재려면 나머지 둘의
+      **참조를 고정**해야 한다 — 안 그러면 어느 쪽이 키에서 빠져도 다른 축이 대신 캐시를 빗나가게
+      해서 mutation이 살아남는다. 실제로 첫 판이 그랬다: `createWorld()`가 `doors`·`designations`를
+      **매번 새 객체**로 주는 탓에 `worldWith(...)` 두 개는 늘 서로 다른 키였고, 키에서
+      designations를 통째로 지워도 세 테스트가 전부 통과했다(돌연변이 생존 실측).
+      아래 픽스처가 참조를 상수로 붙들어 그 구멍을 막는다.
+    */
+    const WALLS = new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h))
+    const WALLS_WIDE = new Set(rectWalls(10, 10, 9, 5))
+    const DOOR = idx(13, 14)
+    const WALLS_HOLED = new Set([...WALLS].filter(t => t !== DOOR))
+    const NO_DOORS: ReadonlySet<number> = new Set()
+    const ONE_DOOR: ReadonlySet<number> = new Set([DOOR])
+    const NO_DESIG: SimWorld['designations'] = []
+    const AS_WARD: SimWorld['designations'] = [{ at: { x: 12, y: 12 }, type: 'WARD' }]
+    const AS_LOUNGE: SimWorld['designations'] = [{ at: { x: 12, y: 12 }, type: 'LOUNGE' }]
+
+    /** 세 필드를 **명시한 참조 그대로** 실은 세계 — 나머지는 캐시가 안 보는 값이다. */
+    const keyed = (
+      walls: ReadonlySet<number>,
+      doors: ReadonlySet<number>,
+      designations: SimWorld['designations'],
+    ): SimWorld => ({ ...createWorld(1), walls, doors, designations })
+
+    const shape = (rs: ReturnType<typeof computeRegions>) =>
+      rs.map(r => ({ id: r.id, type: r.type, tiles: [...r.tiles].sort((a, b) => a - b) }))
+
+    it('walls만 갈려도 새로 계산한다 — doors·designations는 같은 참조다', () => {
+      const small = keyed(WALLS, NO_DOORS, NO_DESIG)
+      expect(shape(computeRegions(small))).toEqual(shape(computeRegionsUncached(small)))
+      const wide = keyed(WALLS_WIDE, NO_DOORS, NO_DESIG)
+      expect(shape(computeRegions(wide))).toEqual(shape(computeRegionsUncached(wide)))
+      // 내부 타일 수가 다르다(4×3 vs 7×3) — 캐시가 walls를 키에서 빠뜨리면 여기서 운다.
+      expect(computeRegions(wide)[0].tiles.size).toBe(21)
+      expect(computeRegions(small)[0].tiles.size).toBe(12)
+    })
+
+    it('doors만 갈려도 새로 계산한다 — 문 하나가 방을 마당으로 가른다', () => {
+      const sealed = keyed(WALLS_HOLED, ONE_DOOR, NO_DESIG)
+      expect(shape(computeRegions(sealed))).toEqual(shape(computeRegionsUncached(sealed)))
+      expect(computeRegions(sealed)).toHaveLength(1)
+      // walls·designations는 같은 참조이고 doors만 비웠다 — 벽의 구멍이 안팎을 이어 영역이 없어진다.
+      expect(computeRegions(keyed(WALLS_HOLED, NO_DOORS, NO_DESIG))).toEqual([])
+    })
+
+    it('designations만 갈려도 새로 계산한다 — 용도가 캐시에 굳지 않는다', () => {
+      // walls·doors를 같은 참조로 고정한 채 용도만 갈아 끼운다.
+      expect(computeRegions(keyed(WALLS, NO_DOORS, AS_WARD))[0].type).toBe('WARD')
+      expect(computeRegions(keyed(WALLS, NO_DOORS, AS_LOUNGE))[0].type).toBe('LOUNGE')
+      expect(computeRegions(keyed(WALLS, NO_DOORS, AS_WARD))[0].type).toBe('WARD') // 되돌려도 옛 답이 안 남는다
+      expect(computeRegions(keyed(WALLS, NO_DOORS, NO_DESIG))[0].type).toBeUndefined()
+    })
+  })
+
+  describe('regionById — 폰의 roomId가 가리키는 영역', () => {
+    const rs = computeRegions(worldWith({
+      walls: new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h)),
+      designations: [{ at: { x: 12, y: 12 }, type: 'EXAM', dept: 'CARDIOLOGY' }],
+    }))
+
+    it('id 문자열로 그 영역을 찾는다', () => {
+      expect(regionById(rs, String(rs[0].id))?.type).toBe('EXAM')
+    })
+
+    it('배정 전(undefined)이나 없는 id면 undefined — 던지지 않는다', () => {
+      // 벽을 편집해 영역이 갈라지면 저장된 배정이 끊긴다. 그때 던지면 벽 한 장에 세계가 죽는다.
+      expect(regionById(rs, undefined)).toBeUndefined()
+      expect(regionById(rs, '999999')).toBeUndefined()
+    })
   })
 
   it('벽을 허물어 두 방이 합쳐지면 먼저 지정한 앵커의 용도로 이어진다', () => {

@@ -6,11 +6,17 @@
 // `applyEvent`가 순수 함수이고 상태 전이 규칙을 바꾸는 경로가 타입 수준에 없기 때문이다
 // (LLM이 만질 수 있는 것은 선택지 enum과 연출문 string뿐이다).
 //
-// **leaf다** — world·dept의 **타입만** 임포트한다. 값을 하나라도 당기면 T-093(값 임포트 순환)에
-// 걸린다: `patientFlow`가 이 파일의 배율을 값으로 읽는데, 폴백 디렉터(`director.ts`)는 반대로
-// patientFlow의 시드 폴딩을 값으로 읽는다. 효과(여기)와 선택(director)을 두 파일로 가른 것이
-// 그 순환을 끊는 방법이다.
+// **거의 leaf다** — world·dept는 **타입만** 임포트한다. 상위 층(patientFlow·emergency·director)의
+// 값을 하나라도 당기면 T-093(값 임포트 순환)에 걸린다: `patientFlow`가 이 파일의 배율을 값으로
+// 읽는데, 폴백 디렉터(`director.ts`)는 반대로 patientFlow의 시드 폴딩을 값으로 읽는다.
+// 효과(여기)와 선택(director)을 두 파일로 가른 것이 그 순환을 끊는 방법이다.
+//
+// ⚠️ 예외 하나 — `regions.computeRegions`는 **값으로** 당긴다. 대량 응급의 전제("병동이 있는가")가
+// 이제 파생값이라 타입만으로는 못 묻는다. 안전한 이유는 regions.ts 자신이 leaf여서다
+// (world의 격자 상수 + dept 타입뿐 — 이 파일로 되돌아오는 경로가 없다). 상위 층을 당기는 것과
+// 아래 leaf를 당기는 것은 다른 일이고, 갈리는 지점이 여기다.
 import type { DeptMix } from './dept'
+import { computeRegions } from './regions'
 import type { SimWorld } from './world'
 
 /** 이벤트 종류 — **배열이 단일 출처**이고 유니온은 거기서 파생한다(traits.TRAIT_KEYS와 같은 형태).
@@ -76,7 +82,7 @@ export function isEligibleEvent(w: SimWorld, kind: SimEventKind): boolean {
     // 병상 0인 병원에 대량 응급을 떨어뜨리면 플레이어가 할 수 있는 게 하나도 없다(전원 회차).
     // "받을 수 없는 환자는 받을 수 없다"는 하드락이 **불공정**으로 읽히는 유일한 조합이라 막는다.
     case 'MASS_CASUALTY':
-      return w.week >= MASS_CASUALTY_FROM_WEEK && w.rooms.some(r => r.type === 'WARD')
+      return w.week >= MASS_CASUALTY_FROM_WEEK && computeRegions(w).some(r => r.type === 'WARD')
     // 돌려보낸 응급이 하나도 없으면 소송의 원인이 없다 — 판 누적 카운터라 하루·주로 리셋되지 않는다.
     case 'LAWSUIT':
       return w.turnedAwayTotal >= 1

@@ -12,6 +12,7 @@ import { HIRABLE_DEPTS, simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway, type TurnAwayReason } from '../sim/emergency'
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam } from '../sim/needs'
+import { computeRegions } from '../sim/regions'
 import { TRAITS, type TraitKey } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
 import type { RoomType, SimWorld } from '../sim/world'
@@ -336,8 +337,11 @@ export function doctorRoomlessMark(p: Pawn): ActivityMark | null {
 export function setupWarningText(w: SimWorld): string | null {
   const doctors = w.pawns.filter(p => p.kind === 'DOCTOR')
   if (doctors.length === 0) return null
-  if (!w.rooms.some(r => r.type === 'WAITING')) return '대기실이 없습니다 — 환자가 들어오지 못합니다'
-  const roomless = doctors.filter(d => !w.rooms.some(r => r.type === 'EXAM' && r.dept === d.dept)).length
+  // **영역**을 센다 — 규칙이 보는 방과 경고가 세는 방이 갈리면, 벽이 뚫린 대기실(= 마당이라
+  // 좌석이 안 열린다)에서 "대기실은 있는데 환자가 안 온다"가 되어 경고가 정확히 거짓말을 한다.
+  const regions = computeRegions(w)
+  if (!regions.some(r => r.type === 'WAITING')) return '대기실이 없습니다 — 환자가 들어오지 못합니다'
+  const roomless = doctors.filter(d => !regions.some(r => r.type === 'EXAM' && r.dept === d.dept)).length
   return roomless > 0 ? `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요` : null
 }
 

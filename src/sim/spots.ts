@@ -7,11 +7,13 @@
 // 바로 그런 값이라, 임포트 순서가 한 번 바뀌면 런타임에 무너질 수 있었다. 좌표 파생만 leaf로
 // 내리면 그 순환 자체가 사라진다.
 //
-// 위상: world/path → **spots** → fatigue → needs → patientFlow → emergency → day/week → tick
+// 위상: world/path/regions → **spots** → fatigue → needs → patientFlow → emergency → day/week → tick
+// (regions.ts도 leaf다 — world의 격자 상수와 dept 타입만 본다. 순환은 늘지 않는다.)
 //
 // ⚠️ **방 종류의 의미가 실린 함수는 여기 두지 않는다** — `waitingSeats`(대기실 좌석)는
 // patientFlow에 남는다. 여기 있는 것은 "좌표를 어떻게 뽑는가"이지 "그 자리가 무엇인가"가 아니다.
-import { GRID_W, GRID_H, type FurnitureKind, type RoomType, type SimWorld } from './world'
+import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld } from './world'
+import { computeRegions, type Region } from './regions'
 import { buildBlockedSet, isBlockedTile, type Pt } from './path'
 
 /** 두 점이 같은 칸인가 — **도착 판정의 단일 출처**다(`path.length === 0`은 길이 끊겨 비워진
@@ -40,10 +42,13 @@ function frontTile(blocked: Set<number>, at: Pt): Pt | null {
 /** 방 안 가구 앞에 설 자리 — 의사의 정위치(책상 앞)와 진료 좌석(의자 앞)의 **단일 출처**다.
  *  하루를 넘길 때(day.startNextDay) 의사를 제자리로 되돌리는 것도 여기를 본다 — 파생식을
  *  복제하면 "책상 앞"이 배정과 복귀에서 갈라져 의사가 어제와 다른 칸에 선다. */
+/** 인자가 **영역**인 것이 전환의 요지다: 가구는 소속 필드를 갖지 않으므로(world.Furniture)
+ *  "이 방의 책상"은 좌표 포함 관계로만 물을 수 있다. 영역이 `undefined`(배정 전이거나 벽 편집으로
+ *  끊긴 id)면 `null`이다 — 호출부가 전부 "없으면 다음 분에 다시"를 이미 쓰고 있어 던질 자리가 없다. */
 export function furnitureSpot(
-  w: SimWorld, roomId: string, kind: 'DESK' | 'CHAIR', blocked: Set<number>,
+  w: SimWorld, region: Region | undefined, kind: 'DESK' | 'CHAIR', blocked: Set<number>,
 ): Pt | null {
-  const f = w.furniture.find(x => x.roomId === roomId && x.kind === kind)
+  const f = region && w.furniture.find(x => x.kind === kind && region.tiles.has(tileIndex(x.x, x.y)))
   return f ? frontTile(blocked, f) : null
 }
 
@@ -56,12 +61,19 @@ export function furnitureSpot(
 export function furnitureSpots(
   w: SimWorld, roomType: RoomType, kind: FurnitureKind,
   blocked: Set<number> = buildBlockedSet(w),
+  regions: readonly Region[] = computeRegions(w),
 ): Pt[] {
-  const rooms = new Set(w.rooms.filter(r => r.type === roomType).map(r => r.id))
+  // 기본값이 있어도 **호출부가 넘기는 것이 기본 경로**다(설계 §1-2) — 틱 하나가 이 함수를
+  // 여러 번 지나므로, 매번 flood fill을 새로 돌면 같은 답을 인원수만큼 다시 계산한다.
+  // 폴백을 남기는 것은 테스트·단발 조회용이고, 그때도 답은 같다(순수 함수).
+  const inType = new Set<number>()
+  for (const r of regions) if (r.type === roomType) for (const t of r.tiles) inType.add(t)
   const seen = new Set<string>()
   const out: Pt[] = []
+  // 순회는 여전히 **furniture 배열 순서**(= 설치 순서)다 — 영역을 먼저 훑어 그 안의 가구를
+  // 모으면 순서가 좌표 정렬로 바뀌어, 좌석이 모자랄 때 누가 먼저 앉는지가 조용히 달라진다.
   for (const f of w.furniture) {
-    if (f.kind !== kind || !rooms.has(f.roomId)) continue
+    if (f.kind !== kind || !inType.has(tileIndex(f.x, f.y))) continue
     const spot = frontTile(blocked, f)
     if (!spot || seen.has(ptKey(spot))) continue
     seen.add(ptKey(spot))

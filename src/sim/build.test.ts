@@ -80,15 +80,26 @@ describe('placeRoom', () => {
     if (!res.ok) return
     expect(res.world.treasuryManwon).toBe(0)
   })
-  it('방마다 고유 id를 받고 가구가 그 id를 가리킨다', () => {
+  it('방마다 고유 id를 받고, 가구는 **좌표로** 제 방 영역에 속한다', () => {
+    // 옛 계약은 "가구가 방 id를 가리킨다"였다. 그 필드는 사라졌다(설계 §1-1) — 소속을 말하는
+    // 것은 이제 좌표뿐이라, 재는 방식도 "그 가구 타일이 그 방 영역 안에 있는가"로 바뀐다.
     const first = placeRoom(createWorld(1), { type: 'EXAM', x: 4, y: 4, w: 6, h: 5 })
     if (!first.ok) throw new Error('전제 실패')
     const second = placeRoom(first.world, { type: 'WARD', x: 20, y: 4, w: 6, h: 5 })
     if (!second.ok) throw new Error('전제 실패')
     const [a, b] = second.world.rooms
     expect(a.id).not.toBe(b.id)
-    const owners = new Set(second.world.furniture.map(f => f.roomId))
-    expect(owners).toEqual(new Set([a.id, b.id]))
+    const regions = computeRegions(second.world)
+    expect(regions).toHaveLength(2)
+    // 가구가 하나도 남김없이 어느 한 영역에 담긴다 — 벽 위·문 위에 놓인 가구가 없다는 뜻이다.
+    for (const f of second.world.furniture) {
+      const owners = regions.filter(r => r.tiles.has(tileIndex(f.x, f.y)))
+      expect(owners).toHaveLength(1)
+    }
+    // 그리고 두 영역 다 제 몫을 받았다(한쪽이 통째로 비어 위 단언이 헛돌지 않았다).
+    for (const r of regions) {
+      expect(second.world.furniture.some(f => r.tiles.has(tileIndex(f.x, f.y)))).toBe(true)
+    }
   })
   it('WAITING은 내부에 의자를 깔고, WARD는 침대를 놓는다', () => {
     expect(FURNITURE_OF.WAITING).toBe('CHAIR')

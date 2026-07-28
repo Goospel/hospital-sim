@@ -37,15 +37,15 @@ function autoFurniture(room: Room): Furniture[] {
   const iw = room.w - 2, ih = room.h - 2
   const out: Furniture[] = []
   if (room.type === 'EXAM') {
-    out.push({ kind: 'DESK', x: ix, y: iy, roomId: room.id })
-    out.push({ kind: 'CHAIR', x: ix + 1, y: iy, roomId: room.id })
+    out.push({ kind: 'DESK', x: ix, y: iy })
+    out.push({ kind: 'CHAIR', x: ix + 1, y: iy })
   } else if (room.type === 'RECEPTION') {
-    out.push({ kind: 'COUNTER', x: ix, y: iy, roomId: room.id })
+    out.push({ kind: 'COUNTER', x: ix, y: iy })
   } else if (room.type === 'LOUNGE') {
-    out.push({ kind: 'CHAIR', x: ix, y: iy, roomId: room.id })
+    out.push({ kind: 'CHAIR', x: ix, y: iy })
     // 둘째 의자는 한 칸 띄워 놓을 자리가 있을 때만 — 좁은 휴게실이면 하나로 끝낸다.
     // (자리가 없을 때 첫 의자 위에 겹쳐 놓으면 한 타일에 두 좌석이 생겨 뒤 태스크의 좌석 점유가 어긋난다)
-    if (ix + 2 <= room.x + room.w - 2) out.push({ kind: 'CHAIR', x: ix + 2, y: iy, roomId: room.id })
+    if (ix + 2 <= room.x + room.w - 2) out.push({ kind: 'CHAIR', x: ix + 2, y: iy })
   } else {
     // 오른쪽에 설 자리가 남는 열까지만 놓는다(`dx + 1 < iw`) — 벽에 딱 붙은 마지막 열은
     // 앞 타일이 "오른쪽"이 아니라 "아래"로 떨어지는데, 그 타일은 한 줄 아래 의자가 "위"로
@@ -54,7 +54,7 @@ function autoFurniture(room: Room): Furniture[] {
     // 한 칸 비우면 모든 의자가 자기 오른쪽/위 타일을 독점해 "의자 1개 = 좌석 1개"가 성립한다.
     const kind = FURNITURE_OF[room.type]!
     for (let dx = 0; dx + 1 < iw; dx += 2) for (let dy = 0; dy < ih; dy += 2) {
-      out.push({ kind, x: ix + dx, y: iy + dy, roomId: room.id })
+      out.push({ kind, x: ix + dx, y: iy + dy })
     }
   }
   // 문 앞 타일을 가구가 막지 않게 — 문 바로 안쪽 칸은 비운다.

@@ -31,6 +31,7 @@
 import { FATIGUE_RED } from '../game/doctor'
 import { buildBlockedSet, findPath } from './path'
 import type { FurnitureKind, RoomType, SimWorld } from './world'
+import { computeRegions, regionById, type Region } from './regions'
 import { priorityOf, type Pawn, type PriorityKind } from './pawn'
 import { fatigueOf, slowedDurationMin } from './fatigue'
 import { furnitureSpot, furnitureSpots, ptKey, samePt } from './spots'
@@ -293,6 +294,8 @@ interface StepCtx {
   /** 이미 임자가 있는 욕구 좌석(휴게실 의자·식당 의자를 함께 담는다). 이번 분에 새로 잡은
    *  자리도 여기 얹혀 둘이 겹치지 않는다. */
   taken: Set<string>
+  /** 이 분의 영역 — 의사마다 다시 계산하지 않는다(설계 §1-2). `blocked`와 같은 자리의 같은 이유다. */
+  regions: readonly Region[]
 }
 
 /**
@@ -305,7 +308,9 @@ interface StepCtx {
  * 순회는 **폰 배열 순서**다 — 좌석이 모자랄 때 누가 먼저 앉는지가 그 순서로 정해진다
  * (외래 배정·응급 배정과 같은 타이브레이크라, 세 단계가 같은 근거로 결정론을 얻는다).
  */
-export function stepDoctors(world: SimWorld): SimWorld {
+export function stepDoctors(
+  world: SimWorld, regions: readonly Region[] = computeRegions(world),
+): SimWorld {
   // ⓪ 허기는 **매 분** 오른다 — 일하든 쉬든 먹든 가리지 않는다(식사 중에도 오르고, 리셋은
   //    블록이 끝날 때 한 번이다: BREAKS의 onEnd). 이 줄이 아래 조기 반환보다 **앞**인 것이
   //    계약이다: 뒤에 두면 아무도 임계에 못 닿아 식사가 통째로 죽는다(에러 0의 무성 실패).
@@ -345,6 +350,7 @@ export function stepDoctors(world: SimWorld): SimWorld {
     taken: new Set(
       w.pawns.filter(p => p.activity && p.dest).map(p => ptKey(p.dest!)),
     ),
+    regions,
   }
   const pawns = w.pawns.map(p => (p.kind === 'DOCTOR' ? stepDoctor(w, p, ctx) : p))
   return { ...w, pawns }
@@ -367,7 +373,7 @@ function stepDoctor(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
     // ⓓ 좌초 — 못 닿았는데 경로가 비었다(tick의 재탐색이 실패했다는 뜻이고, 스스로는 절대
     //    못 벗어난다). 안 풀면 이 의사는 걸어가던 상태인 채 굳어 외래에도 응급에도 안 잡힌다 —
     //    합법적인 건설 한 번으로 의사 하나가 영구 정지한다(환자 좌초 해소와 같은 병).
-    if (p.path.length === 0) return backToDesk(w, clearActivity(p), ctx.blocked)
+    if (p.path.length === 0) return backToDesk(w, clearActivity(p), ctx)
     return p
   }
 
@@ -387,7 +393,7 @@ function stepDoctor(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
     // 이 선택은 주석으로만 두지 않는다: needs.test.ts가 "종료 시각 없는 RESTING은 회복하지
     // 않는다"로 잠근다(폴백을 0으로 돌리면 그 테스트가 죽는다).
     if (w.minute < (p.activityUntilMin ?? Infinity)) return p
-    return backToDesk(w, doing.onEnd(clearActivity(p)), ctx.blocked)
+    return backToDesk(w, doing.onEnd(clearActivity(p)), ctx)
   }
 
   return maybeStartBreak(w, p, ctx)
@@ -405,7 +411,7 @@ function maybeStartBreak(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
   for (const def of BREAKS) {
     // 임계 **그리고** 토글 — 0으로 끈 갈래는 자리가 비어 있어도 통째로 건너뛴다(breakActive).
     if (!breakActive(def, p)) continue
-    for (const spot of furnitureSpots(w, def.roomType, def.furnitureKind, ctx.blocked)) {
+    for (const spot of furnitureSpots(w, def.roomType, def.furnitureKind, ctx.blocked, ctx.regions)) {
       if (ctx.taken.has(ptKey(spot))) continue
       // 첫 후보가 도달 불가라고 여기서 끝내지 않는다 — 봉인된 휴게실 하나가 멀쩡한 다른
       // 휴게실을 통째로 가려 아무도 못 쉬게 되고, 철거가 없어 세션 내 비가역이다
@@ -422,8 +428,8 @@ function maybeStartBreak(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
 /** 자기 방 책상 앞으로 복귀 — 방이 없거나 못 가면 dest를 지우고 그 자리에 선다(멈춘 채 두느니).
  *  책상 앞 좌표는 `furnitureSpot`이 **단일 출처**다(day.freshMorning이 아침마다 쓰는 그 함수) —
  *  파생식을 복제하면 복귀 자리와 아침 자리가 갈려 의사가 어제와 다른 칸에 선다. */
-function backToDesk(w: SimWorld, p: Pawn, blocked: Set<number>): Pawn {
-  const spot = p.roomId ? furnitureSpot(w, p.roomId, 'DESK', blocked) : null
+function backToDesk(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
+  const spot = furnitureSpot(w, regionById(ctx.regions, p.roomId), 'DESK', ctx.blocked)
   const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
   if (!spot || !path) {
     const stay: Pawn = { ...p, path: [] }

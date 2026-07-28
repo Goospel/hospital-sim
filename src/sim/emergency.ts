@@ -18,6 +18,7 @@
 import { seededUnit } from '../game/daysim'
 import { buildBlockedSet, findPath, type Pt } from './path'
 import { ENTRANCE, type SimWorld } from './world'
+import { computeRegions, type Region } from './regions'
 import { priorityOf, type Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
 import { ARRIVAL_WINDOW_MIN, minuteStreamSeed, toExit } from './patientFlow'
@@ -177,9 +178,12 @@ export function emergencyArrivalAt(w: SimWorld): EmergencyKind | null {
   return pickEmergencyKind(seededUnit(emergencyKindSeed(w)))
 }
 
-/** 병동 침대 자리 = 침대 앞에 설 수 있는 타일들. 대기실 좌석과 같은 기계다(furnitureSpots). */
-export function wardBeds(w: SimWorld, blocked: Set<number> = buildBlockedSet(w)): Pt[] {
-  return furnitureSpots(w, 'WARD', 'BED', blocked)
+/** 병동 침대 자리 = **type=WARD 영역** 안 침대 앞에 설 수 있는 타일들.
+ *  대기실 좌석과 같은 기계다(furnitureSpots) — 갈리는 것은 영역 용도 하나뿐이다. */
+export function wardBeds(
+  w: SimWorld, blocked: Set<number> = buildBlockedSet(w), regions?: readonly Region[],
+): Pt[] {
+  return furnitureSpots(w, 'WARD', 'BED', blocked, regions)
 }
 
 /** 비어 있고 **입구에서 닿을 수 있는** 첫 침대와 거기까지의 경로.
@@ -187,11 +191,13 @@ export function wardBeds(w: SimWorld, blocked: Set<number> = buildBlockedSet(w))
  *  폰이 사라질 때(퇴장·마감) 되돌리는 걸 잊어 침대가 영구히 잠긴다.
  *  닿을 수 없는 침대를 여기서 끝내지 않고 다음 후보를 보는 이유도 좌석과 같다: 봉인된 병동
  *  하나가 멀쩡한 다른 병동을 통째로 가리면 수용이 영원히 0이 된다(철거가 없어 비가역). */
-export function freeBed(w: SimWorld, blocked: Set<number>): { spot: Pt; path: Pt[] } | null {
+export function freeBed(
+  w: SimWorld, blocked: Set<number>, regions?: readonly Region[],
+): { spot: Pt; path: Pt[] } | null {
   const taken = new Set(
     w.pawns.filter(p => p.emergency && p.dest && OCCUPIES_BED.includes(p.stage!)).map(p => ptKey(p.dest!)),
   )
-  for (const spot of wardBeds(w, blocked)) {
+  for (const spot of wardBeds(w, blocked, regions)) {
     if (taken.has(ptKey(spot))) continue
     const path = findPath(w, ENTRANCE, spot)
     if (path) return { spot, path }
@@ -207,8 +213,10 @@ const OCCUPIES_BED: readonly NonNullable<Pawn['stage']>[] = ['TO_BED', 'IN_BED',
  *  **배정이 전이 뒤인 것이 계약이다**: 침대에 막 닿은 환자(전이)와 방금 처치를 끝내 풀려난
  *  의사(전이)가 **같은 분 안에서** 만난다. 순서를 뒤집으면 둘 다 한 분씩 놀고, 그 한 분은
  *  응급이 몰릴수록 누적된다. */
-export function stepEmergencies(world: SimWorld): SimWorld {
-  const arrived = maybeEmergency(world)
+export function stepEmergencies(
+  world: SimWorld, regions: readonly Region[] = computeRegions(world),
+): SimWorld {
+  const arrived = maybeEmergency(world, regions)
   return assignEmergencyDoctors(progressEmergencies(arrived))
 }
 
@@ -224,7 +232,7 @@ function turnAway(w: SimWorld, kind: EmergencyKind, reason: TurnAwayReason): Sim
   }
 }
 
-function maybeEmergency(w: SimWorld): SimWorld {
+function maybeEmergency(w: SimWorld, regions: readonly Region[]): SimWorld {
   const kind = emergencyArrivalAt(w)
   if (!kind) return w
   const spec = emergencySpec(kind)
@@ -240,7 +248,7 @@ function maybeEmergency(w: SimWorld): SimWorld {
   }
   // ② 빈 침대. 의사를 **먼저** 보는 것이 사유의 순서 계약이다 — 둘 다 없을 때 플레이어가
   //    들어야 할 말은 "침대를 더 지으세요"가 아니라 "그 과가 없습니다"다(메시지의 심장).
-  const bed = freeBed(w, buildBlockedSet(w))
+  const bed = freeBed(w, buildBlockedSet(w), regions)
   if (!bed) return turnAway(w, kind, 'NO_BED')
   const patient: Pawn = {
     id: `emg-${w.nextId}`, kind: 'PATIENT',

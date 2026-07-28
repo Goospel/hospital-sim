@@ -21,6 +21,7 @@ import {
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
 import { createWorld, type RoomType, type SimWorld } from "@/sim/world";
+import { computeRegions } from "@/sim/regions";
 import { placeRoom, roomCostManwon, COST_PER_TILE_MANWON, MIN_ROOM_W, MIN_ROOM_H, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import { hireDoctor, setDoctorPriority, type HireResult, type Priority, type PriorityKind } from "@/sim/pawn";
@@ -163,7 +164,9 @@ export default function SimGame() {
         doctors: morning.pawns.filter((p) => p.kind === "DOCTOR").length,
         treasuryManwon: morning.treasuryManwon,
         turnedAwayTotal: morning.turnedAwayTotal,
-        wards: morning.rooms.filter((r) => r.type === "WARD").length,
+        // 규칙이 보는 병동(= 벽에 둘러싸이고 WARD로 지정된 영역)을 센다 — 스토리텔러가 읽는
+        // 숫자와 응급 수용이 보는 숫자가 갈리면, 못 받는 병원에 대량 응급이 떨어진다.
+        wards: computeRegions(morning).filter((r) => r.type === "WARD").length,
       },
       eligible,
     ).then((reply) => {
