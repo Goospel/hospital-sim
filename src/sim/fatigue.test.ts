@@ -210,6 +210,27 @@ describe('축적 — 표준강도분', () => {
     expect(theDoctor(w).loadMinToday).toBe(EMERGENCIES.STEMI.durationMin * EMERGENCY_INTENSITY)
   })
 
+  /**
+   * `EMERGENCY_INTENSITY` 1.7 튜닝(2026-07-28)이 **사려던 것 자체**를 잰다: "응급 1건은 공짜,
+   * 2건부터 갈린다". 값은 자유값이라 어느 숫자든 될 수 있지만 이 **관계**는 튜닝의 의도라,
+   * 계약을 사살 가능한 계측기와 짝지어 둔다(T-089). 옛 값 2.0에서는 1건이 180 > 160이라
+   * 아래 첫 단언이 곧바로 죽는다 — 실제로 되돌려 확인했다.
+   *
+   * ⚠️ **격리 조건에서의 계약이다**: 외래 부하 0 · 전날 피로 0 · 굶지 않은 의사. 셋 중 하나라도
+   * 깨지면 1건인 날도 문턱을 넘는다(프로브 실측 — 표준 구성 4시드 28일에서 응급 1건인 날의
+   * 부하가 205.7~457.7이었고, 굶은 채 시작한 응급 1건은 그것만으로 198.9다). 이 테스트가 지는
+   * 몫은 "그 병원이 안 갈린다"가 아니라 **손잡이 두 상수의 대소**뿐이다.
+   */
+  it('응급 1건은 하루 문턱 안, 2건은 넘는다 — 격리 조건(외래 0·피로 0)에서의 튜닝 계약', () => {
+    const oneCase = EMERGENCIES.STEMI.durationMin * EMERGENCY_INTENSITY
+    expect(oneCase).toBeLessThan(FATIGUE_FREE_MIN)      // 1건은 공짜
+    expect(oneCase * 2).toBeGreaterThan(FATIGUE_FREE_MIN) // 2건부터 갈린다
+    // 대소를 피로로도 확인한다 — 산술만 재면 문턱이 부하에 **실제로** 걸리는지는 안 잡힌다.
+    const afterOne = addWorkLoad(doc(), oneCase)
+    expect(afterOne.fatigue).toBe(0)
+    expect(addWorkLoad(afterOne, oneCase).fatigue).toBeGreaterThan(0)
+  })
+
   it('부하는 그 일을 한 의사에게만 붙는다', () => {
     let w = outpatientWorld('INTERNAL_MEDICINE')
     w = hire(w, 'AESTHETICS') // 방이 없어 놀기만 하는 의사
