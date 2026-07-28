@@ -149,7 +149,7 @@ describe('하루 마감', () => {
     })
     const { loadBefore, after } = atDusk(treat)
     const load = 90 * EMERGENCY_INTENSITY
-    // 과 강도(1.2)로 접으면 108, 응급 강도(2.0)면 180 — 두 값이 갈려 회귀가 곧바로 드러난다.
+    // 과 강도(1.2)로 접으면 108, 응급 강도(1.7)면 153 — 두 값이 갈려 회귀가 곧바로 드러난다.
     expect(after.loadMinToday).toBe(loadBefore + load)
     expect(after.fatigue).toBe(fatigueGain(loadBefore + load) - fatigueGain(loadBefore))
     expect(after.fatigue).toBeGreaterThan(0)

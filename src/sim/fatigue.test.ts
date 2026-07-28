@@ -175,11 +175,11 @@ describe('축적 — 표준강도분', () => {
     // (강도 없이는 examsDone × 20 = 상한의 세 배가 넘는다).
     //
     // ⚠️ 등식이 아니라 **구간**인 이유: 이 병원엔 식당이 없어 의사가 `HUNGRY_AFTER_MIN`(300분)
-    // 이후 굶은 채로 일한다(needs.starvedSlowFactor). 그 뒤 시작한 외래는 20분이 아니라 23분이라,
+    // 이후 굶은 채로 일한다(needs.starvedSlowFactor). 그 뒤 시작한 외래는 20분이 아니라 26분이라,
     // 건별 소요가 20과 `round(20 × STARVED_SLOW)` 사이에서 갈린다 — 몇 건이 어느 쪽인지는
     // 도착 시드가 정하므로 여기서 세지 않고 양쪽 끝만 잠근다. 무풍이라는 주장(피로 0)은 그대로다.
-    // ⓘ 상한을 느슨하게 둔 대가는 **다른 파일이 치른다**: 굶주림 감속 자체(1.15배)는
-    //    needs.test.ts 「굶은 의사의 외래는 1.15배 길다」가 단일 건으로 정확히 잡는다. 여기서
+    // ⓘ 상한을 느슨하게 둔 대가는 **다른 파일이 치른다**: 굶주림 감속 자체(1.3배)는
+    //    needs.test.ts 「굶은 의사의 외래는 …배 길다」(제목이 상수에서 파생된다)가 단일 건으로 정확히 잡는다. 여기서
     //    구간이 넓다고 그 축이 무계측인 것은 아니다 — 이 테스트가 지는 몫은 **강도 곱**뿐이다.
     const base = w.stats.examsDone * simDept('AESTHETICS').intensity
     expect(d.loadMinToday!).toBeGreaterThanOrEqual(base * EXAM_DURATION_MIN)
@@ -208,6 +208,27 @@ describe('축적 — 표준강도분', () => {
     expect(theDoctor(w).loadMinToday).toBe(0) // 전제: 아직 아무것도 안 끝났다
     w = until(w, x => (theDoctor(x).loadMinToday ?? 0) > 0, EMERGENCIES.STEMI.durationMin + 5)
     expect(theDoctor(w).loadMinToday).toBe(EMERGENCIES.STEMI.durationMin * EMERGENCY_INTENSITY)
+  })
+
+  /**
+   * `EMERGENCY_INTENSITY` 1.7 튜닝(2026-07-28)이 **사려던 것 자체**를 잰다: "응급 1건은 공짜,
+   * 2건부터 갈린다". 값은 자유값이라 어느 숫자든 될 수 있지만 이 **관계**는 튜닝의 의도라,
+   * 계약을 사살 가능한 계측기와 짝지어 둔다(T-089). 옛 값 2.0에서는 1건이 180 > 160이라
+   * 아래 첫 단언이 곧바로 죽는다 — 실제로 되돌려 확인했다.
+   *
+   * ⚠️ **격리 조건에서의 계약이다**: 외래 부하 0 · 전날 피로 0 · 굶지 않은 의사. 셋 중 하나라도
+   * 깨지면 1건인 날도 문턱을 넘는다(프로브 실측 — 표준 구성 4시드 28일에서 응급 1건인 날의
+   * 부하가 205.7~457.7이었고, 굶은 채 시작한 응급 1건은 그것만으로 198.9다). 이 테스트가 지는
+   * 몫은 "그 병원이 안 갈린다"가 아니라 **손잡이 두 상수의 대소**뿐이다.
+   */
+  it('응급 1건은 하루 문턱 안, 2건은 넘는다 — 격리 조건(외래 0·피로 0)에서의 튜닝 계약', () => {
+    const oneCase = EMERGENCIES.STEMI.durationMin * EMERGENCY_INTENSITY
+    expect(oneCase).toBeLessThan(FATIGUE_FREE_MIN)      // 1건은 공짜
+    expect(oneCase * 2).toBeGreaterThan(FATIGUE_FREE_MIN) // 2건부터 갈린다
+    // 대소를 피로로도 확인한다 — 산술만 재면 문턱이 부하에 **실제로** 걸리는지는 안 잡힌다.
+    const afterOne = addWorkLoad(doc(), oneCase)
+    expect(afterOne.fatigue).toBe(0)
+    expect(addWorkLoad(afterOne, oneCase).fatigue).toBeGreaterThan(0)
   })
 
   it('부하는 그 일을 한 의사에게만 붙는다', () => {

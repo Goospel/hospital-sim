@@ -2,9 +2,11 @@
 // 경로는 목적지가 정해질 때 findPath로 1회 계산해 path에 저장하고, 틱은 소비만 한다
 // (findPath는 최장 경로 ~3ms라 매 틱 재탐색하면 폰 수만큼 곱해져 프레임을 먹는다).
 import { GRID_W, GRID_H, ENTRANCE, isWalkable, type SimWorld } from './world'
-import type { SimDeptKey } from './dept'
+import { HIRABLE_DEPTS, simDept, type SimDeptKey } from './dept'
 import type { EmergencyKind } from './emergency' // 타입 전용 — emergency.ts가 pawn을 되받아도 순환 무해
 import type { Pt } from './path'
+// traits.ts는 leaf라 값으로 당겨도 순환이 없다(아무것도 임포트하지 않는다).
+import { doctorName, pickTraits, type TraitKey } from './traits'
 
 /** 폰의 이동 속도 — 게임 분당 타일 수. 시간 분할 불변식이 성립하려면 정수여야 한다. */
 export const PAWN_TILES_PER_MIN = 2
@@ -100,6 +102,14 @@ export interface Pawn {
    *     "도착"으로 오인한다 — 그래서 도착 판정은 항상 **위치 == dest**로 한다. */
   dest?: Pt
   // DOCTOR
+  /** 이 의사의 이름 — **의사만**. 채용·스폰이 `nextId`로 결정론 부여한다(traits.doctorName).
+   *  optional인 이유는 손세계 폰·저장된 옛 세계 때문이다(우선순위 필드와 같은 계약). */
+  name?: string
+  /** 이 의사의 특성 두 개 — **의사만**. 서로 다른 두 값이 보장된다(traits.pickTraits).
+   *  ⚠️ **수치 효과가 없다**(traits.ts 머리말) — 사직 편지·연출문의 재료이고 패널 표시용이다.
+   *  `readonly [TraitKey, TraitKey]`로 길이를 타입에 박아 두는 이유: 화면이 "두 줄"을 전제로
+   *  그리는데 배열이 비거나 셋이 되면 조용히 한 줄만 뜨거나 넘친다. */
+  traits?: readonly [TraitKey, TraitKey]
   /** 전공과. 카탈로그 밖 과(2주차 절단)를 넣으면 라우팅이 런타임에 터지므로 `SimDeptKey`로
    *  좁혀 컴파일로 당긴다(Room.dept와 같은 이유). */
   dept?: SimDeptKey
@@ -185,14 +195,35 @@ export function doctorDeptOf(p: Pawn): SimDeptKey {
   return p.dept
 }
 
+/**
+ * 이 판에서 지금까지 채용한 인원 — **이름의 인덱스**다(풀 소진량의 합).
+ *
+ * `nextId`를 쓰지 않는 이유: 그건 방·환자·응급까지 올리는 **전역** 카운터라 채용 순서와 무관하게
+ * 뛴다 — 8명만 뽑아도 목록을 한 바퀴 돌아 동명이인이 났다(리뷰 실측). 풀은 **단조 감소**하고
+ * (사직자는 돌아오지 않는다 — week.startNextWeek) 채용마다 정확히 1 줄어드니, 이 합은 판 안에서
+ * 단조 증가하고 값마다 유일하다. 새 필드를 하나도 안 늘리고 그 성질을 얻는 것이 요점이다.
+ *
+ * ⚠️ `hireDoctor`가 `spawnDoctor`를 **차감 전에** 부르므로 첫 채용자의 서수는 0이다. 순서를
+ * 뒤집으면 목록의 첫 이름이 영영 안 쓰인다(에러 0 — 테스트가 잠근다).
+ * ⚠️ 채용을 거치지 않는 `spawnDoctor` 직접 호출(테스트의 손세계 폰)은 풀을 안 건드리므로 전부
+ * 서수 0을 받는다 — 의도된 결과다. 이름의 유일성은 **채용 경로의 성질**이지 스폰의 성질이 아니다.
+ */
+function hiredEver(w: SimWorld): number {
+  return HIRABLE_DEPTS.reduce((sum, key) => sum + (simDept(key).nationalPool - w.hirePool[key]), 0)
+}
+
 export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
   // 피로·부하·허기를 **명시적으로 0**에서 시작한다 — `?? 0` 폴백이 있어도 필드가 실재해야 UI·저장이
   // "아직 일 안 한 의사"와 "필드가 없는 손세계 폰"을 구별할 수 있다.
   // 허기 0 = 밥을 먹고 출근했다(freshMorning의 아침 리셋과 같은 각색).
   // 우선순위도 같은 이유로 명시한다 — 새 의사는 세 축이 전부 '보통'이다.
   // 포화 일수도 명시적으로 0이다 — 이 사람은 아직 하루도 갈리지 않았다.
+  // 이름·특성 둘 다 **시드를 소비하지 않는다**(traits.ts 머리말) — 채용 한 번이 도착·응급
+  // 스트림을 밀지 않는다. 다만 **인덱스가 서로 다르다**: 이름은 유일해야 해서 채용 서수를,
+  // 특성은 유형이라 겹쳐도 자연스러워 `nextId`를 쓴다.
   const p: Pawn = {
     id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept,
+    name: doctorName(hiredEver(w)), traits: pickTraits(w.nextId),
     fatigue: 0, loadMinToday: 0, hungerMin: 0, saturatedDays: 0, priorities: freshPriorities(),
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }

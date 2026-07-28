@@ -1,9 +1,8 @@
 "use client";
 
-import { formatManwon } from "@/game/labels";
 import type { DayRecord } from "@/sim/day";
 import type { EmergencyTurnAway } from "@/sim/emergency";
-import { turnAwayBreakdownText } from "./simHud";
+import { formatManwon, turnAwayBreakdownText } from "./simHud";
 
 /**
  * 하루 마감 오버레이 — 19:00에 세계가 멈추고 그날의 종이 한 장이 올라온다.

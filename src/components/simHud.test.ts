@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
-  busyDoctorIds, doctorActivityMark, doctorCountByDept, fatigueTone, nextPriority, noRestSpotIdle,
-  PRIORITY_LABEL, resigningDeptLabels, roomLabel, saturationText, turnAwayBatchText,
-  turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
+  busyDoctorIds, doctorActivityMark, doctorCountByDept, fatigueTone, formatManwon, nextPriority,
+  noRestSpotIdle, PRIORITY_LABEL, resigningNotices, roomLabel, saturationText, traitBadges,
+  turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
 } from './simHud'
 import { simDept } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
+import { TRAITS } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
 import { FATIGUE_RED, RESIGN_SATURATED_DAYS } from '../game/doctor'
 
@@ -278,21 +279,30 @@ describe('saturationText — 사직 카운트다운', () => {
   })
 })
 
-describe('resigningDeptLabels — 결산 화면의 사직 통지 줄', () => {
+describe('resigningNotices — 결산 화면의 사직 통지(과 · 이름 · 편지)', () => {
+  const leaver = (over: Partial<Pawn> = {}) =>
+    doctor({ name: '김서준', saturatedDays: RESIGN_SATURATED_DAYS, ...over })
+
   it('과 이름은 카탈로그에서 온다 — 화면이 과 이름을 따로 적으면 두 벌이 된다', () => {
-    expect(resigningDeptLabels([doctor({ dept: 'CARDIOLOGY' })])).toEqual([simDept('CARDIOLOGY').label])
+    expect(resigningNotices([leaver({ dept: 'CARDIOLOGY' })])[0].head)
+      .toContain(simDept('CARDIOLOGY').label)
+  })
+
+  it('이름과 포화 일수가 실린다 — PR D에서 의사는 과가 아니라 **사람**으로 떠난다', () => {
+    const n = resigningNotices([leaver({ dept: 'CARDIOLOGY', saturatedDays: 4 })])[0]
+    expect(n.head).toContain('김서준')
+    expect(n.body).toContain('4')
   })
 
   it('여러 명이면 여러 줄이고 순서가 보존된다 — 같은 과가 둘이면 두 줄이다(한 줄로 접지 않는다)', () => {
-    expect(
-      resigningDeptLabels([
-        doctor({ id: 'a', dept: 'GENERAL_SURGERY' }),
-        doctor({ id: 'b', dept: 'CARDIOLOGY' }),
-        doctor({ id: 'c', dept: 'CARDIOLOGY' }),
-      ]),
-    ).toEqual([
-      simDept('GENERAL_SURGERY').label, simDept('CARDIOLOGY').label, simDept('CARDIOLOGY').label,
+    const notices = resigningNotices([
+      leaver({ id: 'a', dept: 'GENERAL_SURGERY', name: '박지우' }),
+      leaver({ id: 'b', dept: 'CARDIOLOGY', name: '이도현' }),
+      leaver({ id: 'c', dept: 'CARDIOLOGY', name: '최민서' }),
     ])
+    expect(notices.map(n => n.key)).toEqual(['a', 'b', 'c'])
+    expect(notices[1].head).toContain('이도현')
+    expect(notices[2].head).toContain('최민서')
   })
 
   it('⚠️ 과 없는 폰은 **건너뛴다 — 던지지 않는다**', () => {
@@ -300,13 +310,56 @@ describe('resigningDeptLabels — 결산 화면의 사직 통지 줄', () => {
     // 중에 나면 결산 화면이 **통째로** 죽어 플레이어는 사직 통지가 아니라 흰 화면을 본다.
     // 한 줄을 잃는 것과 화면을 잃는 것 중에서 고른 결과다.
     const noDept: Pawn = { id: 'ghost', kind: 'DOCTOR', x: 0, y: 0, path: [] }
-    expect(() => resigningDeptLabels([noDept])).not.toThrow()
-    expect(resigningDeptLabels([noDept, doctor({ dept: 'INTERNAL_MEDICINE' })]))
-      .toEqual([simDept('INTERNAL_MEDICINE').label])
+    expect(() => resigningNotices([noDept])).not.toThrow()
+    expect(resigningNotices([noDept, leaver({ dept: 'INTERNAL_MEDICINE' })]).map(n => n.key))
+      .toEqual(['d1'])
+  })
+
+  it('이름 없는 폰도 문장이 선다 — undefined가 화면에 새지 않는다', () => {
+    const notice = resigningNotices([leaver({ name: undefined })])[0]
+    expect(`${notice.head} ${notice.body}`).not.toContain('undefined')
   })
 
   it('빈 명단은 빈 배열 — 아무도 안 떠나는 주엔 줄이 서지 않는다', () => {
-    expect(resigningDeptLabels([])).toEqual([])
+    expect(resigningNotices([])).toEqual([])
+  })
+})
+
+describe('traitBadges — 인사 패널의 특성 표시', () => {
+  it('특성 두 개의 라벨과 사연을 카탈로그에서 읽는다 — 화면이 문구를 따로 적지 않는다', () => {
+    const badges = traitBadges(doctor({ traits: ['WORKAHOLIC', 'IDEALIST'] }))
+    expect(badges.map(b => b.label)).toEqual([TRAITS.WORKAHOLIC.label, TRAITS.IDEALIST.label])
+    expect(badges[0].story).toBe(TRAITS.WORKAHOLIC.story)
+  })
+
+  it('특성이 없으면 빈 배열 — 손세계 폰·옛 세계에서 패널이 죽지 않는다', () => {
+    expect(traitBadges(doctor())).toEqual([])
+  })
+})
+
+describe('formatManwon — 금액 표기의 단일 함수(§0-8)', () => {
+  // 접는 경계(1억)는 `game/labels.formatManwon`이 소유한다 — 여기서 다시 나누면 화면마다
+  // 단위가 갈린다. 이 함수가 더하는 것은 **음수 부호**뿐이다(금고는 음수가 될 수 있다).
+  it('1억 미만은 만원 + 천 단위 콤마', () => {
+    expect(formatManwon(9_999)).toBe('9,999만원')
+    expect(formatManwon(0)).toBe('0만원')
+  })
+
+  it('1억(=10,000만원)부터 억으로 접는다 — 경계는 `>=`다(10,000은 이미 억이다)', () => {
+    // 돌연변이 ③(경계 뒤집기 `>=` → `>`)이 여기서 죽는다.
+    expect(formatManwon(10_000)).toBe('1.0억')
+  })
+
+  it('억은 소수 한 자리 — 반올림이다(152,340만원 = 15.234억 → 15.2억). 표시용이라 합계와 어긋날 수 있다', () => {
+    expect(formatManwon(152_340)).toBe('15.2억')
+    expect(formatManwon(15_000)).toBe('1.5억')
+  })
+
+  it('음수는 유니코드 마이너스(−)를 유지한다 — 금고가 마이너스인 판이 이 게임의 절반이다', () => {
+    expect(formatManwon(-9_999)).toBe('−9,999만원')
+    expect(formatManwon(-10_000)).toBe('−1.0억')
+    // ASCII 하이픈이 새면 폰트에 따라 부호가 안 보인다(game/labels의 관례 계승).
+    expect(formatManwon(-24)).not.toContain('-')
   })
 })
 

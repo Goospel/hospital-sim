@@ -42,6 +42,11 @@ jobs:
           # goospel.github.io/<repo>/ 로 서빙되므로 하위 경로가 필요하다.
           # 레포명을 하드코딩하지 않아 이름이 바뀌어도 따라간다.
           PAGES_BASE_PATH: /${{ github.event.repository.name }}
+          # 정적 export 에는 API 라우트가 실리지 않는다(next.config 의 pageExtensions 스위치).
+          # 그래서 Pages 에 배포된 게임은 스토리텔러를 **Vercel 쪽 프록시**로 크로스오리진 호출한다.
+          # 비밀이 아니다(브라우저가 어차피 그 주소로 요청한다) — 키는 저쪽 서버에만 있다.
+          # 이 값이 없으면 게임은 같은 오리진의 없는 라우트를 부르고 404 → 폴백 문장으로 완주한다.
+          NEXT_PUBLIC_STORYTELLER_ORIGIN: https://hospital-sim-ashy.vercel.app
         run: npm run build
 
       # _next/ 는 언더스코어로 시작해 Jekyll 이 통째로 무시한다. 한 줄로 차단.

@@ -1,9 +1,11 @@
 "use client";
 
-import { formatManwon, formatSignedManwon } from "@/game/labels";
+import { formatSignedManwon } from "@/game/labels";
 import type { DayRecord } from "@/sim/day";
 import { simDept, type SimDeptKey } from "@/sim/dept";
 import type { WeekDeptLine, WeekSummary } from "@/sim/week";
+import type { EndingKind } from "@/sim/world";
+import { formatManwon, type ResigningNotice } from "./simHud";
 
 /**
  * 주간 결산 오버레이 — 7일이 끝나고 **비용이 청구되는** 자리.
@@ -22,28 +24,42 @@ export default function WeekEndOverlay({
   week,
   days,
   summary,
-  leavingDepts,
+  leaving,
   treasuryManwon,
   insolvencyStreak,
   closed,
+  ending,
+  epilogue,
   onNextWeek,
 }: {
   week: number;
   days: DayRecord[];
   summary: WeekSummary;
-  /** 이번 주말에 떠나는 의사들의 **과 이름**(사람 수만큼 줄이 선다). 명단도 과 이름 파생도
+  /** 이번 주말에 떠나는 의사들의 **통지와 편지**(사람 수만큼 줄이 선다). 명단도 문장 파생도
    *  화면 밖에서 끝난다 — 여기는 세계를 통째로 받지 않는다(summary를 받는 관례 그대로).
-   *  ⚠️ 과 없는 폰은 파생 단계(simHud.resigningDeptLabels)에서 **건너뛴다**: `doctorDeptOf`로
+   *  ⚠️ 과 없는 폰은 파생 단계(simHud.resigningNotices)에서 **건너뛴다**: `doctorDeptOf`로
    *  읽으면 그런 폰 하나에 이 오버레이가 통째로 죽어 결산 화면이 흰 화면이 된다. */
-  leavingDepts: string[];
+  leaving: ResigningNotice[];
   treasuryManwon: number;
-  /** 금고가 음수로 끝난 주의 **연속** 횟수 — 1이면 은행 경고, 문턱을 채우면 폐업(closed). */
+  /** 금고가 음수로 끝난 주의 **연속** 횟수 — 1이면 은행 경고, 문턱을 채우면 폐업(ending). */
   insolvencyStreak: number;
   /** 세계가 CLOSED인가 — 판정은 코어(settleWeek)가 했고 여기선 그 결과만 읽는다. */
   closed: boolean;
+  /** 판이 **왜** 끝났는가 — 살아 있는 세계에는 없다(world.ending).
+   *  ⚠️ streak으로 폐업을 **되짚지 않는다**: 되짚기는 지금 우연히 맞을 뿐이고(폐업 판정이 곧
+   *  그 문턱이라서), 종결 조건이 하나라도 늘거나 순위가 바뀌면 화면만 조용히 옛 규칙으로 남는다.
+   *  코어가 이미 판정해 필드로 들고 있는 값을 화면이 다시 계산할 이유가 없다. */
+  ending?: EndingKind;
+  /** 엔딩별 결말문(`narrative.epilogueText`) — CLOSED일 때만 온다. 문장은 화면 밖에서 끝난다. */
+  epilogue?: string;
   onNextWeek: () => void;
 }) {
   const warning = !closed && insolvencyStreak > 0;
+  /** 이 판이 **돈 때문에** 끝났는가 — CLOSED 세 종류(돈·사람·시간) 중 폐업만 고른다. */
+  const insolvent = ending === "INSOLVENCY";
+  const bankNotice = insolvent
+    ? "은행: 두 주 연속 적자입니다. 병원은 폐업합니다."
+    : `은행: 잔고 ${formatSignedManwon(treasuryManwon)}. 다음 주도 적자면 폐업합니다.`;
 
   return (
     <div
@@ -167,15 +183,18 @@ export default function WeekEndOverlay({
               잃었는가"가 한 장에서 읽힌다(은행 통지처럼 밖으로 빼면 사고 알림이 된다).
               톤 가드레일 — 사실만 쓴다. "갈아 넣었습니다"·"관리 실패" 같은 말이 붙는 순간
               구조의 결과가 플레이어의 실수로 미끄러진다(§톤 · turnAwayText와 같은 규칙). */}
-          {leavingDepts.length > 0 && (
+          {leaving.length > 0 && (
             <div className="flex flex-col gap-1.5 border-t border-rule pt-3">
               <span className="font-sans text-xs text-ink-2">이번 주말</span>
-              <ul className="flex flex-col gap-1">
-                {leavingDepts.map((label, i) => (
+              <ul className="flex flex-col gap-2.5">
+                {leaving.map((n) => (
                   // 같은 과가 둘이면 두 줄이다 — 떠나는 것은 과가 아니라 사람이라 접지 않는다.
-                  // key에 index를 쓰는 것도 그래서다(과 이름은 유일하지 않다).
-                  <li key={`${label}-${i}`} className="text-sm font-medium text-stamp-ink">
-                    {label} 의사가 병원을 떠납니다
+                  // key는 폰 id다(과 이름도 사람 이름도 유일하지 않다).
+                  <li key={n.key} className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium text-stamp-ink">{n.head}</span>
+                    {/* 사직 편지 — 떠나는 것이 「내과 1명」이 아니라 사람 하나임을 말하는 줄이다.
+                        해석 없이 사실만(§톤): 포화한 날 수와 그가 어떤 사람이었는지까지다. */}
+                    <span className="text-xs leading-relaxed text-ink-2">{n.body}</span>
                   </li>
                 ))}
               </ul>
@@ -184,18 +203,25 @@ export default function WeekEndOverlay({
           )}
         </section>
 
-        {(warning || closed) && (
-          // 은행 통지 — 규칙의 사실만(해석 0). 색 단독 신호 금지: 붉은 잉크 + 글자가 함께 판정을 진다.
+        {/* 은행 통지 — 규칙의 사실만(해석 0). 색 단독 신호 금지: 붉은 잉크 + 글자가 함께 판정을 진다.
+            ⚠️ 붉은 도장은 **경고(적자 1주)와 폐업에만** 뜬다. `closed`에 걸어 두면 12주 흑자
+            완주(CAMPAIGN_END)와 인력 종결(NO_PEOPLE)에도 붉은 잉크가 찍혀, 색이 "이 판은 실패다"를
+            혼자 말한다 — 문구는 잔고만 알리는데 색만 다른 말을 하는 상태였다. */}
+        {(warning || insolvent) && (
           <p className="rounded-xs border border-stamp bg-stamp-field px-4 py-3 text-center text-sm font-medium text-stamp-ink">
-            {closed
-              ? "은행: 두 주 연속 적자입니다. 병원은 폐업합니다."
-              : `은행: 잔고 ${formatSignedManwon(treasuryManwon)}. 다음 주도 적자면 폐업합니다.`}
+            {bankNotice}
           </p>
         )}
 
-        {/* 조작 UI는 종이에 얹지 않는다(§6). 폐업이면 버튼 자체가 없다 — 이 판은 여기서 끝난다. */}
+        {/* 조작 UI는 종이에 얹지 않는다(§6). 판이 끝났으면 버튼 자체가 없다 — 여기서 끝난다. */}
         {closed ? (
-          <p className="text-center text-sm text-on-desk-muted">병원 문을 닫았습니다. 새로고침하면 다시 개원합니다.</p>
+          <div className="flex flex-col gap-2 text-center text-sm text-on-desk-muted">
+            {/* 에필로그 — 왜 끝났는가(엔딩 3종)와 판의 지표. 문장은 `narrative.epilogueText`가
+                만들고 여기선 놓기만 한다. ending이 없는 CLOSED는 정상 흐름에 없지만(settleWeek이
+                둘을 함께 세팅한다) 그때도 화면이 비지 않게 마지막 줄은 항상 선다. */}
+            {epilogue && <p className="leading-relaxed text-on-desk">{epilogue}</p>}
+            <p>새로고침하면 다시 개원합니다.</p>
+          </div>
         ) : (
           <button
             type="button"

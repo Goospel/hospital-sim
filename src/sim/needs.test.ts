@@ -511,7 +511,7 @@ describe('불변식·경계', () => {
   })
 
   it('freshMorning은 hungerMin을 0으로 되돌린다 — 저녁을 먹고 출근한다', () => {
-    // 안 되돌리면 어제 굶은 의사가 오늘 **첫 진료부터** 1.15배로 시작하고, 식당이 없는 병원은
+    // 안 되돌리면 어제 굶은 의사가 오늘 **첫 진료부터** STARVED_SLOW배로 시작하고, 식당이 없는 병원은
     // 이튿날부터 영구히 굶은 상태가 된다(허기는 식사 말고 내려갈 길이 없다).
     const w = hungryFor(restWorld(), HUNGRY_AFTER_MIN)
     expect(doctorOf(w).hungerMin).toBe(HUNGRY_AFTER_MIN) // 전제
@@ -589,7 +589,7 @@ describe('허기 — 개시·전이·종료', () => {
 
   it('식당이 없으면 못 먹는다 — 굶은 채로 계속 일한다', () => {
     // 이게 "식당 없는 병원은 오후가 느리다"의 입구다: 못 먹으면 안 내려가고, 안 내려가면
-    // 그 뒤 모든 작업에 1.15가 붙는다.
+    // 그 뒤 모든 작업에 STARVED_SLOW(1.3)가 붙는다.
     const w0 = hungryFor(restWorld({ rooms: [] }), HUNGRY_AFTER_MIN)
     const before = at(doctorOf(w0))
     const w = run(w0, 100)
@@ -659,7 +659,7 @@ describe('굶주림 감속 — 작업 시작 시점에 확정된다', () => {
     return workMin
   }
 
-  it('굶은 의사의 외래는 1.15배 길다 — 식당 없는 병원의 오후가 느려진다', () => {
+  it(`굶은 의사의 외래는 ${STARVED_SLOW}배 길다 — 식당 없는 병원의 오후가 느려진다`, () => {
     const fed = examWorkMin(0)
     const starved = examWorkMin(HUNGRY_AFTER_MIN)
     // 피로는 0이라 감속의 유일한 원인이 허기다(두 축이 섞이면 계측력이 흐려진다).
@@ -699,17 +699,18 @@ describe('굶주림 감속 — 작업 시작 시점에 확정된다', () => {
     expect(both).toBeGreaterThan(examWorkMin(HUNGRY_AFTER_MIN, 0))     // 피로 축
     //
     // ⚠️ **등가 돌연변이·사살 불가 인지(T-089 갈래②)**: 곱 순서를 뒤집은 변조
-    //    (`round(round(base × 허기) × 피로)`)는 이 지점에서 **판별되지 않는다** — 실측:
-    //    피로 67·외래 20분이면 두 순서가 똑같이 29분을 낸다. 전수 확인(피로 0..100 × 외래 20분)
-    //    결과 갈리는 피로값은 21개뿐이고 FATIGUE_RED는 거기 없다. 순서 계약은 **아래 응급판이**
-    //    잠근다(같은 피로 67에서 130 vs 129로 갈린다) — 이 테스트가 지는 몫은 "곱이 쌓인다"까지다.
+    //    (`round(round(base × 허기) × 피로)`)는 이 지점에서 **판별되지 않는다** — 실측
+    //    (STARVED_SLOW 1.3 기준으로 재측정, 2026-07-28): 피로 67·외래 20분이면 두 순서가 똑같이
+    //    33분을 낸다. 전수 확인(피로 0..100 × 외래 20분) 결과 갈리는 피로값은 23개뿐이고
+    //    FATIGUE_RED는 거기 없다. 순서 계약은 **아래 응급판이** 잠근다(같은 피로 67에서
+    //    147 vs 146으로 갈린다) — 이 테스트가 지는 몫은 "곱이 쌓인다"까지다.
   })
 
   it('피로와 허기가 겹치면 곱이 쌓인다 — 응급(곱 순서까지 잠근다)', () => {
     const base = emergencySpec('STEMI').durationMin
     const both = treatWorkMin(HUNGRY_AFTER_MIN, FATIGUE_RED)
-    // ⚠️ 여기가 **곱 순서의 유일한 계측점**이다: base 90·피로 67에서 현행 순서는 130,
-    //    뒤집으면 129다(외래 20분은 29로 같아 못 잡는다 — 위 테스트 주석의 실측).
+    // ⚠️ 여기가 **곱 순서의 유일한 계측점**이다: base 90·피로 67에서 현행 순서는 147,
+    //    뒤집으면 146이다(외래 20분은 33으로 같아 못 잡는다 — 위 테스트 주석의 실측).
     expect(both).toBe(bothSlowed(base, FATIGUE_RED))
     expect(both).toBeGreaterThan(treatWorkMin(0, FATIGUE_RED))
     expect(both).toBeGreaterThan(treatWorkMin(HUNGRY_AFTER_MIN, 0))

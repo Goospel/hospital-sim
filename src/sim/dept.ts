@@ -103,7 +103,7 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
     // 부호가 뒤집힌다(실측: 급성복증 14~22건/주). 24시간 개복팀 대기가 그 무게의 정체다.
     weeklyCostManwon: 4_500,
     // 1.2 ← FATIGUE_INTENSITY의 기준선(1.0, 외래)과 응급(1.5~2.0) 사이. 필수과 외래는 기준선보다
-    // 무겁지만 응급 수술은 아니다 — 응급 강도(2.0)는 계획 Task 4가 따로 얹는다.
+    // 무겁지만 응급 수술은 아니다 — 응급 강도(이 층은 1.7)는 emergency.ts가 따로 얹는다.
     intensity: 1.2,
     // 3 — 응급 대기가 붙는 과라 얇다. 외과 의사 셋을 다 갈아 넣으면 그 병원은 남은 판 내내
     // 급성복증을 받을 수 없다(응급 배후과 하드락과 맞물려 사직이 곧 진료 종목의 상실이 된다).
@@ -124,10 +124,10 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
     // 최대 17건 × 350 = 약 6,500이다. 주급이 그보다 무거워야 **응급을 최대로 받아도 적자**가
     // 되고, 그게 이 게임이 하려는 말이다. 여유(약 1,500)는 시드 변동을 흡수하는 폭이다.
     weeklyCostManwon: 8_000,
-    // 1.2 = 외과와 같은 근거(필수과 외래 — 기준선 1.0과 응급 1.5~2.0 사이). 두 과의 외래는
-    // 의사에게 같은 무게라고 본다 — 갈리는 차이는 강도가 아니라 응급(Task 4의 ×2.0)에서 온다.
+    // 1.2 = 외과와 같은 근거(필수과 외래 — FATIGUE_INTENSITY의 기준선 1.0과 응급 1.5~2.0 사이). 두 과의 외래는
+    // 의사에게 같은 무게라고 본다 — 갈리는 차이는 강도가 아니라 응급(EMERGENCY_INTENSITY ×1.7)에서 온다.
     intensity: 1.2,
-    // 2 — **가장 얇다**. 이 게임에서 가장 빨리 갈려나가는 과(응급 강도 2.0 + 24시간 대기)에
+    // 2 — **가장 얇다**. 이 게임에서 가장 빨리 갈려나가는 과(응급 강도 1.7 + 24시간 대기)에
     // 사람이 가장 적다는 것이 논지의 인사판이다: 한 명을 태우고 나면 다음 한 명뿐이고, 그마저
     // 태우면 그 병원엔 STEMI를 받을 사람이 영원히 없다. 값이 아니라 이 대소가 주장이다.
     nationalPool: 2,
@@ -139,6 +139,13 @@ export const SIM_DEPTS: Record<SimDeptKey, SimDeptSpec> = {
  *  카탈로그에 플래그를 판다. 지금은 그런 과가 없어 미리 만들지 않는다.)
  *  순서는 객체 리터럴의 기재 순서 = 미용 → 내과 → 외과 → 순환기(고정비 오름차순)다. */
 export const HIRABLE_DEPTS = Object.keys(SIM_DEPTS) as SimDeptKey[]
+
+/** 과별 **누적 상한** 표 — `[과, 그 구간의 위쪽 경계]`의 배열이고 배열 순서가 곧 구간 순서다.
+ *  평시 도착 분포(`patientFlow.ARRIVAL_DEPT_MIX`)와 이벤트가 갈아 끼우는 분포
+ *  (`events.EPIDEMIC_DEPT_MIX`)가 **같은 모양**이라야 `pickWantsDept` 하나가 둘 다 읽는다.
+ *  타입 자리가 여기(카탈로그 leaf)인 이유: 양쪽이 이미 `SimDeptKey`를 여기서 가져간다 —
+ *  한쪽 파일에 두면 다른 쪽이 그 파일을 타입 때문에 임포트하게 되어 위상이 흐려진다. */
+export type DeptMix = ReadonlyArray<readonly [SimDeptKey, number]>
 
 /** 한 판의 시작 채용 풀 — **카탈로그에서 파생한다**(`SimWorld.hirePool`의 초기값).
  *  숫자를 createWorld에 다시 적으면 카탈로그를 튜닝해도 세계가 안 따라오고, 그 어긋남은

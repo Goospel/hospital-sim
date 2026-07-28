@@ -24,6 +24,7 @@ import { ARRIVAL_WINDOW_MIN, minuteStreamSeed, toExit } from './patientFlow'
 import { furnitureSpots, ptKey, samePt } from './spots'
 import { interruptActivity, workDurationMin } from './needs'
 import { applyWorkLoads } from './fatigue'
+import { emergencyProbMulOf } from './events' // leaf — 값으로 당겨도 순환 없음(events.ts 머리말)
 
 /** 응급 도착 스트림 전용 salt — `daysim.callSeed` 주석의 **레지스트리에 등재된 값**이다.
  *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23·29·31, 이 파일에서 37·41.) */
@@ -98,14 +99,21 @@ export const EMERGENCIES: Record<EmergencyKind, EmergencySpec> = {
  * 응급 처치의 **피로 강도**(부하 = 소요 분 × 이 값). 두 종류가 같은 값이라 종류별 필드가 아니라
  * 모듈 상수다 — 갈리는 날 `EmergencySpec`으로 내리면 된다.
  *
- * 2.0 = `src/game/doctor.ts` FATIGUE_INTENSITY의 STEMI·ABDOMINAL_EMERGENCY **그대로**(각색 없음).
- * 저쪽 주석대로 "응급 수술·시술급 — 생사·집중"이라는 판단은 스케일과 무관하다. 외래 기준선(1.0)의
- * 두 배이고 필수과 외래(dept.ts 1.2)보다도 무겁다 — 90분짜리 처치 한 건이 하루 문턱
- * (`FATIGUE_FREE_MIN`)을 혼자 넘긴다는 뜻이고, **응급을 받는 과가 갈려나간다**는 이 게임의
- * 논지가 피로 축에서 완성되는 자리다. 값의 자리가 카탈로그(dept.ts)가 아니라 여기인 이유는
- * 이 파일 머리말과 같다: 응급은 도착·판정·수가·소요·강도까지 한 덩어리다.
+ * ⚠️ **옛 층은 2.0, 이 층은 1.7이다** — `src/game/doctor.ts` FATIGUE_INTENSITY의
+ * STEMI·ABDOMINAL_EMERGENCY를 그대로 옮겨 쓰다가 **실측으로 튜닝했다**(2026-07-28). 계승한 것은
+ * 이제 값이 아니라 **대소**다: 외래 기준선(1.0)의 1.7배이고 필수과 외래(dept.ts 1.2)보다 무겁다.
+ *
+ * 왜 내렸나 — 최종 리뷰 프로브 실측: 응급이 **포화의 유일한 원천**이었다(병동 없는 대조군에서
+ * 포화 0). 2.0이면 한 건이 90 × 2.0 = 180 표준강도분이라 하루 상한(`FATIGUE_FREE_MIN` 160)을
+ * **혼자** 넘겨, 응급을 한 건만 받아도 그날로 포화가 시작됐다 — 플레이어에게 남는 선택이
+ * "받거나 안 받거나"뿐이라 대응 창이 없었다. 1.7이면 1건 = 153 < 160(문턱 안 — 공짜),
+ * 2건 = 306 > 160(넘는다). "1건은 공짜, 2건부터 갈린다"로 바뀌어 **몇 건까지 받을지**가
+ * 손잡이가 되고, **응급을 받는 과가 갈려나간다**는 논지는 2건째부터 그대로 성립한다.
+ *
+ * 값의 자리가 카탈로그(dept.ts)가 아니라 여기인 이유는 이 파일 머리말과 같다: 응급은
+ * 도착·판정·수가·소요·강도까지 한 덩어리다.
  */
-export const EMERGENCY_INTENSITY = 2.0
+export const EMERGENCY_INTENSITY = 1.7
 
 /** 끝난 응급 처치 한 건의 **표준강도분**(소요 × 응급 강도) — `patientFlow.examLoadMin`의 응급판이고
  *  같은 이유로 여기 하나다: 처치의 완료도 두 곳에서 관측된다(정상 종료는 `progressEmergencies`,
@@ -155,11 +163,17 @@ export function emergencyKindSeed(w: SimWorld): number {
 }
 
 /** 이 분에 응급이 오는가 — 온다면 그 종류. 도착 판정의 **단일 출처**다(테스트의 전제도 이걸
- *  부른다 — 판정식을 손으로 다시 쓰면 한쪽이 조용히 낡는다). 세계 상태를 안 보고 시각만 보므로
- *  "누가 왔는가"와 "받을 수 있는가"가 섞이지 않는다: 받을 수 없어도 **응급은 온다**. */
+ *  부른다 — 판정식을 손으로 다시 쓰면 한쪽이 조용히 낡는다).
+ *
+ *  세계의 **용량**(병상·의사)은 안 보고 **시각과 오늘의 이벤트**만 본다 — 그래서 "누가 왔는가"와
+ *  "받을 수 있는가"가 섞이지 않는다: 받을 수 없어도 **응급은 온다**(수용 판정은 maybeEmergency).
+ *  대량 응급 날 문턱이 3배가 되는 것은 도착 쪽 사실이라 여기 있는 것이 맞다. */
 export function emergencyArrivalAt(w: SimWorld): EmergencyKind | null {
   if (w.minute >= EMERGENCY_WINDOW_MIN) return null
-  if (seededUnit(emergencyArrivalSeed(w)) >= EMERGENCY_PROB_PER_MIN) return null
+  // 대량 응급(MASS_CASUALTY) 날은 문턱이 3배가 된다 — 이벤트가 없으면 배율이 1이라 평일
+  // 스트림은 이 훅이 붙기 전과 완전히 같다. 시드가 아니라 문턱을 곱하는 이유는 외래와 같다
+  // (patientFlow.maybeArrive): 평일 도착이 이벤트 날의 부분집합으로 남아 "몇 배"가 관측된다.
+  if (seededUnit(emergencyArrivalSeed(w)) >= EMERGENCY_PROB_PER_MIN * emergencyProbMulOf(w)) return null
   return pickEmergencyKind(seededUnit(emergencyKindSeed(w)))
 }
 
@@ -198,9 +212,14 @@ export function stepEmergencies(world: SimWorld): SimWorld {
   return assignEmergencyDoctors(progressEmergencies(arrived))
 }
 
+/** 되돌려 보낸다 — **두 축에 동시에 적힌다.** `stats.emergencyTurnedAway`는 오늘의 내역이라
+ *  아침마다 비워지고, `turnedAwayTotal`은 **판 누적**이라 리셋이 없다(world.ts). 회차가 그날의
+ *  메시지로 끝나지 않고 나중에 의료소송(events.LAWSUIT)의 전제로 돌아오는 자리가 이 카운터다 —
+ *  둘을 한 곳에서 함께 올리는 이유는, 갈라 두면 한쪽만 올리는 경로가 조용히 생기기 때문이다. */
 function turnAway(w: SimWorld, kind: EmergencyKind, reason: TurnAwayReason): SimWorld {
   return {
     ...w,
+    turnedAwayTotal: w.turnedAwayTotal + 1,
     stats: { ...w.stats, emergencyTurnedAway: [...w.stats.emergencyTurnedAway, { kind, reason }] },
   }
 }
@@ -352,8 +371,8 @@ function assignEmergencyDoctors(w: SimWorld): SimWorld {
     // 의사의 PCI는 90분이 아니라 그보다 길고, 그동안 그 과의 외래·다음 응급이 함께 밀린다.
     // 곱하는 순서·정수화가 외래와 같은 것은 이제 성질이 아니라 **같은 함수**다
     // (`needs.workDurationMin` — 갈릴 여지 자체를 없앴다).
-    // ⓘ **곱 순서의 계측점이 이 경로다**: 90분 base는 순서를 뒤집으면 피로 67에서 130 → 129로
-    //   갈리는데, 외래 20분은 같은 피로에서 29로 일치해 못 잡는다. 함수가 하나가 된 지금 그
+    // ⓘ **곱 순서의 계측점이 이 경로다**: 90분 base는 순서를 뒤집으면 피로 67에서 147 → 146으로
+    //   갈리는데, 외래 20분은 같은 피로에서 33으로 일치해 못 잡는다. 함수가 하나가 된 지금 그
     //   계측은 외래 경로까지 함께 잠근다.
     const workMin = workDurationMin(spec.durationMin, doc)
     updates.set(i, {

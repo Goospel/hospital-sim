@@ -1,9 +1,8 @@
 "use client";
 
-import { formatManwon } from "@/game/labels";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import type { Pawn } from "@/sim/pawn";
-import { doctorCountByDept } from "./simHud";
+import { doctorCountByDept, formatManwon } from "./simHud";
 
 /**
  * 채용 패널 — 이 게임에서 플레이어가 내리는 **첫 결정**이 여기서 일어난다(개원 시 의사 0명).
@@ -52,7 +51,7 @@ export default function HirePanel({
         <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-semibold text-on-desk">의사 채용</h2>
           <span className="font-mono text-xs tabular-nums text-on-desk-muted">
-            금고 {treasuryManwon.toLocaleString()}만원
+            금고 {formatManwon(treasuryManwon)}
           </span>
         </div>
 

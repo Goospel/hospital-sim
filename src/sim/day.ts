@@ -156,14 +156,22 @@ export function freshMorning(world: SimWorld): SimWorld {
     delete next.dest
     // 허기도 아침에 0으로 돌아간다 — **저녁을 먹고 출근했다**는 각색이다. 안 되돌리면 허기는
     // 식사 말고 내려갈 길이 없어서(피로와 달리 밤 회복이 없다), 식당 없는 병원의 의사는
-    // 이튿날부터 **첫 진료부터** 영구히 1.15배가 된다. 리셋 자리가 여기인 이유는 피로 회복과
+    // 이튿날부터 **첫 진료부터** 영구히 `STARVED_SLOW`(1.3)배가 된다. 리셋 자리가 여기인 이유는 피로 회복과
     // 같다: 7일차 밤엔 startNextDay가 없어 그쪽에 달면 주의 첫날만 굶은 채로 시작한다.
     if (p.kind === 'DOCTOR') next.hungerMin = 0
     // 방을 못 찾거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
     const spot = p.kind === 'DOCTOR' && p.roomId ? furnitureSpot(world, p.roomId, 'DESK', blocked) : null
     return spot ? { ...next, x: spot.x, y: spot.y } : next
   })
-  return { ...world, minute: 0, pawns, stats: freshStats() }
+  // 어제의 이벤트도 여기서 떨어진다 — **이벤트의 지속은 그날 하루뿐**이다(events.ts). 자리가
+  // 여기인 이유는 stats·허기 리셋과 같다: 7일차 밤엔 startNextDay가 없어서, 클리어를 그쪽에
+  // 달면 **주의 첫날만** 지난주 마지막 날의 이벤트를 물고 시작한다(에러 없이 배율만 틀린다).
+  // **필드 자체를 없앤다** — `event: undefined`로 두면 직렬화·구조 비교에서 "이벤트 없는
+  // 아침"이 두 모양으로 갈린다. 갓 만든 복사본만 건드리므로 입력 세계는 그대로다(위의
+  // `delete next.dest`와 같은 형태 — 이 파일이 이미 쓰는 이디엄이다).
+  const morning: SimWorld = { ...world, minute: 0, pawns, stats: freshStats() }
+  delete morning.event
+  return morning
 }
 
 /** 하루 넘기기 — DAY_END에서만(시계가 아니라 플레이어가 부른다).

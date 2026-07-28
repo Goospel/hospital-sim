@@ -2,7 +2,9 @@
 // 하루가 수익을 벌어들이는 자리라면, 주는 **비용이 청구되는** 자리다: 고정비를 여기서 한 번에
 // 빼고, 금고가 음수로 끝난 주가 연속되면 병원이 닫힌다. 하루만 있으면 돈이 늘기만 해서 게임에
 // 실패가 없다 — 폐업이 있어야 "한 판"이 성립한다.
-import type { SimWorld } from './world'
+// 판이 끝나는 길은 폐업만이 아니다 — 사람(NO_PEOPLE)·시간(CAMPAIGN_END) 종결이 함께 있다.
+// 셋 다 이 파일의 `endingOf` 한 곳에서만 판정된다(정산의 단일 출처 계승).
+import type { EndingKind, SimWorld } from './world'
 import { freshMorning } from './day'
 import { doctorDeptOf, type Pawn } from './pawn'
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from './dept'
@@ -11,6 +13,10 @@ import { RESIGN_SATURATED_DAYS } from '../game/doctor'
 
 /** 금고 음수가 이만큼 **연속**되면 폐업(기존 게임 규칙 계승). */
 export const INSOLVENCY_WEEKS_TO_CLOSE = 2
+
+/** 한 판의 길이 — 이 주차의 결산이 끝나면 무조건 에필로그다.
+ *  상한이 없으면 흑자 빌드(미용 단독 등)가 무한히 굴러가 판에 결말이 없다. */
+export const CAMPAIGN_WEEKS = 12
 
 /** 결산 표의 한 줄 — 그 과가 이번 주에 **번 돈과 나간 돈**.
  *  `netManwon`을 들고 있는 이유는 이게 표시용 스냅샷이라서다(WeekSummary 전체가 그렇다) —
@@ -96,7 +102,10 @@ function weekDeptTable(w: SimWorld): Partial<Record<SimDeptKey, WeekDeptLine>> {
   return table
 }
 
-/** 주간 결산 — 고정비 차감·insolvencyStreak 갱신·연속 문턱을 채우면 CLOSED.
+/** 주간 결산 — 고정비 차감·insolvencyStreak 갱신·**판 종결 판정**(endingOf 3종).
+ *  종결이면 `phase: 'CLOSED'` + `ending`이 함께 실린다: 돈(INSOLVENCY)·사람(NO_PEOPLE)·
+ *  시간(CAMPAIGN_END). 판정이 여기 있는 이유는 셋 다 주간 축의 값(고정비 결과·주말 사직 명단·
+ *  주차)을 읽기 때문이다 — 다른 곳에서 또 판정하면 끝난 판이 두 번 끝난다.
  *  수익은 진료가 끝난 그 순간 이미 금고에 들어와 있다(settleDay) — 여기서 또 더하면 이중 지급이다.
  *  ⚠️ 이중 정산 가드: 두 번 부르면 고정비가 두 번 빠져 멀쩡한 병원이 장부로만 망한다.
  *  phase는 결산 화면을 유지해야 해서 못 쓰므로(world.weekSettled 주석) 표시로 막는다. */
@@ -106,14 +115,41 @@ export function settleWeek(w: SimWorld): SimWorld {
   const treasuryManwon = w.treasuryManwon - weekSummary(w).fixedCostManwon
   // 0은 음수가 아니다 — 딱 고정비만큼 벌어 금고를 비운 주는 살아남는다.
   const insolvencyStreak = treasuryManwon < 0 ? w.insolvencyStreak + 1 : 0
+  const ending = endingOf(w, insolvencyStreak)
   return {
     ...w,
     treasuryManwon,
     insolvencyStreak,
     weekSettled: true,
-    // `>=`인 이유: 등호는 문턱을 이미 넘긴 세계(streak 2에서 또 적자)를 폐업으로 안 보고 그냥 연다.
-    phase: insolvencyStreak >= INSOLVENCY_WEEKS_TO_CLOSE ? 'CLOSED' : 'WEEK_END',
+    phase: ending ? 'CLOSED' : 'WEEK_END',
+    ending,
   }
+}
+
+/**
+ * 이 결산으로 판이 끝나는가 — 우선순위: 돈(INSOLVENCY) > 사람(NO_PEOPLE) > 시간(CAMPAIGN_END).
+ * 세 조건은 동시에 참일 수 있어(12주차에 전원 사직하며 폐업) 순서가 곧 결말을 고른다.
+ * 망해서 끝난 판을 "12주 완주"로 부르면 그 판이 하려던 말이 뒤집힌다.
+ *
+ * ⚠️ **NO_PEOPLE은 사직을 선반영한다** — 집행은 `startNextWeek`이지만 명단은 여기서도
+ * `resigningSimDoctors`로 읽는다(통지=집행 단일 출처). 선반영하지 않으면 "마지막 의사가 떠난다"는
+ * 통지를 읽고 [다음 주]를 눌러야 비로소 판이 끝나, 마지막 통지가 뜬 화면과 결말이 한 박자 어긋난다.
+ *
+ * ⓘ 풀까지 보는 이유: 의사가 0명이어도 전국에 사람이 남았으면 **다시 뽑으면 된다**. 사람이
+ *   바닥난 것과 지금 비어 있는 것은 다르다 — 후자는 판이 아직 플레이어의 결정을 기다린다.
+ *   그리고 의사가 0명인 세계는 고정비도 0이라 금고가 영영 안 줄어 폐업이 도달 불가능해진다:
+ *   NO_PEOPLE이 없으면 그 세계는 아무 결정도 없이 무한히 굴러간다(좀비).
+ */
+function endingOf(w: SimWorld, insolvencyStreak: number): EndingKind | undefined {
+  // `>=`인 이유: 등호는 문턱을 이미 넘긴 세계(streak 2에서 또 적자)를 폐업으로 안 보고 그냥 연다.
+  if (insolvencyStreak >= INSOLVENCY_WEEKS_TO_CLOSE) return 'INSOLVENCY'
+  const doctors = w.pawns.filter(p => p.kind === 'DOCTOR').length
+  const leaving = resigningSimDoctors(w).length
+  const poolLeft = Object.values(w.hirePool).reduce((sum, n) => sum + n, 0)
+  if (doctors - leaving === 0 && poolLeft === 0) return 'NO_PEOPLE'
+  // `>=`: 상한 주차의 결산이 마지막이다(`>`면 12주차를 넘겨 13주차를 한 주 더 살게 된다).
+  if (w.week >= CAMPAIGN_WEEKS) return 'CAMPAIGN_END'
+  return undefined
 }
 
 /**
