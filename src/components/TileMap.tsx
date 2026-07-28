@@ -15,12 +15,17 @@ import { computeRegions, type Region } from "@/sim/regions";
 import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, PatientSprite } from "./PixelSprite";
 import {
   busyDoctorIds,
+  clampCamera,
   doctorActivityMark,
   doctorRoomlessMark,
   fatigueTone,
   FATIGUE_COLOR,
+  pannedCamera,
   roomLabel,
   tileFromPoint,
+  zoomedCamera,
+  type Camera,
+  type Size,
 } from "./simHud";
 
 /**
@@ -47,27 +52,44 @@ import {
  */
 export const TILE = 16;
 
-/** 맵 전체가 부모 안에 딱 들어가는 배율. 종횡비는 유지하고 짧은 쪽에 맞춘다(잘리지 않는다). */
-function useFitScale(ref: RefObject<HTMLElement | null>): number {
-  const [scale, setScale] = useState(1);
+/** 부지 원본 크기(px) — 카메라 산술이 받는 `base`. 화면에 보이는 크기는 여기 × fit × zoom이다. */
+const BASE: Size = { w: GRID_W * TILE, h: GRID_H * TILE };
+
+/**
+ * 뷰포트 측정(fit) + 그 위에 얹힌 카메라(줌·팬).
+ *
+ * `fit`은 옛 `useFitScale`이 주던 값 그대로다 — 부지 전체가 뷰포트에 딱 들어가는 배율(짧은 쪽 기준).
+ * 달라진 건 그것이 **최종 배율이 아니라 zoom 1의 기준선**이 됐다는 것뿐이다(카메라 산술은 simHud).
+ */
+function useCamera(ref: RefObject<HTMLElement | null>) {
+  const [fit, setFit] = useState(1);
+  const [view, setView] = useState<Size>({ w: 0, h: 0 });
+  const [cam, setCam] = useState<Camera>({ zoom: 1, x: 0, y: 0 });
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const fit = (width: number, height: number) => {
+    const measure = (width: number, height: number) => {
       if (width === 0 || height === 0) return; // 아직 배치 전 — 0으로 접으면 맵이 사라진다
-      setScale(Math.min(width / (GRID_W * TILE), height / (GRID_H * TILE)));
+      const f = Math.min(width / BASE.w, height / BASE.h);
+      setFit(f);
+      setView({ w: width, h: height });
+      /* 리사이즈: **zoom은 유지하고 다시 클램프만** 한다 — 창을 줄였다고 플레이어가 당겨 둔
+         배율까지 되돌리면 조작이 사라진다.
+         ponytail: 보던 **중심 유지**는 안 한다 — 창 크기를 바꾸면 화면이 조금 밀린다. 필요해지면
+         리사이즈 직전 중심을 앵커로 zoomedCamera(factor 1)를 한 번 태우면 된다. */
+      setCam((c) => clampCamera(c, { w: width, h: height }, { w: BASE.w * f * c.zoom, h: BASE.h * f * c.zoom }));
     };
     /* ⚠️ **마운트 시 한 번은 직접 잰다** — ResizeObserver의 첫 콜백에 기대면 안 된다.
        그 콜백은 다음 *렌더링 스텝*에 오므로 ① 첫 프레임이 배율 1(768×512)로 그려졌다가 튀고,
        ② 페이지가 프레임을 그리지 않는 동안(숨은 탭·비표시 창) 콜백 자체가 오지 않아 맵이
        작은 채로 남는다 — 실측으로 잡은 결함이다(옵저버만 달았을 때 300ms 동안 콜백 0회).
        getBoundingClientRect 계열은 레이아웃을 즉시 계산하므로 컴포지팅과 무관하게 값을 준다. */
-    fit(el.clientWidth, el.clientHeight);
-    const ro = new ResizeObserver(([entry]) => fit(entry.contentRect.width, entry.contentRect.height));
+    measure(el.clientWidth, el.clientHeight);
+    const ro = new ResizeObserver(([entry]) => measure(entry.contentRect.width, entry.contentRect.height));
     ro.observe(el);
     return () => ro.disconnect();
   }, [ref]);
-  return scale;
+  return { cam, setCam, fit, view };
 }
 
 /**
@@ -141,6 +163,9 @@ export interface TileMapProps {
   preview?: BuildPreview | null;
   /** 폰 이동 transition 길이(ms). 배속이 오르면 짧아진다 — 0이면 전환 없이 즉시(일시정지). */
   stepMs: number;
+  /** 지금 주버튼 드래그가 **건설**인가 — 아니면 그 드래그는 카메라 팬이다(도구를 안 골랐을 때가 그 상태).
+   *  판정은 SimGame이 소유한다(`ready`): 여기서 다시 세면 도구 팔레트와 맵의 "지을 수 있다"가 갈린다. */
+  buildReady?: boolean;
   onTileDown?: (t: { x: number; y: number }) => void;
   onTileMove?: (t: { x: number; y: number }) => void;
   /** 손을 뗐다 — **확정**. 여기서만 건설이 일어난다. */
@@ -159,13 +184,41 @@ export default function TileMap({
   world,
   preview,
   stepMs,
+  buildReady = false,
   onTileDown,
   onTileMove,
   onTileUp,
   onTileCancel,
 }: TileMapProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const scale = useFitScale(hostRef);
+  const { cam, setCam, fit, view } = useCamera(hostRef);
+  const scale = fit * cam.zoom;
+
+  /* 팬 중인 포인터와 직전 위치 — **상태가 아니라 ref**다: 드래그 한 프레임마다 리렌더를 유발하면
+     수백 개 타일 div가 딸려 오고, 무엇보다 다음 델타는 *직전 이벤트*에서 오지 렌더에서 오지 않는다. */
+  const panRef = useRef<{ id: number; x: number; y: number } | null>(null);
+  const [panning, setPanning] = useState(false);
+
+  /* 휠 줌 — **네이티브 리스너 + passive:false**여야 한다. React의 onWheel은 패시브로 붙어
+     preventDefault가 무시되고, 그러면 확대하려던 휠이 페이지를 스크롤한다. */
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      // 지수식이라 트랙패드의 잔 델타와 휠의 큰 델타가 같은 비율 감각으로 붙는다(선형이면
+      // 트랙패드에서 거의 안 움직이거나 휠 한 칸에 화면이 튄다).
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      setCam((c) => zoomedCamera(c, { x: e.clientX - r.left, y: e.clientY - r.top }, factor, { w: r.width, h: r.height }, BASE, fit));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [fit, setCam]);
+
+  /** 줌 버튼 한 번 — 앵커는 화면 **중앙**이다(커서가 없는 조작이라 중앙이 유일하게 뜻을 갖는다). */
+  const zoomBy = (factor: number) =>
+    setCam((c) => zoomedCamera(c, { x: view.w / 2, y: view.h / 2 }, factor, view, BASE, fit));
 
   // 진료 중인 의사 — 환자의 doctorId가 "바쁨"의 단일 출처다(patientFlow와 같은 규칙).
   // 집합을 만드는 식 자체도 simHud가 든다: 인사 패널이 태업 판정에 같은 집합을 쓰므로
@@ -287,43 +340,92 @@ export default function TileMap({
   }, [walls, doors, designations]);
 
   return (
-    /* 부모가 준 자리를 꽉 채우고 그 안에서 맵을 **통째로 확대**한다 — 림월드처럼 부지가 화면이 된다.
-       배율은 CSS transform 하나로 끝난다: 타일마다 박힌 px를 배율로 곱하면 반올림 오차가 칸마다
-       쌓여 격자가 어긋나고, 무엇보다 폰 이동 transition이 매 배율마다 다시 계산된다. */
-    <div ref={hostRef} className="grid h-full w-full place-items-center overflow-hidden">
-      {/* 확대된 **차지 크기**를 갖는 껍데기 — transform은 레이아웃 크기를 바꾸지 않아
-          (부모가 원본 768×512로 안다) 이 한 겹이 없으면 가운데 정렬이 어긋난다. */}
-      <div style={{ width: GRID_W * TILE * scale, height: GRID_H * TILE * scale }}>
+    /* 부모가 준 자리를 꽉 채우고 그 안에서 맵을 **카메라로 밀고 당긴다** — 림월드처럼 부지가 화면이 된다.
+       위치·배율은 CSS transform 하나로 끝난다: 타일마다 박힌 px를 배율로 곱하면 반올림 오차가 칸마다
+       쌓여 격자가 어긋나고, 무엇보다 폰 이동 transition이 매 배율마다 다시 계산된다.
+       ⚠️ transform에 transition을 걸지 않는다 — 팬 드래그가 손보다 늦게 따라오면 조작이 미끄럽지 않다.
+
+       옛 판에 있던 **중앙 정렬 껍데기 한 겹이 사라졌다**: 중앙값은 이제 클램프가 돌려준다
+       (콘텐츠 < 뷰포트면 중앙 — simHud.clampCamera), 그래서 zoom 1의 화면은 옛 판과 같다. */
+    <div
+      ref={hostRef}
+      className="relative h-full w-full overflow-hidden"
+      // 우클릭 팬과 브라우저 메뉴가 충돌한다 — 메뉴가 뜨면 포인터가 그 자리에서 끊긴다.
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <div
-        className="relative touch-none select-none border border-frame"
+        className={`absolute left-0 top-0 touch-none select-none border border-frame ${panning ? "cursor-grabbing" : ""}`}
         style={{
           width: GRID_W * TILE,
           height: GRID_H * TILE,
-          transform: `scale(${scale})`,
+          transform: `translate(${cam.x}px, ${cam.y}px) scale(${scale})`,
           transformOrigin: "top left",
           backgroundColor: OUTSIDE_FLOOR,
           backgroundImage: `repeating-linear-gradient(90deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px), repeating-linear-gradient(180deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px)`,
         }}
         role="img"
         aria-label={`병원 부지 ${GRID_W}×${GRID_H} 타일 — 방 ${roomCount}개, 인원 ${world.pawns.length}명`}
+        /* ⚠️ **포인터 → 타일 산술은 카메라가 생겨도 무변이다** — `tileOf`가 화면에 그려진 rect를
+           읽으므로(simHud.tileFromPoint) 맵이 밀리든 당겨지든 그 rect가 이미 답을 담고 있다.
+           그게 T-099 계열을 산술에서 닫아 둔 값이고, 이번 변경이 그 값을 그대로 회수한다. */
         onPointerDown={(e) => {
-          // 순서가 의미를 갖는다 — 캡처가 먼저면 setPointerCapture가 던질 때(이미 끝난
-          // 포인터 등 NotFoundError) 드래그가 아예 시작되지 않는다. 시작을 먼저 알리면
-          // 최악의 경우도 "맵 밖으로 나가면 놓친다"로 그친다.
-          const t = tileOf(e);
-          onTileDown?.(t);
+          /* 버튼이 조작을 가른다: **주버튼 + 지을 수 있음**만 건설이고 나머지는 전부 팬이다.
+             중·우클릭이 늘 팬인 것은 도구를 든 채로도 화면을 옮겨야 하기 때문이고, 이 갈래가
+             옛 버그도 함께 닫는다 — 버튼 구분이 없어 **우클릭이 건설 드래그를 시작**했다. */
+          if (e.button === 0 && buildReady) {
+            // 순서가 의미를 갖는다 — 캡처가 먼저면 setPointerCapture가 던질 때(이미 끝난
+            // 포인터 등 NotFoundError) 드래그가 아예 시작되지 않는다. 시작을 먼저 알리면
+            // 최악의 경우도 "맵 밖으로 나가면 놓친다"로 그친다.
+            const t = tileOf(e);
+            onTileDown?.(t);
+            try {
+              e.currentTarget.setPointerCapture(e.pointerId); // 드래그가 맵 밖으로 나가도 안 끊기게
+            } catch {
+              /* 캡처 실패는 연출 손해일 뿐이라 삼킨다 */
+            }
+            return;
+          }
+          // 주버튼인데 못 짓는 상태면 **팬 전에 한 번 알린다** — 도구를 반쯤 고른 상태(용도만
+          // 고르고 방 종류를 안 고름)의 안내 토스트가 이 호출에 걸려 있다. 삼키면 부지를 눌러도
+          // 아무 말이 없어 판이 죽은 것으로 보인다(SimGame onTileDown).
+          if (e.button === 0) onTileDown?.(tileOf(e));
+          e.preventDefault(); // 중클릭 자동 스크롤(십자 커서)이 뜨면 드래그가 통째로 가로채인다
+          panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+          setPanning(true);
           try {
-            e.currentTarget.setPointerCapture(e.pointerId); // 드래그가 맵 밖으로 나가도 안 끊기게
+            e.currentTarget.setPointerCapture(e.pointerId);
           } catch {
-            /* 캡처 실패는 연출 손해일 뿐이라 삼킨다 */
+            /* 위와 같다 — 캡처 실패는 "맵 밖에서 놓치면 끝"으로 그친다 */
           }
         }}
-        onPointerMove={(e) => onTileMove?.(tileOf(e))}
-        onPointerUp={(e) => onTileUp?.(tileOf(e))}
+        onPointerMove={(e) => {
+          const p = panRef.current;
+          if (p) {
+            setCam((c) => pannedCamera(c, e.clientX - p.x, e.clientY - p.y, view, BASE, fit));
+            panRef.current = { id: p.id, x: e.clientX, y: e.clientY };
+            return;
+          }
+          onTileMove?.(tileOf(e));
+        }}
+        onPointerUp={(e) => {
+          if (panRef.current) {
+            panRef.current = null;
+            setPanning(false);
+            return; // 팬은 아무것도 짓지 않는다
+          }
+          onTileUp?.(tileOf(e));
+        }}
         // 취소는 **확정과 다른 경로**여야 한다. 한때 이 자리에서 onTileUp을 불렀는데,
         // 그러면 브라우저가 드래그를 가로챌 때(스크롤 제스처·포인터 강제 해제 등)
         // 손을 떼지도 않은 사각형이 그대로 지어진다 — 철거 수단이 없어 비가역이다.
-        onPointerCancel={() => onTileCancel?.()}
+        onPointerCancel={() => {
+          if (panRef.current) {
+            panRef.current = null;
+            setPanning(false);
+            return;
+          }
+          onTileCancel?.();
+        }}
       >
         {/* 지형(벽·문·영역 바닥·라벨) — 위 useMemo가 만든다. */}
         {terrain}
@@ -439,6 +541,27 @@ export default function TileMap({
           </span>
         )}
       </div>
+
+      {/* 줌 버튼 — **터치·트랙패드 사용자의 유일한 줌 수단**이라 필수다(휠이 없는 손이 있다).
+          ⌂는 zoom 1 복귀: 배수의 역수를 한 번 태우면 클램프가 중앙 정렬까지 해 준다.
+          ponytail: 핀치 줌은 안 넣었다 — 포인터 두 개를 추적하는 상태가 통째로 필요하고 이 버튼이
+          같은 일을 한다. 터치 사용자가 확대를 자주 쓴다는 신호가 오면 그때 붙인다. */}
+      <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1">
+        {[
+          { label: "+", title: "확대", run: () => zoomBy(1.4) },
+          { label: "⌂", title: "부지 전체 보기", run: () => setCam((c) => zoomedCamera(c, { x: view.w / 2, y: view.h / 2 }, 1 / c.zoom, view, BASE, fit)) },
+          { label: "−", title: "축소", run: () => zoomBy(1 / 1.4) },
+        ].map((b) => (
+          <button
+            key={b.label}
+            type="button"
+            title={b.title}
+            onClick={b.run}
+            className="h-7 w-7 border border-frame bg-desk-2/80 font-mono text-sm text-on-desk-muted backdrop-blur-sm transition-colors hover:border-on-desk-muted hover:text-on-desk"
+          >
+            {b.label}
+          </button>
+        ))}
       </div>
     </div>
   );

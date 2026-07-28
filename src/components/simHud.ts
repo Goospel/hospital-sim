@@ -347,6 +347,82 @@ export function tileFromPoint(
   }
 }
 
+/*
+  ── 부지 카메라 ─────────────────────────────────────────────────────────────
+  부지를 밀고 당기는 산술. 옛 판은 부지 전체가 화면에 딱 맞는 배율 하나뿐이라(useFitScale)
+  **가려진 타일을 피할 방법이 없었고**, 그래서 HUD를 맵 위에 겹치지 못했다(SimGame main 주석).
+  카메라가 생기면 가려진 자리를 팬으로 끌어내 지을 수 있으므로 그 제약이 사라진다.
+
+  DOM 없이 순수 함수인 이유는 이 파일 머리말 그대로다 — 클램프와 앵커 산술은 화면 계약인데
+  이벤트 핸들러 안에 있으면 그것을 겨눌 수 있는 테스트가 하나도 없다(tileFromPoint와 같은 자리).
+*/
+
+/** 뷰포트·부지의 크기 한 쌍(px). */
+export interface Size {
+  w: number
+  h: number
+}
+
+export interface Camera {
+  /** **fit 배율 대비 배수** — 1이면 부지 전체가 뷰포트에 딱 맞는다(옛 useFitScale이 주던 그 화면).
+   *  fit 자체를 곱해 두지 않는 것이 계약이다: 창 크기가 바뀌면 fit은 갈리지만 "몇 배로 당겨 봤는가"는
+   *  플레이어의 의도라 유지돼야 한다. */
+  zoom: number
+  /** 뷰포트 좌상단 기준 **맵 좌상단의 화면 px** — 왼쪽·위로 밀면 음수다. */
+  x: number
+  y: number
+}
+
+/** 최대 줌 — 타일 하나가 화면을 채우면 부지의 맥락이 사라져 오히려 짓기 어렵다. */
+export const ZOOM_MAX = 3
+
+/** 그 배율에서 화면에 그려지는 맵 크기 — 클램프의 경계는 전부 여기서 나온다. */
+const contentOf = (base: Size, scale: number): Size => ({ w: base.w * scale, h: base.h * scale })
+
+/** 축 하나의 클램프. **콘텐츠가 뷰포트보다 작으면 중앙값**(팬을 무시한다) — zoom 1에서는 짧은 쪽에
+ *  늘 여백이 남는데, 그 축을 밀 수 있으면 부지가 화면 밖으로 흘러가고 절반이 빈 배경이 된다.
+ *  크면 [view − content, 0]으로 자른다: 맵 가장자리가 뷰포트 안쪽으로 들어오면 그쪽에 빈틈이 생긴다. */
+function clampAxis(pan: number, view: number, content: number): number {
+  if (content <= view) return (view - content) / 2
+  return Math.max(view - content, Math.min(0, pan))
+}
+
+export function clampCamera(cam: Camera, view: Size, content: Size): Camera {
+  return { zoom: cam.zoom, x: clampAxis(cam.x, view.w, content.w), y: clampAxis(cam.y, view.h, content.h) }
+}
+
+/**
+ * 앵커(뷰포트 px) 아래의 맵 지점이 **줌 전후로 같은 화면 위치에 남도록** 팬을 다시 잡는다.
+ *
+ * 이 불변식이 줌의 전부다 — 없으면 휠을 굴릴 때마다 보던 곳이 화면 밖으로 밀려나 커서로
+ * 다시 찾아가야 한다. 식은 배율 변화 k = s′/s에 대해 `x′ = ax − (ax − x)·k` 하나뿐이다.
+ *
+ * ⚠️ 기준이 **저장된 팬이 아니라 클램프된 유효 팬**인 것이 요점이다: zoom 1에서는 화면이 언제나
+ * 중앙 정렬인데 저장값은 그와 다를 수 있어(직전 줌아웃이 남긴 값), 그대로 쓰면 첫 줌인이 튄다.
+ */
+export function zoomedCamera(
+  cam: Camera,
+  anchor: { x: number; y: number },
+  factor: number,
+  view: Size,
+  base: Size,
+  fit: number,
+): Camera {
+  const zoom = Math.max(1, Math.min(ZOOM_MAX, cam.zoom * factor))
+  const k = zoom / cam.zoom
+  const eff = clampCamera(cam, view, contentOf(base, fit * cam.zoom))
+  return clampCamera(
+    { zoom, x: anchor.x - (anchor.x - eff.x) * k, y: anchor.y - (anchor.y - eff.y) * k },
+    view,
+    contentOf(base, fit * zoom),
+  )
+}
+
+/** 드래그 델타를 그대로 더하고 가장자리에서 자른다. */
+export function pannedCamera(cam: Camera, dx: number, dy: number, view: Size, base: Size, fit: number): Camera {
+  return clampCamera({ ...cam, x: cam.x + dx, y: cam.y + dy }, view, contentOf(base, fit * cam.zoom))
+}
+
 /** 드래그 사각형이 낳는 타일 — 가구·철거는 **채움**, 벽은 **테두리**다(1줄이면 곧 직선 벽). */
 export function rectTiles(a: Pt, b: Pt, mode: 'FILL' | 'BORDER'): Pt[] {
   const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x)
