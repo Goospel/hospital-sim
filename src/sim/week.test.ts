@@ -408,6 +408,28 @@ describe('판 종결 — 엔딩 3종', () => {
     expect(settled.ending).toBe('NO_PEOPLE')
   })
 
+  it('ⓘ 돈도 사람도 동시에 바닥나면 INSOLVENCY — 돈이 사람을 이긴다', () => {
+    // 우선순위의 **맨 위 두 칸**. ⓓ는 돈 > 시간을, ⓖ는 사람 > 시간을 잠그지만 **돈 > 사람**은
+    // 어느 쪽도 안 잰다 — NO_PEOPLE 검사를 INSOLVENCY 앞으로 옮기는 변조가 1056건 전부를
+    // 통과했다(리뷰 실측). 그러면 두 주 연속 적자로 망한 병원이 "사람이 없어서 끝났다"로
+    // 보고되고, 플레이어는 자기가 어디서 졌는지를 틀리게 배운다.
+    //
+    // 의사 0이라 고정비도 0이다 — 그래서 적자는 **이미 음수인 금고**로 만든다(고정비로
+    // 밀어 넣으면 의사가 필요해지고, 그러면 NO_PEOPLE 조건이 성립하지 않아 두 조건이
+    // 동시에 참인 세계를 못 만든다).
+    const before = weekEndWorld({
+      pawns: [], hirePool: emptyPool(), treasuryManwon: -100,
+      insolvencyStreak: INSOLVENCY_WEEKS_TO_CLOSE - 1, week: 3,
+    })
+    const settled = settleWeek(before)
+    // 전제 — 두 조건이 **둘 다** 참이라 우선순위만이 답을 가른다.
+    expect(settled.insolvencyStreak).toBe(INSOLVENCY_WEEKS_TO_CLOSE)
+    expect(settled.pawns.filter(p => p.kind === 'DOCTOR')).toHaveLength(0)
+    expect(Object.values(settled.hirePool).reduce((s, n) => s + n, 0)).toBe(0)
+    expect(settled.phase).toBe('CLOSED')
+    expect(settled.ending).toBe('INSOLVENCY')
+  })
+
   it('ⓗ 전국 풀이 비어도 우리 병원에 의사가 있으면 끝나지 않는다', () => {
     // NO_PEOPLE의 **왼쪽 항**을 재는 유일한 자리. ⓐⓑⓖ는 전부 풀 0 **그리고** 의사 0이라
     // 왼쪽 항을 통째로 지워도(= 풀만 보고 판정) 전부 통과한다.

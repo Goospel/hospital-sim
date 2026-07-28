@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse, type NextRequest } from 'next/server'
+import { allowedOrigin } from '@/lib/corsOrigin'
 import { EVENT_KINDS } from '@/sim/events'
 
 /**
@@ -35,21 +36,6 @@ const SDK_TIMEOUT_MS = 9_000
  *  그게 이 값이 여유로워야 하는 이유이고, 아래 `max_tokens` 강등이 남은 절반을 막는다. */
 const MAX_TOKENS = 4096
 
-/**
- * 브라우저에서 이 프록시를 부를 수 있는 오리진.
- *
- * ⚠️ **이건 CORS이지 인증이 아니다.** Origin 헤더는 브라우저가 붙이는 값이라 `curl -H Origin:`
- * 한 줄로 위조된다 — 아래 403은 *브라우저에 심어진 남의 페이지*가 이 프록시를 지갑처럼 쓰는
- * 것을 막을 뿐, 작정한 스크립트는 못 막는다. **최종 방어선은 코드 밖에 있다**(사용자 몫):
- *   ① Vercel Firewall 의 rate-limit 룰(`/api/storyteller`)  ② Anthropic 콘솔의 지출 상한.
- * 둘 다 대시보드에서 1회 설정이고, 그게 서지 않는 한 이 라우트는 무인증 공개 지출 경로다.
- *
- * `http://localhost:3000`이 목록에 남아 있는 이유: dev 서버가 다른 포트로 뜨면 아래 같은-오리진
- * 규칙이 덮지만, **Pages 빌드를 로컬에서 띄워 Vercel 프록시로 쏘는 대조 실험**은 오리진이
- * 갈리므로 이 줄이 없으면 못 한다.
- */
-const ALLOWED_ORIGINS = new Set(['https://goospel.github.io', 'http://localhost:3000'])
-
 const TASKS = ['director', 'letter', 'epilogue'] as const
 type StorytellerTask = (typeof TASKS)[number]
 
@@ -58,19 +44,15 @@ function isTask(value: unknown): value is StorytellerTask {
 }
 
 /**
- * 이 요청을 받아 줄 오리진인가 — 아니면 `null`.
+ * 이 요청을 받아 줄 오리진인가 — 판정은 `lib/corsOrigin`(순수 함수·테스트 있음)이 하고
+ * 여기서는 헤더 두 개를 꺼내 넘기기만 한다. 판정이 이 파일에 있으면 SDK를 임포트하는 모듈이라
+ * 테스트에서 부르기 어렵고, 실제로 **이 게임의 유일한 지출 관문이 무테스트로** 남아 있었다.
  *
- * 목록(위)에 더해 **같은 오리진**을 반드시 허용해야 한다: Vercel 배포본은 게임과 프록시가 한
- * 도메인에 있어 브라우저가 `Origin: https://<그 배포>`를 붙여 보낸다. 목록만 보면 **자기 자신을
- * 403으로 막는** 배포가 되고, 그건 주 배포 경로가 통째로 죽는 것이다.
+ * ⚠️ 이건 CORS이지 인증이 아니다(위조 가능). 최종 방어선은 코드 밖 대시보드 둘(사용자 몫):
+ *   ① Vercel Firewall 의 rate-limit 룰(`/api/storyteller`)  ② Anthropic 콘솔의 지출 상한.
+ * 그게 서지 않는 한 이 라우트는 무인증 공개 지출 경로다.
  */
-function allowedOrigin(req: NextRequest): string | null {
-  const origin = req.headers.get('origin')
-  if (origin === null) return null // 브라우저는 POST에 항상 붙인다 — 없으면 브라우저가 아니다
-  if (ALLOWED_ORIGINS.has(origin)) return origin
-  const host = req.headers.get('host')
-  return host !== null && (origin === `https://${host}` || origin === `http://${host}`) ? origin : null
-}
+const originOf = (req: NextRequest) => allowedOrigin(req.headers.get('origin'), req.headers.get('host'))
 
 const cors = (origin: string | null) => ({
   'Access-Control-Allow-Origin': origin ?? 'https://goospel.github.io',
@@ -134,11 +116,11 @@ const SYSTEM_PROMPTS: Record<StorytellerTask, string> = {
 }
 
 export async function OPTIONS(req: NextRequest) {
-  return new Response(null, { status: 204, headers: cors(allowedOrigin(req)) })
+  return new Response(null, { status: 204, headers: cors(originOf(req)) })
 }
 
 export async function POST(req: NextRequest) {
-  const origin = allowedOrigin(req)
+  const origin = originOf(req)
   const headers = cors(origin)
 
   // 프리플라이트만으로는 막을 수 없는 것을 여기서 막는다: 단순 요청(`content-type` 없이 보낸

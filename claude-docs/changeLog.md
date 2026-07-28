@@ -21,7 +21,7 @@ tags:
 
 **함정 3건 등재** — [T-095](troubleshooting/T-095.md) 숨은 pane의 언 시계를 뚫는 프로브(세계를 콘솔로 세팅하면 검증이 사라지므로 **프레임 공급원만** 갈아 끼운다 — 게임 규칙·tick·시드 무접촉이 유효 범위 선언이다) · [T-096](troubleshooting/T-096.md) ESLint `no-restricted-imports`의 `group`은 gitignore 문법이라 허용 목록이 **표현 자체가 불가능**(부모 제외 후 `!`로 자식 부활 불가 — 5개 변형 전수 실측 후 금지 목록으로 전환) · [T-097](troubleshooting/T-097.md) SDK 기본 `maxRetries: 2`가 9초 타임아웃을 **28.45초**로 늘려, 클라이언트가 10초에 끊은 뒤 18초간 돈만 나갔다.
 
-**게이트** — **1056 vitest**(37파일)·tsc 0·eslint 0 error·`npm run build` 성공(`ƒ /api/storyteller` 포함) + `PAGES_BASE_PATH` 정적 export 성공(API 라우트 제외)·**`src/game` 0줄**(`/classic` 라우트 신설로 `src/app`은 변하지만 본체는 불변이 계약)·dev 서버 3라우트 실측(콘솔 0)·`npm run pdf` 2종 재생성. 설계 [플랜](../docs/superpowers/plans/2026-07-28-rimworld-week2-storyteller-submission.md).
+**게이트** — **1062 vitest**(38파일)·tsc 0·eslint 0 error·`npm run build` 성공(`ƒ /api/storyteller` 포함) + `PAGES_BASE_PATH` 정적 export 성공(API 라우트 제외)·**`src/game` 로직 0줄**(주석 1줄 — `daysim.callSeed`의 salt 레지스트리에 43·47 등재. `/classic` 라우트 신설로 `src/app`은 변하지만 본체는 불변이 계약)·dev 서버 3라우트 실측(콘솔 0)·`npm run pdf` 2종 재생성. 설계 [플랜](../docs/superpowers/plans/2026-07-28-rimworld-week2-storyteller-submission.md).
 
 **사용자 몫(코드 밖)** — ① Vercel 환경변수 `ANTHROPIC_API_KEY` 등록 ② **Vercel Firewall rate-limit 룰 + Anthropic 콘솔 지출 상한** — CORS는 인증이 아니라(`curl -H Origin:` 한 줄로 위조된다) 그 둘이 서기 전까지 프록시는 무인증 공개 지출 경로다 ③ 스크린샷 7장 재캡처(본편 기준) ④ 플레이 영상 촬영·업로드. 키 등록 전까지 배포본은 폴백 문장으로 완주한다(의도).
 

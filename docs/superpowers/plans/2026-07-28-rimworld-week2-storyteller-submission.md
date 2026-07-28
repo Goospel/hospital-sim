@@ -108,6 +108,11 @@ autoFurniture가 침대를 반드시 놓으므로 실질 등가다(Task 3 리뷰
   task 3종: `director`(이벤트 선택+연출문 — **structured output**으로 JSON 보장) ·
   `letter`(사직 편지) · `epilogue`(결말문).
 - 모델 **`claude-opus-5`**(기본 · `LLM_MODEL` env로 오버라이드 가능), `max_tokens: 1024`,
+  > ⚠️ **Task 5 리뷰 후기(2026-07-28)**: 구현은 **4096**이다 — `claude-opus-5`는 `thinking`을
+  > 생략하면 adaptive 사고가 켜지고(Opus 4.8에서 바뀐 기본값) `max_tokens`가 **사고 + 본문을
+  > 합산해서** 캡한다. 1024면 사고가 먼저 먹고 산문이 잘리는데, 잘린 director는 JSON이 깨져
+  > 저절로 폐기되지만 잘린 편지·결말문은 "빈 문자열이 아닌 반 토막"이라 그대로 화면에 선다.
+  > 그래서 상한을 올리고 `stop_reason === 'max_tokens'`도 refusal과 같은 502 강등에 넣었다.
   `output_config: { effort: 'low' }`(짧은 연출문 — 지연 최소화). `stop_reason === 'refusal'`은
   실패로 취급 → 앱 폴백 강등(서버측 fallbacks 베타는 안 쓴다 — 게임 자체 폴백이 이미 최종 안전망이라
   베타 의존을 늘릴 이유가 없다). SDK 타임아웃 9,000ms(TS는 **밀리초**).
