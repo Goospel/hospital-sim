@@ -4,10 +4,10 @@ import {
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
-  toolCostText, traitBadges, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
+  toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
 } from './simHud'
 import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
-import { createWorld, type RoomType, type SimWorld } from '../sim/world'
+import { createWorld, GRID_W, GRID_H, type RoomType, type SimWorld } from '../sim/world'
 import { simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
 import { TRAITS } from '../sim/traits'
@@ -721,5 +721,48 @@ describe('statusLineText — footer 상태줄의 우선순위 체인', () => {
   it('아무것도 안 골랐으면 **건설 순서**를 알려 준다 — 벽부터라는 걸 모르면 첫 5분이 통째로 막힌다', () => {
     const text = line()
     for (const word of ['벽', '문', '용도', '가구']) expect(text).toContain(word)
+  })
+})
+
+describe('tileFromPoint — 포인터 위치 → 타일 좌표', () => {
+  /** 화면에 그려진 맵의 사각형. 배율이 곧 rect의 크기다 — 함수는 TILE 상수를 모른다. */
+  const rectAt = (scale: number) => ({
+    left: 100,
+    top: 50,
+    width: GRID_W * 16 * scale,
+    height: GRID_H * 16 * scale,
+  })
+
+  it('1배 — 타일 16px 격자로 나눈다', () => {
+    const r = rectAt(1)
+    expect(tileFromPoint({ x: 100, y: 50 }, r)).toEqual({ x: 0, y: 0 })
+    expect(tileFromPoint({ x: 100 + 17, y: 50 + 33 }, r)).toEqual({ x: 1, y: 2 })
+  })
+
+  /* 확대의 핵심 계약 — **rect에서 타일 크기를 파생**하므로 배율이 자동 반영된다.
+     TILE 상수로 나누면 2배 확대 화면에서 좌표가 정확히 두 배로 어긋난다(7×6을 그렸는데
+     7×4가 지어지던 그 계열의 결함 — SimGame 헤더 주석). */
+  it('2배 확대 — 같은 픽셀이 절반 타일을 가리킨다', () => {
+    const r = rectAt(2)
+    expect(tileFromPoint({ x: 100 + 17, y: 50 + 33 }, r)).toEqual({ x: 0, y: 1 })
+    expect(tileFromPoint({ x: 100 + 64, y: 50 + 96 }, r)).toEqual({ x: 2, y: 3 })
+  })
+
+  it('축소 — 0.5배에서도 같은 식이 성립한다', () => {
+    expect(tileFromPoint({ x: 100 + 17, y: 50 + 33 }, rectAt(0.5))).toEqual({ x: 2, y: 4 })
+  })
+
+  it('격자 밖으로 나가도 부지 안으로 물린다 — 드래그가 맵 밖에서 끝나도 사각형이 성립해야 한다', () => {
+    const r = rectAt(2)
+    expect(tileFromPoint({ x: -500, y: -500 }, r)).toEqual({ x: 0, y: 0 })
+    expect(tileFromPoint({ x: 99_999, y: 99_999 }, r)).toEqual({ x: GRID_W - 1, y: GRID_H - 1 })
+  })
+
+  it('오른쪽·아래 끝 픽셀이 마지막 타일이다 — 경계에서 한 칸 넘어가지 않는다', () => {
+    const r = rectAt(2)
+    expect(tileFromPoint({ x: 100 + r.width - 1, y: 50 + r.height - 1 }, r)).toEqual({
+      x: GRID_W - 1,
+      y: GRID_H - 1,
+    })
   })
 })

@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { FATIGUE_MAX } from "@/game/doctor";
 import { GRID_W, GRID_H, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions, type Region } from "@/sim/regions";
@@ -12,6 +20,7 @@ import {
   fatigueTone,
   FATIGUE_COLOR,
   roomLabel,
+  tileFromPoint,
 } from "./simHud";
 
 /**
@@ -29,8 +38,37 @@ import {
  * 도착 판정은 위치 기반이라 시뮬 결과에는 영향이 없다(연출만의 문제).
  */
 
-/** 타일 한 칸의 화면 크기(px). 맵 크기(768×512)가 여기서 파생된다. */
+/**
+ * 타일 한 칸의 **내부 좌표계** 크기(px) — 스프라이트·라벨이 그려지는 기준 격자(48×32 = 768×512).
+ *
+ * ⚠️ 화면에 **보이는** 크기가 아니다. 맵은 부모가 준 자리에 맞춰 통째로 확대되므로
+ * (`useFitScale` → CSS transform) 실제 타일은 이 값 × 배율이다. 그래서 포인터 좌표를
+ * 이 상수로 나누면 안 된다 — 그 계산은 화면에 그려진 rect를 읽는 `simHud.tileFromPoint`가 진다.
+ */
 export const TILE = 16;
+
+/** 맵 전체가 부모 안에 딱 들어가는 배율. 종횡비는 유지하고 짧은 쪽에 맞춘다(잘리지 않는다). */
+function useFitScale(ref: RefObject<HTMLElement | null>): number {
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = (width: number, height: number) => {
+      if (width === 0 || height === 0) return; // 아직 배치 전 — 0으로 접으면 맵이 사라진다
+      setScale(Math.min(width / (GRID_W * TILE), height / (GRID_H * TILE)));
+    };
+    /* ⚠️ **마운트 시 한 번은 직접 잰다** — ResizeObserver의 첫 콜백에 기대면 안 된다.
+       그 콜백은 다음 *렌더링 스텝*에 오므로 ① 첫 프레임이 배율 1(768×512)로 그려졌다가 튀고,
+       ② 페이지가 프레임을 그리지 않는 동안(숨은 탭·비표시 창) 콜백 자체가 오지 않아 맵이
+       작은 채로 남는다 — 실측으로 잡은 결함이다(옵저버만 달았을 때 300ms 동안 콜백 0회).
+       getBoundingClientRect 계열은 레이아웃을 즉시 계산하므로 컴포지팅과 무관하게 값을 준다. */
+    fit(el.clientWidth, el.clientHeight);
+    const ro = new ResizeObserver(([entry]) => fit(entry.contentRect.width, entry.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return scale;
+}
 
 /**
  * 방 타입별 바닥·벽 색. 지면(desk) 팔레트에서 파생한 어두운 계열 — 사람(스프라이트)이
@@ -48,7 +86,9 @@ export const ROOM_STYLE: Record<RoomType, { floor: string; wall: string }> = {
   CAFETERIA: { floor: "#24220f", wall: "#4a4620" },
 };
 
-const OUTSIDE_FLOOR = "#0d0d11"; // 부지 바닥(방 밖) — 복도이자 마당
+/** 부지 바닥(방 밖) — 복도이자 마당. **화면 전체의 배경이기도 하다**(SimGame): 맵 둘레의 여백이
+ *  같은 색이라야 부지가 화면 밖으로 이어지는 것으로 보이고, HUD가 그 위에 뜬 패널로 읽힌다. */
+export const OUTSIDE_FLOOR = "#0d0d11";
 const GRID_LINE = "rgba(216,207,175,0.045)"; // 격자 — 타일 경계를 겨우 읽을 만큼만
 
 /** 용도 없는 영역·용도 영역에 안 닿은 벽의 색. 벽을 세웠지만 아직 무슨 방인지 안 정한 상태가
@@ -109,14 +149,10 @@ export interface TileMapProps {
   onTileCancel?: () => void;
 }
 
-/** 포인터 위치 → 타일 좌표. 격자 밖으로 나가도 부지 안으로 물린다(드래그가 밖에서 끝나도 사각형이 성립). */
+/** 포인터 위치 → 타일 좌표. 산술은 `simHud.tileFromPoint`가 지고 여기선 **화면에 그려진 rect**만
+ *  넘긴다 — 그 rect가 확대된 크기라 배율이 자동으로 반영된다(그 함수 주석의 계약). */
 function tileOf(e: ReactPointerEvent<HTMLDivElement>): { x: number; y: number } {
-  const r = e.currentTarget.getBoundingClientRect();
-  const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v));
-  return {
-    x: clamp(Math.floor((e.clientX - r.left) / TILE), GRID_W - 1),
-    y: clamp(Math.floor((e.clientY - r.top) / TILE), GRID_H - 1),
-  };
+  return tileFromPoint({ x: e.clientX, y: e.clientY }, e.currentTarget.getBoundingClientRect());
 }
 
 export default function TileMap({
@@ -128,6 +164,9 @@ export default function TileMap({
   onTileUp,
   onTileCancel,
 }: TileMapProps) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const scale = useFitScale(hostRef);
+
   // 진료 중인 의사 — 환자의 doctorId가 "바쁨"의 단일 출처다(patientFlow와 같은 규칙).
   // 집합을 만드는 식 자체도 simHud가 든다: 인사 패널이 태업 판정에 같은 집합을 쓰므로
   // 여기서 따로 적으면 두 화면이 각자의 "바쁨"을 갖게 된다.
@@ -248,12 +287,20 @@ export default function TileMap({
   }, [walls, doors, designations]);
 
   return (
-    <div className="overflow-x-auto">
+    /* 부모가 준 자리를 꽉 채우고 그 안에서 맵을 **통째로 확대**한다 — 림월드처럼 부지가 화면이 된다.
+       배율은 CSS transform 하나로 끝난다: 타일마다 박힌 px를 배율로 곱하면 반올림 오차가 칸마다
+       쌓여 격자가 어긋나고, 무엇보다 폰 이동 transition이 매 배율마다 다시 계산된다. */
+    <div ref={hostRef} className="grid h-full w-full place-items-center overflow-hidden">
+      {/* 확대된 **차지 크기**를 갖는 껍데기 — transform은 레이아웃 크기를 바꾸지 않아
+          (부모가 원본 768×512로 안다) 이 한 겹이 없으면 가운데 정렬이 어긋난다. */}
+      <div style={{ width: GRID_W * TILE * scale, height: GRID_H * TILE * scale }}>
       <div
         className="relative touch-none select-none border border-frame"
         style={{
           width: GRID_W * TILE,
           height: GRID_H * TILE,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
           backgroundColor: OUTSIDE_FLOOR,
           backgroundImage: `repeating-linear-gradient(90deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px), repeating-linear-gradient(180deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px)`,
         }}
@@ -391,6 +438,7 @@ export default function TileMap({
             {preview.label}
           </span>
         )}
+      </div>
       </div>
     </div>
   );
