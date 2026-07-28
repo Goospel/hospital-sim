@@ -4,7 +4,15 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { FATIGUE_MAX } from "@/game/doctor";
 import { GRID_W, GRID_H, doorTile, type RoomType, type SimWorld } from "@/sim/world";
 import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, PatientSprite } from "./PixelSprite";
-import { busyDoctorIds, doctorActivityMark, fatigueTone, FATIGUE_COLOR, formatManwon, roomLabel } from "./simHud";
+import {
+  busyDoctorIds,
+  doctorActivityMark,
+  doctorRoomlessMark,
+  fatigueTone,
+  FATIGUE_COLOR,
+  formatManwon,
+  roomLabel,
+} from "./simHud";
 
 /**
  * 타일 병원 맵 — SimWorld를 그대로 그리는 순수 표시층. 세계를 만들지도 고치지도 않는다.
@@ -230,7 +238,10 @@ export default function TileMap({
         {world.pawns.map((p) => {
           // 욕구 표시는 의사만 갖는 상태라 환자에는 언제나 null이다(activity 필드가 없다) —
           // 그래서 kind로 한 번 더 거르지 않는다.
-          const activityMark = doctorActivityMark(p);
+          //
+          // 자리 없음(?)은 **욕구가 없을 때만** 뜬다: 쉬러 간 의사는 자리가 없어서가 아니라
+          // 스스로 자리를 뜬 것이라, 두 표시가 겹치면 이유가 뒤바뀐다(판정은 simHud가 진다).
+          const activityMark = doctorActivityMark(p) ?? doctorRoomlessMark(p);
           return (
           <div
             key={p.id}

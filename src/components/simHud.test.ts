@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
-  busyDoctorIds, doctorActivityMark, doctorCountByDept, fatigueTone, formatManwon, nextPriority,
-  noRestSpotIdle, PRIORITY_LABEL, resigningNotices, roomLabel, saturationText, traitBadges,
+  buildBlockReason, busyDoctorIds, doctorActivityMark, doctorCountByDept, doctorRoomlessMark,
+  fatigueTone, formatManwon, nextPriority, noRestSpotIdle, PRIORITY_LABEL, resigningNotices,
+  roomLabel, saturationText, setupWarningText, statusLineText, traitBadges,
   turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
 } from './simHud'
+import { createWorld, type Room, type SimWorld } from '../sim/world'
 import { simDept } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
 import { TRAITS } from '../sim/traits'
@@ -399,5 +401,155 @@ describe('noRestSpotIdle — 태업 힌트(쉬라고 했는데 쉴 자리가 없
 
   it('임계 아래면 안 뜬다 — 쉬라고 매겨 뒀어도 아직 쉴 때가 아니다', () => {
     expect(noRestSpotIdle(wantsRest({ fatigue: FATIGUE_RED - 1 }), NOBODY_BUSY)).toBe(false)
+  })
+})
+
+/*
+  ── 온보딩 판정 3종 ─────────────────────────────────────────────────────────
+  이 게임의 첫 5분이 무너진 자리는 규칙이 아니라 **침묵**이었다: 과를 안 고른 채 부지를 끌면
+  드래그가 열리지 않는데(ready=false) 화면에 아무 말도 안 떠서, 플레이어에게는 "판이 죽었다"로
+  보인다(사용자 신고: 캐릭터가 안 움직이고 방이 안 지어진다 — 실제로는 건설 성공 0회였다).
+  아래 셋은 그 침묵을 문장으로 바꾸는 판정이고, 문구와 **우선순위**가 곧 화면 계약이다.
+*/
+describe('buildBlockReason — 과 미선택 드래그의 침묵을 깬다', () => {
+  it('진료실인데 과를 안 골랐으면 **왜 안 되는지**를 말한다 — 이 한 줄이 없으면 드래그가 조용히 먹힌다', () => {
+    const text = buildBlockReason('EXAM', null)
+    expect(text).not.toBeNull()
+    expect(text).toContain('과')
+  })
+
+  it('과를 골랐으면 사유가 없다 — 지을 수 있는 상태에 경고를 켜 두지 않는다', () => {
+    expect(buildBlockReason('EXAM', 'CARDIOLOGY')).toBeNull()
+  })
+
+  it('진료실이 아닌 방은 과가 없어도 사유가 없다 — 과 개념 자체가 없는 방이다(placeRoom이 떨군다)', () => {
+    for (const t of ['WAITING', 'WARD', 'LOUNGE', 'RECEPTION', 'CAFETERIA'] as const) {
+      expect(buildBlockReason(t, null), `${t}에 사유가 붙었다`).toBeNull()
+    }
+  })
+
+  it('아무 방도 안 고른 맵 클릭은 **조용히** 지나간다 — 그건 탐색이지 실패가 아니다', () => {
+    expect(buildBlockReason(null, null)).toBeNull()
+    // 남아 있던 과 선택이 사유를 되살리면 맵을 누를 때마다 토스트가 뜬다.
+    expect(buildBlockReason(null, 'CARDIOLOGY')).toBeNull()
+  })
+
+  it('톤 가드레일 — 비난 카피 금지(사실과 다음 행동만)', () => {
+    const text = buildBlockReason('EXAM', null)!
+    for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) expect(text).not.toContain(word)
+  })
+})
+
+/** 손으로 세운 방 한 칸 — 이 판정이 읽는 건 `type`·`dept`뿐이라 좌표는 아무 값이어도 된다. */
+let roomSeq = 0
+const room = (type: Room['type'], dept?: Room['dept']): Room =>
+  ({ id: `r${++roomSeq}`, type, dept, x: 0, y: 0, w: 5, h: 5 })
+const worldOf = (pawns: Pawn[], rooms: Room[]): SimWorld => ({ ...createWorld(1), pawns, rooms })
+
+describe('setupWarningText — 왜 아무 일도 안 일어나는가', () => {
+  it('의사도 방도 없는 첫 판엔 경고가 없다 — 아직 아무것도 안 한 사람에게 경고부터 띄우지 않는다', () => {
+    expect(setupWarningText(worldOf([], []))).toBeNull()
+  })
+
+  it('의사는 있는데 대기실이 없으면 **환자가 아예 안 온다** — 화면에 이유가 없으면 시뮬 고장으로 읽힌다', () => {
+    const text = setupWarningText(worldOf([doctor()], [room('EXAM', 'CARDIOLOGY')]))
+    expect(text).toContain('대기실')
+  })
+
+  it('대기실은 있는데 그 과 진료실이 없으면 그 의사는 영원히 서 있다 — 인원수까지 말한다', () => {
+    const w = worldOf(
+      [doctor({ id: 'd1' }), doctor({ id: 'd2', dept: 'INTERNAL_MEDICINE' })],
+      [room('WAITING'), room('EXAM', 'CARDIOLOGY')],
+    )
+    const text = setupWarningText(w)!
+    expect(text).toContain('진료실')
+    expect(text).toContain('1') // 내과 의사 한 명만 방이 없다
+  })
+
+  it('과가 맞아야 방으로 친다 — 남의 과 진료실은 이 의사의 자리가 아니다(삼중 일치)', () => {
+    const w = worldOf([doctor({ dept: 'INTERNAL_MEDICINE' })], [room('WAITING'), room('EXAM', 'CARDIOLOGY')])
+    expect(setupWarningText(w)).not.toBeNull()
+  })
+
+  it('대기실 경고가 진료실 경고보다 **먼저**다 — 대기실이 없으면 진료실을 지어도 환자가 안 온다', () => {
+    const w = worldOf([doctor()], []) // 대기실도 없고 진료실도 없다
+    expect(setupWarningText(w)).toContain('대기실')
+  })
+
+  it('대기실 + 자기 과 진료실이 다 있으면 경고가 없다 — 정상 병원이 경고를 달고 있으면 경고가 죽는다', () => {
+    const w = worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')])
+    expect(setupWarningText(w)).toBeNull()
+  })
+})
+
+describe('doctorRoomlessMark — 서 있는 의사 머리 위의 이유', () => {
+  it('방도 활동도 없는 의사에 물음표가 붙는다 — 아무 표시 없이 서 있으면 "고장"으로 보인다', () => {
+    const mark = doctorRoomlessMark(doctor())
+    expect(mark).not.toBeNull()
+    expect(mark!.glyph.length).toBeGreaterThan(0)
+    expect(mark!.label).toContain('진료실')
+  })
+
+  it('방을 받았으면 표시가 없다 — 자리를 찾은 사람에게 경고를 달지 않는다', () => {
+    expect(doctorRoomlessMark(doctor({ roomId: 'r1' }))).toBeNull()
+  })
+
+  it('쉬거나 먹으러 갔으면 표시가 없다 — 그건 자리 없음이 아니라 스스로 자리를 뜬 것이다', () => {
+    expect(doctorRoomlessMark(doctor({ activity: 'TO_LOUNGE' }))).toBeNull()
+  })
+
+  it('환자에는 절대 안 붙는다 — 환자는 방을 받는 개체가 아니라 대기실이 통째로 물들어 버린다', () => {
+    const patient: Pawn = { id: 'p1', kind: 'PATIENT', x: 0, y: 0, path: [], stage: 'WAITING' }
+    expect(doctorRoomlessMark(patient)).toBeNull()
+  })
+})
+
+describe('statusLineText — footer 상태줄의 우선순위 체인', () => {
+  /** 아무 일도 없는 판(방 타입 미선택) — 각 테스트가 필요한 칸만 덮어 쓴다. */
+  const line = (over: Partial<Parameters<typeof statusLineText>[0]> = {}) =>
+    statusLineText({ toast: null, pause: null, idle: false, warning: null, selected: null, examDept: null, ...over })
+
+  it('토스트가 최우선 — 방금 일어난 일이 배경 안내에 묻히면 안 된다', () => {
+    expect(line({ toast: '자금이 부족합니다', pause: 'BUILD', idle: true, warning: '대기실이 없습니다' }))
+      .toBe('자금이 부족합니다')
+  })
+
+  it('정지 사유는 무엇이 세웠는지에 따라 다르다 — 넷이 한 문구로 접히면 왜 멈췄는지가 사라진다', () => {
+    const texts = (['BUILD', 'HIRE', 'PRIORITY', 'EVENT'] as const).map(p => line({ pause: p }))
+    expect(new Set(texts).size).toBe(4)
+    for (const t of texts) expect(t).toContain('일시정지')
+  })
+
+  it('스스로 멈춰 둔 상태에는 **개원 방법**을 알려 준다 — 첫날은 일시정지로 시작한다', () => {
+    const text = line({ idle: true })
+    expect(text).toContain('일시정지')
+    expect(text).toContain('1×')
+  })
+
+  it('정지 사유가 스스로 멈춤보다 먼저다 — 건설 중에 "1×를 누르세요"가 뜨면 지금 할 일이 뒤집힌다', () => {
+    expect(line({ pause: 'BUILD', idle: true })).toContain('건설')
+  })
+
+  it('시계가 도는 판에서는 배치 경고가 선다 — 왜 아무 일도 안 일어나는지가 그 자리의 사실이다', () => {
+    expect(line({ warning: '대기실이 없습니다 — 환자가 들어오지 못합니다' }))
+      .toBe('대기실이 없습니다 — 환자가 들어오지 못합니다')
+  })
+
+  it('경고보다 스스로 멈춤이 먼저다 — 멈춰 있으면 무엇을 지어도 아무 일이 안 일어난다', () => {
+    expect(line({ idle: true, warning: '대기실이 없습니다' })).toContain('1×')
+  })
+
+  it('아무 경고도 없으면 고른 방 안내가 선다 — 진료실은 과 이름까지 달고 나온다', () => {
+    const text = line({ selected: 'EXAM', examDept: 'CARDIOLOGY' })
+    expect(text).toContain(simDept('CARDIOLOGY').label)
+    expect(text).toContain('드래그')
+  })
+
+  it('진료실인데 과가 없으면 그 사유가 안내를 대신한다 — buildBlockReason과 **같은 문장**이다', () => {
+    expect(line({ selected: 'EXAM' })).toBe(buildBlockReason('EXAM', null))
+  })
+
+  it('아무것도 안 골랐으면 기본 안내 — 빈 줄로 두면 처음 여는 사람이 무엇부터 할지 모른다', () => {
+    expect(line().length).toBeGreaterThan(0)
   })
 })
