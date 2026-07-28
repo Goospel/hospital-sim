@@ -5,9 +5,13 @@ import { tick } from './tick'
 import { DAYS_PER_WEEK, freshMorning, startNextDay } from './day'
 import { startNextWeek } from './week'
 import { EMERGENCY_WINDOW_MIN, emergencyArrivalAt, emergencyArrivalSeed } from './emergency'
-import { ARRIVAL_WINDOW_MIN, arrivalSeed, wantsDeptSeed } from './patientFlow'
+import { ARRIVAL_WINDOW_MIN, arrivalSeed, waitingSeats, wantsDeptSeed } from './patientFlow'
 import type { SimDeptKey } from './dept'
-import { EVENT_KINDS, LAWSUIT_COST_MANWON, applyEvent, type SimEventKind } from './events'
+import {
+  EPIDEMIC_ARRIVAL_MUL, EPIDEMIC_DEPT_MIX, EVENT_KINDS, LAWSUIT_COST_MANWON,
+  MASS_CASUALTY_EMERGENCY_MUL, NEARBY_CLOSURE_ARRIVAL_MUL,
+  applyEvent, type SimEventKind,
+} from './events'
 import {
   EVENT_MIX, EVENT_PROB_PER_DAY,
   eligibleEvents, eventKindSeed, eventRollSeed, fallbackDirectorChoice, pickEventKind,
@@ -19,8 +23,13 @@ import {
  *  통째로 떼어내도 테스트는 초록으로 남는다(그 변조가 이 파일의 계측 대상이다). */
 
 const WARD = { type: 'WARD' as const, x: 30, y: 20, w: 4, h: 4 }
-/** 넉넉한 대기실 — 좌석 부족으로 도착이 막히면 배율 측정이 좌석 수를 재게 된다.
- *  16×11의 내부는 14×9라 자동 배치가 의자 35개를 놓는다(EPIDEMIC 정상 상태 대기 인원의 두 배 밖). */
+/** 대기실 — 좌석이 모자라면 문간에서 발길을 돌린 사람은 폰조차 안 생겨(maybeArrive), 배율
+ *  측정이 배율이 아니라 **좌석 수**를 재게 된다.
+ *  16×11의 내부는 14×9라 자동 배치가 의자 **35개**를 놓는다.
+ *  ⚠️ **여유가 넉넉하지 않다**(실측 2026-07-28): 동시 대기 최대가 평일 25 · NEARBY 31 ·
+ *  EPIDEMIC **33**(94%)이다. 아직 안 찼지만 두 석 차이라, 배율이나 인내를 올리는 튜닝이
+ *  포화로 넘길 수 있다 — 그래서 `arrivalsOf`가 매 분 동시 인원을 세어 좌석 수 미만임을
+ *  단언한다(조용한 압축 대신 큰 실패로 만든다). */
 const BIG_WAITING = { type: 'WAITING' as const, x: 2, y: 2, w: 16, h: 11 }
 
 function place(w: SimWorld, spec: Parameters<typeof placeRoom>[1]): SimWorld {
@@ -45,19 +54,27 @@ function clinicWorld(seed = 5): SimWorld {
 function arrivalsOf(w0: SimWorld, days = 3) {
   let total = 0
   const dept = new Map<SimDeptKey, number>()
+  const seats = waitingSeats(w0).length
+  let maxConcurrent = 0
   for (let day = 1; day <= days; day++) {
     let w: SimWorld = { ...w0, day, minute: 0 }
     const before = w.nextId
     const seen = new Map<string, SimDeptKey>()
     for (let i = 0; i < ARRIVAL_WINDOW_MIN - 1; i++) {
       w = tick(w, 1)
-      for (const p of w.pawns) if (p.kind === 'PATIENT' && p.wantsDept) seen.set(p.id, p.wantsDept)
+      const live = w.pawns.filter(p => p.kind === 'PATIENT')
+      maxConcurrent = Math.max(maxConcurrent, live.length)
+      for (const p of live) if (p.wantsDept) seen.set(p.id, p.wantsDept)
     }
     // 계측기 자기검사 — 매 분 훑으므로 태어난 환자는 하나도 못 보고 지나칠 수 없다.
     expect(seen.size).toBe(w.nextId - before)
     total += w.nextId - before
     for (const d of seen.values()) dept.set(d, (dept.get(d) ?? 0) + 1)
   }
+  // 계측기 자기검사 ② — **좌석이 안 찼다.** 차는 순간 문간 반려가 시작되고, 그때부터 이
+  // 함수는 배율이 아니라 대기실 크기를 잰다(그리고 배율이 클수록 더 깎여 비율이 1에 가까워진다
+  // — 훅이 있는데도 없는 것처럼 보이는 방향의 무성 실패다).
+  expect(maxConcurrent).toBeLessThan(seats)
   return { total, internalShare: (dept.get('INTERNAL_MEDICINE') ?? 0) / total }
 }
 
@@ -116,32 +133,59 @@ describe('applyEvent — 전제와 효과', () => {
 })
 
 describe('이벤트 효과 — 배율이 판정식에 실제로 곱해진다', () => {
-  it('MASS_CASUALTY 날은 응급 판정이 3배로 성립한다', () => {
+  /**
+   * ⚠️ **이 스위트의 분담**(fa1ff01 선례):
+   *  · **리터럴 단언**(바로 아래)이 상수의 **값**을 잠근다 — 튜닝은 여기서 눈에 띈다.
+   *  · **밴드**(각 실측 테스트)는 **훅이 판정식에 물려 있는가**를 잡는다 — 훅을 떼면 비율이
+   *    1.0으로 주저앉아 어떤 밴드도 통과 못 한다.
+   *
+   *  밴드 중심이 상수보다 **낮은 것은 버그가 아니라 표본 노이즈다**(실측 2026-07-28):
+   *  EPIDEMIC 기대 도착 3일 × 479분 × 0.2 = 287건인데 이 시드에선 272건(−1σ)이 나와
+   *  비율이 1.470으로 잰다(상수는 1.6). NEARBY 1.308(상수 1.4) · MASS 2.944(상수 3 —
+   *  이쪽은 표본이 40,320분이라 거의 안 흔들린다). 그래서 밴드로 "1.6인가"를 확인하려 들면
+   *  안 되고, 그 일은 리터럴 단언이 한다.
+   */
+  it('배율 상수는 계획 표의 값이다 — 튜닝은 이 단언에서 멈춘다', () => {
+    expect(MASS_CASUALTY_EMERGENCY_MUL).toBe(3)
+    expect(EPIDEMIC_ARRIVAL_MUL).toBe(1.6)
+    expect(NEARBY_CLOSURE_ARRIVAL_MUL).toBe(1.4)
+    expect(LAWSUIT_COST_MANWON).toBe(800)
+    // 전염병 믹스도 계획 표 그대로 — 내과 75%가 이 이벤트의 정체다.
+    expect(EPIDEMIC_DEPT_MIX).toEqual([
+      ['INTERNAL_MEDICINE', 0.75],
+      ['GENERAL_SURGERY', 0.85],
+      ['CARDIOLOGY', 0.92],
+      ['AESTHETICS', 1.00],
+    ])
+  })
+
+  it('MASS_CASUALTY 날은 응급 판정이 3배 가까이 성립한다', () => {
     const base = richWorld()
     const plain = emergencyHits(base)
     const surge = emergencyHits(applyEvent(base, 'MASS_CASUALTY'))
     expect(plain).toBeGreaterThan(200) // 계측기가 헛돌지 않았다
-    expect(surge / plain).toBeGreaterThan(2.7)
-    expect(surge / plain).toBeLessThan(3.3)
+    expect(surge / plain).toBeGreaterThan(2.85) // 실측 2.944
+    expect(surge / plain).toBeLessThan(3.05)
   })
 
-  it('EPIDEMIC 날은 외래 도착이 1.6배이고 내과로 몰린다', () => {
+  it('EPIDEMIC 날은 외래 도착이 늘고 내과로 몰린다', () => {
     const plain = arrivalsOf(clinicWorld())
     const epidemic = arrivalsOf(applyEvent(clinicWorld(), 'EPIDEMIC'))
     expect(plain.total).toBeGreaterThan(100) // 계측기 자기검사
-    expect(epidemic.total / plain.total).toBeGreaterThan(1.4)
-    expect(epidemic.total / plain.total).toBeLessThan(1.8)
-    // 믹스 교체 — 평일 내과 45%가 75% 근처로 올라간다(누적 상한 표의 첫 구간).
-    expect(plain.internalShare).toBeLessThan(0.60)
-    expect(epidemic.internalShare).toBeGreaterThan(0.65)
+    expect(epidemic.total / plain.total).toBeGreaterThan(1.40) // 실측 1.470
+    expect(epidemic.total / plain.total).toBeLessThan(1.56)
+    // 믹스 교체 — 평일 내과 45%(실측 0.476)가 75%(실측 0.779)로 올라간다.
+    expect(plain.internalShare).toBeLessThan(0.55)
+    expect(epidemic.internalShare).toBeGreaterThan(0.70)
   })
 
-  it('NEARBY_CLOSURE 날은 외래 도착이 1.4배다 — 믹스는 그대로', () => {
+  it('NEARBY_CLOSURE 날은 외래 도착이 늘되 믹스는 그대로다', () => {
     const plain = arrivalsOf(clinicWorld())
     const closure = arrivalsOf(applyEvent(clinicWorld(), 'NEARBY_CLOSURE'))
-    expect(closure.total / plain.total).toBeGreaterThan(1.25)
-    expect(closure.total / plain.total).toBeLessThan(1.6)
-    expect(closure.internalShare).toBeLessThan(0.60)
+    expect(closure.total / plain.total).toBeGreaterThan(1.24) // 실측 1.308
+    expect(closure.total / plain.total).toBeLessThan(1.39)
+    // EPIDEMIC과 갈린다 — 두 배율을 맞바꾸는 실수는 위 밴드와 이 밴드가 함께 잡는다.
+    expect(closure.internalShare).toBeLessThan(0.55) // 실측 0.496
   })
 
   it('배율은 **시드가 아니라 문턱**을 곱한다 — 평일 도착이 이벤트 날의 부분집합으로 남는다', () => {
@@ -229,16 +273,14 @@ describe('eligibleEvents — 코드가 확정하는 가드레일', () => {
 })
 
 describe('폴백 디렉터 — 시드 결정론 가중 랜덤', () => {
-  /** 그 세계의 12주 × 7일 이벤트 달력. */
-  function calendar(w0: SimWorld): Array<SimEventKind | null> {
-    const out: Array<SimEventKind | null> = []
-    for (let week = 1; week <= 12; week++) {
-      for (let day = 1; day <= DAYS_PER_WEEK; day++) {
-        out.push(fallbackDirectorChoice({ ...w0, week: Math.max(week, w0.week), day, minute: 0 }))
-      }
-    }
-    return out
-  }
+  /** 그 세계의 **연속 12주** × 7일 이벤트 달력 = 84일 실표본.
+   *  ⚠️ 시작 주를 `w0.week`으로 잡는 것이 핵심이다. 예전엔 1..12를 돌며 `Math.max(week, w0.week)`로
+   *  접었는데, `richWorld`는 2주차라 1주와 2주가 **같은 날들로 겹쳐** 84일 중 7일이 중복이었다 —
+   *  표본이 77일로 줄고 그 7일만 두 번 세져 발생률 단언이 미세하게 기울었다. */
+  const calendar = (w0: SimWorld): Array<SimEventKind | null> =>
+    Array.from({ length: 12 }, (_, i) => w0.week + i).flatMap(week =>
+      Array.from({ length: DAYS_PER_WEEK }, (_, d) =>
+        fallbackDirectorChoice({ ...w0, week, day: d + 1, minute: 0 })))
 
   it('같은 (판·주·날)이면 같은 선택이다', () => {
     const w = { ...richWorld(), week: 3, day: 4, minute: 0 }
