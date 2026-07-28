@@ -19,7 +19,7 @@ import { examSlots } from '../sim/spots'
 import { TRAITS, type TraitKey } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
 import type { Pt } from '../sim/path'
-import { tileIndex, type FurnitureKind, type RoomType, type SimWorld } from '../sim/world'
+import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld } from '../sim/world'
 
 /**
  * 금액 한 곳 — **|금액| ≥ 1억이면 「N.N억」, 미만이면 「N만원」**(계획 §0-8).
@@ -323,6 +323,28 @@ export function toolCostText(tool: BuildTool): string {
   if (tool === 'DESIGNATE') return '용도 지정 — 무료'
   if (tool === 'DEMOLISH') return '철거 — 건설비의 50% 환불'
   return `${TOOL_LABEL[tool]} 개당 ${BUILD_COST[tool]}만원`
+}
+
+/**
+ * 포인터 위치 → 타일 좌표. 격자 밖으로 나가도 부지 안으로 물린다(드래그가 밖에서 끝나도 사각형이 성립).
+ *
+ * **타일 크기를 `rect`에서 파생하는 것**이 이 함수의 전부이자 계약이다 — `rect`는 화면에 그려진
+ * 실제 크기(getBoundingClientRect)라 맵의 확대·축소가 자동으로 반영된다. 화면 상수 TILE로
+ * 나누면 2배로 확대된 맵에서 좌표가 정확히 두 배로 어긋난다: 이 저장소는 같은 계열의 결함을
+ * 이미 한 번 겪었다(헤더가 한 줄 늘어 맵이 32px 내려가자 7×6을 그렸는데 7×4가 지어졌다 —
+ * SimGame 헤더 주석). 그 함정을 **산술에서 없앤 자리**가 여기다.
+ *
+ * 컴포넌트 밖인 이유는 이 파일의 머리말 그대로다 — DOM 없이 도는 테스트가 겨눌 수 있어야 한다.
+ */
+export function tileFromPoint(
+  point: { x: number; y: number },
+  rect: { left: number; top: number; width: number; height: number },
+): Pt {
+  const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v))
+  return {
+    x: clamp(Math.floor((point.x - rect.left) / (rect.width / GRID_W)), GRID_W - 1),
+    y: clamp(Math.floor((point.y - rect.top) / (rect.height / GRID_H)), GRID_H - 1),
+  }
 }
 
 /** 드래그 사각형이 낳는 타일 — 가구·철거는 **채움**, 벽은 **테두리**다(1줄이면 곧 직선 벽). */

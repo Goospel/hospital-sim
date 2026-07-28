@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import TileMap, { type BuildPreview } from "@/components/TileMap";
+import TileMap, { OUTSIDE_FLOOR, type BuildPreview } from "@/components/TileMap";
 import DayEndOverlay from "@/components/DayEndOverlay";
 import EventCard from "@/components/EventCard";
 import HirePanel from "@/components/HirePanel";
@@ -401,9 +401,24 @@ export default function SimGame() {
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-3 p-4">
+    /*
+      한 화면 = 부지 하나. **맵이 곧 화면이고 HUD는 그 위에 얹힌 패널**이다(림월드의 배치).
+      옛 판은 맵이 768×512 상자로 화면 한가운데 놓이고 위아래에 바가 따로 서 있었는데, 그러면
+      화면의 대부분이 빈 배경이라 정작 플레이하는 부지가 제일 작았다.
+
+      **3행 그리드인 것이 계약이다**(auto · 1fr · auto): 맵이 받는 자리가 남은 공간 **전부**이고,
+      HUD 두 줄은 그 자리를 겹쳐 먹지 않는다. 진짜로 겹쳐 띄우면 가려진 타일에 벽을 못 세우는데,
+      이 판은 부지가 고정 48×32라 카메라를 밀어 피할 수가 없다(림월드와 다른 조건). 대신 배경색을
+      부지 바닥과 같게 깔고 바를 반투명으로 두어 **보기에는** 한 장의 화면으로 이어지게 한다.
+
+      배율은 TileMap이 자기 자리를 재서 정한다 — 그래서 이 파일에는 맵 크기가 한 번도 안 나온다.
+    */
+    <main
+      className="grid h-dvh grid-rows-[auto_1fr_auto] overflow-hidden"
+      style={{ backgroundColor: OUTSIDE_FLOOR }}
+    >
       {/* ── 상단 바 — 시각·금고·오늘 집계·시간 조작 ── */}
-      <header className="flex flex-wrap items-center gap-x-5 gap-y-2 border border-frame bg-desk-2 px-4 py-2 font-mono text-sm tabular-nums text-on-desk">
+      <header className="z-10 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-frame bg-desk-2/80 px-4 py-2 font-mono text-sm tabular-nums text-on-desk backdrop-blur-sm">
         <span className="text-base font-semibold">{formatClockFromOpen(world.minute)}</span>
         {/* 하루 안의 시각만으로는 지금이 몇 번째 하루인지 알 수 없다 — 주·일이 리듬의 좌표다. */}
         <span className="text-on-desk-muted">
@@ -442,8 +457,11 @@ export default function SimGame() {
         </span>
         {/* ⚠️ 정지 사유 문구는 여기 없다 — footer 상태줄에 있다. 한때 이 자리에 있었는데,
             드래그를 **시작하는 순간** 문구가 생겨 헤더가 한 줄 늘고 맵이 32px 내려가
-            드래그 좌표가 두 타일 어긋났다(7×6을 그렸는데 7×4가 지어졌다). 맵 위의 높이는
-            드래그 중에 변하면 안 된다 — 상태 문구는 맵 아래 예약된 줄에서만 바뀐다. */}
+            드래그 좌표가 두 타일 어긋났다(7×6을 그렸는데 7×4가 지어졌다).
+            **좌표가 어긋나는 부분은 이제 구조적으로 불가능하다** — 포인터 변환이 화면에 그려진
+            rect를 읽으므로(simHud.tileFromPoint) 맵이 밀리든 배율이 바뀌든 따라온다. 그래도
+            문구를 여기 두지 않는 이유는 남았다: 헤더가 한 줄 늘면 맵 자리가 줄어 **화면 전체가
+            리스케일**된다(드래그 중에 부지가 출렁인다). 상태 문구는 맵 아래 예약된 줄에서만 바뀐다. */}
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
@@ -515,7 +533,7 @@ export default function SimGame() {
       />
 
       {/* ── 하단 바 — 건설 도구 팔레트. 벽을 두르고 → 문을 내고 → 용도를 정하고 → 가구를 놓는다. ── */}
-      <footer className="flex flex-col gap-2 border border-frame bg-desk-2 px-4 py-3">
+      <footer className="z-10 flex flex-col gap-2 border-t border-frame bg-desk-2/80 px-4 py-3 backdrop-blur-sm">
         <div className="flex flex-wrap items-center gap-2">
           {BUILD_TOOLS.map((t) => (
             <button
