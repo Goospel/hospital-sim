@@ -35,6 +35,10 @@ export interface Furniture { kind: FurnitureKind; x: number; y: number; roomId: 
  *  마감·결산 화면 동안 세계가 계속 굴러가면 플레이어가 읽는 숫자와 세계가 어긋난다. */
 export type SimPhase = 'RUNNING' | 'DAY_END' | 'WEEK_END' | 'CLOSED'
 
+/** 판이 **왜** 끝났는가 — 돈(INSOLVENCY)·사람(NO_PEOPLE)·시간(CAMPAIGN_END).
+ *  `phase: 'CLOSED'` 하나로는 세 결말이 한 화면으로 뭉개진다. 판정은 주간 결산 한 곳뿐이다(week.endingOf). */
+export type EndingKind = 'INSOLVENCY' | 'NO_PEOPLE' | 'CAMPAIGN_END'
+
 export interface SimWorld {
   minute: number   // 개장(09:00)부터의 게임 분
   day: number      // 1부터
@@ -63,6 +67,9 @@ export interface SimWorld {
    *  필수의료를 떠난 것이라, 이 숫자는 한 판 동안 단조 감소한다.
    *  초기값은 카탈로그 파생이다(dept.freshHirePool) — 두 곳에 적지 않는다. */
   hirePool: Record<SimDeptKey, number>
+  /** 판을 끝낸 결말 — **`phase: 'CLOSED'`와 항상 함께** 세팅된다(settleWeek 한 곳).
+   *  살아 있는 세계에는 없다(optional인 이유): 있으면 끝난 판이고, 없으면 아직 굴러가는 판이다. */
+  ending?: EndingKind
 }
 
 export interface SimStats {

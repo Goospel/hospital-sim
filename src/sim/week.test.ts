@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, type SimWorld } from './world'
-import { INSOLVENCY_WEEKS_TO_CLOSE, weekSummary, settleWeek, startNextWeek } from './week'
+import { CAMPAIGN_WEEKS, INSOLVENCY_WEEKS_TO_CLOSE, weekSummary, settleWeek, startNextWeek } from './week'
+import { RESIGN_SATURATED_DAYS } from '../game/doctor'
 import { DAY_END_MIN, DAYS_PER_WEEK, startNextDay, type DayRecord } from './day'
 import { placeRoom } from './build'
 import { type Pawn } from './pawn'
@@ -282,6 +283,8 @@ describe('주간 결산', () => {
     const dead = settleWeek(weekEndWorld({ treasuryManwon: 100, insolvencyStreak: 1 }))
     expect(dead.insolvencyStreak).toBe(2)
     expect(dead.phase).toBe('CLOSED')
+    // CLOSED에는 **왜 끝났는지**가 함께 실린다 — phase만 보면 세 엔딩이 한 화면으로 뭉개진다.
+    expect(dead.ending).toBe('INSOLVENCY')
     expect(() => startNextWeek(dead)).toThrow()
   })
 
@@ -290,6 +293,13 @@ describe('주간 결산', () => {
     const dead = settleWeek(weekEndWorld({ treasuryManwon: 100, insolvencyStreak: 2 }))
     expect(dead.insolvencyStreak).toBe(3)
     expect(dead.phase).toBe('CLOSED')
+    expect(dead.ending).toBe('INSOLVENCY')
+  })
+
+  it('살아남은 주에는 엔딩이 붙지 않는다 — 결말은 판이 끝난 세계만 갖는다', () => {
+    const alive = settleWeek(weekEndWorld({ treasuryManwon: 100_000 }))
+    expect(alive.phase).toBe('WEEK_END')
+    expect(alive.ending).toBeUndefined()
   })
 
   it('settleWeek는 WEEK_END가 아닌 세계를 거부한다', () => {
@@ -301,6 +311,88 @@ describe('주간 결산', () => {
     const settled = settleWeek(weekEndWorld({ treasuryManwon: 100_000 }))
     expect(() => settleWeek(settled)).toThrow()
     expect(settled.treasuryManwon).toBe(100_000 - FIXTURE_FIXED_COST) // 한 번만 빠졌다
+  })
+})
+
+// ─── 판 종결 ──────────────────────────────────────────────────────────────────
+// 판이 **끝날 수 있는가**를 재는 자리. 폐업(INSOLVENCY)만 있던 시절엔 끝이 도달 불가능한
+// 세계가 둘 있었다: 의사가 전멸하면 고정비가 0이라 금고가 영영 안 줄고(좀비), 흑자 빌드는
+// 무한히 굴러간다. 세 엔딩은 그 두 구멍을 각각 막는다.
+describe('판 종결 — 엔딩 3종', () => {
+  /** 전국에 남은 의사가 0명인 채용 풀 — NO_PEOPLE의 두 조건 중 「더 뽑을 사람이 없다」 쪽.
+   *  카탈로그에서 유도한다(HIRABLE_DEPTS) — 과를 손으로 나열하면 과가 늘어나는 날 조용히 낡아,
+   *  빠뜨린 과에 사람이 남은 채로 "풀이 비었다"고 주장하게 된다. */
+  const emptyPool = (): Record<SimDeptKey, number> =>
+    Object.fromEntries(HIRABLE_DEPTS.map(k => [k, 0])) as Record<SimDeptKey, number>
+
+  it('ⓐ 의사도 없고 전국에도 사람이 없으면 금고가 멀쩡해도 끝난다 (좀비 반증)', () => {
+    // 의사 0 = 고정비 0 = 금고가 **영영 안 줄어든다** → 폐업(음수 2주)이 도달 불가능해진다.
+    // 그 세계는 아무 결정도 없는 [다음 주] 버튼만 남아 무한히 굴러간다 — 판이 아니다.
+    const settled = settleWeek(weekEndWorld({
+      pawns: [], hirePool: emptyPool(), treasuryManwon: 100_000, week: 3,
+    }))
+    // 돈이 아니라 **사람이** 바닥나서 끝났다는 것을 두 숫자로 못박는다.
+    expect(settled.treasuryManwon).toBe(100_000)
+    expect(settled.insolvencyStreak).toBe(0)
+    expect(settled.phase).toBe('CLOSED')
+    expect(settled.ending).toBe('NO_PEOPLE')
+  })
+
+  it('ⓑ 마지막 의사가 이번 주말에 떠나면 **같은 결산**에서 NO_PEOPLE (사직 선반영)', () => {
+    // 사직 집행은 startNextWeek이지만 명단은 resigningSimDoctors — 통지=집행의 단일 출처다.
+    // 선반영하지 않으면 "떠난다"는 통지를 읽고 [다음 주]를 눌러야 비로소 판이 끝나, 마지막
+    // 통지가 뜬 화면과 결말이 한 박자 어긋난다.
+    const leaving: Pawn = {
+      ...doctor('doc-1', 8, FIXTURE_DEPTS[0]), saturatedDays: RESIGN_SATURATED_DAYS,
+    }
+    const settled = settleWeek(weekEndWorld({
+      pawns: [leaving], hirePool: emptyPool(), treasuryManwon: 100_000, week: 3,
+    }))
+    // 결산 시점의 세계엔 아직 의사가 **있다** — 그런데도 끝난다는 것이 선반영의 관측점이다.
+    expect(settled.pawns).toHaveLength(1)
+    expect(settled.phase).toBe('CLOSED')
+    expect(settled.ending).toBe('NO_PEOPLE')
+  })
+
+  it(`ⓒ ${CAMPAIGN_WEEKS}주차 결산은 흑자여도 끝난다 — 캠페인 상한`, () => {
+    const settled = settleWeek(weekEndWorld({ week: CAMPAIGN_WEEKS, treasuryManwon: 100_000 }))
+    expect(settled.treasuryManwon).toBeGreaterThan(0) // 망해서 끝난 게 아니다
+    expect(settled.insolvencyStreak).toBe(0)
+    expect(settled.phase).toBe('CLOSED')
+    expect(settled.ending).toBe('CAMPAIGN_END')
+  })
+
+  it(`ⓓ ${CAMPAIGN_WEEKS}주차이면서 연속 적자면 INSOLVENCY — 돈이 시간을 이긴다`, () => {
+    // 두 조건이 **동시에** 참이라 우선순위만이 답을 가른다. 순서를 뒤집으면 폐업한 병원의
+    // 결말이 "12주를 완주했다"로 나온다.
+    const settled = settleWeek(weekEndWorld({
+      week: CAMPAIGN_WEEKS, treasuryManwon: 100, insolvencyStreak: INSOLVENCY_WEEKS_TO_CLOSE - 1,
+    }))
+    expect(settled.insolvencyStreak).toBe(INSOLVENCY_WEEKS_TO_CLOSE)
+    expect(settled.phase).toBe('CLOSED')
+    expect(settled.ending).toBe('INSOLVENCY')
+  })
+
+  it('ⓔ 의사가 0명이어도 전국에 사람이 남았으면 끝나지 않는다 — 다시 뽑으면 된다', () => {
+    const w = weekEndWorld({ pawns: [], treasuryManwon: 100_000, week: 3 })
+    // 전제: 풀이 실제로 남아 있다(비어 있으면 이 테스트는 ⓐ의 중복이 된다).
+    expect(Object.values(w.hirePool).reduce((s, n) => s + n, 0)).toBeGreaterThan(0)
+    const settled = settleWeek(w)
+    expect(settled.phase).toBe('WEEK_END')
+    expect(settled.ending).toBeUndefined()
+  })
+
+  it(`ⓕ ${CAMPAIGN_WEEKS - 1}주차 정상 결산은 끝나지 않는다 — 상한의 경계`, () => {
+    // 경계의 기준은 결산 **전** 세계에서 캡처한다(T-085). 결산 결과의 주차로 경계를 쓰면,
+    // 언젠가 settleWeek이 주를 옮기는 날 이 테스트가 조용히 다른 주를 재게 된다.
+    const before = weekEndWorld({ week: CAMPAIGN_WEEKS - 1, treasuryManwon: 100_000 })
+    expect(before.week).toBe(CAMPAIGN_WEEKS - 1)
+    expect(before.pawns.length).toBeGreaterThan(0) // 계측기가 NO_PEOPLE로 헛돌지 않았다
+    const settled = settleWeek(before)
+    expect(settled.week).toBe(before.week)
+    expect(settled.treasuryManwon).toBeGreaterThan(0)
+    expect(settled.phase).toBe('WEEK_END')
+    expect(settled.ending).toBeUndefined()
   })
 })
 
