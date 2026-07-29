@@ -23,6 +23,7 @@ import {
   rectTiles,
   regionOverlayOn,
   resigningNotices,
+  setupSteps,
   setupWarningText,
   statusLineText,
   toggledSpeed,
@@ -144,6 +145,15 @@ export default function SimGame() {
    *  카드의 수치가 그 순간에 굳고, 퇴장(배열에서 제거)한 뒤에도 유령 카드가 남는다. */
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [hireOpen, setHireOpen] = useState(false);
+  /** **스타팅 로스터 게이트** — 판이 열리자마자 채용 패널이 뜨고, 최소 인원을 채워야 닫힌다
+   *  (사용자 지시 2026-07-29). `true`로 **시작**하는 것이 곧 강제다.
+   *
+   *  왜 세계가 아니라 화면 상태인가: 게이트는 규칙이 아니라 **안내**다. 코어에 「개원했는가」
+   *  플래그를 두면 tick·결산·회귀 픽스처가 전부 그 국면을 알아야 하는데, 이 게이트가 막는 것은
+   *  시뮬이 아니라 사람이다(닫고 나면 세계는 지금까지와 완전히 같다).
+   *  ⚠️ 한 번 닫으면 다시 안 뜬다 — 전원 사직으로 의사가 0이 되어도 그때는 게이트가 아니라
+   *  경고 스택과 체크리스트가 말한다(이미 판을 아는 사람에게 시작 화면을 다시 띄우지 않는다). */
+  const [rosterOpen, setRosterOpen] = useState(true);
   const [priorityOpen, setPriorityOpen] = useState(false);
   /* 이미 읽은 이벤트 카드 — **닫힘을 상태로 두지 않고 "읽은 것"을 기억한다.** 카드가 뜨는
      조건(`world.event`)은 세계가 정하므로, 열림 플래그를 따로 두면 아침 전이가 그것을 켜 줘야
@@ -230,7 +240,10 @@ export default function SimGame() {
 
   /* 무엇이 시계를 세웠는가 — 사유까지 남기는 이유는 상태줄이 그걸 문구로 쓰기 때문이다.
      불리언 하나로 접으면 "왜 멈췄나"가 화면에서 사라진다(넷은 할 일이 서로 다르다). */
-  const pause: PauseCause = drag !== null ? "BUILD" : hireOpen ? "HIRE" : priorityOpen ? "PRIORITY" : eventOpen ? "EVENT" : null;
+  // 스타팅 게이트도 채용과 **같은 사유**로 시계를 세운다(HIRE) — 사유를 하나 더 만들면
+  // 상태줄 문구 표가 늘고, 플레이어에게는 둘 다 "채용 중"이라 구별할 이유가 없다.
+  const pause: PauseCause =
+    drag !== null ? "BUILD" : hireOpen || rosterOpen ? "HIRE" : priorityOpen ? "PRIORITY" : eventOpen ? "EVENT" : null;
   const paused = pause !== null;
   const running: SimSpeed = effectiveSpeed(world.phase, paused ? 0 : speed);
   useSimClock(running, setWorld);
@@ -260,6 +273,10 @@ export default function SimGame() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat) return;
+      /* 스타팅 게이트가 떠 있는 동안 키보드는 **통째로 잠긴다.** 스페이스는 게이트 뒤의 시계를
+         켜려 들고(아직 의사가 없는 판이 돌기 시작한다), ESC는 이 모달을 못 닫으면서 그 아래
+         도구를 놓아 "ESC가 먹통"으로 읽힌다. 블로킹 모달의 계약은 *뒤가 조작되지 않는다*이다. */
+      if (rosterOpen) return;
       if (e.code === "Space") {
         e.preventDefault();
         setSpeed((cur) => toggledSpeed(cur, lastRunSpeed.current));
@@ -291,7 +308,7 @@ export default function SimGame() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hireOpen, priorityOpen, eventOpen, eventKey, tool, inspectId]);
+  }, [hireOpen, rosterOpen, priorityOpen, eventOpen, eventKey, tool, inspectId]);
 
   /*
     되돌아간 응급 알림 — 폰이 만들어지지 않는 사건이라(문전 판정) 화면에 아무 흔적이 없다.
@@ -496,6 +513,12 @@ export default function SimGame() {
   /* 경고 스택이 읽는 목록 — 판정·문구·순서는 전부 simHud.alertsOf가 소유한다.
      상태줄의 배치 경고(setupWarningText)도 같은 함수의 파생이라 두 자리가 갈릴 수 없다. */
   const alerts = alertsOf(world);
+
+  /* 개원 준비 체크리스트 — 위 경고와 **같은 판정**(simHud.setupSteps)이다. 경고는 그 목록의
+     첫 미완 단계이고, 여기서는 전부를 진행률과 함께 편다. 남은 것이 없으면 목록이 사라진다. */
+  const setupSteps_ = setupSteps(world);
+  const setupTodo = setupSteps_.filter((s) => !s.done);
+  const setupDone = setupSteps_.length - setupTodo.length;
 
   /* 인스펙트 카드 — **매 렌더 세계에서 폰을 다시 찾는다**(스냅샷 금지). 그래서 그 사람이
      걸어가면 카드의 수치가 따라 살고, 퇴장하면(배열에서 빠지면) 찾기가 실패해 카드가 저절로
@@ -720,6 +743,52 @@ export default function SimGame() {
             </span>
           ))}
         </div>
+      )}
+
+      {/*
+        ── 개원 준비 체크리스트 — **경고가 말하지 못하는 「전체 순서」**.
+
+        사용자 결정(2026-07-29): *"튜토리얼을 필요로 하는 사용자에게는 건설도 안내해 줘야 한다고
+        생각해. 림월드가 한국에서는 그렇게 일반적인 장르는 아니거든."* 경고 스택은 계약상 **한
+        건만** 낸다(무엇부터 할지가 사라지지 않게) — 그건 아는 사람에게 맞는 형태이고, 처음 보는
+        사람에게는 *앞으로 몇 개가 남았는지*와 *어떻게 하는지*가 함께 있어야 한다.
+
+        판정은 한 줄도 여기 없다 — `simHud.setupSteps`가 단일 출처이고 위 경고가 그 **첫 미완
+        단계**다. 그래서 체크리스트에 체크가 없는 줄과 경고 칩이 언제나 같은 단계를 가리킨다.
+
+        **다 끝나면 통째로 사라진다.** 남겨 두면 아는 사람의 화면을 영영 좁히고, 사라지는 것
+        자체가 "준비가 끝났다"는 신호다. 스타팅 게이트가 떠 있는 동안에는 그 모달이 이미 첫
+        단계를 맡고 있으므로 뒤에 겹쳐 띄우지 않는다.
+      */}
+      {!rosterOpen && setupTodo.length > 0 && (
+        <aside
+          /* 좌측 패널 **바로 옆**이다(`insets.left`) — 안내가 가리키는 버튼([건설]·[벽]…)이
+             그 패널에 있어서, 문장과 손이 갈 자리가 한 화면에 붙어 있어야 한다. */
+          style={{ top: insets.top + 8, left: insets.left + 8 }}
+          aria-label="개원 준비"
+          className="pointer-events-none absolute z-10 w-60 border border-frame bg-desk-2/85 px-3 py-2.5 backdrop-blur-sm"
+        >
+          <h2 className="mb-1.5 font-mono text-[11px] text-on-desk">
+            개원 준비 <span className="tabular-nums text-on-desk-muted">{setupDone}/{setupSteps_.length}</span>
+          </h2>
+          <ol className="flex flex-col gap-1">
+            {setupSteps_.map((s) => (
+              <li key={s.key} className="flex gap-1.5 text-[11px] leading-snug">
+                {/* 체크는 **글리프**로 진다 — 색만으로 지면 흑백에서 완료·미완이 같은 줄이 된다
+                    (관통 규칙). `aria-hidden`이 아닌 것은 스크린리더도 상태를 읽어야 해서다. */}
+                <span className="font-mono text-on-desk-muted">{s.done ? "✔" : "□"}</span>
+                <div className={s.done ? "text-on-desk-muted/50" : "text-on-desk"}>
+                  <p className={s.done ? "line-through" : ""}>{s.label}</p>
+                  {/* 조작 안내는 **지금 할 일에만** 편다 — 다섯 줄이 전부 펼쳐지면 그건 목록이
+                      아니라 설명서라, 무엇부터 할지가 다시 묻힌다(경고가 한 건만 내는 그 이유). */}
+                  {!s.done && s.key === setupTodo[0].key && (
+                    <p className="mt-0.5 text-[10px] text-on-desk-muted">{s.hint}</p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </aside>
       )}
 
       {/*
@@ -962,13 +1031,16 @@ export default function SimGame() {
       */}
       {/* 채용 패널 — 결산 오버레이와 **같은 층**에 뜨지만 국면과 무관하다(운영 중에도 뽑는다).
           시계는 phase가 아니라 hireOpen이 세운다(위 paused 파생). */}
-      {hireOpen && (
+      {(hireOpen || rosterOpen) && (
         <HirePanel
           pawns={world.pawns}
           hirePool={world.hirePool}
           treasuryManwon={world.treasuryManwon}
+          // 스타팅 모드는 **게이트가 열려 있는 동안만**이다 — 닫은 뒤 [채용]으로 다시 열면
+          // 평소 패널이다(같은 컴포넌트가 두 얼굴을 갖되 상태는 하나다).
+          starting={rosterOpen}
           onHire={hire}
-          onClose={() => setHireOpen(false)}
+          onClose={() => (rosterOpen ? setRosterOpen(false) : setHireOpen(false))}
         />
       )}
 
