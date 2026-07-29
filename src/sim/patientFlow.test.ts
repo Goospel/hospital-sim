@@ -30,11 +30,19 @@ function hospitalWorld(seed: number) {
   return spawnDoctor(r2.world, 'INTERNAL_MEDICINE', { x: 8, y: 8 })
 }
 
-/** 대기실만 — 의사가 없어 아무도 진료받지 못한다 */
+/** 대기실만 — 의사가 **한 명도 없어** 도착 전원이 접수처에서 반려된다(폰이 안 만들어진다) */
 function waitingOnlyWorld(seed: number) {
   const r = placeRoom(createWorld(seed), { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
   if (!r.ok) throw new Error('전제 실패')
   return r.world
+}
+
+/** 대기실 + 내과 의사 — **진료실이 없다.** 접수처는 통과하지만(그 과를 보긴 한다) 배정될 방이
+ *  없어 아무도 못 불린다: **인내 초과 이탈만 남는 유일한 픽스처**다.
+ *  접수처 반려가 생기기 전에는 `waitingOnlyWorld`(의사 0)가 그 자리였는데, 이제 그 세계는
+ *  환자가 아예 안 들어와 인내를 관측할 수 없다. */
+function noExamRoomWorld(seed: number) {
+  return hire(waitingOnlyWorld(seed), 'INTERNAL_MEDICINE')
 }
 
 /** 대기실 둘(A는 봉인 대상 · B는 끝까지 멀쩡) + 진료실 + 의사.
@@ -197,8 +205,58 @@ describe('환자 흐름', () => {
     expect(w.nextId).toBe(w0.nextId)
   })
 
-  it(`인내 ${PATIENCE_MIN}분 초과 대기자는 LEFT_WAITING으로 떠난다`, () => {
+  /*
+    ── 접수처 반려 ────────────────────────────────────────────────────────────
+    안 보는 과의 환자는 **대기실까지 들어오지 않는다**. 옛 규칙은 그 사람을 의자에 앉혀
+    90분을 기다리게 했는데, 그건 두 가지로 틀렸다: ① 실제 접수처라면 문 앞에서 말해 준다
+    ② 그 90분 동안 좌석이 잠겨, 볼 수 있었던 환자까지 문간에서 돌아갔다(이탈 증폭).
+
+    ⚠️ **놓쳤다는 숫자는 그대로 남는다**(leftCount). 이 게임의 논지가 그 숫자다 —
+    내과를 안 뽑아서 못 본 환자가 화면에서 사라지면 판이 "안 뽑는 게 이득"이라고 말한다.
+  */
+  it('그 과 의사가 하나도 없으면 **폰조차 안 만들어지고** 전부 접수처 반려로 세어진다', () => {
     const w0 = waitingOnlyWorld(3)
+    const w = run(w0, DAY_END_MIN - 1)
+    expect(w.phase).toBe('RUNNING')
+    // 좌석 넉넉한 대기실인데도 아무도 안 앉는다 — 이게 "대기실까지 안 들어온다"의 관측이다.
+    expect(w.nextId).toBe(w0.nextId)
+    expect(w.pawns).toEqual([])
+    expect(w.stats.leftCount).toBeGreaterThan(0)
+    // 의사가 한 명도 없으니 도착 전원이 반려다 — 부분집합이 아니라 전체와 같아진다.
+    expect(w.stats.leftNoDept).toBe(w.stats.leftCount)
+  })
+
+  it('그 과 의사가 있으면 그 과 환자만 들어온다 — 나머지는 문 앞에서 돌아간다', () => {
+    // 내과 의사 하나뿐인 병원. 도착 표는 4과가 섞여 있으므로(ARRIVAL_DEPT_MIX) 반려가 반드시 생긴다.
+    const { w, wants } = runCollectingWants(hospitalWorld(3), DAY_END_MIN - 1)
+    expect(wants.length).toBeGreaterThan(0)
+    expect(new Set(wants)).toEqual(new Set(['INTERNAL_MEDICINE']))
+    expect(w.stats.leftNoDept).toBeGreaterThan(0)
+    // 불변식 — 반려는 이탈의 **부분집합**이다(따로 세는 축이 아니라 사유 하나다).
+    expect(w.stats.leftNoDept).toBeLessThanOrEqual(w.stats.leftCount)
+  })
+
+  it('4과를 다 보는 병원에서는 **반려가 0건**이다 — 이 규칙이 완비 병원의 밸런스를 안 건드린다', () => {
+    // 마감 12일 전에 얹는 규칙이라 "어디까지 흔드는가"를 못박아 둔다: 반려 분기는 안 보는 과가
+    // 있을 때만 발동하므로, 4과가 다 있으면 코드 경로가 옛것과 **완전히 같다**.
+    const w = run(fourDeptWorld(3), DAY_END_MIN - 1)
+    expect(w.stats.leftNoDept).toBe(0)
+    expect(w.stats.examsDone).toBeGreaterThan(0) // 계측기 자기검사 — 실제로 돌아간 병원이다
+  })
+
+  it('반려는 좌석 판정보다 **먼저**다 — 자리가 없어도 안 보는 과는 「그 과 없음」으로 갈린다', () => {
+    // 대기실이 없는(= 좌석 0) 병원 + 내과 의사 1명. 내과 환자는 자리가 없어 돌아가고(반려 아님),
+    // 나머지 세 과는 자리와 무관하게 반려다 — 두 사유가 **동시에** 잡히는 유일한 픽스처다.
+    // 순서를 뒤집으면(좌석 먼저) 전부 「자리 없음」이 되어 아래 두 단언이 함께 깨진다.
+    const r = placeRoom(createWorld(3), { type: 'EXAM', dept: 'INTERNAL_MEDICINE', x: 6, y: 6, w: 6, h: 5 })
+    if (!r.ok) throw new Error('전제 실패')
+    const w = run(hire(r.world, 'INTERNAL_MEDICINE'), DAY_END_MIN - 1)
+    expect(w.stats.leftNoDept).toBeGreaterThan(0)
+    expect(w.stats.leftCount).toBeGreaterThan(w.stats.leftNoDept)
+  })
+
+  it(`인내 ${PATIENCE_MIN}분 초과 대기자는 LEFT_WAITING으로 떠난다`, () => {
+    const w0 = noExamRoomWorld(3)
     const w = run(w0)
     for (const p of w.pawns.filter(p => p.stage === 'WAITING')) {
       expect(w.minute - p.arrivedMin!).toBeLessThanOrEqual(PATIENCE_MIN)
@@ -207,22 +265,25 @@ describe('환자 흐름', () => {
     expect(w.treasuryManwon).toBe(w0.treasuryManwon) // 이탈은 수익 0
   })
 
-  it('자리가 넉넉해도 의사가 없으면 결국 전원이 인내 초과로 떠난다', () => {
-    // leftCount의 두 원인(자리 없음 / 인내 초과)을 가르는 계측기.
-    // 좌석 45개짜리 대기실이면 자리 부족은 0건이라, 남는 이탈은 전부 인내 초과다.
+  it('자리가 넉넉해도 진료실이 없으면 결국 **들어온 전원이** 인내 초과로 떠난다', () => {
+    // leftCount의 세 원인(접수처 반려 / 자리 없음 / 인내 초과)을 가르는 계측기.
+    // 좌석 45개면 자리 부족은 0건이고, 내과 의사가 있으니 내과 환자는 반려도 아니다 —
+    // **들어온 사람의 이탈은 전부 인내 초과**다(그 의사에게 배정될 방이 없다).
     // 마감 직전까지만 돌린다 — 정산(600분)이 잔류 환자를 이탈로 집계하므로 600분을 넘겨 재면
-    // "인내가 원인"이라는 이 테스트의 구분이 정산에 가려진다(셋째 원인이 섞인다).
-    const w0 = roomySeatsWorld(3)
+    // "인내가 원인"이라는 이 테스트의 구분이 정산에 가려진다(넷째 원인이 섞인다).
+    const w0 = hire(roomySeatsWorld(3), 'INTERNAL_MEDICINE')
     const w = run(w0, DAY_END_MIN - 1)
     const arrived = w.nextId - w0.nextId
     expect(w.phase).toBe('RUNNING')
     expect(arrived).toBeGreaterThan(0)
-    expect(w.stats.leftCount).toBe(arrived)
-    expect(w.pawns).toEqual([])
+    // 이탈 = 들어온 사람(인내 초과) + 문 앞에서 돌아간 사람(반려). 자리 부족이 0이라 이 등식이 닫힌다.
+    expect(w.stats.leftCount).toBe(arrived + w.stats.leftNoDept)
+    expect(w.stats.leftNoDept).toBeGreaterThan(0) // 나머지 세 과는 실제로 돌려보내졌다
+    expect(w.pawns.filter(p => p.kind === 'PATIENT')).toEqual([]) // 의사는 남는다(이 세계엔 있다)
   })
 
   it(`대기 환자는 딱 ${PATIENCE_MIN}분까지는 남고, 한 분 더 지나면 떠난다`, () => {
-    let w = waitingOnlyWorld(3)
+    let w = noExamRoomWorld(3)
     while (!w.pawns.some(p => p.stage === 'WAITING')) {
       w = tick(w, 1)
       if (w.minute > 200) throw new Error('전제 실패 — 아무도 앉지 않았다')
@@ -476,6 +537,14 @@ describe('진료 배정', () => {
     const r2 = placeRoom(r1.world, { type: 'EXAM', x: 6, y: 6, w: 6, h: 5 })
     if (!r2.ok) throw new Error('전제 실패')
     let w = spawnDoctor(r2.world, 'INTERNAL_MEDICINE', { x: 44, y: 29 }) // 대각선 반대편
+    /* 나머지 세 과 의사도 세운다 — **관측 표본을 위해서다**(규칙과 무관).
+       접수처 반려가 생긴 뒤로 안 보는 과 환자는 폰이 안 만들어지는데, 이 계측기의 창은
+       의사가 방에 닿기까지의 **27분**뿐이라(실측) 도착이 그 사이 1~2건이다. 내과만 보면
+       그중 45%만 남아 표본이 말라 아래 `sawWaitingWhileOutside`가 헛돈다.
+       이 셋은 진료실이 없어(방은 내과 하나뿐) 아무도 안 받는다 — 판정에는 영향이 없다. */
+    for (const dept of ['GENERAL_SURGERY', 'CARDIOLOGY', 'AESTHETICS'] as const) {
+      w = spawnDoctor(w, dept, { x: 45, y: 29 })
+    }
     const exam = { x: 6, y: 6, w: 6, h: 5 } // 위에서 지은 진료실 — 방 객체가 없으니 좌표가 곧 방이다
     let sawWaitingWhileOutside = false
     for (let i = 0; i < 120; i++) {
@@ -786,9 +855,13 @@ describe('희망 과 배정 — 분포와 스트림 축', () => {
 })
 
 describe('과 라우팅 — 삼중 일치', () => {
-  it('내과만 있는 병원에서 미용 환자는 진료받지 못하고 떠난다', () => {
+  it('내과만 있는 병원에서 미용 환자는 **문 앞에서** 돌아간다 — 대기실에 앉지 않는다', () => {
+    // 옛 계약은 "들어와서 진료받지 못하고 떠난다"였다(사용자 보고: *"내과가 없는데 내과 환자가
+    // 대기실에서 기다린다 — 말이 안 된다"*). 지금은 접수처가 문 앞에서 말해 준다.
+    // **놓쳤다는 사실 자체는 그대로 남는다** — 그게 이 게임의 논지라 leftNoDept로 계속 센다.
     const { w, wants } = runCollectingWants(hospitalWorld(3), DAY_END_MIN - 1)
-    expect(wants.filter(d => d === 'AESTHETICS').length).toBeGreaterThan(0) // 실제로 미용 환자가 왔다
+    expect(wants).not.toContain('AESTHETICS') // 미용 환자는 폰조차 안 만들어진다
+    expect(w.stats.leftNoDept).toBeGreaterThan(0) // 그래도 놓친 수로는 남는다
     expect(w.phase).toBe('RUNNING')
     // 장부에 남은 과는 내과 하나뿐 — 다른 과 환자는 한 건도 돈이 되지 않았다.
     expect(Object.keys(w.stats.byDept)).toEqual(['INTERNAL_MEDICINE'])

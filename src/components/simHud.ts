@@ -14,6 +14,7 @@ import { emergencySpec, wardBeds, type EmergencyTurnAway, type TurnAwayReason } 
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam, starvedSlowFactor } from '../sim/needs'
 import { buildBlockedSet } from '../sim/path'
+import { unservedDepts } from '../sim/patientFlow'
 import { computeRegions, type Region } from '../sim/regions'
 import { examSlots } from '../sim/spots'
 import { TRAITS, type TraitKey } from '../sim/traits'
@@ -678,6 +679,24 @@ export function alertsOf(w: SimWorld): SimAlert[] {
     alerts.push({
       key: 'starving', kind: 'ops', severity: 'warn',
       text: `식당이 없어 굶는 의사 ${starving}명 — 모든 일이 느려집니다`,
+    })
+  }
+  /* 접수처 반려 — 코어에서는 **폰조차 안 만들어지는** 사실이라(patientFlow.maybeArrive) 병상 0과
+     똑같이 화면에 흔적이 없다. 그런데 이건 이 판에서 가장 큰 손실원이 될 수 있다(회귀 픽스처
+     실측: 이탈 33건 중 32건).
+
+     **실제로 돌려보낸 뒤에만** 뜬다(`leftNoDept > 0`). 상태만 보면 개원 직후 의사 0명일 때
+     네 과 경고가 한꺼번에 서서, 아직 아무 일도 안 일어난 화면이 사고 난 것처럼 읽힌다.
+     반대로 과 목록은 **지금** 상태에서 뽑는다 — 그 사이 채용했으면 그 과는 문장에서 빠진다
+     (경고가 과거를 붙들면 채용한 보람이 화면에서 사라진다).
+
+     ⚠️ warn이지 danger가 아니다. 안 뽑은 것은 사고가 아니라 **플레이어의 선택**이고, 붉게
+     칠하는 순간 화면이 "그러면 안 된다"고 말하게 된다(인사 패널의 「응급 끔」과 같은 톤 규칙). */
+  const unserved = w.stats.leftNoDept > 0 ? unservedDepts(w) : []
+  if (unserved.length > 0) {
+    alerts.push({
+      key: 'no-dept', kind: 'ops', severity: 'warn',
+      text: `${unserved.map(d => simDept(d).label).join('·')} 환자를 문 앞에서 돌려보내고 있습니다 — 그 과 의사가 없습니다`,
     })
   }
 

@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { placeRoom } from './testHelpers'
+import { hire, placeRoom } from './testHelpers'
 import { createWorld, type SimWorld } from './world'
 import { tick } from './tick'
 import { DAYS_PER_WEEK, freshMorning, startNextDay } from './day'
 import { startNextWeek } from './week'
 import { EMERGENCY_WINDOW_MIN, emergencyArrivalAt, emergencyArrivalSeed } from './emergency'
 import { ARRIVAL_WINDOW_MIN, arrivalSeed, waitingSeats, wantsDeptSeed } from './patientFlow'
-import type { SimDeptKey } from './dept'
+import { HIRABLE_DEPTS, type SimDeptKey } from './dept'
 import {
   EPIDEMIC_ARRIVAL_MUL, EPIDEMIC_DEPT_MIX, EVENT_KINDS, LAWSUIT_COST_MANWON,
   MASS_CASUALTY_EMERGENCY_MUL, NEARBY_CLOSURE_ARRIVAL_MUL,
@@ -44,10 +44,19 @@ function richWorld(seed = 5): SimWorld {
 }
 
 /** 외래만 관측되는 세계 — 병동이 없어 응급은 전부 되돌아가고 폰조차 안 생긴다.
- *  그래서 `nextId`의 증가분은 **전부 외래 도착**이다. 의사도 없어 진료가 없고, 환자는
- *  인내(90분)를 넘기면 떠나 좌석을 비운다. */
+ *  그래서 `nextId`의 증가분은 **전부 외래 도착**이다. 환자는 인내(90분)를 넘기면 떠나 좌석을 비운다.
+ *
+ *  ⚠️ **4과 의사를 한 명씩 세우는 것이 이 픽스처의 필수 조건이다**(접수처 반려가 생긴 뒤로).
+ *  안 세우면 도착 전원이 문 앞에서 반려돼 폰이 하나도 안 생기고, 이 파일이 재려는 **배율**이
+ *  통째로 관측 불가가 된다(총계 0). 진료실은 없으므로 넷 다 아무도 안 받는다 — 도착·인내만
+ *  남는 옛 관측 조건이 그대로다.
+ *
+ *  ⚠️ 믹스 측정에도 필수다: 한 과라도 빠지면 그 과 환자만 반려돼 **분포 자체가 왜곡**된다
+ *  (「내과 75%로 몰린다」가 의사 구성 때문에 우연히 참이 될 수 있다). */
 function clinicWorld(seed = 5): SimWorld {
-  return place(createWorld(seed), BIG_WAITING)
+  let w = place(createWorld(seed), BIG_WAITING)
+  for (const dept of HIRABLE_DEPTS) w = hire(w, dept)
+  return w
 }
 
 /** 하루치 외래 도착 — 도착 창(0..479) 동안 실제로 세워진 환자 폰을 센다. */

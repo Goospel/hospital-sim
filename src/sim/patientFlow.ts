@@ -113,6 +113,22 @@ export function pickWantsDept(u: number, mix: DeptMix): SimDeptKey {
  *  `undefined`를 카탈로그에 넘기면 수익이 NaN이 되어 금고로 번지는데, NaN은 어떤 예외도 안 내고
  *  이후 모든 산술을 NaN으로 오염시킨다(simDept가 던지는 것과 같은 이유). 도착(maybeArrive)이
  *  모든 환자에게 배정하므로, 비어 있다는 건 손으로 세운 세계이거나 배정 경로가 빠진 것이다. */
+/**
+ * 이 병원이 그 과를 **보는가** — 그 과 의사가 한 명이라도 있는가.
+ *
+ * 접수처 반려(maybeArrive)와 그 경고(simHud.alertsOf)가 **같은 한 줄**을 봐야 한다.
+ * 갈리면 "돌려보내고 있는데 경고는 안 뜨는" 구간이 조용히 생긴다.
+ *
+ * ⚠️ 배정(`assignWaitingToExam`)의 삼중 일치 중 **의사 축 하나**만 본다 — 방·슬롯까지 보면
+ * 책상이 잠깐 찬 순간에도 문을 닫아 버린다(그건 반려가 아니라 대기다).
+ */
+export const servesDept = (w: SimWorld, dept: SimDeptKey): boolean =>
+  w.pawns.some(p => p.kind === 'DOCTOR' && p.dept === dept)
+
+/** 도착 표에는 있는데 **보는 의사가 없는** 과들 — 지금 문 앞에서 돌려보내고 있는 과다. */
+export const unservedDepts = (w: SimWorld): SimDeptKey[] =>
+  ARRIVAL_DEPT_MIX.map(([dept]) => dept).filter(d => !servesDept(w, d))
+
 export function wantsDeptOf(p: Pawn): SimDeptKey {
   if (!p.wantsDept) throw new Error(`환자(${p.id})에 wantsDept가 없다 — 도착에서 과가 배정되지 않았다`)
   return p.wantsDept
@@ -186,18 +202,30 @@ function maybeArrive(w: SimWorld, regions: readonly Region[]): SimWorld {
   // 시드가 아니라 **문턱**을 곱하는 것이 핵심이다: 시드를 흔들면 이벤트 유무가 도착 시각의
   // 배열 자체를 바꿔 "평일 대비 몇 배"를 잴 수 없고, 문턱을 올리면 평일 도착이 부분집합으로 남는다.
   if (seededUnit(arrivalSeed(w)) >= ARRIVAL_PROB_PER_MIN * arrivalProbMulOf(w)) return w
+  // 무엇을 보러 왔는가는 문을 들어서는 순간 정해지고 이후 바뀌지 않는다. 시드는 (판·주·날·분)의
+  // 순수 함수라 **호출 순서에 의존하지 않는다** — 발길을 돌린 사람 몫을 건너뛰어도 뒤 환자의
+  // 과가 밀리지 않는다(순차 소비형 RNG였다면 좌석 수가 과 분포를 흔들었을 것이다).
+  // 전염병 날은 표가 내과 중심으로 갈린다(events.arrivalDeptMixOf) — 없으면 평시 표다.
+  const wantsDept = pickWantsDept(seededUnit(wantsDeptSeed(w)), arrivalDeptMixOf(w) ?? ARRIVAL_DEPT_MIX)
+  /* 접수처 반려 — **그 과를 아예 안 보는 병원이면 대기실까지 들어오지 않는다.**
+     좌석 판정보다 **먼저**인 것이 이 분기의 전부다: 뒤에 두면 안 보는 과 환자가 의자를 잡고
+     PATIENCE_MIN(90분)을 앉아 있다가 떠나는데, 그동안 그 자리가 잠겨 **볼 수 있었던 환자까지**
+     문간에서 돌아간다(한 명이 이탈을 두 건 만든다). 도착의 45%가 내과인 표에서 내과가 없으면
+     대기실 절반이 영구히 잠기는 셈이었다.
+     ⚠️ 판정은 **의사**가 기준이다(진료실이 아니다). 접수처가 아는 것은 "우리가 그 과를 보는가"이지
+     방이 준비됐는가가 아니다 — 의사는 있는데 방이 없으면 그건 기다릴 만한 상태다(곧 지어진다).
+     ⚠️ **놓쳤다는 숫자는 그대로 센다**(leftCount). 이 게임의 논지가 그 숫자다 — 안 뽑아서 못 본
+     환자가 집계에서 사라지면 판이 "안 뽑는 게 이득"이라고 조용히 말하게 된다. */
+  if (!servesDept(w, wantsDept)) {
+    return { ...w, stats: { ...w.stats, leftCount: w.stats.leftCount + 1, leftNoDept: w.stats.leftNoDept + 1 } }
+  }
   const seat = freeSeat(w, buildBlockedSet(w), regions)
   // 앉을 데가 없거나 거기까지 갈 수 없으면 문간에서 발길을 돌린다 — 폰을 만들지도 않는다.
   if (!seat) return { ...w, stats: { ...w.stats, leftCount: w.stats.leftCount + 1 } }
   const patient: Pawn = {
     id: `pat-${w.nextId}`, kind: 'PATIENT',
     x: ENTRANCE.x, y: ENTRANCE.y, path: seat.path, dest: seat.spot, stage: 'ENTERING',
-    // 무엇을 보러 왔는가는 문을 들어서는 순간 정해지고 이후 바뀌지 않는다 — 그 과가 없으면
-    // 이 환자는 아무리 기다려도 못 본다(인내 초과 이탈). 시드는 (판·주·날·분)의 순수 함수라
-    // **호출 순서에 의존하지 않는다** — 자리가 없어 발길을 돌린 사람 몫을 건너뛰어도 뒤 환자의
-    // 과가 밀리지 않는다(순차 소비형 RNG였다면 좌석 수가 과 분포를 흔들었을 것이다).
-    // 전염병 날은 표가 내과 중심으로 갈린다(events.arrivalDeptMixOf) — 없으면 평시 표다.
-    wantsDept: pickWantsDept(seededUnit(wantsDeptSeed(w)), arrivalDeptMixOf(w) ?? ARRIVAL_DEPT_MIX),
+    wantsDept,
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, patient] }
 }
