@@ -326,9 +326,10 @@ describe('환자 흐름', () => {
 
 describe('대기실 좌석', () => {
   it('그려진 의자 수 == 앉을 수 있는 좌석 수 (홀수 내부 폭 포함)', () => {
-    // 화면이 곧 수용 용량이라는 등식. 벽에 딱 붙은 의자는 앞 타일이 "오른쪽"이 아니라
-    // "아래"로 떨어지는데, 그 타일은 아랫줄 의자가 "위"로 쓰는 자리라 둘이 좌석 하나를
-    // 나눠 갖는다 — 의자는 두 개인데 앉는 사람은 하나. 짝수 폭만 재면 안 보인다.
+    // 화면이 곧 수용 용량이라는 등식. **앉는 자리가 의자 그 자체가 된 뒤로 구조적으로 참**이다
+    // (좌석이 겹칠 수가 없다). 옛 계약에서는 앞 타일을 나눠 갖는 의자 쌍이 좌석 하나로 접혀
+    // 이 등식이 배치에 따라 깨졌고, 그래서 여러 크기를 순회해야 그게 보였다 — 순회는 남긴다:
+    // 등식이 다시 배치에 얽히는 날 이 자리가 먼저 운다.
     for (const [rw, rh] of [[8, 6], [11, 7], [7, 5], [9, 6], [4, 4], [10, 9]]) {
       const r = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w: rw, h: rh })
       if (!r.ok) throw new Error(`전제 실패: ${rw}x${rh}`)
@@ -338,31 +339,36 @@ describe('대기실 좌석', () => {
     }
   })
 
-  it('앞 타일이 겹치는 의자는 좌석 하나로 친다 — 두 환자가 한 타일에 겹쳐 앉지 않는다', () => {
-    // 겹치는 의자를 안 놓는 1차 방어는 build.autoFurniture에 있다. 이건 **모듈 경계를 넘는
-    // 안전망**이라 별도로 잠근다 — 그쪽 간격 규칙이 바뀌거나(2주차 가구 배치 UI 포함) 가구가
-    // 다른 경로로 심어지면 좌석이 겹치고, 그때 조용히 두 환자가 한 타일에 포개진다.
-    // 그래서 여기서만 "의자 수 == 좌석 수" 등식이 의도적으로 깨진 입력을 쓴다.
+  it('빽빽하게 놓은 의자도 좌석이 겹치지 않는다 — 자리가 곧 그 의자다', () => {
+    // 옛 계약에서는 이 입력이 좌석 **하나**로 접혔다: 두 의자가 앞 타일 (10,6)을 나눠 가졌다.
+    // 앉는 자리가 의자 그 자체가 된 뒤로 겹침은 구조적으로 불가능하다 — 그래서 이 자리는
+    // "안전망"이 아니라 **등식의 증인**이 된다(의자 둘 = 좌석 둘, 배치와 무관).
     const r = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w: 8, h: 6 })
     if (!r.ok) throw new Error('전제 실패')
-    // (10,5)는 위·오른쪽이 벽이라 앞이 (10,6)으로 떨어지고, (10,7)은 위가 곧 (10,6)이다.
-    const collided = {
+    const packed = {
       ...r.world,
       furniture: [
         { kind: 'CHAIR' as const, x: 10, y: 5 },
         { kind: 'CHAIR' as const, x: 10, y: 7 },
       ],
     }
-    expect(waitingSeats(collided)).toEqual([{ x: 10, y: 6 }])
+    expect(waitingSeats(packed)).toEqual([{ x: 10, y: 5 }, { x: 10, y: 7 }])
   })
 
-  it('환자는 의자 타일이 아니라 그 앞 통행 타일에 선다', () => {
+  it('환자는 **의자 위에 앉는다** — 그리고 폰은 언제나 통행 가능한 칸에 있다', () => {
+    // 사용자 보고(*"의자를 추가해도 캐릭터들이 의자를 사용 안 해"*)를 그대로 겨눈 계측기다.
+    // 통행 가능 불변식은 그대로 남긴다 — 앉는다는 것이 곧 "그 칸에 선다"이므로 둘은 같은 말이다.
     let w = hospitalWorld(3)
+    const chairs = new Set(w.furniture.filter(f => f.kind === 'CHAIR').map(f => `${f.x},${f.y}`))
+    expect(chairs.size).toBeGreaterThan(0) // 전제: 의자가 있는 병원이다
+    let everSeated = false
     for (let i = 0; i < 120; i++) {
       w = tick(w, 1)
       for (const p of w.pawns) expect(isWalkable(w, p.x, p.y)).toBe(true)
+      if (w.pawns.some(p => p.stage === 'WAITING' && chairs.has(`${p.x},${p.y}`))) everSeated = true
     }
     expect(w.pawns.some(p => p.stage === 'WAITING')).toBe(true) // 계측기가 헛돌지 않았다
+    expect(everSeated).toBe(true)
   })
 
   it('좌석 수보다 많이 받지 않는다 — 자리 없으면 발길을 돌린다', () => {

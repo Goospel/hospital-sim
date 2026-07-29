@@ -7,7 +7,7 @@ import { buildBlockedSet, findPath } from './path'
 import { tick } from './tick'
 import { freshMorning } from './day'
 import { ARRIVAL_WINDOW_MIN, EXAM_DURATION_MIN } from './patientFlow'
-import { furnitureSpots, standSpot } from './spots'
+import { furnitureSpots, seatTiles, standSpot } from './spots'
 import { emergencySpec, wardBeds } from './emergency'
 import { FATIGUE_MAX, FATIGUE_RED, FATIGUE_REST, fatigueSlowFactor } from '../game/doctor'
 import { HUNGRY_AFTER_MIN, MEAL_MIN, REST_BREAK_MIN, REST_BREAK_RECOVER, STARVED_SLOW } from './needs'
@@ -68,7 +68,8 @@ const at = (p: { x: number; y: number }) => ({ x: p.x, y: p.y })
 
 /** 그 의사의 책상 앞 자리 — 파생식을 테스트가 다시 쓰지 않도록 구현의 단일 출처를 부른다. */
 function deskSpot(w: SimWorld, p: Pawn = doctorOf(w)) {
-  const spot = p.deskAt ? standSpot(buildBlockedSet(w), p.deskAt) : null
+  // `seats`까지 넘겨야 구현과 같은 답이다 — 의사는 환자 의자에 서지 않는다(spots.standSpot).
+  const spot = p.deskAt ? standSpot(buildBlockedSet(w), p.deskAt, seatTiles(w)) : null
   if (!spot) throw new Error('전제 실패 — 책상 앞 자리가 없다')
   return spot
 }
@@ -236,8 +237,9 @@ describe('휴식 — 개시·전이·종료', () => {
     const seats = loungeSeats(w)
     expect(seats).toHaveLength(2)
     const [sealed, far] = seats
-    // 전제: 봉인된 의자가 **첫** 후보이고 실제로 도달 불가다
-    expect(sealed).toEqual({ x: 18, y: 7 })
+    // 전제: 봉인된 의자가 **첫** 후보이고 실제로 도달 불가다.
+    // 좌표는 **의자 타일 그 자체**다(앉는다 = 그 칸에 선다) — 옛 계약에서는 앞 타일 (18,7)이었다.
+    expect(sealed).toEqual({ x: 17, y: 7 })
     const doc0 = doctorOf(w)
     expect(findable(w, doc0, sealed)).toBe(false)
     expect(findable(w, doc0, far)).toBe(true)

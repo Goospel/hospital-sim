@@ -12,7 +12,7 @@
 //
 // ⚠️ **방 종류의 의미가 실린 함수는 여기 두지 않는다** — `waitingSeats`(대기실 좌석)는
 // patientFlow에 남는다. 여기 있는 것은 "좌표를 어떻게 뽑는가"이지 "그 자리가 무엇인가"가 아니다.
-import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld } from './world'
+import { blocksWalk, GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld } from './world'
 import { computeRegions, type Region } from './regions'
 import { buildBlockedSet, isBlockedTile, type Pt } from './path'
 
@@ -28,17 +28,52 @@ export const ptKey = (p: Pt) => `${p.x},${p.y}`
 /** 4방향 탐색 순서 — findPath의 DIRS와 같은 (위·우·아래·좌). 이 순서가 결정론의 일부다. */
 const NEIGHBORS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
 
-/** 가구 앞 통행 타일 — 가구 타일 자체는 막혀 있어 폰이 설 수 없다.
- *  그래서 "의자에 앉는다"는 실제로는 **의자에 인접한 첫 통행 타일에 선다**로 구현된다.
- *  의사의 정위치(책상 앞)도 같은 함수다 — 아침 복귀(day.freshMorning)·휴식 복귀(needs.backToDesk)·
- *  슬롯의 의사스팟이 파생식을 복제하면 의사가 자리마다 다른 칸에 선다. */
-export function standSpot(blocked: Set<number>, at: Pt): Pt | null {
+/** 앉는 자리(= 통행을 막지 않는 가구 = 의자) 타일 — **서 있을 자리에서 빼는 집합**이다.
+ *  종류를 여기서 세지 않고 `world.blocksWalk`를 되묻는 것이 계약이다(판정의 단일 출처). */
+export function seatTiles(w: SimWorld): Set<number> {
+  const out = new Set<number>()
+  for (const f of w.furniture) if (!blocksWalk(f)) out.add(tileIndex(f.x, f.y))
+  return out
+}
+
+/**
+ * 막힌 가구 **앞**의 통행 타일 — 그 타일 자체에는 폰이 설 수 없으니 옆에 선다.
+ *
+ * 의사의 정위치(책상 앞)가 이 함수다 — 아침 복귀(day.freshMorning)·휴식 복귀(needs.backToDesk)·
+ * 슬롯의 의사스팟이 파생식을 복제하면 의사가 자리마다 다른 칸에 선다.
+ *
+ * ⚠️ `seats`를 넘기면 **앉는 자리를 건너뛴다**. 의자가 통행 가능해진 뒤로 필요해졌고, 안 넘기면
+ * 자동 배치된 진료실이 통째로 죽는다: 책상은 내부 좌상단 모서리라 위·왼쪽이 벽이고 오른쪽이
+ * 환자 의자다 — 의자를 서는 곳으로 세면 의사스팟이 그 의자가 되고, 그러면 짝지을 의자가
+ * 그것뿐이라 **슬롯이 아예 안 열린다**(진료실 정원 0). 서는 폰을 놓는 호출부는 전부 넘긴다.
+ *
+ * ⚠️ 가구를 **쓰는** 자리를 물을 땐 이것 말고 `occupySpot`이다(의자는 그 위에 앉는다).
+ */
+export function standSpot(blocked: Set<number>, at: Pt, seats?: ReadonlySet<number>): Pt | null {
   for (const d of NEIGHBORS) {
     const t = { x: at.x + d.x, y: at.y + d.y }
     if (t.x < 0 || t.y < 0 || t.x >= GRID_W || t.y >= GRID_H) continue
-    if (!isBlockedTile(blocked, t)) return t
+    if (isBlockedTile(blocked, t) || seats?.has(tileIndex(t.x, t.y))) continue
+    return t
   }
   return null
+}
+
+/**
+ * 그 가구를 **쓰는** 폰이 서는 칸 — 막힌 가구는 앞 통행 타일, **안 막힌 가구는 그 위**다.
+ *
+ * 갈림의 기준이 가구 **종류**가 아니라 **막힘**인 것이 계약이다. "의자는 앉는 가구"라는 사실은
+ * 이미 `world.blocksWalk`에 한 번 적혀 있고, 여기서 종류를 다시 세면 두 곳이 갈린다 — 나중에
+ * 다른 가구가 통행 가능해지는 날 이 함수만 옛 규칙으로 남아 그 가구 옆에 어색하게 선다.
+ *
+ * ⚠️ 앉을 수 있다는 것과 **거기까지 갈 수 있다**는 것은 다르다 — 사방이 벽으로 둘린 의자도
+ * 여기서는 그 자리를 돌려준다. 도달 가능성은 호출부의 `findPath`가 판정한다(대기실 좌석 선택이
+ * 첫 후보에서 멈추지 않고 다음 좌석을 보는 이유가 그것이다 — patientFlow.freeSeat).
+ */
+export function occupySpot(blocked: Set<number>, at: Pt): Pt | null {
+  // 새 객체를 돌려주는 것이 계약이다 — 인자를 그대로 흘리면 호출부가 넘긴 **가구 객체**(kind가
+  // 달린)가 좌표인 척 흘러 나가, 좌표만 비교하는 테스트·집합 키가 조용히 어긋난다.
+  return isBlockedTile(blocked, at) ? standSpot(blocked, at) : { x: at.x, y: at.y }
 }
 
 /** 진료 슬롯 하나 — **책상 하나에 의사 하나**의 담지자다(설계 §4).
@@ -68,18 +103,20 @@ export function examSlots(
     if (f.kind === 'CHAIR' && region.tiles.has(tileIndex(f.x, f.y))) chairs.set(ptKey(f), { x: f.x, y: f.y })
   }
   const paired = new Set<string>()
+  const seats = seatTiles(w) // 의사는 **의자에 서지 않는다**(standSpot 주석의 진료실 붕괴 경로)
   const out: ExamSlot[] = []
   for (const f of w.furniture) {
     if (f.kind !== 'DESK' || !region.tiles.has(tileIndex(f.x, f.y))) continue
     const desk = { x: f.x, y: f.y }
-    const doctorSpot = standSpot(blocked, desk)
+    const doctorSpot = standSpot(blocked, desk, seats)
     if (!doctorSpot) continue
     for (const d of NEIGHBORS) {
       const key = ptKey({ x: desk.x + d.x, y: desk.y + d.y })
       const chair = chairs.get(key)
       if (!chair || paired.has(key)) continue
-      const patientSpot = standSpot(blocked, chair)
-      if (!patientSpot) continue // 앞이 막힌 의자는 짝으로 잡지 않는다 — 다음 의자를 본다
+      const patientSpot = occupySpot(blocked, chair) // 환자는 **의자 위**에 앉는다
+      if (!patientSpot) continue // 앞이 막힌 가구는 짝으로 잡지 않는다 — 다음 의자를 본다
+      // ⓘ 두 스팟이 겹칠 수는 없다 — 의사스팟은 `seats`를 건너뛰고 환자스팟은 언제나 의자다.
       paired.add(key)
       out.push({ desk, chair, doctorSpot, patientSpot })
       break
@@ -88,10 +125,11 @@ export function examSlots(
   return out
 }
 
-/** 그 종류의 방에 놓인 그 가구 앞에 설 수 있는 타일들. **가구 하나당 자리 하나**가 이 함수의
- *  계약이고, 그게 화면(그려진 의자·침대)과 수용 용량을 같게 만든다 — build의 autoFurniture가
- *  앞 타일이 겹치는 가구를 애초에 놓지 않아 성립한다. 여기 dedupe는 그 계약이 깨졌을 때 두
- *  환자가 한 타일에 겹치는 것만은 막는 안전망이다(용량이 줄지언정 겹치지는 않는다).
+/** 그 종류의 방에 놓인 그 가구를 쓸 타일들(`occupySpot` — 의자는 그 위, 나머지는 앞).
+ *  **가구 하나당 자리 하나**가 이 함수의 계약이고, 그게 화면(그려진 의자·침대)과 수용 용량을
+ *  같게 만든다. 의자는 자리가 곧 그 타일이라 겹침이 **구조적으로** 불가능해졌고(의자 수 = 좌석 수),
+ *  dedupe가 남아 있는 것은 앞 타일을 쓰는 가구(침대·카운터) 때문이다 — 두 침대가 앞 타일 하나를
+ *  나눠 가지면 두 환자가 한 칸에 겹친다(용량이 줄지언정 겹치지는 않는다).
  *  대기실 좌석(patientFlow.waitingSeats)·병동 침대(emergency.wardBeds)·욕구 좌석(needs)이
  *  **같은 기계**라 여기 하나로 둔다 — 복제하면 한쪽만 dedupe를 잃거나 방 종류 필터가 갈린다. */
 export function furnitureSpots(
@@ -110,7 +148,7 @@ export function furnitureSpots(
   // 모으면 순서가 좌표 정렬로 바뀌어, 좌석이 모자랄 때 누가 먼저 앉는지가 조용히 달라진다.
   for (const f of w.furniture) {
     if (f.kind !== kind || !inType.has(tileIndex(f.x, f.y))) continue
-    const spot = standSpot(blocked, f)
+    const spot = occupySpot(blocked, f)
     if (!spot || seen.has(ptKey(spot))) continue
     seen.add(ptKey(spot))
     out.push(spot)

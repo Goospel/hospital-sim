@@ -1,15 +1,16 @@
 // 그리드 A* — 4방향, 맨해튼 휴리스틱, 결정론(타이브레이크 = push 순서).
 // 통행 판정은 buildBlockedSet 사전계산 1회 — isWalkable을 노드마다 부르지 않는다(56x).
-import { GRID_W, GRID_H, tileIndex, type SimWorld } from './world'
+import { blocksWalk, GRID_W, GRID_H, tileIndex, type SimWorld } from './world'
 
 export interface Pt { x: number; y: number }
 
-/** 막힌 타일 인덱스 집합 = **벽 ∪ 가구** — findPath 진입 시 1회 계산.
+/** 막힌 타일 인덱스 집합 = **벽 ∪ 막는 가구** — findPath 진입 시 1회 계산.
  *  방 사각형이 아니라 벽 타일을 읽는다: 문은 벽이 아니므로 자연히 통행 가능하고,
- *  방에 속하지 않는 자유 벽(설계 PR 2)도 같은 경로로 들어온다. */
+ *  방에 속하지 않는 자유 벽(설계 PR 2)도 같은 경로로 들어온다.
+ *  ⚠️ "막는가"의 판정은 `world.blocksWalk` 하나다 — 여기서 종류를 다시 세면 `isWalkable`과 갈린다. */
 export function buildBlockedSet(world: SimWorld): Set<number> {
   const blocked = new Set<number>(world.walls)
-  for (const f of world.furniture) blocked.add(tileIndex(f.x, f.y))
+  for (const f of world.furniture) if (blocksWalk(f)) blocked.add(tileIndex(f.x, f.y))
   return blocked
 }
 

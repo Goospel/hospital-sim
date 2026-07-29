@@ -115,7 +115,10 @@ describe('buildBlockedSet', () => {
     // 되돌아가면 여기서 깨진다: 홀로 선 벽 한 줄이 아무것도 막지 않게 된다.
     const walls = buildWalls(createWorld(1), [{ x: 10, y: 10 }, { x: 11, y: 10 }, { x: 12, y: 10 }])
     if (!walls.ok) throw new Error('전제 실패 — 벽')
-    const chair = placeFurniture(walls.world, 'CHAIR', [{ x: 10, y: 12 }])
+    const desk = placeFurniture(walls.world, 'DESK', [{ x: 10, y: 12 }])
+    if (!desk.ok) throw new Error('전제 실패 — 책상')
+    // 의자는 **막지 않는다**(world.blocksWalk) — 이 줄이 그 규칙을 경로 층에서 못박는다.
+    const chair = placeFurniture(desk.world, 'CHAIR', [{ x: 12, y: 12 }])
     if (!chair.ok) throw new Error('전제 실패 — 의자')
     const w = chair.world
     const asc = (s: Set<number>) => [...s].sort((a, b) => a - b)
