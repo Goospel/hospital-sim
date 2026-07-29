@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, type SimWorld } from './world'
-import { CAMPAIGN_WEEKS, INSOLVENCY_WEEKS_TO_CLOSE, weekSummary, settleWeek, startNextWeek } from './week'
+import {
+  CAMPAIGN_WEEKS, INSOLVENCY_WEEKS_TO_CLOSE, NURSE_GRADE_RATE, NURSE_WEEKLY_COST_MANWON,
+  nurseGradeOf, weekSummary, settleWeek, startNextWeek,
+} from './week'
 import { RESIGN_SATURATED_DAYS } from '../game/doctor'
 import { DAY_END_MIN, DAYS_PER_WEEK, startNextDay, type DayRecord } from './day'
 import { type Pawn } from './pawn'
@@ -33,12 +36,20 @@ const day = (n: number, exams: number, dept: SimDeptKey = 'INTERNAL_MEDICINE'): 
 const doctor = (id: string, x: number, dept: SimDeptKey): Pawn =>
   ({ id, kind: 'DOCTOR', x, y: 8, path: [], dept })
 
+/** 픽스처 간호사 — 과가 **없다**(간호사는 과별 표에 줄이 서지 않는다 · week.WeekSummary.nursing). */
+const nurse = (id: string): Pawn => ({ id, kind: 'NURSE', x: 30, y: 24, path: [] })
+
 /** 기본 픽스처의 두 의사는 **일부러 다른 과**다 — 같은 과 둘이면 "의사 수 × 균일 상수"로
  *  회귀해도 값이 같아 과별 합산이 통째로 관측되지 않는다. 두 과의 주급이 얼마인지는 여기
  *  적지 않는다(단일 출처는 `simDept` — 카탈로그를 튜닝할 때 이 주석이 조용히 낡는다). */
 const FIXTURE_DEPTS: SimDeptKey[] = ['INTERNAL_MEDICINE', 'AESTHETICS']
 const FIXTURE_FIXED_COST =
   FIXTURE_DEPTS.reduce((sum, d) => sum + simDept(d).weeklyCostManwon, 0)
+
+/** 픽스처 병원의 **간호등급 감산액** — 의사 2명(기준 1)에 간호사 0명이라 SHORT다.
+ *  −210 = 7일 × 10건 × 30 × 10%. 숫자를 손으로 적는 것이 요지다: 여기서 식을 다시 쓰면
+ *  구현이 틀려도 함께 틀려 아무것도 관측하지 않는다(등급 자체의 계약은 「간호등급」 describe). */
+const FIXTURE_NURSE_ADJUST = -210
 
 function weekEndWorld(over: Partial<SimWorld> = {}): SimWorld {
   const base = createWorld(1)
@@ -62,7 +73,9 @@ describe('주간 요약', () => {
     expect(s.week).toBe(3)
     expect(s.revenueManwon).toBe(7 * 10 * 30)
     expect(s.fixedCostManwon).toBe(FIXTURE_FIXED_COST)
-    expect(s.netManwon).toBe(s.revenueManwon - s.fixedCostManwon)
+    // 순이익에는 간호 블록도 들어간다 — 이 픽스처는 간호사가 0명이라 주급은 0이고, 등급
+    // 감산만 남는다(간호사 없는 병원의 기본 상태다 · 「간호등급」 describe).
+    expect(s.netManwon).toBe(s.revenueManwon - s.fixedCostManwon + FIXTURE_NURSE_ADJUST)
   })
 
   it('진료·이탈도 7일 **합**이다(하루치나 마지막 날이 아니라)', () => {
@@ -141,7 +154,10 @@ describe('주간 요약 — 과별 표·응급 줄', () => {
     const lines = Object.values(s.byDept)
     expect(lines.reduce((a, l) => a + l.revenueManwon, 0)).toBe(s.revenueManwon)
     expect(lines.reduce((a, l) => a + l.fixedCostManwon, 0)).toBe(s.fixedCostManwon)
-    expect(lines.reduce((a, l) => a + l.netManwon, 0)).toBe(s.netManwon)
+    // 순익만은 **간호 블록만큼 벌어진다** — 간호 주급·등급 가감산은 과가 없어 표 밖에 산다
+    // (그래서 총액에서 그 둘을 되돌려야 표와 만난다 · WeekSummary.nursing).
+    expect(lines.reduce((a, l) => a + l.netManwon, 0))
+      .toBe(s.netManwon + s.nursing.wageManwon - s.nursing.adjustManwon)
   })
 
   it('의사가 있는 과는 수익 0이어도 줄이 선다 — 진료를 한 건도 안 봐도 고정비는 나간다', () => {
@@ -170,6 +186,92 @@ describe('주간 요약 — 과별 표·응급 줄', () => {
     // 날마다 값을 다르게 준다 — 전부 같으면 "합" 대신 "첫날 × N"이나 "마지막 날"로 바꿔도 안 걸린다.
     const days = [1, 2, 3].map(n => dayOf(n, {}, { accepted: n, turnedAway: n * 2 }))
     expect(weekSummary(weekEndWorld({ days })).emergencies).toEqual({ accepted: 6, turnedAway: 12 })
+  })
+})
+
+// ─── 간호등급 가감산 ──────────────────────────────────────────────────────────
+// 사람 수가 **자동으로 돈으로 번역되는** 자리다(설계 2026-07-29 §6). 등급 판정은 주말 시점의
+// 인원만 보고, 그 결과가 주간 진료 수익에 ±10%로 얹힌다.
+describe('간호등급 — 인원이 수가로 번역된다', () => {
+  /** 등급만 재는 주말 세계 — 의사는 과를 번갈아 준다(고정비는 이 describe의 관심사가 아니다). */
+  function graded(doctors: number, nurses: number, over: Partial<SimWorld> = {}): SimWorld {
+    return weekEndWorld({
+      pawns: [
+        ...Array.from({ length: doctors }, (_, i) =>
+          doctor(`doc-${i}`, 8 + i, FIXTURE_DEPTS[i % FIXTURE_DEPTS.length])),
+        ...Array.from({ length: nurses }, (_, i) => nurse(`nur-${i}`)),
+      ],
+      ...over,
+    })
+  }
+
+  /** 픽스처 한 주의 진료 수익 — 7일 × 10건 × 30. 가감산은 이 값의 10%다. */
+  const WEEK_REVENUE = 7 * 10 * FIXTURE_RATE
+  const ADJUST_MAGNITUDE = WEEK_REVENUE * NURSE_GRADE_RATE
+
+  it('필요 인원 = 의사 수의 **올림 절반** — 홀수에서 한 명 더 필요하다', () => {
+    // 홀수를 함께 재는 것이 요지다: floor로 바꿔도 짝수에서는 값이 같아 안 걸린다.
+    expect(nurseGradeOf(graded(1, 0)).required).toBe(1)
+    expect(nurseGradeOf(graded(2, 0)).required).toBe(1)
+    expect(nurseGradeOf(graded(3, 0)).required).toBe(2)
+    expect(nurseGradeOf(graded(4, 0)).required).toBe(2)
+  })
+
+  it('기준보다 한 명 적으면 SHORT — 수익의 10%가 감산된다', () => {
+    const s = weekSummary(graded(3, 1))
+    expect(s.nursing.grade).toBe('SHORT')
+    expect(s.nursing.adjustManwon).toBe(-ADJUST_MAGNITUDE)
+  })
+
+  it('기준을 정확히 채우면 MET — 가감이 없다', () => {
+    const s = weekSummary(graded(3, 2))
+    expect(s.nursing.grade).toBe('MET')
+    expect(s.nursing.adjustManwon).toBe(0)
+  })
+
+  it('기준보다 한 명 많으면 BONUS — 수익의 10%가 가산된다', () => {
+    const s = weekSummary(graded(3, 3))
+    expect(s.nursing.grade).toBe('BONUS')
+    expect(s.nursing.adjustManwon).toBe(ADJUST_MAGNITUDE)
+  })
+
+  it('부호 불변식 — SHORT는 음수·BONUS는 양수·MET은 정확히 0', () => {
+    expect(weekSummary(graded(3, 1)).nursing.adjustManwon).toBeLessThan(0)
+    expect(weekSummary(graded(3, 3)).nursing.adjustManwon).toBeGreaterThan(0)
+    // `toBe(0)`은 `-0`을 거른다(Object.is) — 수익 0인 SHORT 주가 `-0`으로 새지 않는지도 함께 잰다.
+    expect(weekSummary(graded(3, 2)).nursing.adjustManwon).toBe(0)
+    expect(weekSummary(graded(3, 1, { days: [] })).nursing.adjustManwon).toBe(0)
+  })
+
+  it('의사가 0명이면 간호사가 몇이든 MET — 기준이 없는 병원에 가산은 없다', () => {
+    // 주중에 벌고 주말 전에 의사가 전부 떠난 주는 실재한다(weekDeptTable 주석) — 그 주의 수익에
+    // 간호사만으로 10%가 붙으면, 아무도 진료하지 않는 병원이 등급으로 돈을 번다.
+    const s = weekSummary(graded(0, 2))
+    expect(s.revenueManwon).toBe(WEEK_REVENUE) // 전제: 잴 수익이 실제로 있다
+    expect(s.nursing.required).toBe(0)
+    expect(s.nursing.grade).toBe('MET')
+    expect(s.nursing.adjustManwon).toBe(0)
+  })
+
+  it('의사 0·간호사 0도 MET — 아무도 없는 병원이 미달로 벌받지 않는다', () => {
+    expect(nurseGradeOf(graded(0, 0)).grade).toBe('MET')
+  })
+
+  it('총액은 블록에서 **유도**한다 — 주급과 가감산이 순익에 둘 다 반영된다', () => {
+    const s = weekSummary(graded(3, 1))
+    expect(s.nursing.wageManwon).toBe(NURSE_WEEKLY_COST_MANWON)
+    expect(s.netManwon).toBe(
+      s.revenueManwon - s.fixedCostManwon - s.nursing.wageManwon + s.nursing.adjustManwon,
+    )
+  })
+
+  it('금고도 같은 유도로 빠진다 — 화면의 순익과 금고가 갈리지 않는다', () => {
+    const w = graded(3, 1, { treasuryManwon: 100_000 })
+    const s = weekSummary(w)
+    const settled = settleWeek(w)
+    // 청구액 = 수익 − 순익(고정비 + 주급 − 가감산). 항목을 다시 나열하지 않는 것이 계약이다.
+    expect(settled.treasuryManwon).toBe(100_000 - (s.revenueManwon - s.netManwon))
+    expect(settled.treasuryManwon).toBeLessThan(100_000 - s.fixedCostManwon) // 감산이 실제로 물렸다
   })
 })
 
@@ -253,7 +355,7 @@ describe('주간 결산', () => {
   it('settleWeek: 고정비가 금고에서 빠진다(수익은 진료 시점에 이미 들어옴 — 이중 지급 금지)', () => {
     const w = weekEndWorld({ treasuryManwon: 10_000 })
     const settled = settleWeek(w)
-    expect(settled.treasuryManwon).toBe(10_000 - FIXTURE_FIXED_COST)
+    expect(settled.treasuryManwon).toBe(10_000 - FIXTURE_FIXED_COST + FIXTURE_NURSE_ADJUST)
     expect(settled.phase).toBe('WEEK_END') // 결산해도 결산 화면은 남는다(플레이어가 읽고 넘긴다)
   })
 
@@ -276,7 +378,10 @@ describe('주간 결산', () => {
 
   it('금고 0은 음수가 아니다 — 딱 고정비만큼 벌면 살아남는다', () => {
     // 경계 앞에서 기준을 캡처한다(T-085): 고정비와 금고가 같은 순간이 폐업 판정의 경계다.
-    const exact = settleWeek(weekEndWorld({ treasuryManwon: FIXTURE_FIXED_COST, insolvencyStreak: 1 }))
+    // 청구액은 고정비 + 등급 감산이다(간호사 0명이라 주급은 없다) — 그만큼만 벌어 둔 금고.
+    const exact = settleWeek(weekEndWorld({
+      treasuryManwon: FIXTURE_FIXED_COST - FIXTURE_NURSE_ADJUST, insolvencyStreak: 1,
+    }))
     expect(exact.treasuryManwon).toBe(0)
     expect(exact.insolvencyStreak).toBe(0) // `<= 0`으로 쓰면 여기서 걸린다
     expect(exact.phase).toBe('WEEK_END')
@@ -313,7 +418,7 @@ describe('주간 결산', () => {
   it('두 번 결산하면 거부한다 — 고정비가 두 번 빠지지 않는다(이중 정산 방지)', () => {
     const settled = settleWeek(weekEndWorld({ treasuryManwon: 100_000 }))
     expect(() => settleWeek(settled)).toThrow()
-    expect(settled.treasuryManwon).toBe(100_000 - FIXTURE_FIXED_COST) // 한 번만 빠졌다
+    expect(settled.treasuryManwon).toBe(100_000 - FIXTURE_FIXED_COST + FIXTURE_NURSE_ADJUST) // 한 번만 빠졌다
   })
 })
 
@@ -495,7 +600,7 @@ describe('다음 주', () => {
     const next = startNextWeek(settleWeek(weekEndWorld({ treasuryManwon: 100_000 })))
     const week2End: SimWorld = { ...next, phase: 'WEEK_END', days: [1, 2, 3, 4, 5, 6, 7].map(n => day(n, 10)) }
     const settled2 = settleWeek(week2End)
-    expect(settled2.treasuryManwon).toBe(next.treasuryManwon - FIXTURE_FIXED_COST)
+    expect(settled2.treasuryManwon).toBe(next.treasuryManwon - FIXTURE_FIXED_COST + FIXTURE_NURSE_ADJUST)
   })
 
   it('startNextWeek는 WEEK_END가 아닌 세계를 거부한다', () => {

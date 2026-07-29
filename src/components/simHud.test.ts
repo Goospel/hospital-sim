@@ -3,7 +3,8 @@ import { hire, placeRoom } from '../sim/testHelpers'
 import {
   alertsOf, escTarget, inspectCard, regionOverlayOn, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
-  doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
+  doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle,
+  NURSE_GRADE_TEXT, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidText,
   startingRosterMet, STARTING_ROSTER_MIN, statusLineText, TOOL_LABEL,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
@@ -1168,6 +1169,24 @@ describe('unpaidText — 하루 결산의 미수 한 조각', () => {
   it('톤 가드레일 — 상태 서술만 한다', () => {
     for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) {
       expect(unpaidText(84)).not.toContain(word)
+    }
+  })
+})
+
+describe('NURSE_GRADE_TEXT — 주간 결산의 간호등급 한 줄', () => {
+  it('세 등급 모두 문장이 있다 — MET·BONUS에도 "왜 이 숫자인가"가 붙는다', () => {
+    for (const grade of ['SHORT', 'MET', 'BONUS'] as const) {
+      expect(NURSE_GRADE_TEXT[grade].length).toBeGreaterThan(0)
+    }
+  })
+
+  it('세 문장이 서로 다르다 — 같은 문구가 가산과 감산에 함께 뜨면 판정이 안 읽힌다', () => {
+    expect(new Set(Object.values(NURSE_GRADE_TEXT)).size).toBe(3)
+  })
+
+  it('감산 문장은 **상태 서술만** 한다 — 톤 가드레일', () => {
+    for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) {
+      expect(NURSE_GRADE_TEXT.SHORT).not.toContain(word)
     }
   })
 })
