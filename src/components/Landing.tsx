@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * 랜딩 타이틀 카드 — 게임의 첫 화면(원본 97a012c "수화기 너머의 벽" 랜딩을 되살림).
+ * 랜딩 타이틀 카드 — 게임의 첫 화면(원본 97a012c 랜딩을 되살림. 당시 제목은 옛 이름
+ * "수화기 너머의 벽"이었고, 2026-07-29 「심스피탈」(Sim + hoSPITAL)로 바뀌었다).
  * 카피는 현재 게임(병원 경영 전체 아크)에 맞춰 재프레이밍: 세우고=채용 / 받고=콜큐·응급 / 대가를 치른다=결말.
  * 어두운 책상(desk) 위 표지 한 장. 제목만 명조(사람이 쓴 판정) — 나머지는 전부 고딕이다(스펙 §6).
  * CTA는 `bg-go` — 초록(1막 유혹)→붉은 잉크(결말 적자) 아크의 시작점(위저드 CTA와 동색).
@@ -17,7 +18,13 @@ export default function Landing({ onStart }: { onStart: () => void }) {
           대한민국 의료 시스템 시뮬레이션
         </p>
 
-        <h1 className="font-serif text-4xl font-bold tracking-tight sm:text-6xl">수화기 너머의 벽</h1>
+        <h1 className="font-serif text-4xl font-bold tracking-tight sm:text-6xl">심스피탈</h1>
+
+        {/* 영문 병기 — 눈썹줄과 같은 톤(작은 글씨·넓은 자간). `uppercase`는 쓰지 않는다:
+            이름의 뜻(Sim + hoSPITAL)이 가운데 대문자 S에 걸려 있어 전부 대문자면 사라진다. */}
+        <p className="mt-3 text-xs font-medium tracking-[0.3em] text-on-desk/60">
+          SimSpital
+        </p>
 
         {/* 제목 아래 얇은 괘선 — 서류의 머리줄. 장식이라 aria-hidden 없이도 의미가 없다. */}
         <span aria-hidden className="mt-5 block h-px w-24 bg-frame" />

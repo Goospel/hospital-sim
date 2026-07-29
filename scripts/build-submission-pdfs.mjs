@@ -20,8 +20,8 @@ const OUT_DIR = join(SRC_DIR, 'final')
 /** 제출물 번호는 대회 요강 순서(③ 게임 소개 / ④ AI 활용)를 따른다. */
 // title은 PDF 문서 속성(뷰어 탭에 뜨는 이름)이 된다 — 없으면 임시 html 파일명이 새어 나간다.
 const DOCS = [
-  { src: 'game-intro.md', out: '03-게임소개-수화기너머의벽.pdf', title: '수화기 너머의 벽 — 게임 소개 및 설명 (NAN 2026 사전과제)' },
-  { src: 'ai-usage-doc.md', out: '04-AI활용기술문서-수화기너머의벽.pdf', title: '수화기 너머의 벽 — AI 활용 기술 문서 (NAN 2026 사전과제)' },
+  { src: 'game-intro.md', out: '03-게임소개-심스피탈.pdf', title: '심스피탈 — 게임 소개 및 설명 (NAN 2026 사전과제)' },
+  { src: 'ai-usage-doc.md', out: '04-AI활용기술문서-심스피탈.pdf', title: '심스피탈 — AI 활용 기술 문서 (NAN 2026 사전과제)' },
 ]
 
 /** Chrome 실행 파일 — 환경변수 우선, 없으면 Windows/macOS 표준 경로. */

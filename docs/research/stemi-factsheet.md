@@ -5,7 +5,7 @@ tags:
 
 # STEMI 시나리오 팩트시트
 
-> 게임 "수화기 너머의 벽" STEMI(급성심근경색) 시나리오의 사실 근거 + **각색 고지**.
+> 게임 "심스피탈(SimSpital)" STEMI(급성심근경색) 시나리오의 사실 근거 + **각색 고지**.
 > 제출물 ③게임 소개 PDF·④AI 기술 PDF의 사실 기반. 게임 UI/엔딩 수치는 '검증된 사실'을 쓰되, 불가피한 각색(골든타임·장부 ₩)은 **§2에 명시**한다.
 > ⚠️ **의학 감수 없음** — 아래는 공개 출처 기반 정리이며, 감수받은 문구가 아니다. "감수" 표현을 붙이지 않는다.
 > 관련: [medical-system-grounding.md](medical-system-grounding.md) (팩트체크 전문) · [essential-care-economics.md](essential-care-economics.md) (장부·필수의료 경제 근거) · [er-rejection-news-coverage.md](er-rejection-news-coverage.md) (보도 문법·윤리 가드 — **§5의 병원 수는 기준이 다르다**, §2 참조)
