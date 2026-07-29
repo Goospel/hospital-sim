@@ -156,6 +156,15 @@ export default function WeekEndOverlay({
               <dt className="font-sans text-xs text-ink-2">고정비 (의사 월급)</dt>
               <dd className="text-stamp-ink">−{formatManwon(summary.fixedCostManwon)}</dd>
             </div>
+            {/* 간호 인력 — 과별 표 **밖**의 줄이다(간호사는 과가 없다 · week.WeekSummary.nursing).
+                인원 0이어도 뜬다: 위 고정비와 나란히 서 있어야 "사람을 더 두면 이 줄이 는다"가
+                읽히고, 창구가 없어 진료비가 새는 병원에서 0이 그 사실을 말한다. */}
+            <div className="flex items-baseline justify-between">
+              <dt className="font-sans text-xs text-ink-2">
+                간호 인력 ({summary.nursing.count}명)
+              </dt>
+              <dd className="text-stamp-ink">−{formatManwon(summary.nursing.wageManwon)}</dd>
+            </div>
             {/* 응급 줄 — **문앞 판정** 기준이다. 수용은 "받아들인 시점"에 세므로, 처치까지 못
                 간 채 마감을 맞은 건은 여기 수용에 들어 있으면서 위 과별 표의 수익에는 없다.
                 라벨이 그 사실을 직접 말한다(숫자만 놓으면 표와 어긋나 보인다).

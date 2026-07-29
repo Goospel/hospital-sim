@@ -11,7 +11,7 @@
 // ⚠️ 상대 경로 임포트 — vitest에 `@/` 별칭이 없다(simHud.ts 머리말과 같은 제약).
 import { buildWalls, designateRegion, placeDoor, placeFurniture, type PlaceResult } from './build'
 import { DEFAULT_EXAM_DEPT, type SimDeptKey } from './dept'
-import { hireDoctor } from './pawn'
+import { hireDoctor, hireNurse } from './pawn'
 import type { Furniture, RoomType, SimWorld } from './world'
 
 /**
@@ -27,6 +27,24 @@ export function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
   const r = hireDoctor(w, dept)
   if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
   return r.world
+}
+
+/** 수납 창구 한 벌을 부지 **오른쪽 아래 구석**에 세운다 — 접수처 + 카운터(자동) + 간호사 1명.
+ *
+ * 수납(설계 2026-07-29 §2)이 생긴 뒤로 이것이 **진료비를 걷는 병원의 최소 조건**이다: 없으면
+ * 진료는 그대로 도는데 수익이 0이고 그 금액이 통째로 `stats.unpaidManwon`으로 샌다. 그래서
+ * *돈을 재는 픽스처*는 전부 이 한 줄을 지나야 하고, 반대로 **미수를 재려는 픽스처는 지나면 안
+ * 된다** — 어느 쪽인지가 픽스처마다 명시되도록 기본값 없이 호출로 붙인다.
+ *
+ * 자리가 구석인 이유는 기존 픽스처들이 x≤38·y≤29 안에서 방을 세우기 때문이다 — 겹치면
+ * `placeRoom`이 거부하고 여기서 터진다(조용히 안 지어지는 것보다 낫다).
+ * 간호사를 **맨 뒤에** 뽑는 것도 계약이다: `spawnSpotNear`가 정문 근처의 빈 칸을 가져가므로
+ * 앞에 두면 그 뒤 채용자의 첫 좌표가 한 칸씩 밀린다.
+ */
+export function withCashier(world: SimWorld): SimWorld {
+  const r = placeRoom(world, { type: 'RECEPTION', x: 40, y: 24, w: 6, h: 6 })
+  if (!r.ok) throw new Error(`전제 실패 — 접수처 건설 거부(${r.reason})`)
+  return hireNurse(r.world)
 }
 
 /*

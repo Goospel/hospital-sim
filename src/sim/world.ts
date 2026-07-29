@@ -112,12 +112,25 @@ export interface SimStats {
    *  `NO_SPECIALIST`는 그 과를 안 뽑아서고 `NO_BED`는 병동이 모자라서라, 플레이어가 할 일이
    *  다르다(계획 Task 6이 이 사유를 그대로 토스트로 보여준다). */
   emergencyTurnedAway: EmergencyTurnAway[]
+  /**
+   * 오늘 **받지 못한** 진료비의 합(만원) — 수납 창구가 없어 그냥 샌 돈이다
+   * (`patientFlow.hasCashier`가 거짓일 때 외래·응급의 수가가 여기로 간다).
+   *
+   * 금고에 안 들어간 돈이라 `byDept`에도 없다 — 그래서 이 축이 없으면 "진료는 했는데 수익이
+   * 0"이라는 사실만 남고 **얼마가 샜는지**를 물을 자리가 사라진다(leftNoDept가 leftCount에서
+   * 사유를 떼어낸 것과 같은 이유: 그냥 안 번 것과 벌었는데 못 받은 것은 할 일이 다르다).
+   * 하루 집계라 아침마다 0으로 돌아간다(freshStats) — 그날치 총액은 DayRecord가 보존한다.
+   */
+  unpaidManwon: number
 }
 
 /** 하루 집계의 영점 — `createWorld`와 `freshMorning`(day.ts)이 **같은 모양**을 써야 한다.
  *  한쪽만 새 필드를 빠뜨리면 그날 집계가 undefined로 시작해 조용히 무너진다. */
 export function freshStats(): SimStats {
-  return { examsDone: 0, leftCount: 0, leftNoDept: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [] }
+  return {
+    examsDone: 0, leftCount: 0, leftNoDept: 0, byDept: {},
+    emergencyAccepted: 0, emergencyTurnedAway: [], unpaidManwon: 0,
+  }
 }
 
 export function createWorld(seed: number): SimWorld {

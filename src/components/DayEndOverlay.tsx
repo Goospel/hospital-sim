@@ -2,7 +2,7 @@
 
 import type { DayRecord } from "@/sim/day";
 import type { EmergencyTurnAway } from "@/sim/emergency";
-import { formatManwon, turnAwayBreakdownText } from "./simHud";
+import { formatManwon, turnAwayBreakdownText, unpaidText } from "./simHud";
 
 /**
  * 하루 마감 오버레이 — 19:00에 세계가 멈추고 그날의 종이 한 장이 올라온다.
@@ -59,6 +59,15 @@ export default function DayEndOverlay({
           <p className="text-center font-mono text-4xl font-semibold tabular-nums text-go">
             {formatManwon(today?.revenueManwon ?? 0)}
           </p>
+          {/* 못 받은 진료비 — **수익에 더하지 않는다**(DayRecord.unpaidManwon 주석): 걷힌 돈의
+              부분집합이 아니라 걷히지 않은 별개의 액수라, 합치면 안 번 돈이 수익으로 읽힌다.
+              0이면 줄이 아예 안 뜬다 — 판정과 문구는 simHud.unpaidText 하나가 진다
+              (회차 사유·접수처 반려 표기와 같은 규칙). */}
+          {unpaidText(today?.unpaidManwon ?? 0) && (
+            <p className="-mt-3 text-center font-mono text-xs tabular-nums text-stamp-ink">
+              ({unpaidText(today!.unpaidManwon)})
+            </p>
+          )}
 
           <dl className="flex flex-col gap-1.5 border-t border-rule pt-3 font-mono text-sm tabular-nums">
             <div className="flex items-baseline justify-between">

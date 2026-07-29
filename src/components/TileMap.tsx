@@ -12,7 +12,7 @@ import {
 import { FATIGUE_MAX } from "@/game/doctor";
 import { GRID_W, GRID_H, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions, type Region } from "@/sim/regions";
-import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, PatientSprite } from "./PixelSprite";
+import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, NurseSprite, PatientSprite } from "./PixelSprite";
 import {
   busyDoctorIds,
   clampCamera,
@@ -584,7 +584,12 @@ export default function TileMap({
                 aria-hidden
               />
             )}
-            {p.kind === "DOCTOR" && p.dept ? (
+            {/* 간호사가 **먼저**다 — 과가 없어서(pawn.hireNurse) 아래 의사 분기의 `p.dept`
+                조건에 걸리지 않으면 그대로 환자로 그려진다(익명 회색). 종류를 명시로 갈라
+                그 폴백에 안 얹는 것이 계약이다. */}
+            {p.kind === "NURSE" ? (
+              <NurseSprite variantKey={p.id} />
+            ) : p.kind === "DOCTOR" && p.dept ? (
               <DoctorSprite dept={p.dept} busy={busyDoctors.has(p.id)} variantKey={p.id} />
             ) : (
               <PatientSprite />

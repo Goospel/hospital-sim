@@ -4,7 +4,7 @@ import { CAMPAIGN_WEEKS, INSOLVENCY_WEEKS_TO_CLOSE, weekSummary, settleWeek, sta
 import { RESIGN_SATURATED_DAYS } from '../game/doctor'
 import { DAY_END_MIN, DAYS_PER_WEEK, startNextDay, type DayRecord } from './day'
 import { type Pawn } from './pawn'
-import { hire, placeRoom } from './testHelpers'
+import { hire, placeRoom, withCashier } from './testHelpers'
 import { tick } from './tick'
 import { HIRABLE_DEPTS, deptRevenueSum, simDept, type SimDeptKey, type SimDeptStats } from './dept'
 
@@ -20,6 +20,7 @@ const dayOf = (n: number, byDept: SimDeptStats, emergencies = NO_EMERGENCY): Day
   leftCount: 0,
   leftNoDept: 0,
   revenueManwon: deptRevenueSum(byDept),
+  unpaidManwon: 0,
   byDept,
   emergencies,
 })
@@ -194,7 +195,9 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
     // 병동은 **양쪽 다** 짓는다 — 순환기만 지어 주면 "응급을 받을 수 있어서" 진 게 아니라
     // "병동을 더 지어서" 진 것이 되어 비교가 과의 비교가 아니게 된다.
     w = place(w, { type: 'WARD', x: 30, y: 20, w: 6, h: 5 })
-    return hire(w, dept)
+    // 수납 창구 — 없으면 진료비가 한 푼도 안 걷혀 아래 금고·수익 단언이 0 대 0의 항진명제가 된다
+      // (설계 2026-07-29 §2 · testHelpers.withCashier).
+    return withCashier(hire(w, dept))
   }
 
   function runWeek(dept: SimDeptKey, seed = I_B1_SEED) {
@@ -467,13 +470,14 @@ describe('다음 주', () => {
       treasuryManwon: 100_000, pawns: [walking],
       stats: {
         examsDone: 12, leftCount: 3, leftNoDept: 1, byDept: { CARDIOLOGY: { patients: 12, revenueManwon: 300 } },
-        emergencyAccepted: 2, emergencyTurnedAway: [{ kind: 'STEMI', reason: 'NO_BED' }],
+        emergencyAccepted: 2, emergencyTurnedAway: [{ kind: 'STEMI', reason: 'NO_BED' }], unpaidManwon: 0,
       },
     }))
     const next = startNextWeek(settled)
     // 과별 집계도, 응급 집계도 아침에 비운다 — 안 비우면 새 주 첫날 장부가 지난주를 다시 싣는다.
     expect(next.stats).toEqual({
-      examsDone: 0, leftCount: 0, leftNoDept: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [],
+      examsDone: 0, leftCount: 0, leftNoDept: 0, byDept: {},
+      emergencyAccepted: 0, emergencyTurnedAway: [], unpaidManwon: 0,
     })
     const doc = next.pawns[0]
     expect(doc.path).toEqual([])

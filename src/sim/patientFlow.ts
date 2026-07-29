@@ -15,7 +15,7 @@ import { computeRegions, type Region } from './regions'
 // 좌표 파생은 spots.ts가 **단일 출처**다(leaf). 이 파일에 두면 욕구(needs)가 좌석을 찾느라
 // 상위를 값으로 당겨 needs ⇄ patientFlow 순환이 된다 — spots.ts 머리말.
 import { examSlots, furnitureSpots, ptKey, samePt, type ExamSlot } from './spots'
-import { priorityOf, type Pawn, type PatientStage } from './pawn'
+import { nurseCount, priorityOf, type Pawn, type PatientStage } from './pawn'
 import {
   simDept, addExamToDeptStats, type DeptMix, type SimDeptKey, type SimDeptStats,
 } from './dept'
@@ -134,6 +134,35 @@ export function wantsDeptOf(p: Pawn): SimDeptKey {
   return p.wantsDept
 }
 
+// ─── 수납 ────────────────────────────────────────────────────────────────────
+
+/** 수납 자리 — **접수처 안** 카운터의 앞 통행 타일들(카운터는 `blocksWalk` 참이라 그 위가
+ *  아니다 — `occupySpot`이 그 갈림의 단일 출처다). 순서는 furniture 배열 순서(= 설치 순서)라
+ *  대기실 좌석·병동 침대와 같은 규칙이고, 간호사가 설 자리와 환자가 갈 자리가 **같은 표**다:
+ *  두 곳이 각자 좌표를 뽑으면 간호사가 선 창구와 환자가 가는 창구가 서로 다른 카운터가 된다. */
+export function cashierSpots(
+  w: SimWorld, blocked: Set<number> = buildBlockedSet(w), regions?: readonly Region[],
+): Pt[] {
+  return furnitureSpots(w, 'RECEPTION', 'COUNTER', blocked, regions)
+}
+
+/**
+ * 이 병원이 진료비를 걷는가 — **접수처 안 카운터 ≥ 1 그리고 간호사 ≥ 1**.
+ *
+ * **판정을 이 한 곳에 모으는 것이 계약이다**(`blocksWalk`·`servesDept`와 같은 이유): 환자
+ * 흐름·응급·마감 정산·체크리스트·경고가 전부 이 함수를 본다. 계상 지점이 다섯이라 한 곳만
+ * 따로 판정하면 "창구가 없는데 그 한 건만 걷히는" 구간이 조용히 생긴다.
+ *
+ * ⚠️ 간호사의 **도착 여부는 안 본다**(뽑혀 있으면 성립한다). 진료실은 의사 도착을 기다리지만
+ * 수납까지 그러면 대기 상태가 하나 더 생기고, 화면상 간호사는 어차피 카운터로 걸어가므로
+ * (assignNurseCounters) 대부분의 시간 어긋남이 없다 — 마감 12일 전에 그 복잡도는 안 산다.
+ */
+export function hasCashier(
+  w: SimWorld, blocked: Set<number> = buildBlockedSet(w), regions?: readonly Region[],
+): boolean {
+  return nurseCount(w.pawns) > 0 && cashierSpots(w, blocked, regions).length > 0
+}
+
 /** 끝난 외래 한 건의 **표준강도분**(소요 × 과 강도) — 피로 축적의 입력.
  *  단위를 여기 한 곳에 모으는 이유: 진료의 완료는 두 곳에서 관측된다(정상 종료는
  *  `progressStages`, 마감에 걸린 건은 `day.settleDay`). 식을 양쪽에 적으면 한쪽만 강도를
@@ -151,8 +180,9 @@ export function stepPatients(
 ): SimWorld {
   let w = maybeArrive(world, regions)
   w = assignDoctorDesks(w, regions)
+  w = assignNurseCounters(w, regions)
   w = assignWaitingToExam(w, regions)
-  return progressStages(w)
+  return progressStages(w, regions)
 }
 
 /** 이 폰이 그 영역 **안**에 서 있는가 — 옛 `insideRoom(rect, p)`의 자리다.
@@ -294,6 +324,37 @@ function assignDoctorDesks(w: SimWorld, regions: readonly Region[]): SimWorld {
   return { ...w, pawns }
 }
 
+/**
+ * 간호사를 카운터 앞으로 보낸다 — 의사의 책상 배정(`assignDoctorDesks`)과 같은 자리의 같은 기계.
+ *
+ * **아침 리셋(day.freshMorning)에 간호사 분기를 두지 않는 이유가 이것이다**: 아침은 모두의
+ * `dest`·`path`를 비우므로, 매 분 도는 이 배정이 그 다음 분에 저절로 다시 붙인다. 두 곳에
+ * 적으면 "아침에는 카운터로 가는데 낮에 뽑은 간호사는 입구에 서 있는" 비대칭이 생긴다.
+ *
+ * 자리는 **순서대로 하나씩** 나눠 갖는다(간호사 i ↔ 카운터 i). 남는 간호사는 그 자리에 선다 —
+ * 한 자리에 둘을 보내면 스프라이트가 타일을 꽉 채우는 탓에 **두 명이 화면에서 한 명**이 된다
+ * (`spawnSpotNear`가 점유를 보는 것과 같은 이유). 수납 판정은 인원수만 보므로(`hasCashier`)
+ * 못 앉은 간호사가 있어도 창구는 그대로 성립한다.
+ */
+function assignNurseCounters(w: SimWorld, regions: readonly Region[]): SimWorld {
+  const nurses = w.pawns.map((p, i) => ({ p, i })).filter(({ p }) => p.kind === 'NURSE')
+  if (nurses.length === 0) return w
+  const spots = cashierSpots(w, buildBlockedSet(w), regions)
+  if (spots.length === 0) return w // 창구가 아직 없다 — 있던 자리에 그대로 선다(의사의 "방 없음")
+  const updates = new Map<number, Pawn>()
+  for (const [n, { p, i }] of nurses.entries()) {
+    const spot = spots[n]
+    // 이미 그 자리를 겨누고 있으면 손대지 않는다 — 매 분 findPath를 다시 돌면(최장 ~3ms)
+    // 인원수만큼 곱해져 프레임을 먹는다(이 파일 머리말 규칙 ③).
+    if (!spot || (p.dest && samePt(p.dest, spot))) continue
+    const path = findPath(w, { x: p.x, y: p.y }, spot)
+    if (!path) continue // 못 가는 자리는 다음 분에 다시 시도한다
+    updates.set(i, { ...p, dest: spot, path })
+  }
+  if (updates.size === 0) return w
+  return { ...w, pawns: w.pawns.map((p, i) => updates.get(i) ?? p) }
+}
+
 /** 대기 환자(도착순)와 유휴 의사를 짝짓는다. 의사의 "바쁨"은 환자의 doctorId로만 표현된다 —
  *  의사 쪽에 busy 플래그를 두면 환자가 사라질 때(제거·이탈) 되돌리는 걸 잊어 방이 영구히 잠긴다.
  *
@@ -389,9 +450,9 @@ export function toExit(w: SimWorld, p: Pawn, stage: PatientStage): Pawn | null {
   return path ? { ...p, stage, dest: ENTRANCE, path } : null
 }
 
-function progressStages(w: SimWorld): SimWorld {
+function progressStages(w: SimWorld, regions: readonly Region[]): SimWorld {
   let treasuryManwon = w.treasuryManwon
-  let { examsDone, leftCount } = w.stats
+  let { examsDone, leftCount, unpaidManwon } = w.stats
   // 과별 집계는 갈아끼우기(재할당)로만 갱신한다 — 입력 세계의 객체를 건드리면 tick의 순수성이 깨진다.
   let byDept: SimDeptStats = w.stats.byDept
   /** 이번 분에 끝난 진료의 **표준강도분**을 의사별로 모은다 — 의사 폰은 이 루프의 앞머리에서
@@ -399,6 +460,16 @@ function progressStages(w: SimWorld): SimWorld {
   const loadByDoctor = new Map<string, number>()
   const out: Pawn[] = []
   const keep = (p: Pawn | null) => { if (p) out.push(p) }
+  /** 수납 자리 — **처음 필요할 때 한 번만** 계산한다. 진료가 하나도 안 끝나는 분이 대부분이라
+   *  분마다 미리 뽑으면 가구 스캔이 공짜로 480번 돈다(`blocked` 집합을 공유하는 것과 같은 결). */
+  let cashier: Pt[] | undefined
+  const cashierAt = (): Pt | undefined => {
+    if (cashier === undefined) {
+      const blocked = buildBlockedSet(w)
+      cashier = hasCashier(w, blocked, regions) ? cashierSpots(w, blocked, regions) : []
+    }
+    return cashier[0]
+  }
 
   for (const p of w.pawns) {
     if (p.kind !== 'PATIENT') { out.push(p); continue }
@@ -449,10 +520,11 @@ function progressStages(w: SimWorld): SimWorld {
         if (w.minute >= (p.examUntilMin ?? Infinity)) {
           // 수익은 **환자가 보러 온 과의 수가**다 — 같은 20분이어도 미용 30만원, 내과 12만원.
           // 이 한 줄이 "옳은 의료를 할수록 장부가 나빠진다"의 수입 쪽 절반이다(지출 쪽은 주 고정비).
+          // ⚠️ **여기서 계상하지 않는다** — 진료가 끝난 것과 돈을 받은 것은 이제 다른 사건이다
+          //    (아래 수납 갈림). `examsDone`과 부하만 여기서 확정된다: 그 둘은 창구와 무관하게
+          //    이미 일어난 노동이라, 수납이 없다고 진료 건수가 줄거나 의사가 안 지치면 거짓이 된다.
           const dept = wantsDeptOf(p)
           examsDone++
-          treasuryManwon += simDept(dept).examRevenueManwon
-          byDept = addExamToDeptStats(byDept, dept)
           // 부하는 **끝날 때** 쌓인다 — 그리고 그 단위는 분이 아니라 **표준강도분**(소요 × 과 강도)이다.
           // 강도를 빼면 "많이 보는 과가 갈린다"가 되어 미용이 포화하고 필수과가 무풍이 된다
           // (src/game/doctor.ts FATIGUE_INTENSITY 주석의 실측). 감속으로 길어진 소요는 그대로
@@ -468,7 +540,33 @@ function progressStages(w: SimWorld): SimWorld {
           delete done.doctorId
           delete done.examUntilMin
           delete done.workMin // 끝난 작업의 소요는 남기지 않는다 — 다음 작업이 물려받으면 안 된다
-          keep(toExit(w, done, 'LEAVING'))
+          /* 수납 갈림 — 이 게임에서 **진료와 수금이 갈리는 유일한 자리**다(설계 §3).
+             창구가 있으면 카운터 앞까지 걸어가 **거기 닿는 분에** 낸다(아래 'PAYING').
+             없으면 그 수가는 통째로 샌다 — 이탈이 아니라 **미수**다: 이 사람은 진료를 받고 갔고,
+             장부에만 안 들어왔다. 두 숫자를 한 축으로 접으면 결산이 "의자를 더 놓으라"고 말하는데
+             실제로는 창구를 지어야 하는 상황이 생긴다(leftNoDept가 갈라진 것과 같은 이유).
+             ⚠️ 카운터가 있어도 **길이 끊겼으면** 미수다 — 못 가는 곳에서 돈을 걷을 수는 없다. */
+          const spot = cashierAt()
+          const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
+          if (spot && path) keep({ ...done, stage: 'PAYING', dest: spot, path })
+          else {
+            unpaidManwon += simDept(dept).examRevenueManwon
+            keep(toExit(w, done, 'LEAVING'))
+          }
+        } else keep(p)
+        break
+      // 카운터 앞으로 걸어가는 구간 — **도착한 분에 낸다**. 진료실 의자와 달리 여기선 이동이
+      // 있으므로 좌초가 실재한다(누가 접수처 문 앞을 막았다).
+      case 'PAYING':
+        if (arrived) {
+          const dept = wantsDeptOf(p)
+          treasuryManwon += simDept(dept).examRevenueManwon
+          byDept = addExamToDeptStats(byDept, dept)
+          keep(toExit(w, p, 'LEAVING'))
+        } else if (stranded) {
+          // 진료비는 못 받지만 **사람은 내보낸다** — 이탈로 세지 않는 것이 계약이다(진료는 받았다).
+          unpaidManwon += simDept(wantsDeptOf(p)).examRevenueManwon
+          keep(toExit(w, p, 'LEAVING'))
         } else keep(p)
         break
       case 'LEAVING':
@@ -484,6 +582,6 @@ function progressStages(w: SimWorld): SimWorld {
   // 필드를 손으로 나열하면 새 집계가 늘 때마다 여기서 조용히 0으로 리셋된다.
   return {
     ...w, treasuryManwon, pawns: applyWorkLoads(out, loadByDoctor),
-    stats: { ...w.stats, examsDone, leftCount, byDept },
+    stats: { ...w.stats, examsDone, leftCount, byDept, unpaidManwon },
   }
 }

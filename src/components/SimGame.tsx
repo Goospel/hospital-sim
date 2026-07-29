@@ -39,7 +39,7 @@ import { createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions } from "@/sim/regions";
 import { buildWalls, demolish, designateRegion, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
-import { hireDoctor, setDoctorPriority, type HireResult, type Priority, type PriorityKind } from "@/sim/pawn";
+import { hireDoctor, hireNurse, setDoctorPriority, type HireResult, type Priority, type PriorityKind } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
 import { startNextDay } from "@/sim/day";
 import { applyMorningEvent, eligibleEvents, fallbackDirectorChoice, type DirectorChoice } from "@/sim/director";
@@ -413,6 +413,10 @@ export default function SimGame() {
     if (res.ok) setWorld(res.world);
     else showToast(HIRE_REASON_TEXT[res.reason]);
   };
+
+  /** 간호사 채용 — 위와 **같은 자리·같은 타이밍**이되 실패 경로가 없다(전국 풀이 없다).
+   *  그래서 토스트도 없다: 말할 사유가 없는데 문장을 만들면 그게 곧 거짓말이다. */
+  const hireNurseHere = () => setWorld(hireNurse(world));
 
   /** 우선순위 한 칸 — 채용·건설과 달리 **업데이터 안**에서 확정한다.
    *  두 번 불려도(StrictMode) 같은 축에 같은 값을 두 번 쓸 뿐이라 결과가 같고, 그 대신 렌더
@@ -1040,6 +1044,7 @@ export default function SimGame() {
           // 평소 패널이다(같은 컴포넌트가 두 얼굴을 갖되 상태는 하나다).
           starting={rosterOpen}
           onHire={hire}
+          onHireNurse={hireNurseHere}
           onClose={() => (rosterOpen ? setRosterOpen(false) : setHireOpen(false))}
         />
       )}

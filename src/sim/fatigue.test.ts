@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { createWorld, INITIAL_TREASURY_MANWON, type SimWorld } from './world'
 import { type Pawn } from './pawn'
-import { hire, placeRoom } from './testHelpers'
+import { hire, placeRoom, withCashier } from './testHelpers'
 import { tick } from './tick'
 import { DAY_END_MIN, startNextDay } from './day'
 import { startNextWeek } from './week'
@@ -56,7 +56,9 @@ function mixedWorld(seed = BOTH_KINDS_SEED): SimWorld {
   let w = place(createWorld(seed), { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
   w = place(w, { type: 'EXAM', dept: 'CARDIOLOGY', x: 6, y: 6, w: 6, h: 5 })
   w = place(w, WARD_1BED)
-  return hire(w, 'CARDIOLOGY')
+  // 수납 창구 — 없으면 진료비가 한 푼도 안 걷혀 아래 금고·수익 단언이 0 대 0의 항진명제가 된다
+  // (설계 2026-07-29 §2 · testHelpers.withCashier).
+  return withCashier(hire(w, 'CARDIOLOGY'))
 }
 
 /** 진료실 하나 + 그 과 의사 하나(대기실 없음 — 자연 도착이 폰조차 만들지 않는다).

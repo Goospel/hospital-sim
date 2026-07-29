@@ -21,7 +21,7 @@ import { ENTRANCE, type SimWorld } from './world'
 import { computeRegions, type Region } from './regions'
 import { priorityOf, type Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
-import { ARRIVAL_WINDOW_MIN, minuteStreamSeed, toExit } from './patientFlow'
+import { ARRIVAL_WINDOW_MIN, hasCashier, minuteStreamSeed, toExit } from './patientFlow'
 import { furnitureSpots, ptKey, samePt } from './spots'
 import { interruptActivity, workDurationMin } from './needs'
 import { applyWorkLoads } from './fatigue'
@@ -217,7 +217,7 @@ export function stepEmergencies(
   world: SimWorld, regions: readonly Region[] = computeRegions(world),
 ): SimWorld {
   const arrived = maybeEmergency(world, regions)
-  return assignEmergencyDoctors(progressEmergencies(arrived))
+  return assignEmergencyDoctors(progressEmergencies(arrived, regions))
 }
 
 /** 되돌려 보낸다 — **두 축에 동시에 적힌다.** `stats.emergencyTurnedAway`는 오늘의 내역이라
@@ -266,11 +266,17 @@ function maybeEmergency(w: SimWorld, regions: readonly Region[]): SimWorld {
   }
 }
 
-function progressEmergencies(w: SimWorld): SimWorld {
+function progressEmergencies(w: SimWorld, regions: readonly Region[]): SimWorld {
   if (!w.pawns.some(p => p.emergency)) return w
   let treasuryManwon = w.treasuryManwon
   let leftCount = w.stats.leftCount
+  let unpaidManwon = w.stats.unpaidManwon
   let byDept: SimDeptStats = w.stats.byDept
+  /* 수납 판정은 외래와 **같은 함수**를 본다(patientFlow.hasCashier) — 그러나 **이동은 없다**:
+     침대에서 카운터까지 걷는 흐름은 응급의 서사(눕는다)와 어긋나고, 처치가 끝나는 그 자리에서
+     낸다고 봐도 게임에 갈리는 것이 없다(설계 §3). 갈리는 것은 오직 "걷히는가"뿐이다. */
+  let paid: boolean | undefined
+  const collects = () => (paid ??= hasCashier(w, buildBlockedSet(w), regions))
   /** 이번 분에 끝난 처치의 표준강도분 — 외래와 같은 기계(fatigue.applyWorkLoads)로 얹는다. */
   const loadByDoctor = new Map<string, number>()
   const out: Pawn[] = []
@@ -296,10 +302,12 @@ function progressEmergencies(w: SimWorld): SimWorld {
       case 'IN_TREATMENT':
         if (w.minute >= (p.treatUntilMin ?? Infinity)) {
           const spec = emergencySpec(emergencyKindOf(p))
-          treasuryManwon += spec.revenueManwon
-          // 응급 수가도 **그 과의 장부**로 들어간다 — 따로 두면 과별 순익이 응급을 모르는 채
-          // 계산돼 "순환기는 응급을 받아도 적자"라는 이 게임의 논지를 잴 수 없다.
-          byDept = addRevenueToDeptStats(byDept, spec.dept, spec.revenueManwon)
+          if (collects()) {
+            treasuryManwon += spec.revenueManwon
+            // 응급 수가도 **그 과의 장부**로 들어간다 — 따로 두면 과별 순익이 응급을 모르는 채
+            // 계산돼 "순환기는 응급을 받아도 적자"라는 이 게임의 논지를 잴 수 없다.
+            byDept = addRevenueToDeptStats(byDept, spec.dept, spec.revenueManwon)
+          } else unpaidManwon += spec.revenueManwon
           // 처치도 **끝날 때** 부하가 쌓인다(외래와 같은 시점 계약). 강도는 과 강도가 아니라
           // 응급 강도다 — 같은 순환기 의사라도 90분 PCI와 20분 외래는 같은 무게가 아니다.
           if (p.doctorId) {
@@ -319,7 +327,7 @@ function progressEmergencies(w: SimWorld): SimWorld {
   }
   return {
     ...w, treasuryManwon, pawns: applyWorkLoads(out, loadByDoctor),
-    stats: { ...w.stats, leftCount, byDept },
+    stats: { ...w.stats, leftCount, byDept, unpaidManwon },
   }
 }
 

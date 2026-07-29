@@ -11,7 +11,16 @@ import { doctorName, pickTraits, type TraitKey } from './traits'
 /** 폰의 이동 속도 — 게임 분당 타일 수. 시간 분할 불변식이 성립하려면 정수여야 한다. */
 export const PAWN_TILES_PER_MIN = 2
 
-export type PawnKind = 'DOCTOR' | 'PATIENT'
+/**
+ * 세계를 걸어다니는 개체의 종류.
+ *
+ * ⚠️ **`'NURSE'`는 사람 기계(피로·허기·욕구·우선순위·사직)에 들어가지 않는다** — 그 전부가
+ * `kind === 'DOCTOR'`를 보고 갈리며, 그 한 줄들이 유지되는 것이 이 슬라이스의 **계약**이지
+ * 우연이 아니다(설계 §1 · payment.test가 잠근다). 간호사가 합류하는 곳은 셋뿐이다:
+ * 아침 입장·통행/충돌·렌더. 그리고 그가 하는 일은 하나다 — **접수처 카운터에 있으면
+ * 진료비가 걷힌다**(patientFlow.hasCashier).
+ */
+export type PawnKind = 'DOCTOR' | 'PATIENT' | 'NURSE'
 
 /**
  * 의사 한 명의 일 하나에 매기는 우선순위 — **0=금지 · 1=낮음 · 2=보통 · 3=높음**.
@@ -295,6 +304,35 @@ export function hireDoctor(w: SimWorld, dept: SimDeptKey): HireResult {
   if (remaining <= 0) return { ok: false, reason: 'NO_POOL' }
   const world = spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE))
   return { ok: true, world: { ...world, hirePool: { ...world.hirePool, [dept]: remaining - 1 } } }
+}
+
+/** 이 병원의 간호사 수 — 수납 판정(patientFlow.hasCashier)·주급(week)이 **같은 한 줄**을 본다.
+ *  세는 식을 호출부마다 적으면 "창구는 성립하는데 주급은 안 나가는" 병원이 조용히 생긴다. */
+export const nurseCount = (pawns: readonly Pawn[]): number =>
+  pawns.filter(p => p.kind === 'NURSE').length
+
+/**
+ * 간호사 채용 — 한 명이 정문으로 걸어 들어온다.
+ *
+ * **실패가 없어서 `HireResult`가 아니다**(hireDoctor와 갈리는 유일한 지점): 간호사는 과가
+ * 없으므로 전국 풀(`hirePool`)도 없고, 채용 일시금도 없다(의사와 같다 — 대가는 주말의 주급뿐).
+ * 거부 사유가 하나도 없는 자리에 결과 타입을 씌우면 화면이 도달 불가능한 분기를 떠안는다.
+ *
+ * 이름은 **의사 목록을 나눠 쓴다**(`doctorName`) — 인덱스는 이미 뽑은 간호사 수다(간호사는
+ * 사직이 없어 단조 증가한다). 의사와 같은 이름이 나올 수 있지만 카드가 늘 역할을 함께 적어
+ * 구별되고, 간호사에겐 사직 편지가 없어 동명이인이 사실을 흐릴 자리가 없다.
+ *
+ * ⚠️ 피로·허기·우선순위·특성을 **명시적으로도 싣지 않는다** — 필드가 없는 것이 곧 "이 사람은
+ * 그 기계 밖"이라는 표현이다(PawnKind 주석의 계약). 0으로 채우면 그 기계가 나중에 조용히
+ * 이 사람을 집는다.
+ */
+export function hireNurse(w: SimWorld): SimWorld {
+  const at = spawnSpotNear(w, ENTRANCE)
+  const p: Pawn = {
+    id: `nur-${w.nextId}`, kind: 'NURSE', x: at.x, y: at.y, path: [],
+    name: doctorName(nurseCount(w.pawns)),
+  }
+  return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
 }
 
 /** 경로를 분 예산만큼 소비 — tick의 이동 절반.

@@ -6,13 +6,26 @@
 // 셋 다 이 파일의 `endingOf` 한 곳에서만 판정된다(정산의 단일 출처 계승).
 import type { EndingKind, SimWorld } from './world'
 import { freshMorning } from './day'
-import { doctorDeptOf, type Pawn } from './pawn'
+import { doctorDeptOf, nurseCount, type Pawn } from './pawn'
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from './dept'
 // 임계는 기존 게임에서 임포트한다 — 복제하면 옛 층과 이 층의 "몇 일이면 떠나는가"가 조용히 갈린다.
 import { RESIGN_SATURATED_DAYS } from '../game/doctor'
 
 /** 금고 음수가 이만큼 **연속**되면 폐업(기존 게임 규칙 계승). */
 export const INSOLVENCY_WEEKS_TO_CLOSE = 2
+
+/**
+ * 간호사 한 명의 **주급**(만원, 항상 양수) — 의사의 과별 고정비와 같은 자리의 같은 성격이다
+ * (진료비를 한 푼도 못 걷은 주에도 나간다).
+ *
+ * **자리가 `dept.ts` 카탈로그 밖인 이유**: 간호사는 과가 아니다. 카탈로그에 줄을 하나 끼우면
+ * 채용 목록(HIRABLE_DEPTS)·도착 분포·응급 배후과가 전부 그 줄을 과로 읽는다(전부 카탈로그
+ * 파생이다) — 값 하나를 두려고 네 기계를 속이는 꼴이다.
+ *
+ * **눈금의 근거는 대소다**: 미용 의사(800)의 절반 이하 — 리서치의 "간호사 인건비 ≪ 의사"에서
+ * 부호만 계승했다. 절대액은 실측 후 조정 가능한 튜닝값이다(임상·회계 주장 아님).
+ */
+export const NURSE_WEEKLY_COST_MANWON = 300
 
 /** 한 판의 길이 — 이 주차의 결산이 끝나면 무조건 에필로그다.
  *  상한이 없으면 흑자 빌드(미용 단독 등)가 무한히 굴러가 판에 결말이 없다. */
@@ -41,6 +54,11 @@ export interface WeekSummary {
   /** 과별 표 — **관계가 있는 과만** 줄이 선다(의사가 있거나 그 주에 돈을 벌었거나).
    *  0줄을 채우지 않는 것은 `SimDeptStats`(dept.ts)의 Partial 계승이다. */
   byDept: Partial<Record<SimDeptKey, WeekDeptLine>>
+  /** 간호 인력 — 인원과 그 주급 합. **과별 표에 섞지 않는 것이 계약이다**: 간호사는 과가 없어
+   *  줄을 세울 자리가 없고, 억지로 한 과에 얹으면 그 과의 순익이 거짓이 된다.
+   *  ⚠️ 등급 가감산(`grade`·`adjustManwon`)은 **아직 없다** — 다음 PR의 자리다. 주급만 먼저
+   *  드는 이유는 공짜 노동을 만들지 않기 위해서다(뽑는 순간 대가가 확정된다는 채용의 계약). */
+  nursing: { count: number; wageManwon: number }
   /** 이번 주 응급 — 몇 건 받았고 몇 건 되돌아갔나. **사유별 내역은 여기 없다**(그건 그날
    *  그 순간의 메시지라 `stats.emergencyTurnedAway`가 소유한다 — DayRecord와 같은 분담). */
   emergencies: { accepted: number; turnedAway: number }
@@ -54,11 +72,16 @@ export function weekSummary(w: SimWorld): WeekSummary {
   // 총 고정비는 **과별 표에서 유도한다** — 따로 합산하면 표와 총액이 갈릴 수 있고, 갈려도
   // 화면엔 둘 중 하나만 보인다(DayRecord.revenueManwon이 byDept에서 유도되는 것과 같은 이유).
   const fixedCostManwon = Object.values(byDept).reduce((sum, line) => sum + line.fixedCostManwon, 0)
+  // 간호 주급도 **블록에서 유도한다** — 총액을 따로 더하면 표의 인원과 총액이 갈릴 수 있고,
+  // 갈려도 화면엔 둘 중 하나만 보인다(byDept 유도와 같은 계약).
+  const count = nurseCount(w.pawns)
+  const nursing = { count, wageManwon: count * NURSE_WEEKLY_COST_MANWON }
   return {
     week: w.week,
     revenueManwon,
     fixedCostManwon,
-    netManwon: revenueManwon - fixedCostManwon,
+    nursing,
+    netManwon: revenueManwon - fixedCostManwon - nursing.wageManwon,
     examsDone: w.days.reduce((sum, d) => sum + d.examsDone, 0),
     leftCount: w.days.reduce((sum, d) => sum + d.leftCount, 0),
     byDept,
@@ -112,7 +135,10 @@ function weekDeptTable(w: SimWorld): Partial<Record<SimDeptKey, WeekDeptLine>> {
 export function settleWeek(w: SimWorld): SimWorld {
   if (w.phase !== 'WEEK_END') throw new Error(`settleWeek: WEEK_END가 아닌 세계(${w.phase})`)
   if (w.weekSettled) throw new Error('settleWeek: 이번 주는 이미 결산했다(고정비 이중 차감)')
-  const treasuryManwon = w.treasuryManwon - weekSummary(w).fixedCostManwon
+  // 나가는 돈은 **결산이 이미 유도해 둔 둘**이다(과별 고정비 + 간호 주급) — 여기서 항목을 다시
+  // 나열하면 새 인건비가 붙는 날 한쪽만 빠져 화면의 순익과 금고가 조용히 갈린다.
+  const bill = weekSummary(w)
+  const treasuryManwon = w.treasuryManwon - bill.fixedCostManwon - bill.nursing.wageManwon
   // 0은 음수가 아니다 — 딱 고정비만큼 벌어 금고를 비운 주는 살아남는다.
   const insolvencyStreak = treasuryManwon < 0 ? w.insolvencyStreak + 1 : 0
   const ending = endingOf(w, insolvencyStreak)

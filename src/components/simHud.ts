@@ -14,7 +14,8 @@ import { emergencySpec, wardBeds, type EmergencyTurnAway, type TurnAwayReason } 
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam, starvedSlowFactor } from '../sim/needs'
 import { buildBlockedSet } from '../sim/path'
-import { unservedDepts } from '../sim/patientFlow'
+import { hasCashier, unservedDepts } from '../sim/patientFlow'
+import { NURSE_WEEKLY_COST_MANWON } from '../sim/week'
 import { computeRegions, type Region } from '../sim/regions'
 import { examSlots } from '../sim/spots'
 import { TRAITS, type TraitKey } from '../sim/traits'
@@ -92,6 +93,19 @@ export function turnAwayBatchText(pending: readonly EmergencyTurnAway[]): string
   if (pending.length === 0) return ''
   const last = turnAwayText(pending[pending.length - 1])
   return pending.length === 1 ? last : `응급 ${pending.length}건이 되돌아갔습니다 — 마지막: ${last}`
+}
+
+/**
+ * 하루 결산에 괄호로 붙는 **미수** 한 조각 — 샌 돈이 없으면 빈 문자열.
+ *
+ * 0에 줄을 안 세우는 것이 요지다(`turnAwayBreakdownText`와 같은 규칙): 「못 받은 진료비 0」이
+ * 떠 있으면 아무 일도 없던 날이 사고가 있던 날처럼 읽힌다. 빈 문자열이 "띄우지 않는다"의
+ * 신호라, 호출부가 금액을 다시 비교하지 않아도 된다.
+ *
+ * 톤: **상태 서술만** 한다 — 「받지 못했습니다」이지 「놓쳤습니다」가 아니다(§톤 가드레일).
+ */
+export function unpaidText(manwon: number): string {
+  return manwon > 0 ? `못 받은 진료비 ${formatManwon(manwon)}` : ''
 }
 
 /** 사유별 회차 집계 — 0도 자리를 지킨다(문구 쪽에서 0줄을 빼는 판단을 한다). */
@@ -699,6 +713,22 @@ export function alertsOf(w: SimWorld): SimAlert[] {
       text: `${unserved.map(d => simDept(d).label).join('·')} 환자를 문 앞에서 돌려보내고 있습니다 — 그 과 의사가 없습니다`,
     })
   }
+  /* 미수 — 진료는 했는데 창구가 없어 돈이 안 걷혔다(patientFlow.hasCashier). 코어에서는
+     금고가 **안 움직이는** 사실이라 화면에 흔적이 없다: 진료 건수는 오르는데 수익만 0이라,
+     경고가 없으면 플레이어에게는 "수가가 0인가"로 보인다.
+
+     **실제로 샌 뒤에만** 뜬다(`unpaidManwon > 0`) — 상태만 보면 창구를 짓기도 전에 경고가
+     서서 아직 아무 일도 안 일어난 화면이 사고 난 것처럼 읽힌다(no-dept와 같은 규칙이고,
+     배치가 덜 끝난 동안은 어차피 setup 경고가 먼저다 — 그 섀도잉은 그대로 유지된다).
+
+     ⚠️ warn이지 danger가 아니고 문구는 **상태 서술만** 한다: 「받지 못했습니다」이지
+     「놓쳤습니다」가 아니다(톤 가드레일 — 「응급 끔」·no-dept와 같은 자리의 같은 규칙). */
+  if (w.stats.unpaidManwon > 0) {
+    alerts.push({
+      key: 'unpaid', kind: 'ops', severity: 'warn',
+      text: `진료비 ${formatManwon(w.stats.unpaidManwon)}을 받지 못했습니다 — 접수처 카운터에 간호사가 없습니다`,
+    })
+  }
 
   return [...alerts.filter(a => a.severity === 'danger'), ...alerts.filter(a => a.severity === 'warn')]
 }
@@ -802,6 +832,18 @@ export function setupSteps(w: SimWorld): SetupStep[] {
         ? `의자 없는 진료 책상 ${lonelyDesks}개 — 책상 옆에 의자를 붙이세요`
         : `진료 책상이 부족합니다 — 앉지 못한 의사 ${missing}명`,
     },
+    {
+      key: 'no-cashier',
+      label: '수납 창구를 만듭니다',
+      hint: '[건설] > [카운터]를 놓고 [용도] > [접수처]로 지정, [사람] > [채용]에서 간호사를 뽑습니다. 창구가 없으면 진료해도 돈을 받지 못합니다.',
+      /* **체인의 맨 뒤인 것이 계약이다**: 진료가 돌기 전에 창구부터 지으라고 말하면 "순서가 곧
+         인과"라는 이 목록의 전제가 뒤집힌다(창구만 있고 의사가 없는 병원은 걷을 돈이 없다).
+         뒤에 있어도 늦지 않다 — 경고는 **첫** 미완 단계라, 앞을 다 마친 병원에서 곧바로 뜬다.
+         판정은 코어(patientFlow.hasCashier)가 진다: 여기서 카운터와 간호사를 다시 세면
+         체크리스트에 체크가 있는데 돈은 안 걷히는 화면이 생긴다. */
+      done: hasCashier(w, blocked, regions),
+      alert: '수납 창구가 없습니다 — 진료비를 받지 못합니다',
+    },
   ]
 }
 
@@ -891,6 +933,16 @@ function doctorStatusText(p: Pawn, busy: ReadonlySet<string>): string {
  * `doctorId`라(busyDoctorIds) 폰 하나만 봐서는 알 수 없다.
  */
 export function inspectCard(p: Pawn, w: SimWorld): InspectCard {
+  /* 간호사 — **역할이 곧 신원**이다. 과가 없고(간호사는 과가 아니다) 피로·우선순위 줄도 없다:
+     그 기계 밖의 사람이라는 것이 이 슬라이스의 계약이라(pawn.PawnKind), 빈 줄을 0으로 채우면
+     화면이 "아직 안 지쳤다"고 말하게 되어 없는 축이 있는 척한다.
+     주급은 **코어 상수**를 그대로 읽는다 — 여기서 숫자를 적으면 결산에서 빠지는 액수와 갈린다. */
+  if (p.kind === 'NURSE') {
+    return {
+      title: p.name ? `${p.name} · 간호사` : '간호사',
+      lines: ['수납 담당', `주급 ${formatManwon(NURSE_WEEKLY_COST_MANWON)}`],
+    }
+  }
   if (p.kind === 'DOCTOR') {
     const name = p.name ?? '이름 미상'
     const deptLabel = p.dept ? simDept(p.dept).label : null
