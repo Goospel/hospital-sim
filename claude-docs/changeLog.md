@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-29 · 게임 이름 변경 — 수화기 너머의 벽 → 심스피탈(SimSpital)
+
+**왜** — 옛 이름은 "전화 너머의 담당자에게 매달리는 협상"이 핵심이던 시절에 붙었다. 본편이 **림월드형 병원 경영 시뮬**로 피벗한 뒤(콜 카드는 `/classic`으로 보존) 이름이 게임을 더는 설명하지 못했고, 제출 문서·랜딩·PDF 파일명이 전부 그 이름을 달고 있어 심사위원이 보는 첫 단어부터 어긋났다. 새 이름은 **Sim + hoSPITAL** 합성이라 장르와 소재가 이름 하나에 다 들어간다.
+
+**무엇을** — 살아 있는 표면만 바꾸고 **역사 기록은 보존**했다. ① 게임 화면 — `layout.tsx` 탭 제목 · `Landing.tsx` h1(+ 영문 병기 `SimSpital` 부제 줄, 눈썹줄과 같은 톤) · `/classic` 제목 ② 제출 문서 — README·requirements·submission-plan·game-intro·ai-usage-doc·final/README·ai-usage-directing.html. `game-intro.md`의 제목 칸에는 이름 뜻(Sim + hoSPITAL)을 적어 심사위원이 바로 읽게 했다 ③ PDF 산출물 — `build-submission-pdfs.mjs`의 파일명·문서 title을 `…-심스피탈.pdf`로 바꾸고 옛 이름 PDF를 `git rm` 후 `npm run pdf`로 재생성, 참조하는 링크(final/README·requirements)도 함께 ④ 리서치 문서 2건의 게임명 참조 줄. **보존**: `changeLog`·`plans`·`specs`의 옛 이름과 `game-concept.md` 본문의 별칭은 그 시점의 사실이라 손대지 않고, `game-concept.md` 상단 이력 목록에 "3. 2026-07-29 — 이름이 바뀌었다" 한 줄만 더했다. **1182 vitest**·tsc 0·eslint 0 error·build 통과 · 브라우저 실측(탭 제목·랜딩 h1).
+
 ## 2026-07-29 · 카메라 안전 영역 fit — HUD 밑에 깔리던 부지를 되찾다
 
 **왜** — 배포본 사용자 보고: *"하단 메뉴에 의사 캐릭터가 처음 배치되는 모습이 가려져."* 바로 아래 항목(부지 카메라)이 zoom 1의 fit을 **뷰포트 전체**로 잡은 결과다 — HUD 두 바는 오버레이라 뷰포트를 줄이지 않으므로, "부지 전체가 뷰포트에 딱 맞는 배율"은 곧 **부지의 위·아래 끝이 정확히 바 밑에 놓이는 배율**이다. 하필 의사의 첫 자리가 입구 앞(부지 아래 가장자리) 고정이라 채용의 결과가 **항상** 안 보였다. 진짜 함정은 그다음이다: 그 배율에서는 콘텐츠 = 클램프 기준이라 **팬 슬랙이 정확히 0**이고, 클램프가 중앙 정렬로 위치를 고정해 **끌어낼 수단이 구조적으로 없다**. 카메라 설계가 HUD를 겹친 근거(*"가려진 타일은 팬으로 끌어내면 된다"*)가 **최소 줌에서만 거짓**이었고, 그게 기본 화면이자 [⌂]가 돌아오는 화면이다([T-102](troubleshooting/T-102.md)).

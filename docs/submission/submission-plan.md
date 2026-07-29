@@ -3,7 +3,7 @@ tags:
   - type/submission
 ---
 
-# 사전 과제 제출 로드맵 — "수화기 너머의 벽"
+# 사전 과제 제출 로드맵 — "심스피탈(SimSpital)"
 
 > **NAN 2026 사전 과제 마감: 2026-08-10** (본선 9/4~9/6, 판교 NHN · 내부 심사 10팀 진출).
 > **전략: 최소 제출선 먼저(Option A).** LLM 없이 결정론 폴백 대사로도 "한 판 플레이 + Vercel 배포"를 먼저 확보 → 그 위에 실LLM을 **비파괴 가산 레이어**로 얹는다.
@@ -81,7 +81,7 @@ LLM/유료 API가 **전혀 없어도**(결정론 폴백 대사) Vercel 공개 UR
 
 - **U1 — 파이프라인 스파이크** (7/16–7/19): 이 제출의 1순위 침몰 리스크는 코드가 아니라 **미검증 파이프라인**이다. 게임 완성을 기다리지 말고 먼저 증명한다.
   - 필수 게이트: 로컬 **prod `next build`**(dev 아님) 통과 — `node_modules/next/dist/docs` 정독으로 Next 16 breaking change 선제 확인(AGENTS.md).
-  - 한 화면 walking skeleton(제목 "수화기 너머의 벽")을 **Vercel 배포** → 타 기기/시크릿창에서 공개 URL 열림 확인. Vercel 환경변수에 `ANTHROPIC_API_KEY`(서버 전용) 등록 예행.
+  - 한 화면 walking skeleton(당시 제목 "수화기 너머의 벽" — 현 「심스피탈」)을 **Vercel 배포** → 타 기기/시크릿창에서 공개 URL 열림 확인. Vercel 환경변수에 `ANTHROPIC_API_KEY`(서버 전용) 등록 예행.
   - **예비 1일**(빌드 실패 대비). 영상 20초 throwaway 유튜브 업로드 테스트 + LLM 단일 왕복 호출·지연 실측은 **U2와 겹쳐** 처리(A1에 다 몰지 않음).
 - **U2 — 한 판 UI 척추** (7/19–7/24, 슬랙 포함): green인 결정론 코어(`round`/`goldenTime`/`adjudicate`)를 React에 배선. 환자 도착 + 골든타임 카운트다운(틱을 `goldenTime.advance`에 위임, 판정은 코드가) / 병원 리스트 + '전원 콜' → `attemptTransfer` → `TransferVerdict` 표시 / 종료 상태 UI + 입력 잠금 / 결정론 폴백 대사 1차 세트 / STEMI 하드코딩 완주. **+ 실LLM 극소판**: 거절 대사 1종만 실제 Anthropic 왕복으로 렌더(무키면 폴백).
 - **U3 — 거절 누적 + 하드락 벽** (7/24–7/27): 콜마다 거절 로그 리스트 + 사유 태그 뱃지 / 자유 텍스트 설득 입력(병상0은 어떤 텍스트에도 `NO_BED` 유지) / 골든타임 임계 이하 화면 톤 경고.
