@@ -409,6 +409,11 @@ export interface Camera {
 /** 최대 줌 — 타일 하나가 화면을 채우면 부지의 맥락이 사라져 오히려 짓기 어렵다. */
 export const ZOOM_MAX = 3
 
+/** 최소 줌 — **fit(1)보다 아래**여야 한다. 1에서 막으면 게임이 시작되는 배율이 곧 하한이라
+ *  [−]와 휠아웃이 **처음부터 죽은 버튼**이다("확대만 되지 축소는 안 된다" — 실제 신고).
+ *  부지 전체가 이미 보이는 배율이라도 둘레 여백까지 당겨 보는 것이 축소의 모습이다. */
+export const ZOOM_MIN = 0.5
+
 /** 그 배율에서 화면에 그려지는 맵 크기 — 클램프의 경계는 전부 여기서 나온다. */
 const contentOf = (base: Size, scale: number): Size => ({ w: base.w * scale, h: base.h * scale })
 
@@ -448,7 +453,7 @@ export function zoomedCamera(
   base: Size,
   fit: number,
 ): Camera {
-  const zoom = Math.max(1, Math.min(ZOOM_MAX, cam.zoom * factor))
+  const zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, cam.zoom * factor))
   const k = zoom / cam.zoom
   const eff = clampCamera(cam, safe, contentOf(base, fit * cam.zoom))
   return clampCamera(

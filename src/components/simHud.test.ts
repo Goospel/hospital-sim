@@ -5,7 +5,7 @@ import {
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
-  clampCamera, pannedCamera, safeArea, zoomedCamera, ZOOM_MAX, type Camera,
+  clampCamera, pannedCamera, safeArea, zoomedCamera, ZOOM_MAX, ZOOM_MIN, type Camera,
 } from './simHud'
 import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
 import { createWorld, GRID_W, GRID_H, type RoomType, type SimWorld } from '../sim/world'
@@ -803,11 +803,27 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
     expect(c.y).toBeCloseTo(VIEW.h - big.h)
   })
 
-  it('zoom은 [1, ZOOM_MAX] 밖으로 못 나간다 — 1보다 작으면 부지가 화면보다 작아진다', () => {
+  it('zoom은 [ZOOM_MIN, ZOOM_MAX] 밖으로 못 나간다', () => {
     const at = (cam: Camera, factor: number) =>
       zoomedCamera(cam, { x: 400, y: 300 }, factor, SAFE, BASE, FIT).zoom
-    expect(at({ zoom: 1, x: 0, y: 0 }, 0.1)).toBe(1)
+    expect(at({ zoom: 1, x: 0, y: 0 }, 0.1)).toBe(ZOOM_MIN)
     expect(at({ zoom: 2, x: -200, y: -200 }, 100)).toBe(ZOOM_MAX)
+  })
+
+  it('**fit보다 더 축소된다** — 시작 화면(zoom 1)에서 [−]가 죽은 버튼이면 안 된다', () => {
+    // 신고된 결함: zoom 1이 곧 하한이라 처음 화면에서 축소가 아무 일도 하지 않았다.
+    // 부지 전체가 이미 보이는 배율이라도 더 당겨 둘레 여백까지 보는 것이 축소의 모습이다.
+    const out = zoomedCamera({ zoom: 1, x: 0, y: 0 }, { x: 400, y: 300 }, 1 / 1.4, SAFE, BASE, FIT)
+    expect(out.zoom).toBeCloseTo(1 / 1.4)
+    // 그 배율에선 콘텐츠가 안전 영역보다 작으므로 중앙 정렬이다(clampAxis의 계약).
+    expect(out.x).toBeCloseTo((VIEW.w - content(out.zoom).w) / 2)
+    expect(out.y).toBeCloseTo((VIEW.h - content(out.zoom).h) / 2)
+  })
+
+  it('ZOOM_MIN에서 더 축소하면 카메라가 통째로 그대로다 — 바닥에서 화면이 안 흔들린다', () => {
+    const floor: Camera = zoomedCamera({ zoom: 1, x: 0, y: 0 }, { x: 400, y: 300 }, 0.01, SAFE, BASE, FIT)
+    expect(floor.zoom).toBe(ZOOM_MIN)
+    expect(zoomedCamera(floor, { x: 10, y: 590 }, 0.5, SAFE, BASE, FIT)).toEqual(floor)
   })
 
   it('**앵커 불변식** — 줌 전후로 커서 아래 맵 좌표가 그대로다(클램프에 안 걸리는 중간 줌)', () => {
