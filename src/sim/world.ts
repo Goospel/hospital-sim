@@ -94,7 +94,14 @@ export interface SimWorld {
 
 export interface SimStats {
   examsDone: number  // 완료된 진료 수(수익의 근거)
-  leftCount: number  // 대기 못 하고 떠난 환자 수(자리 부족 + 인내 초과)
+  leftCount: number  // 대기 못 하고 떠난 환자 수(접수처 반려 + 자리 부족 + 인내 초과)
+  /** 그중 **접수처 반려** — 그 과를 아예 안 보는 병원이라 대기실까지 들어오지도 못한 수.
+   *  `leftCount`의 **부분집합**이지 따로 세는 축이 아니다(총합을 두 번 세면 화면이 갈린다).
+   *
+   *  이 축이 따로 필요한 이유: 나머지 이탈(자리 부족·인내 초과)은 **더 지으면 줄지만** 이건
+   *  안 줄어든다 — 채용해야 줄어든다. 한 숫자로 접으면 결산이 "의자를 더 놓으라"고 말하는데
+   *  실제로는 사람을 뽑아야 하는 상황이 생긴다. */
+  leftNoDept: number
   /** 과별 진료·수익 — 수가가 과마다 달라진 뒤로 **총수익을 여기서 유도한다**(Σ revenueManwon).
    *  총액을 따로 들고 있으면 과별 합과 어긋나도 아무도 모른다(deptLedger 불변식 I-A 계승). */
   byDept: SimDeptStats
@@ -110,7 +117,7 @@ export interface SimStats {
 /** 하루 집계의 영점 — `createWorld`와 `freshMorning`(day.ts)이 **같은 모양**을 써야 한다.
  *  한쪽만 새 필드를 빠뜨리면 그날 집계가 undefined로 시작해 조용히 무너진다. */
 export function freshStats(): SimStats {
-  return { examsDone: 0, leftCount: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [] }
+  return { examsDone: 0, leftCount: 0, leftNoDept: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [] }
 }
 
 export function createWorld(seed: number): SimWorld {

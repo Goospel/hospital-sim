@@ -18,6 +18,7 @@ const dayOf = (n: number, byDept: SimDeptStats, emergencies = NO_EMERGENCY): Day
   day: n,
   examsDone: Object.values(byDept).reduce((s, v) => s + (v?.patients ?? 0), 0),
   leftCount: 0,
+  leftNoDept: 0,
   revenueManwon: deptRevenueSum(byDept),
   byDept,
   emergencies,
@@ -465,14 +466,14 @@ describe('다음 주', () => {
     const settled = settleWeek(weekEndWorld({
       treasuryManwon: 100_000, pawns: [walking],
       stats: {
-        examsDone: 12, leftCount: 3, byDept: { CARDIOLOGY: { patients: 12, revenueManwon: 300 } },
+        examsDone: 12, leftCount: 3, leftNoDept: 1, byDept: { CARDIOLOGY: { patients: 12, revenueManwon: 300 } },
         emergencyAccepted: 2, emergencyTurnedAway: [{ kind: 'STEMI', reason: 'NO_BED' }],
       },
     }))
     const next = startNextWeek(settled)
     // 과별 집계도, 응급 집계도 아침에 비운다 — 안 비우면 새 주 첫날 장부가 지난주를 다시 싣는다.
     expect(next.stats).toEqual({
-      examsDone: 0, leftCount: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [],
+      examsDone: 0, leftCount: 0, leftNoDept: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [],
     })
     const doc = next.pawns[0]
     expect(doc.path).toEqual([])

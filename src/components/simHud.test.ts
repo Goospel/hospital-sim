@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { placeRoom } from '../sim/testHelpers'
+import { hire, placeRoom } from '../sim/testHelpers'
 import {
   alertsOf, escTarget, inspectCard, regionOverlayOn, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
@@ -939,6 +939,51 @@ describe('escTarget — ESC가 닫는 한 겹', () => {
   it('아무것도 안 열려 있으면 **아무 일도 안 한다** — 결산 오버레이는 ESC로 닫히지 않는다', () => {
     // 닫으면 다음 행동(다음 날 버튼)이 화면에서 사라진다 — 그래서 결산은 이 판정의 입력에 없다.
     expect(target()).toBeNull()
+  })
+})
+
+describe('alertsOf — 접수처 반려 경고', () => {
+  /** 대기실 + 진료실(내과) + 내과 의사 — 배치 경고가 안 뜨는 최소 병원(운영 경고만 남긴다). */
+  const clinic = (): SimWorld => {
+    let w = createWorld(3)
+    for (const spec of [
+      { type: 'WAITING' as const, x: 18, y: 24, w: 8, h: 6 },
+      { type: 'EXAM' as const, dept: 'INTERNAL_MEDICINE' as const, x: 18, y: 14, w: 8, h: 6 },
+      { type: 'WARD' as const, x: 28, y: 14, w: 8, h: 6 },
+    ]) {
+      const r = placeRoom(w, spec)
+      if (!r.ok) throw new Error(`전제 실패 — 건설 거부(${r.reason})`)
+      w = r.world
+    }
+    return hire(w, 'INTERNAL_MEDICINE')
+  }
+  const turnAway = (w: SimWorld, n: number): SimWorld =>
+    ({ ...w, stats: { ...w.stats, leftCount: w.stats.leftCount + n, leftNoDept: w.stats.leftNoDept + n } })
+  const alertKeys = (w: SimWorld) => alertsOf(w).map(a => a.key)
+
+  it('아직 아무도 안 돌려보냈으면 안 뜬다 — 개원 직후 4과 경고가 한꺼번에 서면 잡음이다', () => {
+    expect(alertKeys(clinic())).not.toContain('no-dept')
+  })
+
+  it('돌려보낸 뒤에 뜨고, **어느 과인지** 말한다 — 그 이름이 곧 할 일(채용)이다', () => {
+    const a = alertsOf(turnAway(clinic(), 5)).find(x => x.key === 'no-dept')
+    expect(a).toBeDefined()
+    // ⚠️ **부분문자열로 재지 않는다** — 「내과」는 「순환기내과」 안에 들어 있어, `not.toContain`이
+    //    보고 있는 과를 안 적었는데도 걸린다(실제로 걸렸다). 목록 전체를 통째로 대조한다:
+    //    보는 과가 빠지고 안 보는 과 셋이 **카탈로그 순서로** 선다는 계약을 한 줄이 다 잠근다.
+    const names = ['GENERAL_SURGERY', 'CARDIOLOGY', 'AESTHETICS'].map(d => simDept(d as SimDeptKey).label)
+    expect(a!.text).toContain(names.join('·'))
+  })
+
+  it('네 과를 다 뽑으면 사라진다 — 과거의 손실이 현재의 경고로 남지 않는다', () => {
+    let w = turnAway(clinic(), 5)
+    for (const dept of ['GENERAL_SURGERY', 'CARDIOLOGY', 'AESTHETICS'] as const) w = hire(w, dept)
+    expect(alertKeys(w)).not.toContain('no-dept')
+  })
+
+  it('경고이지 위험이 아니다 — 안 뽑은 것은 플레이어의 선택이라 붉게 칠하지 않는다', () => {
+    const a = alertsOf(turnAway(clinic(), 5)).find(x => x.key === 'no-dept')
+    expect(a!.severity).toBe('warn')
   })
 })
 

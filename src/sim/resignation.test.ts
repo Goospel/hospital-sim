@@ -84,6 +84,7 @@ const dayOf = (n: number, byDept: SimDeptStats): DayRecord => ({
   day: n,
   examsDone: Object.values(byDept).reduce((s, v) => s + (v?.patients ?? 0), 0),
   leftCount: 0,
+  leftNoDept: 0,
   revenueManwon: deptRevenueSum(byDept),
   byDept,
   emergencies: NO_EMERGENCY,

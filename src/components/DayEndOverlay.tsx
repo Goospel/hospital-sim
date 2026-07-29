@@ -70,6 +70,13 @@ export default function DayEndOverlay({
               {/* 색 단독 신호 금지 — 0이면 잉크색이고, 있을 때만 붉어진다(숫자가 함께 판정을 진다). */}
               <dd className={`font-semibold ${(today?.leftCount ?? 0) > 0 ? "text-stamp-ink" : "text-ink"}`}>
                 {today?.leftCount ?? 0}
+                {/* 접수처 반려를 **괄호로 떼어 보여준다** — 나머지 이탈(자리 부족·인내 초과)은
+                    더 지으면 줄지만 이건 안 줄고 **채용해야** 줄어든다. 한 숫자로 접으면
+                    결산이 "의자를 더 놓으라"고 말하는데 실제로는 사람을 뽑아야 하는 날이 생긴다.
+                    0이면 줄이 아예 안 뜬다 — 회차 사유(`reasons`)와 같은 규칙이다. */}
+                {(today?.leftNoDept ?? 0) > 0 && (
+                  <span className="font-normal text-ink-2"> (그 과가 없어서 {today!.leftNoDept})</span>
+                )}
               </dd>
             </div>
             {/* 응급 — **문앞 판정** 기준의 수용/회차다(도착 즉시 결정된다). 처치까지 못 간 채

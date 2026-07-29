@@ -49,6 +49,9 @@ export interface DayRecord {
   day: number
   examsDone: number
   leftCount: number
+  /** 그중 접수처 반려(그 과를 안 봐서 못 받은 수) — `leftCount`의 **부분집합**이다(world.SimStats).
+   *  마감이 여기에 더할 것은 없다: 반려는 도착 그 순간에만 일어나고 잔류 환자와 겹치지 않는다. */
+  leftNoDept: number
   /** 그날 진료 수익의 총액 — **`byDept`에서 유도한다**(Σ revenueManwon). 따로 세면 두 숫자가
    *  어긋날 수 있고, 어긋나도 화면엔 둘 중 하나만 보여서 아무도 모른다. */
   revenueManwon: number
@@ -111,6 +114,7 @@ export function settleDay(world: SimWorld): SimWorld {
     day: world.day,
     examsDone: exams,
     leftCount: left,
+    leftNoDept: world.stats.leftNoDept,
     revenueManwon: deptRevenueSum(byDept),
     byDept,
     emergencies: {
