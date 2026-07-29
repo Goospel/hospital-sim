@@ -16,6 +16,7 @@ import {
   buildResultText,
   escTarget,
   formatManwon,
+  inspectCard,
   isDragTool,
   previewLabel,
   rectModeOf,
@@ -134,6 +135,9 @@ export default function SimGame() {
   /** 지정할 진료실의 과 — 진료실을 고른 뒤 **한 번 더** 고르게 한다(과 없는 진료실은 코어가 던진다). */
   const [examDept, setExamDept] = useState<SimDeptKey | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  /** 지금 카드를 열어 둔 폰의 id — **id만** 든다. 폰 자체를 스냅샷으로 들면 그 사람이 걸어가도
+   *  카드의 수치가 그 순간에 굳고, 퇴장(배열에서 제거)한 뒤에도 유령 카드가 남는다. */
+  const [inspectId, setInspectId] = useState<string | null>(null);
   const [hireOpen, setHireOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   /* 이미 읽은 이벤트 카드 — **닫힘을 상태로 두지 않고 "읽은 것"을 기억한다.** 카드가 뜨는
@@ -258,12 +262,19 @@ export default function SimGame() {
       }
       if (e.key !== "Escape") return;
       // 결산 오버레이(DAY_END·WEEK_END)는 입력에 없다 — 닫으면 [다음 날]이 사라진다(escTarget 주석).
-      switch (escTarget({ modalOpen: hireOpen || priorityOpen || eventOpen, inspectOpen: false, tool })) {
+      switch (escTarget({
+        modalOpen: hireOpen || priorityOpen || eventOpen,
+        inspectOpen: inspectId !== null,
+        tool,
+      })) {
         case "modal":
           // 한 번에 한 겹 — 겹쳐 떠 있어도 위엣것부터 닫는다(이벤트 카드는 「읽음」으로 접힌다).
           if (hireOpen) setHireOpen(false);
           else if (priorityOpen) setPriorityOpen(false);
           else setSeenEvent(eventKey);
+          break;
+        case "inspect":
+          setInspectId(null);
           break;
         case "tool":
           // 도구를 놓을 땐 용도·과도 함께 비운다 — 팔레트의 초기화(toggleSection)와 같은 세 줄이다.
@@ -275,7 +286,7 @@ export default function SimGame() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hireOpen, priorityOpen, eventOpen, eventKey, tool]);
+  }, [hireOpen, priorityOpen, eventOpen, eventKey, tool, inspectId]);
 
   /*
     되돌아간 응급 알림 — 폰이 만들어지지 않는 사건이라(문전 판정) 화면에 아무 흔적이 없다.
@@ -481,6 +492,12 @@ export default function SimGame() {
      상태줄의 배치 경고(setupWarningText)도 같은 함수의 파생이라 두 자리가 갈릴 수 없다. */
   const alerts = alertsOf(world);
 
+  /* 인스펙트 카드 — **매 렌더 세계에서 폰을 다시 찾는다**(스냅샷 금지). 그래서 그 사람이
+     걸어가면 카드의 수치가 따라 살고, 퇴장하면(배열에서 빠지면) 찾기가 실패해 카드가 저절로
+     닫힌다 — 남은 id는 무해하므로 상태를 따로 비울 필요가 없다. */
+  const inspected = inspectId === null ? undefined : world.pawns.find((p) => p.id === inspectId);
+  const card = inspected ? inspectCard(inspected, world) : null;
+
   /*
     ── HUD가 덮는 두께 ─────────────────────────────────────────────────────
     맵의 fit·클램프 기준이 뷰포트가 아니라 **안전 영역**이라(TileMap.useCamera), 바가 몇 px인지를
@@ -644,6 +661,16 @@ export default function SimGame() {
           else commit(tool, [t]);
         }}
         onTileMove={(t) => setDrag((d) => (d ? { ...d, cur: t } : d))}
+        // 지금 카드를 보고 있는 폰 — 아바타에 선택 링이 붙는다(맵이 판정하지 않는다).
+        selectedId={inspectId ?? undefined}
+        // 도구를 안 든 주버튼 클릭 = **가리키기**. 도구를 들었으면 이 콜백은 오지 않는다(건설이 먼저다).
+        onTileClick={(t) => {
+          // 한 칸에 겹쳐 선 폰 중 **마지막**을 고른다 — 배열 뒤가 화면 위에 그려지는 쪽이라,
+          // 눈에 보이는 사람과 카드가 가리키는 사람이 같아진다.
+          const hit = [...world.pawns].reverse().find((p) => p.x === t.x && p.y === t.y);
+          // 빈 타일 클릭은 **닫기**다 — 카드를 닫는 데 마우스 경로가 하나 더 생긴다(× 버튼과 함께).
+          setInspectId(hit?.id ?? null);
+        }}
         onTileUp={(t) => {
           // 확정은 setState **바깥**에서 한다 — 업데이터 안에서 건설하면 StrictMode가
           // 업데이터를 두 번 불러 벽이 두 번 서고 비용도 두 번 빠진다.
@@ -878,6 +905,43 @@ export default function SimGame() {
           </span>
         </p>
       </aside>
+
+      {/*
+        ── 인스펙트 카드 — 클릭한 폰 한 명. **팔레트 오른쪽 아래**에 선다(insets.left를 그대로
+        재활용한다 — 팔레트 폭이 갈려도 카드가 그 밑에 깔리지 않는다).
+
+        z-10이라 오버레이(채용·인사·속보·결산 = z-20) **아래** 층이다: 모달이 뜨면 가려지는
+        것이 옳다(그때 플레이어가 보는 것은 그 모달이다).
+
+        닫는 길이 셋이다 — ESC(§키보드) · 빈 타일 클릭 · 이 × 버튼. 마지막 것이 있어야
+        "마우스만으로 완주"가 유지된다(키보드는 언제나 가속 수단일 뿐이다).
+      */}
+      {card && (
+        <aside
+          style={{ left: insets.left + 8 }}
+          className="absolute bottom-2 z-10 w-56 border border-frame bg-desk-2/80 px-3 py-2 backdrop-blur-sm"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="font-mono text-xs leading-snug text-on-desk">{card.title}</h2>
+            <button
+              type="button"
+              title="닫기"
+              onClick={() => setInspectId(null)}
+              className="-mr-1 -mt-0.5 px-1 font-mono text-xs text-on-desk-muted transition-colors hover:text-on-desk"
+            >
+              ×
+            </button>
+          </div>
+          <ul className="mt-1.5 flex flex-col gap-1 border-t border-frame pt-1.5">
+            {card.lines.map((l, i) => (
+              // 줄은 순수 함수가 만든 문장 배열이라 자리가 곧 신원이다(같은 문장이 두 줄 설 수 있다).
+              <li key={i} className="font-mono text-[11px] leading-snug text-on-desk-muted">
+                {l}
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
 
       {/*
         마감·결산은 라우트를 바꾸지 않고 부지 위에 덮는다 — 타일 병원은 한 장면으로 이어지는 게

@@ -17,7 +17,7 @@ import { buildBlockedSet } from '../sim/path'
 import { computeRegions, type Region } from '../sim/regions'
 import { examSlots } from '../sim/spots'
 import { TRAITS, type TraitKey } from '../sim/traits'
-import type { Pawn, Priority } from '../sim/pawn'
+import { priorityOf, type Pawn, type Priority } from '../sim/pawn'
 import type { Pt } from '../sim/path'
 import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld } from '../sim/world'
 // 타입 전용 — 컴파일에 지워지므로 이 파일은 여전히 React를 모른다(vitest가 그대로 돈다).
@@ -673,6 +673,93 @@ function setupAlert(
  *  서로 다른 배치 문제를 말하게 되고, 그 어긋남은 화면 어디에도 안 뜬다. */
 export function setupWarningText(w: SimWorld): string | null {
   return alertsOf(w).find(a => a.kind === 'setup')?.text ?? null
+}
+
+/*
+  ── 인스펙트 카드 ───────────────────────────────────────────────────────────
+  폰을 클릭하면 뜨는 한 장. **세계에 이미 있는 사실만** 싣는다 — "오늘 진료 N건" 같은 폰별
+  집계를 새로 들면 그건 표시가 아니라 시뮬 변경이다.
+
+  이 카드가 필요한 이유는 특성과 사연이 지금까지 **사직 편지에서만** 보였다는 것이다:
+  판이 끝나야 사람이 보이면 그 사람을 지킬 방법이 없다. 그래서 특성 줄이 이 카드의 첫 내용이다.
+*/
+
+/** 카드 한 장 — 제목 한 줄 + 본문 여러 줄. 색·배치는 화면이 정한다(여기는 문장만 만든다). */
+export interface InspectCard {
+  title: string
+  lines: string[]
+}
+
+/** 환자 흐름의 단계 → 한국어. `Record`라 스테이지가 늘면 tsc가 여기서 막는다 — 한 칸이 비면
+ *  그 단계의 환자만 조용히 말을 잃는다(ACTIVITY_MARK와 같은 계약).
+ *  ⚠️ 'PAYING'·'GONE'은 코어에서 **아직 아무도 만들지 않는 2주차 예약**이지만(pawn.ts) 표는
+ *  전부 채운다: 빈 칸을 남기면 그 갈래가 살아나는 날 화면만 조용히 뒤처진다. */
+const STAGE_LABEL: Record<NonNullable<Pawn['stage']>, string> = {
+  ENTERING: '입장 중',
+  WAITING: '대기 중',
+  TO_EXAM: '진료실로 이동',
+  IN_EXAM: '진료 중',
+  PAYING: '수납 중',
+  LEAVING: '퇴장 중',
+  GONE: '퇴장',
+  LEFT_WAITING: '기다리다 떠남',
+  TO_BED: '병상으로 이동',
+  IN_BED: '병상에서 대기',
+  IN_TREATMENT: '처치 중',
+}
+
+/**
+ * 지금 이 의사가 하고 있는 일 한 문장 — **위가 이기는 체인**(statusLineText와 같은 관례).
+ *
+ * 넷 다 이미 화면 어딘가에 있는 판정이다: 진료는 아바타의 busy 색, 휴식·식사는 글리프,
+ * 자리 없음은 물음표. 카드가 그것들을 **문장으로** 모으는 것이지 새로 판정하지 않는다 —
+ * 여기서 다시 적으면 머리 위 표시와 카드가 서로 다른 말을 하는 순간이 생긴다.
+ */
+function doctorStatusText(p: Pawn, busy: ReadonlySet<string>): string {
+  if (busy.has(p.id)) return '진료 중'
+  return doctorActivityMark(p)?.label ?? doctorRoomlessMark(p)?.label ?? '대기 중'
+}
+
+/**
+ * 클릭한 폰 한 명의 카드.
+ *
+ * ⚠️ **던지지 않는다** — 이 함수는 클릭 한 번으로 렌더 중에 불리므로, 과 없는 폰(손세계·옛
+ * 세계)에 `simDept`를 그대로 태우면 클릭 한 번에 화면이 통째로 죽는다(resigningNotices가
+ * `doctorDeptOf`를 피한 것과 같은 판단). 이름·과가 없으면 그 조각만 빠진다.
+ *
+ * 세계를 받는 이유는 **바쁨**뿐이다: "진료 중"의 단일 출처는 의사의 플래그가 아니라 환자의
+ * `doctorId`라(busyDoctorIds) 폰 하나만 봐서는 알 수 없다.
+ */
+export function inspectCard(p: Pawn, w: SimWorld): InspectCard {
+  if (p.kind === 'DOCTOR') {
+    const name = p.name ?? '이름 미상'
+    const deptLabel = p.dept ? simDept(p.dept).label : null
+    return {
+      title: deptLabel ? `${name} · ${deptLabel}` : name,
+      lines: [
+        // 특성 — 라벨과 사연이 **한 줄에 함께** 간다. 라벨만 있으면 이름표일 뿐이라, 이 카드가
+        // 생긴 이유(사람으로 보이게 하기)가 그대로 사라진다.
+        ...traitBadges(p).map(t => `${t.label} — ${t.story}`),
+        doctorStatusText(p, busyDoctorIds(w.pawns)),
+        `피로 ${p.fatigue ?? 0} · 허기 ${p.hungerMin ?? 0}분`,
+        // 폴백(필드 없음 = 보통)은 코어가 소유한다 — 화면이 `?? 2`를 따로 적으면 손세계 폰이
+        // 카드에서만 「금지」로 보인다.
+        `진료 ${priorityOf(p, 'exam')} · 응급 ${priorityOf(p, 'emergency')} · 휴식 ${priorityOf(p, 'rest')}`,
+      ],
+    }
+  }
+  // 환자는 **익명**이다(character-design.md: 환자에 개인 서사를 붙이지 않는다) — 제목이 「환자」인
+  // 것이 그 계약이고, 그래서 이름·특성 줄이 아예 없다.
+  return {
+    title: '환자',
+    lines: [
+      ...(p.wantsDept ? [`원하는 과: ${simDept(p.wantsDept).label}`] : []),
+      ...(p.stage ? [STAGE_LABEL[p.stage]] : []),
+      // 응급은 종류까지 — 아바타의 붉은 링은 "응급이다"까지만 말하고, 무엇이 왔는지는
+      // 어느 과가 붙잡히는지를 정하는 사실이다(emergency.ts의 배후과).
+      ...(p.emergency ? [`응급 — ${emergencySpec(p.emergency).label}`] : []),
+    ],
+  }
 }
 
 /*

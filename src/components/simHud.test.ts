@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { placeRoom } from '../sim/testHelpers'
 import {
-  alertsOf, escTarget, toggledSpeed,
+  alertsOf, escTarget, inspectCard, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
@@ -14,7 +14,8 @@ import { simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
 import { HUNGRY_AFTER_MIN } from '../sim/needs'
 import { TRAITS } from '../sim/traits'
-import type { Pawn, Priority } from '../sim/pawn'
+import { DEFAULT_PRIORITY } from '../sim/pawn'
+import type { Pawn, PatientStage, Priority } from '../sim/pawn'
 import { FATIGUE_RED, RESIGN_SATURATED_DAYS } from '../game/doctor'
 
 /** 회차 사유 한 건을 짧게 쓰는 헬퍼 — 테스트가 읽히게. */
@@ -875,6 +876,117 @@ describe('escTarget — ESC가 닫는 한 겹', () => {
   it('아무것도 안 열려 있으면 **아무 일도 안 한다** — 결산 오버레이는 ESC로 닫히지 않는다', () => {
     // 닫으면 다음 행동(다음 날 버튼)이 화면에서 사라진다 — 그래서 결산은 이 판정의 입력에 없다.
     expect(target()).toBeNull()
+  })
+})
+
+/*
+  ── 인스펙트 카드 ───────────────────────────────────────────────────────────
+  폰을 클릭하면 뜨는 카드. 이 카드가 존재하는 이유는 **특성과 사연이 지금까지 사직 편지에서만
+  보였다**는 것이다 — 판이 끝나야 사람이 보이면 그 사람을 지킬 방법이 없다. 내용은 전부
+  세계에 이미 있는 사실이고(새 집계 필드 금지), 판정은 기존 헬퍼를 그대로 지난다.
+*/
+describe('inspectCard — 폰 클릭 카드', () => {
+  /** 카드가 읽는 세계 — 판정에 필요한 것은 폰 목록뿐이다(바쁨은 환자의 doctorId에서 나온다). */
+  const world = (pawns: Pawn[] = []): SimWorld => ({ ...createWorld(1), pawns })
+  const patient = (over: Partial<Pawn> = {}): Pawn =>
+    ({ id: 'p1', kind: 'PATIENT', x: 0, y: 0, path: [], stage: 'WAITING', wantsDept: 'INTERNAL_MEDICINE', ...over })
+
+  it('의사 제목은 **이름 · 과**다 — 이 카드가 붙는 대상이 사람임을 첫 줄이 말한다', () => {
+    const d = doctor({ name: '김서준' })
+    expect(inspectCard(d, world([d])).title).toBe(`김서준 · ${simDept('CARDIOLOGY').label}`)
+  })
+
+  it('특성 두 개가 **사연과 함께** 실린다 — 이 노출이 카드의 존재 이유다', () => {
+    const d = doctor({ traits: ['WORKAHOLIC', 'IDEALIST'] })
+    const lines = inspectCard(d, world([d])).lines
+    for (const k of ['WORKAHOLIC', 'IDEALIST'] as const) {
+      expect(
+        lines.some(l => l.includes(TRAITS[k].label) && l.includes(TRAITS[k].story)),
+        `${k}의 사연이 없다`,
+      ).toBe(true)
+    }
+  })
+
+  it('상태 — 진료 중이 최우선이다. 판정은 busyDoctorIds(환자의 doctorId)가 진다', () => {
+    const d = doctor({ activity: 'RESTING' }) // 활동이 붙어 있어도 진료가 이긴다
+    const p: Pawn = { id: 'p1', kind: 'PATIENT', x: 0, y: 0, path: [], doctorId: 'd1' }
+    expect(inspectCard(d, world([d, p])).lines).toContain('진료 중')
+  })
+
+  it('상태 — 휴식·식사는 아바타 글리프와 **같은 라벨**을 쓴다(같은 상태를 두 벌로 적지 않는다)', () => {
+    const d = doctor({ activity: 'TO_MEAL' })
+    expect(inspectCard(d, world([d])).lines).toContain(doctorActivityMark(d)!.label)
+  })
+
+  it('상태 — 앉을 책상이 없으면 그 사실이 상태 줄이다(머리 위 물음표와 같은 문장)', () => {
+    const d = doctor()
+    expect(inspectCard(d, world([d])).lines).toContain(doctorRoomlessMark(d)!.label)
+  })
+
+  it('상태 — 아무것도 아니면 대기 중이다', () => {
+    const d = doctor({ deskAt: { x: 9, y: 9 } })
+    expect(inspectCard(d, world([d])).lines).toContain('대기 중')
+  })
+
+  it('피로·허기가 수치로 실린다 — 막대와 달리 카드는 정확한 값을 말한다', () => {
+    const d = doctor({ deskAt: { x: 9, y: 9 }, fatigue: 42, hungerMin: 130 })
+    const line = inspectCard(d, world([d])).lines.find(l => l.includes('피로'))!
+    expect(line).toContain('42')
+    expect(line).toContain('130')
+  })
+
+  it('우선순위 세 축이 실리고, 필드가 없으면 **전부 보통**으로 읽힌다 — 코어 폴백(priorityOf) 그대로', () => {
+    // 화면이 `?? 2`를 따로 적으면 손세계 폰이 카드에서만 「금지」로 보인다.
+    const d = doctor({ deskAt: { x: 9, y: 9 } })
+    expect(inspectCard(d, world([d])).lines)
+      .toContain(`진료 ${DEFAULT_PRIORITY} · 응급 ${DEFAULT_PRIORITY} · 휴식 ${DEFAULT_PRIORITY}`)
+  })
+
+  it('매긴 값이 있으면 그 값이 실린다 — 0(금지)도 그대로 보인다', () => {
+    const d = doctor({ deskAt: { x: 9, y: 9 }, priorities: { exam: 1, emergency: 3, rest: 0 } })
+    expect(inspectCard(d, world([d])).lines).toContain('진료 1 · 응급 3 · 휴식 0')
+  })
+
+  it('이름·과가 없는 폰에도 카드가 선다 — 던지면 클릭 한 번에 화면이 통째로 죽는다', () => {
+    const ghost: Pawn = { id: 'ghost', kind: 'DOCTOR', x: 0, y: 0, path: [] }
+    expect(() => inspectCard(ghost, world([ghost]))).not.toThrow()
+    expect(inspectCard(ghost, world([ghost])).title).not.toContain('undefined')
+  })
+
+  it('환자는 **익명**이다 — 제목에 이름이 붙지 않는다(환자에 개인 서사를 붙이지 않는다)', () => {
+    expect(inspectCard(patient(), world()).title).toBe('환자')
+  })
+
+  it('원하는 과가 실린다 — 그 과가 없으면 이 환자는 기다리다 떠난다', () => {
+    const lines = inspectCard(patient(), world()).lines
+    expect(lines.some(l => l.includes(simDept('INTERNAL_MEDICINE').label))).toBe(true)
+  })
+
+  it('stage마다 **다른** 한국어 문장이다 — 접히면 흐름의 어디쯤인지가 사라진다', () => {
+    const texts = (['ENTERING', 'WAITING', 'TO_EXAM', 'IN_EXAM', 'LEAVING'] as const)
+      .map(stage => inspectCard(patient({ stage }), world()).lines.join('\n'))
+    expect(new Set(texts).size).toBe(5)
+  })
+
+  it('모든 stage에 문구가 있다 — 한 칸이 비면 그 환자만 조용히 말을 잃는다', () => {
+    const stages: PatientStage[] = [
+      'ENTERING', 'WAITING', 'TO_EXAM', 'IN_EXAM', 'PAYING', 'LEAVING', 'GONE', 'LEFT_WAITING',
+      'TO_BED', 'IN_BED', 'IN_TREATMENT',
+    ]
+    for (const stage of stages) {
+      const lines = inspectCard(patient({ stage }), world()).lines
+      expect(lines.join(''), `${stage}에 문구가 없다`).not.toContain('undefined')
+      expect(lines.length, `${stage}에 줄이 없다`).toBeGreaterThan(1)
+    }
+  })
+
+  it('응급은 **종류까지** 말한다 — 붉은 링만으로는 무슨 응급인지 모른다', () => {
+    const lines = inspectCard(patient({ emergency: 'STEMI', stage: 'IN_BED' }), world()).lines
+    expect(lines.some(l => l.includes('응급') && l.includes(emergencySpec('STEMI').label))).toBe(true)
+  })
+
+  it('외래 환자엔 응급 줄이 없다 — 늘 켜진 표시는 표시가 아니다', () => {
+    expect(inspectCard(patient(), world()).lines.some(l => l.includes('응급'))).toBe(false)
   })
 })
 
