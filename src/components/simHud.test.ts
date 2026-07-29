@@ -4,7 +4,7 @@ import {
   alertsOf, escTarget, inspectCard, regionOverlayOn, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
-  previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText,
+  previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidText,
   startingRosterMet, STARTING_ROSTER_MIN, statusLineText, TOOL_LABEL,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
   clampCamera, pannedCamera, safeArea, zoomedCamera, ZOOM_MAX, ZOOM_MIN, type Camera,
@@ -16,6 +16,8 @@ import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
 import { HUNGRY_AFTER_MIN } from '../sim/needs'
 import { TRAITS } from '../sim/traits'
 import { DEFAULT_PRIORITY } from '../sim/pawn'
+import { hasCashier } from '../sim/patientFlow'
+import { NURSE_WEEKLY_COST_MANWON } from '../sim/week'
 import type { Pawn, PatientStage, Priority } from '../sim/pawn'
 import { FATIGUE_RED, RESIGN_SATURATED_DAYS } from '../game/doctor'
 
@@ -639,6 +641,9 @@ describe('buildResultText — 거부 사유와 건너뛴 칸을 말한다', () =
  */
 const room = (type: RoomType, dept?: SimDeptKey) => ({ type, dept })
 
+/** 픽스처 간호사 — 과도 피로도 없다(그게 계약이다 — pawn.PawnKind). */
+const nurse = (over: Partial<Pawn> = {}): Pawn => ({ id: 'nur-1', kind: 'NURSE', x: 0, y: 0, path: [], ...over })
+
 /** 명세를 왼쪽부터 한 칸씩 떼어 놓아 짓는다(겹치면 placeRoom이 거부한다). */
 const worldOf = (pawns: Pawn[], rooms: Array<ReturnType<typeof room>>): SimWorld => {
   let w = createWorld(1)
@@ -664,12 +669,16 @@ describe('setupSteps — 개원 준비 단계', () => {
   const keysOf = (w: SimWorld) => setupSteps(w).map(s => s.key)
 
   it('순서가 곧 **인과**다 — 대기실이 없으면 진료실을 아무리 지어도 환자가 안 온다', () => {
-    expect(keysOf(worldOf([], []))).toEqual(['no-doctor', 'no-waiting', 'sealed-rooms', 'no-exam-room', 'no-desk'])
+    expect(keysOf(worldOf([], []))).toEqual(
+      ['no-doctor', 'no-waiting', 'sealed-rooms', 'no-exam-room', 'no-desk', 'no-cashier'],
+    )
   })
 
   it('세계가 바뀌면 done이 따라온다 — 빈 판은 전부 미완, 갖춰진 병원은 전부 완료', () => {
     expect(setupSteps(worldOf([], [])).every(s => !s.done)).toBe(true)
-    const ready = worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')])
+    const ready = worldOf(
+      [doctor(), nurse()], [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('RECEPTION')],
+    )
     expect(setupSteps(ready).every(s => s.done)).toBe(true)
   })
 
@@ -689,6 +698,29 @@ describe('setupSteps — 개원 준비 단계', () => {
       expect(s.hint.length).toBeGreaterThan(0)
       expect(s.label.length).toBeGreaterThan(0)
     }
+  })
+
+  /*
+    수납 창구는 **체인의 맨 뒤**다(설계 2026-07-29 §4): 진료가 돌기 전에 창구부터 지으라고
+    말하면 순서가 곧 인과라는 이 목록의 전제가 뒤집힌다. 뒤에 있어도 경고는 제때 뜬다 —
+    앞 단계를 다 마친 병원에서 첫 미완 단계가 이것이 되기 때문이다.
+  */
+  it('수납 창구가 마지막 단계다 — 진료가 돌기 시작해야 "돈을 못 받는다"가 뜻을 갖는다', () => {
+    const steps = setupSteps(worldOf([], []))
+    expect(steps[steps.length - 1].key).toBe('no-cashier')
+  })
+
+  it('창구 판정은 코어(hasCashier)와 **같은 답**이다 — 화면이 따로 세지 않는다', () => {
+    const rooms = [room('WAITING'), room('EXAM', 'CARDIOLOGY')]
+    const cashierStep = (w: SimWorld) => setupSteps(w).find(s => s.key === 'no-cashier')!
+    // 셋 다 창구가 아니다 — 사람만 · 카운터만 · 둘 다 없음.
+    expect(cashierStep(worldOf([doctor(), nurse()], rooms)).done).toBe(false)
+    expect(cashierStep(worldOf([doctor()], [...rooms, room('RECEPTION')])).done).toBe(false)
+    expect(cashierStep(worldOf([doctor()], rooms)).done).toBe(false)
+    // 둘이 만나야 열린다.
+    const met = worldOf([doctor(), nurse()], [...rooms, room('RECEPTION')])
+    expect(cashierStep(met).done).toBe(true)
+    expect(hasCashier(met)).toBe(true)
   })
 
   it('톤 가드레일 — 체크리스트도 비난하지 않는다', () => {
@@ -753,8 +785,10 @@ describe('setupWarningText — 왜 아무 일도 안 일어나는가', () => {
     expect(setupWarningText(w)).toContain('대기실')
   })
 
-  it('대기실 + 자기 과 진료실이 다 있으면 경고가 없다 — 정상 병원이 경고를 달고 있으면 경고가 죽는다', () => {
-    const w = worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')])
+  it('대기실 + 자기 과 진료실 + 수납 창구가 다 있으면 경고가 없다 — 정상 병원이 경고를 달고 있으면 경고가 죽는다', () => {
+    // 수납이 생긴 뒤로 **창구까지가 "다 있다"**이다(setupSteps의 마지막 단계) — 창구 없이
+    // 조용하면 진료비가 새는 병원을 화면이 정상이라고 말하는 셈이다.
+    const w = worldOf([doctor(), nurse()], [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('RECEPTION')])
     expect(setupWarningText(w)).toBeNull()
   })
 
@@ -798,8 +832,10 @@ describe('setupWarningText — 왜 아무 일도 안 일어나는가', () => {
 */
 describe('alertsOf — 경고 스택(배치 문제 + 운영 경고)', () => {
   /** 침대까지 갖춘 병원 — ops 경고 하나만 겨누기 위한 바닥 상태(setup은 조용하다). */
+  // 접수처(+자동 카운터)와 간호사까지 갖춘다 — 수납이 생긴 뒤로 창구 없는 병원은 **배치가
+  // 덜 끝난** 상태라(setupSteps의 마지막 단계) setup 경고가 계속 서서 ops 하나만 겨눌 수 없다.
   const healthy = (pawns: Pawn[]) =>
-    worldOf(pawns, [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD')])
+    worldOf([...pawns, nurse()], [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD'), room('RECEPTION')])
   const keysOf = (w: SimWorld) => alertsOf(w).map(a => a.key)
 
   it('setupWarningText가 alertsOf의 **파생**이다 — 같은 세계에서 같은 문구가 나온다(이관 무변)', () => {
@@ -832,6 +868,34 @@ describe('alertsOf — 경고 스택(배치 문제 + 운영 경고)', () => {
 
   it('멀쩡한 병원엔 경고가 하나도 없다 — 늘 켜져 있는 경고는 경고가 아니다', () => {
     expect(alertsOf(healthy([doctor()]))).toEqual([])
+  })
+
+  /*
+    미수 경고 — **실제로 샌 뒤에만** 뜬다(`unpaidManwon > 0`). 상태만 보면 창구를 짓기도 전에
+    경고가 서서, 아직 아무 일도 안 일어난 화면이 사고 난 것처럼 읽힌다(no-dept와 같은 규칙).
+  */
+  it('unpaid — 창구가 없어도 **한 푼도 안 샜으면** 조용하다', () => {
+    const w = worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD')])
+    expect(w.stats.unpaidManwon).toBe(0) // 전제: 아직 아무것도 안 샜다
+    expect(keysOf(w)).not.toContain('unpaid')
+  })
+
+  it('unpaid — 진료비가 실제로 샌 뒤에 뜨고, 얼마인지를 말한다', () => {
+    const base = healthy([doctor()])
+    const leaked = { ...base, stats: { ...base.stats, unpaidManwon: 84 } }
+    const a = alertsOf(leaked).find(x => x.key === 'unpaid')
+    expect(a).toBeDefined()
+    // warn이지 danger가 아니다 — 안 지은 것은 사고가 아니라 플레이어의 선택이다(no-dept와 같은 톤).
+    expect(a!.severity).toBe('warn')
+    expect(a!.kind).toBe('ops')
+    expect(a!.text).toContain('84')
+  })
+
+  it('unpaid — 카피는 **상태 서술만** 한다(톤 가드레일)', () => {
+    const base = healthy([doctor()])
+    const a = alertsOf({ ...base, stats: { ...base.stats, unpaidManwon: 84 } })
+      .find(x => x.key === 'unpaid')!
+    for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) expect(a.text).not.toContain(word)
   })
 
   it('no-bed — 침대 자리가 0이고 의사가 있으면 danger다(오는 응급이 전부 되돌아간다)', () => {
@@ -1092,11 +1156,43 @@ describe('regionOverlayOn — 영역 오버레이를 지금 그리는가', () =>
   보였다**는 것이다 — 판이 끝나야 사람이 보이면 그 사람을 지킬 방법이 없다. 내용은 전부
   세계에 이미 있는 사실이고(새 집계 필드 금지), 판정은 기존 헬퍼를 그대로 지난다.
 */
+describe('unpaidText — 하루 결산의 미수 한 조각', () => {
+  it('샌 돈이 있으면 얼마인지 말한다 — 금액 표기는 formatManwon 하나가 진다', () => {
+    expect(unpaidText(84)).toContain(formatManwon(84))
+  })
+
+  it('0이면 **빈 문자열**이다 — 아무 일도 없던 날에 "못 받은 진료비 0"이 뜨면 사고처럼 읽힌다', () => {
+    expect(unpaidText(0)).toBe('')
+  })
+
+  it('톤 가드레일 — 상태 서술만 한다', () => {
+    for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) {
+      expect(unpaidText(84)).not.toContain(word)
+    }
+  })
+})
+
 describe('inspectCard — 폰 클릭 카드', () => {
   /** 카드가 읽는 세계 — 판정에 필요한 것은 폰 목록뿐이다(바쁨은 환자의 doctorId에서 나온다). */
   const world = (pawns: Pawn[] = []): SimWorld => ({ ...createWorld(1), pawns })
   const patient = (over: Partial<Pawn> = {}): Pawn =>
     ({ id: 'p1', kind: 'PATIENT', x: 0, y: 0, path: [], stage: 'WAITING', wantsDept: 'INTERNAL_MEDICINE', ...over })
+
+  it('간호사는 **역할이 곧 신원**이다 — 과가 없고, 대신 하는 일과 주급이 실린다', () => {
+    const n = nurse({ name: '김서준' })
+    const card = inspectCard(n, world([n]))
+    expect(card.title).toContain('간호사')
+    expect(card.title).toContain('김서준')
+    expect(card.lines).toContain('수납 담당')
+    // 주급은 **코어 상수**에서 온다 — 화면이 숫자를 다시 적으면 결산에서 빠지는 액수와 갈린다.
+    expect(card.lines.some(l => l.includes(formatManwon(NURSE_WEEKLY_COST_MANWON)))).toBe(true)
+  })
+
+  it('간호사 카드엔 피로·우선순위 줄이 없다 — 그 기계 밖의 사람이다(pawn.PawnKind 계약)', () => {
+    const n = nurse()
+    const lines = inspectCard(n, world([n])).lines.join(' ')
+    for (const word of ['피로', '허기', '진료 ', '응급 ']) expect(lines).not.toContain(word)
+  })
 
   it('의사 제목은 **이름 · 과**다 — 이 카드가 붙는 대상이 사람임을 첫 줄이 말한다', () => {
     const d = doctor({ name: '김서준' })

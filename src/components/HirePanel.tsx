@@ -1,7 +1,8 @@
 "use client";
 
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
-import type { Pawn } from "@/sim/pawn";
+import { nurseCount, type Pawn } from "@/sim/pawn";
+import { NURSE_WEEKLY_COST_MANWON } from "@/sim/week";
 import { doctorCountByDept, formatManwon, startingRosterMet, STARTING_ROSTER_MIN } from "./simHud";
 
 /**
@@ -27,6 +28,7 @@ export default function HirePanel({
   treasuryManwon,
   starting = false,
   onHire,
+  onHireNurse,
   onClose,
 }: {
   pawns: Pawn[];
@@ -40,11 +42,19 @@ export default function HirePanel({
    *  화면이 둘이면 그 대조를 두 번 그려야 하고, 그중 하나는 반드시 낡는다. */
   starting?: boolean;
   onHire: (dept: SimDeptKey) => void;
+  /** 간호사 채용 — **과 인자가 없다**(간호사는 과가 아니다). 실패 사유도 없다: 전국 풀이
+   *  걸리지 않으므로 코어가 세계를 그냥 돌려준다(pawn.hireNurse). */
+  onHireNurse: () => void;
   /** 닫기 — 스타팅 모드에서는 **최소 인원을 채워야** 열린다(부모가 판정한다). */
   onClose: () => void;
 }) {
   const counts = doctorCountByDept(pawns);
-  const weeklyTotal = HIRABLE_DEPTS.reduce((sum, k) => sum + counts[k] * simDept(k).weeklyCostManwon, 0);
+  const nurses = nurseCount(pawns);
+  // 간호사 주급도 합계에 든다 — 이 줄이 "지금 병원이 매주 무는 돈"이라, 빼면 화면이 말하는
+  // 액수와 주간 결산에서 빠지는 액수가 갈린다(결산은 nursing 블록으로 함께 청구한다 · week.ts).
+  const weeklyTotal =
+    HIRABLE_DEPTS.reduce((sum, k) => sum + counts[k] * simDept(k).weeklyCostManwon, 0)
+    + nurses * NURSE_WEEKLY_COST_MANWON;
   const hired = HIRABLE_DEPTS.reduce((n, k) => n + counts[k], 0);
   const met = startingRosterMet(pawns);
 
@@ -120,6 +130,29 @@ export default function HirePanel({
               </li>
             );
           })}
+
+          {/* 간호사 — 과 목록과 **같은 줄 모양**이되 「전국 잔여」가 없다: 간호사는 카탈로그
+              밖이라 전국 풀이 없고(pawn.hireNurse), 없는 제약을 0으로 흉내 내면 화면이
+              시뮬에 없는 규칙을 주장한다. 스타팅 게이트도 이 줄을 세지 않는다 — 개원 강제는
+              **의사만**이다(simHud.startingRosterMet 불변). 체크리스트가 대신 안내한다. */}
+          <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+            <span className="min-w-24 text-sm text-on-desk">간호사 · 수납 담당</span>
+            <span className="font-mono text-xs tabular-nums text-on-desk-muted">현재 {nurses}명</span>
+            <span className="ml-auto font-mono text-xs tabular-nums text-on-desk-muted">
+              주급 {formatManwon(NURSE_WEEKLY_COST_MANWON)}
+            </span>
+            <button
+              type="button"
+              onClick={onHireNurse}
+              className="border border-frame px-3 py-1 text-xs text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+            >
+              채용
+            </button>
+            {/* 해석 카피 없이 사실만 — 접수처 카운터에 간호사가 있어야 진료비가 걷힌다는 규칙 그대로. */}
+            <p className="w-full text-[11px] text-on-desk-muted">
+              접수처 카운터에 간호사가 있어야 진료비를 받습니다.
+            </p>
+          </li>
         </ul>
 
         <div className="flex items-baseline justify-between font-mono text-xs tabular-nums">

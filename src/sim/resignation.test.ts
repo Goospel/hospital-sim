@@ -86,6 +86,7 @@ const dayOf = (n: number, byDept: SimDeptStats): DayRecord => ({
   leftCount: 0,
   leftNoDept: 0,
   revenueManwon: deptRevenueSum(byDept),
+  unpaidManwon: 0,
   byDept,
   emergencies: NO_EMERGENCY,
 })

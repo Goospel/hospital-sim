@@ -74,6 +74,21 @@ export function DoctorSprite({ dept, busy, variantKey }: { dept: DeptKey; busy: 
 }
 
 /**
+ * 간호사 — **의사 스프라이트의 팔레트 변주**다(실루엣은 FIGURE 하나 — §1).
+ *
+ * 흰 가운(`#d4d4d8`) 대신 청록 계열을 입는 것이 유일한 차이이고, 그 한 축이 "이 사람은 진료를
+ * 하지 않는다"를 말한다. 어깨 강조(A)에 **과 색을 안 쓰는 것도 계약이다**: 간호사는 과가
+ * 없으므로(pawn.hireNurse) 과 색을 빌려 오면 화면이 그를 그 과 소속으로 말하게 된다.
+ *
+ * `busy`가 없다 — 수납은 인원 판정이라(patientFlow.hasCashier) 간호사에게 "지금 응대 중"이라는
+ * 상태 자체가 없다. 없는 축을 색으로 흉내 내면 화면이 시뮬에 없는 사실을 주장한다.
+ */
+export function NurseSprite({ variantKey }: { variantKey?: string }) {
+  const v = variantKey ? variantOf(variantKey) : { hair: "#3f3f46", skin: "#f0d3b4" };
+  return <PixelGrid rows={FIGURE} palette={{ H: v.hair, S: v.skin, C: "#67e8f9", A: "#0e7490" }} />;
+}
+
+/**
  * 환자 — 익명 회색. 이름도 사연도 없다(의도적 영구 보류):
  * 개인 서사가 붙으면 "시스템이 문제"가 "이 환자가 안됐다"로 미끄러진다.
  */

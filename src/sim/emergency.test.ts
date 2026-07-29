@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, ENTRANCE, INITIAL_TREASURY_MANWON, type SimWorld } from './world'
 import { type Pawn } from './pawn'
-import { hire, placeRoom } from './testHelpers'
+import { hire, placeRoom, withCashier } from './testHelpers'
 import { buildBlockedSet } from './path'
 import { tick } from './tick'
 import { DAY_END_MIN, DAYS_PER_WEEK, settleDay } from './day'
@@ -48,7 +48,9 @@ function emergencyWorld(
   let w = createWorld(seed)
   if (ward) w = place(w, WARD_1BED)
   if (dept) w = hire(w, dept)
-  return w
+  // 수납 창구 — 응급 수가도 창구를 지난다(설계 2026-07-29 §3). 없으면 처치가 끝나도 금고가
+  // 안 움직여, 이 파일의 금고·byDept 단언이 전부 0 대 0의 항진명제가 된다.
+  return withCashier(w)
 }
 
 const run = (w: SimWorld, minutes: number) => {
@@ -73,6 +75,11 @@ function firstEmergencyMin(w0: SimWorld, kind: EmergencyKind, from = 1): number 
   }
   throw new Error(`전제 실패 — 하루 안에 ${kind}가 오지 않는 시드다`)
 }
+
+/** 손으로 `pawns`를 갈아끼우는 세계에 **간호사를 반드시 함께 싣기 위한** 조회.
+ *  빼면 그 세계는 창구가 없는 병원이 되어 처치 수가가 통째로 미수로 새고(설계 2026-07-29 §3),
+ *  금고 단언이 "왜 안 늘었나"를 못 말한 채 틀어진다. */
+const nurseOf = (w: SimWorld): Pawn => w.pawns.find(p => p.kind === 'NURSE')!
 
 const emergencyPawns = (w: SimWorld) => w.pawns.filter(p => p.emergency)
 
@@ -336,8 +343,9 @@ describe('배정·전이 계약', () => {
   function handWorld(ward: typeof WARD_1BED, depts: SimDeptKey[]): SimWorld {
     let w = place(createWorld(3), ward)
     for (const dept of depts) w = hire(w, dept)
-    return { ...w, minute: ARRIVAL_WINDOW_MIN }
+    return { ...withCashier(w), minute: ARRIVAL_WINDOW_MIN }
   }
+
 
   const inBed = (id: string, spot: { x: number; y: number }): Pawn => ({
     id, kind: 'PATIENT', x: spot.x, y: spot.y, path: [], dest: spot,
@@ -387,7 +395,7 @@ describe('배정·전이 계약', () => {
       stage: 'IN_TREATMENT', doctorId: doc.id, treatUntilMin: w.minute + 1,
     }
     const before = w.treasuryManwon
-    w = tick({ ...w, pawns: [doc, finishing, inBed('emg-next', beds[1])] }, 1)
+    w = tick({ ...w, pawns: [doc, nurseOf(w), finishing, inBed('emg-next', beds[1])] }, 1)
     expect(w.treasuryManwon).toBe(before + STEMI.revenueManwon) // 전제: 첫째 처치가 실제로 끝났다
     const next = w.pawns.find(p => p.id === 'emg-next')!
     expect(next.stage).toBe('IN_TREATMENT')
@@ -420,7 +428,8 @@ describe('집계·불변식', () => {
     let w = place(createWorld(seed), { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
     w = place(w, { type: 'EXAM', dept: 'CARDIOLOGY', x: 6, y: 6, w: 6, h: 5 })
     w = place(w, WARD_1BED)
-    return hire(w, 'CARDIOLOGY')
+    // 수납 창구 — 없으면 외래·응급 수가가 전부 미수로 새서 아래 Σ 불변식이 0 대 0이 된다.
+    return withCashier(hire(w, 'CARDIOLOGY'))
   }
 
   it('금고 불변식: 금고 = 초기 − 건설비 + Σ byDept(외래 + 응급)', () => {
@@ -458,7 +467,7 @@ describe('집계·불변식', () => {
   it('마감 정산: 처치 중이면 완료 인정, 침대로 가던 중·대기 중이면 이탈 집계', () => {
     // 자연 흐름의 600분에 어떤 스테이지가 남을지는 시드에 달렸다 — 스테이지별 계약은 손으로 잠근다.
     let w = place(createWorld(3), WARD_1BED)
-    w = hire(w, 'CARDIOLOGY')
+    w = withCashier(hire(w, 'CARDIOLOGY'))
     w = run(w, 5)
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
     const staged = (id: string, stage: Pawn['stage']): Pawn => ({
@@ -467,7 +476,7 @@ describe('집계·불변식', () => {
     })
     const s = settleDay({
       ...w,
-      pawns: [doc, staged('t', 'IN_TREATMENT'), staged('to-bed', 'TO_BED'), staged('in-bed', 'IN_BED')],
+      pawns: [doc, nurseOf(w), staged('t', 'IN_TREATMENT'), staged('to-bed', 'TO_BED'), staged('in-bed', 'IN_BED')],
     })
     expect(s.treasuryManwon).toBe(w.treasuryManwon + STEMI.revenueManwon)
     expect(s.stats.byDept).toEqual({ CARDIOLOGY: { patients: 1, revenueManwon: STEMI.revenueManwon } })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { placeRoom } from './testHelpers'
+import { placeRoom, withCashier } from './testHelpers'
 import { createWorld, tileIndex, INITIAL_TREASURY_MANWON } from './world'
 import { computeRegions } from './regions'
 import { spawnDoctor, type Pawn, type PatientStage } from './pawn'
@@ -20,7 +20,9 @@ function hospitalWorld(seed: number) {
   if (!r1.ok) throw new Error('전제 실패')
   const r2 = placeRoom(r1.world, { type: 'EXAM', x: 6, y: 6, w: 6, h: 5 })
   if (!r2.ok) throw new Error('전제 실패')
-  return spawnDoctor(r2.world, 'INTERNAL_MEDICINE', { x: 8, y: 8 })
+  // 수납 창구 — 없으면 진료비가 한 푼도 안 걷혀 아래 금고 불변식이 전부 0 대 0의 항진명제가 된다
+  // (설계 2026-07-29 §2 · testHelpers.withCashier).
+  return withCashier(spawnDoctor(r2.world, 'INTERNAL_MEDICINE', { x: 8, y: 8 }))
 }
 
 const runToDayEnd = (seed: number) => {
@@ -55,7 +57,10 @@ describe('하루 마감', () => {
     const built = INITIAL_TREASURY_MANWON - w0.treasuryManwon // 건설비를 마감 **전에** 캡처한다
     expect(built).toBeGreaterThan(0)
     const w = runToDayEnd(3)
-    expect(w.pawns.every(p => p.kind === 'DOCTOR')).toBe(true)
+    // 남는 기준은 **환자가 아니다**이지 "의사다"가 아니다 — 후자로 적으면 간호사가 환자와
+    // 함께 쓸려 나가고(에러 0) 이튿날 아침에 창구만 조용히 사라진다(day.settleDay 주석).
+    expect(w.pawns.every(p => p.kind !== 'PATIENT')).toBe(true)
+    expect(w.pawns.some(p => p.kind === 'NURSE')).toBe(true)
     // 금고 불변식은 정산을 통과해도 유지된다 — 금고 = 초기 − 건설비 + Σ(과별 환자 × 과 수가)
     expect(w.stats.byDept).toEqual({ INTERNAL_MEDICINE: { patients: w.stats.examsDone, revenueManwon: w.stats.examsDone * INTERNAL_RATE } })
     expect(w.treasuryManwon).toBe(INITIAL_TREASURY_MANWON - built + deptRevenueSum(w.stats.byDept))
@@ -73,10 +78,14 @@ describe('하루 마감', () => {
     // 여기서 놓치면 마감 수가에 계측기가 아예 없다. 순환기(25)면 회귀가 곧바로 드러난다.
     const patient = (id: string, stage: PatientStage): Pawn =>
       ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage, wantsDept: 'CARDIOLOGY' })
+    // 간호사를 함께 싣는다 — 빼면 이 세계는 창구가 없는 병원이 되어 마감이 인정한 수가가
+    // 통째로 미수로 새고, 아래 금고 단언이 그 이유를 못 말한 채 틀어진다(patientFlow.hasCashier).
+    const nurse = w.pawns.find(p => p.kind === 'NURSE')!
     const staged = {
       ...w,
       pawns: [
         doc,
+        nurse,
         patient('in-exam', 'IN_EXAM'),
         patient('entering', 'ENTERING'),
         patient('waiting', 'WAITING'),
@@ -92,16 +101,17 @@ describe('하루 마감', () => {
     expect(s.treasuryManwon).toBe(w.treasuryManwon + rate)
     expect(s.stats.byDept).toEqual({ CARDIOLOGY: { patients: 1, revenueManwon: rate } })
     expect(s.days[0].revenueManwon).toBe(rate) // Σ byDept == 그날 총수익
-    expect(s.pawns).toEqual([doc]) // 환자는 전부 세계에서 빠지고 의사만 남는다
+    expect(s.pawns).toEqual([doc, nurse]) // 환자는 전부 빠지고 일하는 사람만 남는다
   })
 
   it('이탈 집계는 명시 목록(inclusion)이라 새 스테이지가 자동으로 이탈이 되지 않는다', () => {
-    // 'PAYING'·'GONE'은 아직 아무도 만들지 않는 2주차 예약 스테이지다(pawn.ts). 집계를 denylist로
-    // 쓰면 그 흐름이 붙는 순간 수납 걷는 환자가 조용히 이탈로 세진다 — 에러 없이 숫자만 틀린다.
+    // ⚠️ **'PAYING'이 실제로 살아난 지금** 이 단언의 값이 드러났다(설계 2026-07-29 §3):
+    // denylist였다면 카운터로 걷던 사람이 조용히 이탈로 세져 그날 leftCount가 부풀었을 것이다.
+    // 'GONE'은 여전히 예약석이라 같은 이유로 함께 잰다.
     const w = tick(hospitalWorld(3), 5)
     const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
     const patient = (id: string, stage: PatientStage): Pawn =>
-      ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage })
+      ({ id, kind: 'PATIENT', x: 20, y: 21, path: [], stage, wantsDept: 'CARDIOLOGY' })
     const staged = {
       ...w,
       pawns: [doc, patient('paying', 'PAYING'), patient('gone', 'GONE'), patient('waiting', 'WAITING')],
@@ -203,7 +213,8 @@ describe('다음 날', () => {
     expect(next.minute).toBe(0)
     // 응급 집계도 아침에 비운다 — 안 비우면 2일차 DayRecord가 어제 수용·회차를 다시 싣는다.
     expect(next.stats).toEqual({
-      examsDone: 0, leftCount: 0, leftNoDept: 0, byDept: {}, emergencyAccepted: 0, emergencyTurnedAway: [],
+      examsDone: 0, leftCount: 0, leftNoDept: 0, byDept: {},
+      emergencyAccepted: 0, emergencyTurnedAway: [], unpaidManwon: 0,
     })
     expect(next.days).toHaveLength(1) // 기록은 보존
     expect(next.pawns.some(p => p.kind === 'PATIENT')).toBe(false)
@@ -275,7 +286,7 @@ describe('다음 날', () => {
     // 결산이 안 열리면 고정비도 폐업도 오지 않는다 — 게임이 멈추는 게 아니라 끝나지 않는다.
     const w = hospitalWorld(3)
     const overrun = { ...w, days: [1, 2, 3, 4, 5, 6, 7].map(n =>
-      ({ day: n, examsDone: 0, leftCount: 0, leftNoDept: 0, revenueManwon: 0, byDept: {}, emergencies: { accepted: 0, turnedAway: 0 } })) }
+      ({ day: n, examsDone: 0, leftCount: 0, leftNoDept: 0, revenueManwon: 0, unpaidManwon: 0, byDept: {}, emergencies: { accepted: 0, turnedAway: 0 } })) }
     const settled = settleDay(overrun)
     expect(settled.days).toHaveLength(DAYS_PER_WEEK + 1)
     expect(settled.phase).toBe('WEEK_END')

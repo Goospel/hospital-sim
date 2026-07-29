@@ -5,7 +5,7 @@ import type { Pt } from './path'
 import { spawnDoctor, type Pawn } from './pawn'
 import { demolish, placeFurniture } from './build'
 import { ptKey } from './spots'
-import { hire, placeRoom } from './testHelpers'
+import { hire, placeRoom, withCashier } from './testHelpers'
 import { tick } from './tick'
 import {
   EXAM_DURATION_MIN, PATIENCE_MIN,
@@ -27,7 +27,9 @@ function hospitalWorld(seed: number) {
   if (!r1.ok) throw new Error('전제 실패')
   const r2 = placeRoom(r1.world, { type: 'EXAM', x: 6, y: 6, w: 6, h: 5 })
   if (!r2.ok) throw new Error('전제 실패')
-  return spawnDoctor(r2.world, 'INTERNAL_MEDICINE', { x: 8, y: 8 })
+  // 수납 창구 — 없으면 진료는 도는데 장부가 텅 비어(전액 미수) 아래 과별 수익 단언이
+  // 0 대 0의 항진명제가 된다(설계 2026-07-29 §2 · testHelpers.withCashier).
+  return withCashier(spawnDoctor(r2.world, 'INTERNAL_MEDICINE', { x: 8, y: 8 }))
 }
 
 /** 대기실만 — 의사가 **한 명도 없어** 도착 전원이 접수처에서 반려된다(폰이 안 만들어진다) */
@@ -84,7 +86,7 @@ function fourDeptWorld(seed: number) {
     w = r.world
   })
   for (const dept of [...HIRABLE_DEPTS].reverse()) w = hire(w, dept)
-  return w
+  return withCashier(w) // 수납 창구 — 과별 수익을 재려면 돈이 실제로 걷혀야 한다
 }
 
 /** 진료실 하나 + 그 과 의사 하나. **대기실이 없어 자연 도착이 폰을 만들지 않는다** —
@@ -92,7 +94,7 @@ function fourDeptWorld(seed: number) {
 function soloDeptWorld(dept: SimDeptKey, seed = 3) {
   const r = placeRoom(createWorld(seed), { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 })
   if (!r.ok) throw new Error('전제 실패')
-  const w = tick(hire(r.world, dept), 40) // 의사가 책상 앞에 설 때까지
+  const w = tick(withCashier(hire(r.world, dept)), 40) // 의사가 책상 앞에 설 때까지
   const doc = w.pawns.find(p => p.kind === 'DOCTOR')!
   if (!doc.deskAt) throw new Error('전제 실패 — 의사가 진료실에 배정되지 않았다')
   return w
@@ -644,8 +646,10 @@ describe('퇴장', () => {
     const w0 = hospitalWorld(3)
     const eod = run(w0, DAY_END_MIN - 1) // 마감 직전 — 아직 정산이 없는 시점
     expect(eod.nextId - w0.nextId).toBeGreaterThan(10)                 // 하루 종일 사람이 오갔는데
-    expect(eod.pawns.filter(p => p.kind === 'PATIENT').length)
-      .toBeLessThanOrEqual(1)                                          // 남은 건 걸어 나가는 중인 한 명뿐
+    // 상한이 **2**인 이유: 수납이 생긴 뒤로 진료가 끝난 환자는 곧장 입구로 가지 않고 카운터를
+    // 한 번 들른다(설계 2026-07-29 §3). 그래서 어느 순간에도 '수납하러 가는 중' 한 명과
+    // '나가는 중' 한 명이 동시에 있을 수 있다 — 쌓이지 않는다는 계약은 그대로다.
+    expect(eod.pawns.filter(p => p.kind === 'PATIENT').length).toBeLessThanOrEqual(2)
     expect(eod.pawns.filter(p => p.kind === 'DOCTOR')).toHaveLength(1)
   })
 
@@ -951,7 +955,12 @@ describe('과별 수익', () => {
   })
 
   it('불변식: Σ byDept.patients == examsDone, 과별 수익 == 환자 수 × 그 과 수가', () => {
-    const w = run(fourDeptWorld(3), DAY_END_MIN - 1)
+    // ⚠️ **정산 뒤에** 잰다(마감 직전이 아니라). 수납이 생긴 뒤로 `examsDone`은 진료가 끝난
+    // 순간 오르고 `byDept.patients`는 **돈을 받은** 순간 오르므로(dept.SimDeptStats 주석의
+    // "돈을 받고 본 사람"), 그 사이 카운터로 걷는 중인 환자가 있으면 둘이 한 건 어긋난다 —
+    // 실측으로 31 대 32였다. 등식은 마감이 걷던 사람까지 수납으로 인정하면서 닫힌다.
+    const w = run(fourDeptWorld(3), DAY_END_MIN)
+    expect(w.phase).toBe('DAY_END')
     // ⚠️ 이 등식은 **외래만 도는 세계**의 성질이다 — byDept는 응급 처치도 같은 줄에 접는데
     // 응급 수가는 외래의 수십 배라(emergency.ts) 한 건만 섞여도 등식이 깨진다. 이 병원엔
     // 병동이 없어 응급이 전부 되돌아가므로 성립하고, 그 전제를 우연이 아니라 단언으로 둔다.

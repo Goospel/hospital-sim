@@ -4,10 +4,10 @@
 import { freshStats, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { buildBlockedSet } from './path'
-import { examLoadMin, wantsDeptOf } from './patientFlow'
+import { examLoadMin, hasCashier, wantsDeptOf } from './patientFlow'
 import { seatTiles, standSpot } from './spots'
 import {
-  simDept, addExamToDeptStats, addRevenueToDeptStats, deptRevenueSum, type SimDeptStats,
+  simDept, addRevenueToDeptStats, deptRevenueSum, type SimDeptKey, type SimDeptStats,
 } from './dept'
 import { emergencyLoadMin, emergencySpec, emergencyKindOf } from './emergency'
 import { applyWorkLoads, fatigueOf, restOvernight } from './fatigue'
@@ -38,9 +38,16 @@ function stepSaturation(pawns: Pawn[]): Pawn[] {
 }
 
 /** 마감 시점에 "진료를 못 받고 돌아간" 것으로 세는 스테이지 — **명시 목록(inclusion)**이다.
- *  denylist(`stage !== 'LEAVING' && ...`)로 쓰면 새 스테이지가 생기는 순간 자동으로 이탈이 된다:
- *  예약된 'PAYING'(수납 대기)·'GONE'(퇴장 표현) 흐름이 붙으면 수납 걷던 환자가 조용히 이탈로
- *  세져 leftCount와 DayRecord·주간 결산까지 함께 틀어진다 — 에러 없이 숫자만 틀리는 무성 실패다.
+ *  denylist(`stage !== 'LEAVING' && ...`)로 쓰면 새 스테이지가 생기는 순간 자동으로 이탈이 된다.
+ *  ⚠️ **그 예측이 실제로 실현됐다**: 'PAYING'(수납 대기)이 살아난 지금, denylist였다면 카운터로
+ *  걷던 환자가 조용히 이탈로 세져 leftCount와 DayRecord·주간 결산까지 함께 틀어졌을 것이다
+ *  — 에러 없이 숫자만 틀리는 무성 실패다.
+ *
+ *  ⓘ 다만 'PAYING'을 지키는 것은 **이 목록이 아니라 아래 분기 순서**다(돌연변이 실측
+ *    2026-07-29): 정산의 if/else 체인이 'PAYING'을 목록 검사보다 **먼저** 집어 수납으로
+ *    인정하므로, 이 배열에 'PAYING'을 넣어도 그 줄은 도달 불가라 아무 일도 안 일어난다
+ *    (테스트로 사살되지 않는다 — 겹벨트라서지 계측기가 없어서가 아니다). 목록 자체는 살아
+ *    있다: 'GONE'을 넣으면 day.test가 곧바로 잡는다(그쪽은 전용 분기가 없다).
  *  집계의 의미(무엇을 이탈로 볼 것인가)는 정산 소관이라 여기(day.ts)가 소유한다. */
 export const COUNTS_AS_TURNED_AWAY: readonly PatientStage[] =
   ['ENTERING', 'WAITING', 'TO_EXAM', 'TO_BED', 'IN_BED']
@@ -55,6 +62,10 @@ export interface DayRecord {
   /** 그날 진료 수익의 총액 — **`byDept`에서 유도한다**(Σ revenueManwon). 따로 세면 두 숫자가
    *  어긋날 수 있고, 어긋나도 화면엔 둘 중 하나만 보여서 아무도 모른다. */
   revenueManwon: number
+  /** 그날 **받지 못한** 진료비(만원) — 수납 창구가 없어 샌 돈이다(world.SimStats.unpaidManwon).
+   *  `revenueManwon`과 **더해도 총 진료액이 되지 않는다**: 이 축은 걷힌 돈의 부분집합이 아니라
+   *  걷히지 않은 별개의 액수라, 둘을 합치는 화면을 만들면 안 번 돈이 수익으로 읽힌다. */
+  unpaidManwon: number
   /** 그날 과별 진료·수익 — 결산 과별 표(계획 Task 5·6)의 입력. 기존 `DayRecord.deptStats`
    *  (src/game/session.ts)와 같은 자리의 같은 개념이다. */
   byDept: SimDeptStats
@@ -76,6 +87,19 @@ export function settleDay(world: SimWorld): SimWorld {
   let byDept: SimDeptStats = world.stats.byDept
   // 마감에 인정한 진료의 수익만 따로 센다 — 하루 중에 끝난 건은 그때 이미 금고에 들어갔다.
   let lateRevenueManwon = 0
+  let unpaidManwon = world.stats.unpaidManwon
+  /* 마감이 인정하는 건들도 **창구를 지난다** — 안 그러면 창구 없는 병원이 하루의 마지막 몇 건만
+     공짜로 걷는다(에러 없이 숫자만 틀린다). 판정은 진료 흐름과 같은 함수다(patientFlow.hasCashier).
+     ⚠️ **PAYING은 예외로 인정한다**: 그 사람은 이미 창구를 향해 걷고 있었고, 시계 모서리가 돈을
+     삼키면 안 된다(진행 중 진료를 완료로 인정하는 것과 같은 각색 — 설계 §3). */
+  const collects = hasCashier(world)
+  /** 그 수가를 장부로 보낼지 미수로 보낼지 — 마감의 세 갈래(외래·응급·수납 중)가 같은 한 줄을 본다. */
+  const take = (dept: SimDeptKey, manwon: number, forced = false) => {
+    if (forced || collects) {
+      lateRevenueManwon += manwon
+      byDept = addRevenueToDeptStats(byDept, dept, manwon)
+    } else unpaidManwon += manwon
+  }
   /** 마감이 **완료로 인정한** 작업의 표준강도분 — 진료 중 끝난 건과 똑같이 의사에게 얹는다.
    *  수익만 인정하고 부하를 빼면 하루 상한이 통째로 어긋난다: 의사 한 명이 마감에 물고 있을 수
    *  있는 최대 노동(외래 20분 + 응급 90분 아님 — 각각 한 건씩)이 매일 공짜가 되고, 그만큼
@@ -92,16 +116,19 @@ export function settleDay(world: SimWorld): SimWorld {
       // 하루의 마지막 몇 건이 다른 값으로 매겨지고, 그 차이는 장부 총액에만 나타나 추적이 어렵다.
       const dept = wantsDeptOf(p)
       exams += 1
-      lateRevenueManwon += simDept(dept).examRevenueManwon
-      byDept = addExamToDeptStats(byDept, dept)
+      take(dept, simDept(dept).examRevenueManwon)
       addLoad(p.doctorId, examLoadMin(p, dept))
+    } else if (p.stage === 'PAYING') {
+      // 카운터로 걷던 사람 — 진료는 이미 낮에 `examsDone`으로 세어졌으므로 **수가만** 인정한다.
+      // 다시 세면 그날 진료 건수가 실제보다 부풀어 DayRecord와 주간 결산까지 함께 틀어진다.
+      const dept = wantsDeptOf(p)
+      take(dept, simDept(dept).examRevenueManwon, true)
     } else if (p.stage === 'IN_TREATMENT') {
       // 진행 중 **응급 처치**도 완료 인정 — 외래(IN_EXAM)와 같은 각색이다(야근 연장은 범위 밖).
       // 수가는 반드시 응급 카탈로그에서 온다: 외래 수가로 접으면 850만원짜리 처치가 25만원이
       // 되고, 그 차이는 장부 총액에만 나타나 추적이 어렵다.
       const spec = emergencySpec(emergencyKindOf(p))
-      lateRevenueManwon += spec.revenueManwon
-      byDept = addRevenueToDeptStats(byDept, spec.dept, spec.revenueManwon)
+      take(spec.dept, spec.revenueManwon)
       addLoad(p.doctorId, emergencyLoadMin(p, spec))
     } else if (p.stage && COUNTS_AS_TURNED_AWAY.includes(p.stage)) left += 1
   }
@@ -109,13 +136,18 @@ export function settleDay(world: SimWorld): SimWorld {
   // 수는 없지만(doctorId는 하나), 모아서 얹는 계약을 진료 중 축적(applyWorkLoads)과 같게 둔다.
   // 포화 판정은 부하를 얹은 **뒤**다 — 앞에 두면 "마지막 한 건에 갈려 포화한 날"이 안 세지고,
   // 그만큼 사직이 늦게 온다(에러 없이 곡선만 완만해진다 — 마감 부하 인정과 같은 병).
-  const doctors = stepSaturation(applyWorkLoads(world.pawns.filter(p => p.kind === 'DOCTOR'), loadByDoctor))
+  // ⚠️ 남기는 기준은 **"환자가 아니다"**이지 "의사다"가 아니다. 마감은 환자를 전원 세계에서
+  // 빼는 자리인데, 여기서 의사만 골라 남기면 **간호사가 환자와 함께 쓸려 나간다**(에러 0 —
+  // 이튿날 아침에 창구만 조용히 사라진다). 사람이 늘 때마다 이 줄을 고쳐야 하는 형태를
+  // 피하는 것이 요점이다: 빠지는 쪽을 적으면 새 종류는 자동으로 남는다.
+  const staff = stepSaturation(applyWorkLoads(world.pawns.filter(p => p.kind !== 'PATIENT'), loadByDoctor))
   const record: DayRecord = {
     day: world.day,
     examsDone: exams,
     leftCount: left,
     leftNoDept: world.stats.leftNoDept,
     revenueManwon: deptRevenueSum(byDept),
+    unpaidManwon,
     byDept,
     emergencies: {
       accepted: world.stats.emergencyAccepted,
@@ -132,11 +164,11 @@ export function settleDay(world: SimWorld): SimWorld {
     // 결산이 안 열리면 고정비도 폐업도 오지 않아 하루가 영원히 이어진다(에러 없는 실패).
     // 정상 흐름에선 startNextWeek이 days를 비워 7에서 딱 걸리므로 지금은 등가다.
     phase: days.length >= DAYS_PER_WEEK ? 'WEEK_END' : 'DAY_END',
-    pawns: doctors,
+    pawns: staff,
     treasuryManwon: world.treasuryManwon + lateRevenueManwon,
     // 응급 집계는 마감이 손대지 않는다 — 수용·회차는 이미 도착 시점에 확정된 값이라,
     // 여기서 다시 세면 그날 숫자가 두 번 더해진다(외래의 leftCount 이중 집계와 같은 병).
-    stats: { ...world.stats, examsDone: exams, leftCount: left, byDept },
+    stats: { ...world.stats, examsDone: exams, leftCount: left, byDept, unpaidManwon },
     days,
   }
 }
