@@ -22,9 +22,11 @@ import {
   FATIGUE_COLOR,
   pannedCamera,
   roomLabel,
+  safeArea,
   tileFromPoint,
   zoomedCamera,
   type Camera,
+  type Insets,
   type Rect,
   type Size,
 } from "./simHud";
@@ -57,18 +59,21 @@ export const TILE = 16;
 const BASE: Size = { w: GRID_W * TILE, h: GRID_H * TILE };
 
 /** 인셋 기본값(바 없음) — 모듈 상수라 렌더마다 새 객체가 생기지 않는다. */
-const NO_INSETS = { top: 0, bottom: 0 };
+const NO_INSETS: Insets = { top: 0, left: 0 };
 
 /**
  * 뷰포트 측정(fit) + 그 위에 얹힌 카메라(줌·팬).
  *
  * `fit`은 옛 `useFitScale`이 주던 값과 **기준이 다르다** — 부지 전체가 들어가야 하는 곳이 뷰포트가
- * 아니라 **안전 영역**(HUD 바가 안 덮는 구간)이다. 두 바는 오버레이라 뷰포트를 줄이지 않으므로,
- * 뷰포트로 맞추면 zoom 1에서 아래쪽 타일 줄이 늘 footer 밑에 깔리고 그 배율엔 팬 슬랙이 없어
+ * 아니라 **안전 영역**(HUD가 안 덮는 구간)이다. 바들은 오버레이라 뷰포트를 줄이지 않으므로,
+ * 뷰포트로 맞추면 zoom 1에서 바깥쪽 타일 줄이 늘 바 밑에 깔리고 그 배율엔 팬 슬랙이 없어
  * 꺼낼 수도 없었다([T-102](../../claude-docs/troubleshooting/T-102.md)).
  * 그것이 **최종 배율이 아니라 zoom 1의 기준선**인 것은 그대로다(카메라 산술은 simHud).
+ *
+ * ⚠️ 인셋을 **객체가 아니라 숫자 둘로** 받는 것이 계약이다 — deps에 객체를 두면 부모가 매 렌더
+ * 새로 만드는 순간 이 효과가 무한히 재실행된다.
  */
-function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetBottom: number) {
+function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetLeft: number) {
   const [fit, setFit] = useState(1);
   const [safe, setSafe] = useState<Rect>({ x: 0, y: 0, w: 0, h: 0 });
   const [cam, setCam] = useState<Camera>({ zoom: 1, x: 0, y: 0 });
@@ -76,9 +81,9 @@ function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetBo
     const el = ref.current;
     if (!el) return;
     const measure = (width: number, height: number) => {
-      // 안전 영역 — 좌우 인셋은 없다(두 바 모두 가로 전폭이다).
-      const s: Rect = { x: 0, y: insetTop, w: width, h: height - insetTop - insetBottom };
-      if (width === 0 || s.h <= 0) return; // 아직 배치 전(또는 바가 화면을 다 먹은 극단) — 접으면 맵이 사라진다
+      // 안전 영역 — 상단 바가 위를, 도구 패널이 왼쪽을 덮는다(아래·오른쪽은 비어 있다).
+      const s = safeArea({ w: width, h: height }, { top: insetTop, left: insetLeft });
+      if (s.w <= 0 || s.h <= 0) return; // 아직 배치 전(또는 바가 화면을 다 먹은 극단) — 접으면 맵이 사라진다
       const f = Math.min(s.w / BASE.w, s.h / BASE.h);
       setFit(f);
       setSafe(s);
@@ -97,10 +102,8 @@ function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetBo
     const ro = new ResizeObserver(([entry]) => measure(entry.contentRect.width, entry.contentRect.height));
     ro.observe(el);
     return () => ro.disconnect();
-    /* 인셋이 바뀌면(바가 줄바꿈되거나 도구 줄이 열림) **다시 재고 다시 클램프**해야 한다 —
-       deps에 숫자 둘을 그대로 두는 것이 계약이다: 객체를 두면 부모가 매 렌더 새로 만드는 순간
-       이 효과가 무한히 재실행된다. */
-  }, [ref, insetTop, insetBottom]);
+    // 인셋이 바뀌면(상단 바가 줄바꿈되거나 패널 폭이 갈림) **다시 재고 다시 클램프**해야 한다.
+  }, [ref, insetTop, insetLeft]);
   return { cam, setCam, fit, safe };
 }
 
@@ -178,10 +181,11 @@ export interface TileMapProps {
   /** 지금 주버튼 드래그가 **건설**인가 — 아니면 그 드래그는 카메라 팬이다(도구를 안 골랐을 때가 그 상태).
    *  판정은 SimGame이 소유한다(`ready`): 여기서 다시 세면 도구 팔레트와 맵의 "지을 수 있다"가 갈린다. */
   buildReady?: boolean;
-  /** HUD 두 바가 덮는 위·아래 두께(px) — **fit과 클램프의 기준**이 여기서 갈린다(useCamera).
-   *  높이를 재는 것은 부모 몫이다: 바를 소유한 쪽만 그것이 몇 px인지 알 수 있고, 맵이 되짚으면
-   *  DOM을 가로질러 형제를 캐야 한다. 기본 0이면 옛 계약(뷰포트 전체가 안전 영역)이다. */
-  insets?: { top: number; bottom: number };
+  /** HUD가 덮는 두께(px) — 상단 바의 높이(`top`)와 좌측 도구 패널의 폭(`left`). **fit과 클램프의
+   *  기준**이 여기서 갈린다(useCamera). 재는 것은 부모 몫이다: 바를 소유한 쪽만 그것이 몇 px인지
+   *  알 수 있고, 맵이 되짚으면 DOM을 가로질러 형제를 캐야 한다.
+   *  기본 0이면 옛 계약(뷰포트 전체가 안전 영역)이다. */
+  insets?: Insets;
   onTileDown?: (t: { x: number; y: number }) => void;
   onTileMove?: (t: { x: number; y: number }) => void;
   /** 손을 뗐다 — **확정**. 여기서만 건설이 일어난다. */
@@ -208,7 +212,7 @@ export default function TileMap({
   onTileCancel,
 }: TileMapProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const { cam, setCam, fit, safe } = useCamera(hostRef, insets.top, insets.bottom);
+  const { cam, setCam, fit, safe } = useCamera(hostRef, insets.top, insets.left);
   const scale = fit * cam.zoom;
 
   /* 팬 중인 포인터와 직전 위치 — **상태가 아니라 ref**다: 드래그 한 프레임마다 리렌더를 유발하면
@@ -235,7 +239,7 @@ export default function TileMap({
   }, [fit, safe, setCam]);
 
   /** 줌 버튼 한 번 — 앵커는 **안전 영역의 중앙**이다(커서가 없는 조작이라 중앙이 유일하게 뜻을
-   *  갖고, 지금 보이는 곳의 중앙은 뷰포트 중앙이 아니라 바 사이의 중앙이다). */
+   *  갖고, 지금 보이는 곳의 중앙은 뷰포트 중앙이 아니라 상단 바·좌측 패널을 뺀 구간의 중앙이다). */
   const safeCenter = { x: safe.x + safe.w / 2, y: safe.y + safe.h / 2 };
   const zoomBy = (factor: number) => setCam((c) => zoomedCamera(c, safeCenter, factor, safe, BASE, fit));
 
@@ -368,7 +372,7 @@ export default function TileMap({
        (콘텐츠 < 안전 영역이면 그 안에서 중앙 — simHud.clampCamera).
        ⚠️ host는 `inset-0`(화면 전체)이고 안전 영역은 클램프에만 쓰인다 — 줌인하면 맵이 반투명
        바 **밑으로** 미끄러져 들어가는 것이 의도다(림월드처럼). 안 가리는 것은 zoom 1뿐이고,
-       그 배율에서 부지 전체가 바 사이에 딱 맞는다. */
+       그 배율에서 부지 전체가 상단 바 아래·도구 패널 오른쪽 구간에 딱 맞는다. */
     <div
       ref={hostRef}
       className="relative h-full w-full overflow-hidden"

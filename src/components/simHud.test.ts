@@ -5,7 +5,7 @@ import {
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
-  clampCamera, pannedCamera, zoomedCamera, ZOOM_MAX, type Camera,
+  clampCamera, pannedCamera, safeArea, zoomedCamera, ZOOM_MAX, type Camera,
 } from './simHud'
 import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
 import { createWorld, GRID_W, GRID_H, type RoomType, type SimWorld } from '../sim/world'
@@ -884,6 +884,52 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
     const c = clampCamera({ zoom: 1, x: -99_999, y: -99_999 }, SAFE_I, big)
     expect(c.y).toBeCloseTo(SAFE_I.y + SAFE_I.h - big.h)
     expect(c.x).toBeCloseTo(VIEW.w - big.w)
+  })
+
+  /*
+    ── 좌측 인셋 ────────────────────────────────────────────────────────────
+    도구 팔레트가 하단 전폭 바에서 **좌측 세로 패널**로 옮겨 가면서(SimGame) 인셋의 축이 갈렸다:
+    덮이는 곳이 아래가 아니라 왼쪽이다. clampAxis는 원래부터 `start`를 받아 두 축을 대칭으로
+    다뤘으므로 산술은 그대로고, 아래 둘은 그 대칭이 **실제로 쓰이는 축**에서도 성립함을 못박는다
+    (세로만 겨눈 위 셋의 가로판 — 회귀하면 부지 왼쪽 줄이 팔레트 밑에 영구히 깔린다 · T-102).
+  */
+  const SAFE_L = { x: 160, y: INSET.top, w: VIEW.w - 160, h: VIEW.h - INSET.top }
+
+  it('좌측 인셋 — 중앙은 **패널 오른쪽 구간**의 중앙이다(뷰포트 중앙이면 팔레트 밑에 깔린다)', () => {
+    const small = { w: 400, h: 300 }
+    const c = clampCamera({ zoom: 1, x: -400, y: 250 }, SAFE_L, small)
+    expect(c.x).toBeCloseTo(SAFE_L.x + (SAFE_L.w - small.w) / 2) // 280
+    expect(c.x).not.toBeCloseTo((VIEW.w - small.w) / 2) // 뷰포트 중앙(200)이면 왼쪽 80px이 패널 밑
+  })
+
+  it('좌측 인셋 — 가로 클램프 경계는 [left + safeW − content, left]다', () => {
+    const big = { w: 1600, h: 900 }
+    expect(clampCamera({ zoom: 1, x: 9999, y: 9999 }, SAFE_L, big).x).toBeCloseTo(SAFE_L.x)
+    expect(clampCamera({ zoom: 1, x: -99_999, y: -99_999 }, SAFE_L, big).x).toBeCloseTo(SAFE_L.x + SAFE_L.w - big.w)
+  })
+
+  /*
+    안전 영역을 **재는** 쪽(TileMap.useCamera)이 쓰는 산술. 한 줄짜리 뺄셈이지만 순수 함수인
+    이유는 이 파일 머리말 그대로다 — 훅 안에 있으면 "좌측 인셋이 폭에서 빠지는가"를 겨눌 수
+    있는 테스트가 하나도 없고, 그게 빠지지 않으면 맵이 팔레트 밑으로 밀린다(T-102의 가로판).
+  */
+  it('safeArea — 인셋이 0이면 안전 영역은 뷰포트 전체다(바 없는 옛 계약)', () => {
+    expect(safeArea(VIEW, { top: 0, left: 0 })).toEqual({ x: 0, y: 0, w: VIEW.w, h: VIEW.h })
+  })
+
+  it('safeArea — 상단 바는 y를, 좌측 패널은 x를 밀고 **그만큼 높이·폭을 깎는다**', () => {
+    expect(safeArea(VIEW, { top: 56, left: 160 })).toEqual({
+      x: 160,
+      y: 56,
+      w: VIEW.w - 160,
+      h: VIEW.h - 56,
+    })
+  })
+
+  it('safeArea — 바가 화면을 다 먹으면 폭·높이가 0 이하로 나온다(접는 판정은 호출부 몫)', () => {
+    const s = safeArea({ w: 100, h: 40 }, { top: 60, left: 160 })
+    expect(s.w).toBeLessThanOrEqual(0)
+    expect(s.h).toBeLessThanOrEqual(0)
   })
 
   it('zoom 1 + 인셋 — 부지가 안전 영역에 꼭 맞아 세로 팬 슬랙이 0이다(y가 top에 고정)', () => {

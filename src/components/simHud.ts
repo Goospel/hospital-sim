@@ -366,9 +366,9 @@ export interface Size {
 /**
  * 카메라가 기준으로 삼는 **안전 영역**(뷰포트 px) — 화면에서 HUD 바가 덮지 않는 사각형.
  *
- * 클램프의 기준이 뷰포트 전체가 아니라 이것인 것이 카메라의 계약이다. HUD 두 줄은 맵 **위에 뜬
- * 오버레이**라 뷰포트를 줄이지 않으므로, 뷰포트 전체를 기준으로 잡으면 zoom 1에서 아래쪽 타일
- * 줄이 늘 footer 밑에 깔린다 — 게다가 그 배율에선 콘텐츠가 기준과 같은 크기라 **팬 슬랙이 0**이라
+ * 클램프의 기준이 뷰포트 전체가 아니라 이것인 것이 카메라의 계약이다. HUD는 맵 **위에 뜬
+ * 오버레이**라 뷰포트를 줄이지 않으므로, 뷰포트 전체를 기준으로 잡으면 zoom 1에서 바깥쪽 타일
+ * 줄이 늘 바 밑에 깔린다 — 게다가 그 배율에선 콘텐츠가 기준과 같은 크기라 **팬 슬랙이 0**이라
  * 꺼낼 수도 없다(의사가 처음 서는 입구가 영영 안 보였다 — T-102).
  *
  * 뷰포트를 그대로 넘기고 싶으면 `{ x: 0, y: 0, w, h }`다 — 인셋 0이 곧 옛 계약이다.
@@ -376,6 +376,24 @@ export interface Size {
 export interface Rect extends Size {
   x: number
   y: number
+}
+
+/** HUD가 덮는 두께(px) — 상단 바의 높이와 좌측 도구 패널의 폭. 두 바뿐이라 둘뿐이다. */
+export interface Insets {
+  top: number
+  left: number
+}
+
+/**
+ * 뷰포트 − 인셋 = 안전 영역. 재는 쪽(TileMap.useCamera)이 쓰는 한 줄짜리 산술이지만 훅 밖에
+ * 있는 이유는 이 파일 머리말 그대로다 — 안에 있으면 "좌측 폭이 실제로 빠지는가"를 겨눌 수 있는
+ * 테스트가 하나도 없고, 그게 빠지지 않으면 맵이 팔레트 밑으로 밀린다(T-102의 가로판).
+ *
+ * ⚠️ **음수를 그대로 돌려준다** — 바가 화면을 다 먹는 극단(아주 좁은 창)에서 접을지 말지는
+ * 호출부가 정한다. 여기서 0으로 자르면 "폭 0인 안전 영역"이 정상값처럼 흘러가 맵이 사라진다.
+ */
+export function safeArea(view: Size, insets: Insets): Rect {
+  return { x: insets.left, y: insets.top, w: view.w - insets.left, h: view.h - insets.top }
 }
 
 export interface Camera {
