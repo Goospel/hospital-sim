@@ -92,7 +92,7 @@ export default function SimGame() {
   const [world, setWorld] = useState<SimWorld>(initialWorld);
   /* 첫 판은 **일시정지로 시작한다** — 하루가 1배속 약 6분이라(SIM_MS_PER_GAME_MIN) 처음 여는
      사람이 화면을 파악하는 동안 하루가 흘러 버린다. 개원 시점을 플레이어가 정하게 두면 방을 짓고
-     의사를 뽑은 뒤 1×를 누르는 것이 곧 "개원"이 된다(그 안내는 footer 상태줄이 맡는다). */
+     의사를 뽑은 뒤 1×를 누르는 것이 곧 "개원"이 된다(그 안내는 팔레트 상태줄이 맡는다). */
   const [speed, setSpeed] = useState<SimSpeed>(0);
   /** 손에 든 건설 도구 — 벽·문·가구 4종·용도·철거. 없으면 맵은 구경거리다(클릭이 조용히 지나간다). */
   const [tool, setTool] = useState<BuildTool | null>(null);
@@ -401,34 +401,38 @@ export default function SimGame() {
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 
   /*
-    ── HUD 두 바가 덮는 두께 ───────────────────────────────────────────────
-    맵의 fit·클램프 기준이 뷰포트가 아니라 **안전 영역**이라(TileMap.useCamera), 두 바가 몇 px인지를
-    맵에 알려 줘야 한다. 높이를 **재는** 이유는 셀 수 없기 때문이다: 두 바는 글꼴·창 폭·줄바꿈에
-    따라 높이가 갈리고, 상수로 박으면 좁은 화면에서 즉시 어긋난다(T-101이 고정 px을 버린 그 이유).
+    ── HUD가 덮는 두께 ─────────────────────────────────────────────────────
+    맵의 fit·클램프 기준이 뷰포트가 아니라 **안전 영역**이라(TileMap.useCamera), 바가 몇 px인지를
+    맵에 알려 줘야 한다. **재는** 이유는 셀 수 없기 때문이다: 상단 바는 글꼴·창 폭·줄바꿈에 따라
+    높이가 갈리고, 도구 패널 폭도 rem이라 글꼴 크기를 따른다 — 상수로 박으면 즉시 어긋난다
+    (T-101이 고정 px을 버린 그 이유).
 
     측정 방식은 useCamera와 **같은 패턴**이고 이유도 같다 — 마운트에 한 번 직접 재고(옵저버 첫
     콜백은 다음 렌더링 스텝에 오고, 프레임을 안 그리는 창에서는 아예 안 온다 · T-086) 그 뒤는
-    ResizeObserver가 잇는다. 창 폭이 줄어 도구 팔레트가 줄바꿈되면 footer 높이가 실제로 변한다.
+    ResizeObserver가 잇는다.
+
+    ⚠️ 패널에서 읽는 값이 높이가 아니라 **폭**인 것이 세로 배치의 이점이다: 도구 줄이 열리고
+    닫혀도 폭은 그대로라 맵 배율이 흔들릴 자리가 없다(T-101이 하단 바에서 겪은 그 결합).
   */
   const headerRef = useRef<HTMLElement>(null);
-  const footerRef = useRef<HTMLElement>(null);
-  const [insets, setInsets] = useState({ top: 0, bottom: 0 });
+  const paletteRef = useRef<HTMLElement>(null);
+  const [insets, setInsets] = useState({ top: 0, left: 0 });
   useEffect(() => {
     const header = headerRef.current;
-    const footer = footerRef.current;
-    if (!header || !footer) return;
+    const palette = paletteRef.current;
+    if (!header || !palette) return;
     // 같은 값이면 **같은 객체를 돌려준다** — RO는 레이아웃이 흔들릴 때마다 부르는데, 매번 새
     // 객체를 넣으면 이 컴포넌트가 그때마다 다시 렌더된다(값은 하나도 안 바뀐 채로).
     const measure = () =>
       setInsets((prev) =>
-        prev.top === header.offsetHeight && prev.bottom === footer.offsetHeight
+        prev.top === header.offsetHeight && prev.left === palette.offsetWidth
           ? prev
-          : { top: header.offsetHeight, bottom: footer.offsetHeight },
+          : { top: header.offsetHeight, left: palette.offsetWidth },
       );
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(header);
-    ro.observe(footer);
+    ro.observe(palette);
     return () => ro.disconnect();
   }, []);
 
@@ -440,7 +444,8 @@ export default function SimGame() {
       가려진 타일에 벽을 세울 방법이 없다는 것(부지가 고정 48×32라 화면 밖으로 밀 데가 없었다).
       **카메라가 그 전제를 없앴다**: 이제 가려진 자리는 팬·줌으로 끌어내 지을 수 있으므로 HUD가
       맵을 덮어도 도달 불가능한 타일이 생기지 않는다. 그래서 맵을 `inset-0`으로 화면 전체에 깔고
-      두 바를 그 위에 절대 배치한다 — 부지가 HUD 뒤로 이어져 보이는 것이 이제 착시가 아니다.
+      상단 바와 좌측 팔레트를 그 위에 절대 배치한다 — 부지가 HUD 뒤로 이어져 보이는 것이 이제
+      착시가 아니다.
 
       맵 크기는 여전히 이 파일에 안 나온다 — TileMap이 자기 자리를 재서 fit을 정하고, 그 위에
       플레이어의 카메라가 얹힌다.
@@ -484,14 +489,14 @@ export default function SimGame() {
         >
           {llmLive ? "AI 서사" : "기본 서사"}
         </span>
-        {/* ⚠️ 정지 사유 문구는 여기 없다 — footer 상태줄에 있다. 한때 이 자리에 있었는데,
+        {/* ⚠️ 정지 사유 문구는 여기 없다 — 좌측 팔레트의 상태줄에 있다. 한때 이 자리에 있었는데,
             드래그를 **시작하는 순간** 문구가 생겨 헤더가 한 줄 늘고 맵이 32px 내려가
             드래그 좌표가 두 타일 어긋났다([T-099](../../claude-docs/troubleshooting/T-099.md):
             7×6을 그렸는데 7×4가 지어졌다).
             **그 두 전파 경로는 이제 둘 다 닫혔다** — 좌표는 포인터 변환이 그려진 rect를 읽어
             산술에서(simHud.tileFromPoint), 배율은 헤더가 오버레이가 되어 맵 크기에 영향을 줄 수
-            없게 됐다(맵은 뷰포트 크기만 본다). 그래도 문구는 footer에 둔다 — **손이 가 있는 자리**가
-            거기다(도구 팔레트 바로 아래라 도구별 안내를 눈이 따라간다). */}
+            없게 됐다(맵은 뷰포트 크기만 본다). 그래도 문구는 팔레트에 둔다 — **손이 가 있는 자리**가
+            거기다(도구 목록과 같은 패널이라 도구별 안내를 눈이 따라간다). */}
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
@@ -533,9 +538,9 @@ export default function SimGame() {
         </div>
       </header>
 
-      {/* 부지 — 화면 전체(`inset-0`). HUD 두 줄이 그 위에 뜨지만 **zoom 1에서는 아무것도 안 가린다**:
-          맵이 뷰포트가 아니라 **두 바 사이(안전 영역)**에 맞춰 fit되기 때문이다. 줌인하면 그때부터
-          바 밑으로 미끄러져 들어가고, 그 자리는 팬으로 끌어내 짓는다. */}
+      {/* 부지 — 화면 전체(`inset-0`). HUD가 그 위에 뜨지만 **zoom 1에서는 아무것도 안 가린다**:
+          맵이 뷰포트가 아니라 **상단 바 아래·팔레트 오른쪽(안전 영역)**에 맞춰 fit되기 때문이다.
+          줌인하면 그때부터 바 밑으로 미끄러져 들어가고, 그 자리는 팬으로 끌어내 짓는다. */}
       <div className="absolute inset-0">
       <TileMap
         world={world}
@@ -572,9 +577,28 @@ export default function SimGame() {
       />
       </div>
 
-      {/* ── 하단 바 — 건설 도구 팔레트. 벽을 두르고 → 문을 내고 → 용도를 정하고 → 가구를 놓는다. ── */}
-      <footer ref={footerRef} className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 border-t border-frame bg-desk-2/80 px-4 py-3 backdrop-blur-sm">
-        <div className="flex flex-wrap items-center gap-2">
+      {/*
+        ── 좌측 패널 — 건설 도구 팔레트. 벽을 두르고 → 문을 내고 → 용도를 정하고 → 가구를 놓는다. ──
+
+        **하단 전폭 바에서 좌측 세로 패널로 옮겨 왔다.** 부지는 가로로 넓은 48×32라 zoom 1에서
+        좌우에 늘 여백이 남는데(fit이 세로에 걸린다), 하단 바는 그 남는 가로를 못 쓰면서 세로만
+        깎아 **맵을 두 번 좁혔다** — 이제 팔레트가 그 빈 자리를 채우고 세로는 통째로 부지에 간다.
+
+        ⚠️ 폭(`w-40`)이 **고정**인 것이 T-101을 구조적으로 닫는다: 아래 용도·과 줄이 열리고 닫혀도
+        맵에 넘기는 인셋(= 이 패널의 폭)이 안 변하므로 배율이 흔들릴 수 없다. 하단 바 시절엔 그
+        줄들이 곧 높이였고, 높이가 곧 인셋이라 도구를 고를 때마다 화면 전체 해상도가 튀었다
+        ([T-101](../../claude-docs/troubleshooting/T-101.md): *"하단 메뉴를 클릭하면 해상도가 바뀌어
+        어지럽다"*). 그래서 그 시절 필요했던 `invisible` 자리 예약도 함께 걷어냈다 — 예약은 배율을
+        묶으려던 수단이었지 목적이 아니었고, 세로로 서면서 묶을 것 자체가 사라졌다.
+
+        `top`이 상단 바 높이를 따르는 것은 그 바가 오버레이라서다(자리를 안 비켜 준다).
+      */}
+      <aside
+        ref={paletteRef}
+        style={{ top: insets.top }}
+        className="absolute bottom-0 left-0 z-10 flex w-40 flex-col gap-2 overflow-y-auto border-r border-frame bg-desk-2/80 px-3 py-3 backdrop-blur-sm"
+      >
+        <div className="flex flex-col gap-1.5">
           {BUILD_TOOLS.map((t) => (
             <button
               key={t}
@@ -596,32 +620,17 @@ export default function SimGame() {
               {TOOL_LABEL[t]}
             </button>
           ))}
-          {/* 가격표는 **고른 도구의 값**이다 — 값 자체는 코어 표에서 온다(simHud.toolCostText). */}
-          <span className="ml-auto font-mono text-xs tabular-nums text-on-desk-muted">
-            {tool ? toolCostText(tool) : "도구를 고르면 비용이 표시됩니다"}
-          </span>
         </div>
 
-        {/*
-          용도 6종 — [용도]를 고르면 한 줄이 열린다. 벽이 방을 만드는 게 아니라 **용도가** 만든다는
-          것을 이 줄이 말한다(둘러싸인 실내 + 용도 = 규칙이 보는 방).
+        {/* 가격표는 **고른 도구의 값**이다 — 값 자체는 코어 표에서 온다(simHud.toolCostText). */}
+        <p className="font-mono text-[11px] leading-snug tabular-nums text-on-desk-muted">
+          {tool ? toolCostText(tool) : "도구를 고르면 비용이 표시됩니다"}
+        </p>
 
-          ⚠️ **`invisible` 자리 예약이다**(이 줄과 아래 과 줄) — 조건부 렌더로 두면 도구를 고를
-          때마다 화면 전체 배율이 흔들린다([T-101](../../claude-docs/troubleshooting/T-101.md):
-          *"하단 메뉴를 클릭하면 해상도가 바뀌어 어지럽다"*).
-          **결합의 경로는 두 번 갈렸다**: 처음엔 footer가 맵과 자리를 나눠 갖는 그리드(`1fr`)였고,
-          HUD를 오버레이로 올리면서 그 경로가 끊겨 조건부 렌더로 되돌렸다. 그런데 이제 맵의 fit이
-          **footer 높이를 다시 읽는다**(안전 영역 기준 — T-102) — 자리를 나눠 갖지 않아도 결합은
-          살아 있다. 그래서 예약을 복원한다. 높이가 무엇이 열려 있든 같으므로 배율이 고정된다.
-          고정 px 대신 **실제 내용으로** 예약하는 이유는 T-101 그대로다(글꼴·줄바꿈에 안 깨진다).
-          T-101 원칙 ①("남은 공간을 채우는 요소 옆에 가변 UI를 두지 않는다")이 옳았다 —
-          경로가 바뀌었을 뿐 결합은 안 죽었다.
-        */}
-        <div
-          className={`flex flex-wrap items-center gap-2 border-t border-frame pt-2 ${
-            tool === "DESIGNATE" ? "" : "invisible"
-          }`}
-        >
+        {/* 용도 6종 — [용도]를 고르면 열린다. 벽이 방을 만드는 게 아니라 **용도가** 만든다는 것을
+            이 목록이 말한다(둘러싸인 실내 + 용도 = 규칙이 보는 방). */}
+        {tool === "DESIGNATE" && (
+          <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
             <span className="text-xs text-on-desk-muted">용도</span>
             {ROOM_TYPES.map((t) => (
               <button
@@ -641,17 +650,14 @@ export default function SimGame() {
                 {ROOM_LABEL[t]}
               </button>
             ))}
-        </div>
+          </div>
+        )}
 
         {/* 진료실의 과 — 진료가 성립하려면 환자·진료실·의사의 과가 셋 다 같아야 하므로
-            (코어의 삼중 일치), 무슨 과로 지정하는지가 건설의 절반이다.
-            위 용도 줄과 **같은 이유로** 조건부 렌더가 아니라 `invisible`이다(자리 고정 → 배율 고정). */}
-        <div
-          className={`flex flex-wrap items-center gap-2 border-t border-frame pt-2 ${
-            tool === "DESIGNATE" && roomType === "EXAM" ? "" : "invisible"
-          }`}
-        >
-          <span className="text-xs text-on-desk-muted">과</span>
+            (코어의 삼중 일치), 무슨 과로 지정하는지가 건설의 절반이다. */}
+        {tool === "DESIGNATE" && roomType === "EXAM" && (
+          <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
+            <span className="text-xs text-on-desk-muted">과</span>
             {HIRABLE_DEPTS.map((d) => (
               <button
                 key={d}
@@ -667,12 +673,15 @@ export default function SimGame() {
                 {simDept(d).label}
               </button>
             ))}
-        </div>
+          </div>
+        )}
 
-        {/* 상태줄 — **화면에서 유일하게 문구가 바뀌는 자리**이자 맵 아래 예약된 한 줄(min-h-5)이다.
-            무엇을 쓸지는 simHud.statusLineText(우선순위 체인)가 정하고 여기선 칠만 한다:
-            판정이 JSX 안에 있으면 그 우선순위를 겨눌 수 있는 테스트가 하나도 없다. */}
-        <p className="min-h-5 text-xs">
+        {/* 상태줄 — **화면에서 유일하게 문구가 바뀌는 자리**. 무엇을 쓸지는 simHud.statusLineText
+            (우선순위 체인)가 정하고 여기선 칠만 한다: 판정이 JSX 안에 있으면 그 우선순위를 겨눌 수
+            있는 테스트가 하나도 없다.
+            `mt-auto`로 패널 바닥에 붙인다 — 도구에서 눈이 내려오는 끝자리이자, 목록이 짧을 때
+            패널이 위쪽만 채워진 채 비어 보이지 않게 하는 자리다. */}
+        <p className="mt-auto min-h-5 border-t border-frame pt-2 text-xs leading-snug">
           <span className={toast ? "text-alarm" : "text-on-desk-muted"}>
             {statusLineText({
               toast: toast?.text ?? null,
@@ -687,7 +696,7 @@ export default function SimGame() {
             })}
           </span>
         </p>
-      </footer>
+      </aside>
 
       {/*
         마감·결산은 라우트를 바꾸지 않고 부지 위에 덮는다 — 타일 병원은 한 장면으로 이어지는 게
