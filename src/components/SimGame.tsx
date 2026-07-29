@@ -21,6 +21,7 @@ import {
   previewLabel,
   rectModeOf,
   rectTiles,
+  regionOverlayOn,
   resigningNotices,
   setupWarningText,
   statusLineText,
@@ -135,6 +136,10 @@ export default function SimGame() {
   /** 지정할 진료실의 과 — 진료실을 고른 뒤 **한 번 더** 고르게 한다(과 없는 진료실은 코어가 던진다). */
   const [examDept, setExamDept] = useState<SimDeptKey | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  /** 영역 오버레이를 **손으로** 켜 뒀는가 — 그릴지 말지는 여기에 도구를 더해 정한다
+   *  (`regionOverlayOn`). 도구가 이 값을 안 건드리는 것이 계약이라, 용도 지정을 마치면
+   *  플레이어가 마지막에 고른 상태로 돌아온다. */
+  const [overlayToggled, setOverlayToggled] = useState(false);
   /** 지금 카드를 열어 둔 폰의 id — **id만** 든다. 폰 자체를 스냅샷으로 들면 그 사람이 걸어가도
    *  카드의 수치가 그 순간에 굳고, 퇴장(배열에서 제거)한 뒤에도 유령 카드가 남는다. */
   const [inspectId, setInspectId] = useState<string | null>(null);
@@ -663,6 +668,10 @@ export default function SimGame() {
         onTileMove={(t) => setDrag((d) => (d ? { ...d, cur: t } : d))}
         // 지금 카드를 보고 있는 폰 — 아바타에 선택 링이 붙는다(맵이 판정하지 않는다).
         selectedId={inspectId ?? undefined}
+        // 영역 오버레이 — **끄고 사는 것이 기본**이다. 판정은 여기 하나가 소유한다: 맵은 도구를
+        // 모르므로(buildReady와 같은 계약) 용도 도구가 강제로 켜는 갈래를 맵이 알 수 없다.
+        regionOverlay={regionOverlayOn({ toggled: overlayToggled, tool })}
+        onToggleRegionOverlay={() => setOverlayToggled((v) => !v)}
         // 도구를 안 든 주버튼 클릭 = **가리키기**. 도구를 들었으면 이 콜백은 오지 않는다(건설이 먼저다).
         onTileClick={(t) => {
           // 한 칸에 겹쳐 선 폰 중 **마지막**을 고른다 — 배열 뒤가 화면 위에 그려지는 쪽이라,

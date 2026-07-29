@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { placeRoom } from '../sim/testHelpers'
 import {
-  alertsOf, escTarget, inspectCard, rosterFilters, toggledSpeed,
+  alertsOf, escTarget, inspectCard, regionOverlayOn, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
@@ -939,6 +939,31 @@ describe('escTarget — ESC가 닫는 한 겹', () => {
   it('아무것도 안 열려 있으면 **아무 일도 안 한다** — 결산 오버레이는 ESC로 닫히지 않는다', () => {
     // 닫으면 다음 행동(다음 날 버튼)이 화면에서 사라진다 — 그래서 결산은 이 판정의 입력에 없다.
     expect(target()).toBeNull()
+  })
+})
+
+describe('regionOverlayOn — 영역 오버레이를 지금 그리는가', () => {
+  const on = (over: Partial<Parameters<typeof regionOverlayOn>[0]> = {}) =>
+    regionOverlayOn({ toggled: false, tool: null, ...over })
+
+  it('기본은 꺼짐이다 — 부지 위에 늘 색과 이름표가 깔려 있으면 사람과 가구가 그 밑에 묻힌다', () => {
+    expect(on()).toBe(false)
+  })
+
+  it('토글을 켜면 켜진다', () => {
+    expect(on({ toggled: true })).toBe(true)
+  })
+
+  it('**용도 도구를 들면 꺼져 있어도 켜진다** — 이미 지정된 곳이 안 보이면 어디를 지정할지 알 수 없다', () => {
+    expect(on({ tool: 'DESIGNATE' })).toBe(true)
+  })
+
+  it('다른 도구는 켜지 않는다 — 벽·철거는 영역이 아니라 타일을 겨눈다', () => {
+    for (const t of ['WALL', 'DOOR', 'DESK', 'DEMOLISH'] as const) expect(on({ tool: t })).toBe(false)
+  })
+
+  it('용도 도구를 놓아도 **토글이 켜져 있으면 남는다** — 도구가 토글을 되돌리지 않는다', () => {
+    expect(on({ toggled: true, tool: null })).toBe(true)
   })
 })
 
