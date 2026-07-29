@@ -363,6 +363,21 @@ export interface Size {
   h: number
 }
 
+/**
+ * 카메라가 기준으로 삼는 **안전 영역**(뷰포트 px) — 화면에서 HUD 바가 덮지 않는 사각형.
+ *
+ * 클램프의 기준이 뷰포트 전체가 아니라 이것인 것이 카메라의 계약이다. HUD 두 줄은 맵 **위에 뜬
+ * 오버레이**라 뷰포트를 줄이지 않으므로, 뷰포트 전체를 기준으로 잡으면 zoom 1에서 아래쪽 타일
+ * 줄이 늘 footer 밑에 깔린다 — 게다가 그 배율에선 콘텐츠가 기준과 같은 크기라 **팬 슬랙이 0**이라
+ * 꺼낼 수도 없다(의사가 처음 서는 입구가 영영 안 보였다 — T-102).
+ *
+ * 뷰포트를 그대로 넘기고 싶으면 `{ x: 0, y: 0, w, h }`다 — 인셋 0이 곧 옛 계약이다.
+ */
+export interface Rect extends Size {
+  x: number
+  y: number
+}
+
 export interface Camera {
   /** **fit 배율 대비 배수** — 1이면 부지 전체가 뷰포트에 딱 맞는다(옛 useFitScale이 주던 그 화면).
    *  fit 자체를 곱해 두지 않는 것이 계약이다: 창 크기가 바뀌면 fit은 갈리지만 "몇 배로 당겨 봤는가"는
@@ -379,16 +394,21 @@ export const ZOOM_MAX = 3
 /** 그 배율에서 화면에 그려지는 맵 크기 — 클램프의 경계는 전부 여기서 나온다. */
 const contentOf = (base: Size, scale: number): Size => ({ w: base.w * scale, h: base.h * scale })
 
-/** 축 하나의 클램프. **콘텐츠가 뷰포트보다 작으면 중앙값**(팬을 무시한다) — zoom 1에서는 짧은 쪽에
- *  늘 여백이 남는데, 그 축을 밀 수 있으면 부지가 화면 밖으로 흘러가고 절반이 빈 배경이 된다.
- *  크면 [view − content, 0]으로 자른다: 맵 가장자리가 뷰포트 안쪽으로 들어오면 그쪽에 빈틈이 생긴다. */
-function clampAxis(pan: number, view: number, content: number): number {
-  if (content <= view) return (view - content) / 2
-  return Math.max(view - content, Math.min(0, pan))
+/** 축 하나의 클램프. **콘텐츠가 안전 영역보다 작으면 중앙값**(팬을 무시한다) — zoom 1에서는 짧은
+ *  쪽에 늘 여백이 남는데, 그 축을 밀 수 있으면 부지가 화면 밖으로 흘러가고 절반이 빈 배경이 된다.
+ *  크면 [start + safe − content, start]로 자른다: 맵 가장자리가 안전 영역 **안쪽**으로 들어오면
+ *  그쪽에 빈틈이 생긴다. 바깥(바 밑)으로 나가는 것은 막지 않는다 — 그게 줌인의 모습이다. */
+function clampAxis(pan: number, start: number, safe: number, content: number): number {
+  if (content <= safe) return start + (safe - content) / 2
+  return Math.max(start + safe - content, Math.min(start, pan))
 }
 
-export function clampCamera(cam: Camera, view: Size, content: Size): Camera {
-  return { zoom: cam.zoom, x: clampAxis(cam.x, view.w, content.w), y: clampAxis(cam.y, view.h, content.h) }
+export function clampCamera(cam: Camera, safe: Rect, content: Size): Camera {
+  return {
+    zoom: cam.zoom,
+    x: clampAxis(cam.x, safe.x, safe.w, content.w),
+    y: clampAxis(cam.y, safe.y, safe.h, content.h),
+  }
 }
 
 /**
@@ -399,28 +419,30 @@ export function clampCamera(cam: Camera, view: Size, content: Size): Camera {
  *
  * ⚠️ 기준이 **저장된 팬이 아니라 클램프된 유효 팬**인 것이 요점이다: zoom 1에서는 화면이 언제나
  * 중앙 정렬인데 저장값은 그와 다를 수 있어(직전 줌아웃이 남긴 값), 그대로 쓰면 첫 줌인이 튄다.
+ *
+ * ⚠️ 앵커는 안전 영역이 아니라 **뷰포트 px**다 — 커서는 바 위에도 올라간다. 인셋은 클램프에만 든다.
  */
 export function zoomedCamera(
   cam: Camera,
   anchor: { x: number; y: number },
   factor: number,
-  view: Size,
+  safe: Rect,
   base: Size,
   fit: number,
 ): Camera {
   const zoom = Math.max(1, Math.min(ZOOM_MAX, cam.zoom * factor))
   const k = zoom / cam.zoom
-  const eff = clampCamera(cam, view, contentOf(base, fit * cam.zoom))
+  const eff = clampCamera(cam, safe, contentOf(base, fit * cam.zoom))
   return clampCamera(
     { zoom, x: anchor.x - (anchor.x - eff.x) * k, y: anchor.y - (anchor.y - eff.y) * k },
-    view,
+    safe,
     contentOf(base, fit * zoom),
   )
 }
 
 /** 드래그 델타를 그대로 더하고 가장자리에서 자른다. */
-export function pannedCamera(cam: Camera, dx: number, dy: number, view: Size, base: Size, fit: number): Camera {
-  return clampCamera({ ...cam, x: cam.x + dx, y: cam.y + dy }, view, contentOf(base, fit * cam.zoom))
+export function pannedCamera(cam: Camera, dx: number, dy: number, safe: Rect, base: Size, fit: number): Camera {
+  return clampCamera({ ...cam, x: cam.x + dx, y: cam.y + dy }, safe, contentOf(base, fit * cam.zoom))
 }
 
 /** 드래그 사각형이 낳는 타일 — 가구·철거는 **채움**, 벽은 **테두리**다(1줄이면 곧 직선 벽). */
