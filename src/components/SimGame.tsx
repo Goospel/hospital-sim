@@ -497,28 +497,10 @@ export default function SimGame() {
             산술에서(simHud.tileFromPoint), 배율은 헤더가 오버레이가 되어 맵 크기에 영향을 줄 수
             없게 됐다(맵은 뷰포트 크기만 본다). 그래도 문구는 팔레트에 둔다 — **손이 가 있는 자리**가
             거기다(도구 목록과 같은 패널이라 도구별 안내를 눈이 따라간다). */}
+        {/* ⚠️ [채용]·[인사]도 여기 없다 — 좌측 패널로 옮겼다(사용자 지시). 남은 것은 **시간 조작**
+            뿐이라 이 바는 이제 *읽는 것(시각·금고·집계) + 시계*만 든다. 사람을 들이고 배치하는
+            것은 벽을 세우는 것과 같은 **판을 바꾸는 행동**이라 도구 팔레트 쪽이 제자리다. */}
         <div className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setHireOpen(true)}
-            className="border border-frame px-2 py-1 text-xs text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk"
-          >
-            채용
-          </button>
-          {/* [인사] — 채용 옆에 나란히. 채용이 "사람을 들이는" 버튼이면 이쪽은 **들인 사람이
-              무엇을 할지** 정하는 버튼이다. 떠날 사람이 있으면 붉게 — 주말 통지를 기다리지
-              않고 주중에 눈에 띄어야 대응할 시간이 생긴다. */}
-          <button
-            type="button"
-            onClick={() => setPriorityOpen(true)}
-            className={`mr-2 border px-2 py-1 text-xs transition-colors ${
-              resigning.length > 0
-                ? "border-alarm text-alarm hover:bg-alarm/10"
-                : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
-            }`}
-          >
-            인사{resigning.length > 0 ? ` · 이탈 ${resigning.length}` : ""}
-          </button>
           {SPEEDS.map((s) => (
             <button
               key={s.value}
@@ -578,7 +560,8 @@ export default function SimGame() {
       </div>
 
       {/*
-        ── 좌측 패널 — 건설 도구 팔레트. 벽을 두르고 → 문을 내고 → 용도를 정하고 → 가구를 놓는다. ──
+        ── 좌측 패널 — **판을 바꾸는 행동이 전부 여기 있다.** 사람을 들이고(채용·인사) → 벽을 두르고
+        → 문을 내고 → 용도를 정하고 → 가구를 놓는다. 상단 바에 남은 것은 읽는 값과 시계뿐이다. ──
 
         **하단 전폭 바에서 좌측 세로 패널로 옮겨 왔다.** 부지는 가로로 넓은 48×32라 zoom 1에서
         좌우에 늘 여백이 남는데(fit이 세로에 걸린다), 하단 바는 그 남는 가로를 못 쓰면서 세로만
@@ -598,6 +581,34 @@ export default function SimGame() {
         style={{ top: insets.top }}
         className="absolute bottom-0 left-0 z-10 flex w-40 flex-col gap-2 overflow-y-auto border-r border-frame bg-desk-2/80 px-3 py-3 backdrop-blur-sm"
       >
+        {/* ── 사람 — [채용]·[인사]. **상단 바에서 옮겨 왔다**(사용자 지시). ──
+            도구 목록 **위**에 서는 이유는 순서가 곧 인과라서다: 의사 없이 지은 진료실은 빈 방이고,
+            판을 여는 첫 동작이 채용이다. 패널이 `overflow-y-auto`라 목록이 길어지면 아래가 잘리는데
+            맨 위는 언제나 기본 시야이기도 하다 — 상단 바가 주던 "항상 보임"에 가장 가까운 자리다. */}
+        <div className="flex flex-col gap-1.5 border-b border-frame pb-2">
+          <button
+            type="button"
+            onClick={() => setHireOpen(true)}
+            className="border border-frame px-3 py-1.5 text-sm text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk"
+          >
+            채용
+          </button>
+          {/* [인사] — 채용 바로 아래. 채용이 "사람을 들이는" 버튼이면 이쪽은 **들인 사람이
+              무엇을 할지** 정하는 버튼이다. 떠날 사람이 있으면 붉게 — 주말 통지를 기다리지
+              않고 주중에 눈에 띄어야 대응할 시간이 생긴다. */}
+          <button
+            type="button"
+            onClick={() => setPriorityOpen(true)}
+            className={`border px-3 py-1.5 text-sm transition-colors ${
+              resigning.length > 0
+                ? "border-alarm text-alarm hover:bg-alarm/10"
+                : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+            }`}
+          >
+            인사{resigning.length > 0 ? ` · 이탈 ${resigning.length}` : ""}
+          </button>
+        </div>
+
         <div className="flex flex-col gap-1.5">
           {BUILD_TOOLS.map((t) => (
             <button
