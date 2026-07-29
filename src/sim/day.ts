@@ -5,7 +5,7 @@ import { freshStats, type SimWorld } from './world'
 import type { Pawn, PatientStage } from './pawn'
 import { buildBlockedSet } from './path'
 import { examLoadMin, wantsDeptOf } from './patientFlow'
-import { standSpot } from './spots'
+import { seatTiles, standSpot } from './spots'
 import {
   simDept, addExamToDeptStats, addRevenueToDeptStats, deptRevenueSum, type SimDeptStats,
 } from './dept'
@@ -145,6 +145,7 @@ export function settleDay(world: SimWorld): SimWorld {
  *  어제 목적지를 보고 흔들린다. phase·day·week는 부르는 쪽이 정한다. */
 export function freshMorning(world: SimWorld): SimWorld {
   const blocked = buildBlockedSet(world)
+  const seats = seatTiles(world)
   const pawns = world.pawns.map(p => {
     // 하룻밤 회복도 여기 있어야 한다 — 7일차 밤엔 startNextDay가 없어서, 회복을 그쪽에 달면
     // **주의 첫날만** 지친 채로 시작한다(stats 리셋이 여기 있는 것과 같은 이유).
@@ -160,7 +161,9 @@ export function freshMorning(world: SimWorld): SimWorld {
     // 같다: 7일차 밤엔 startNextDay가 없어 그쪽에 달면 주의 첫날만 굶은 채로 시작한다.
     if (p.kind === 'DOCTOR') next.hungerMin = 0
     // 책상을 못 받았거나(배정 전) 책상 앞이 막혔으면 있던 자리에 그대로 둔다 — 다음 날 배정이 다시 본다.
-    const spot = p.kind === 'DOCTOR' && p.deskAt ? standSpot(blocked, p.deskAt) : null
+    // `seats`를 함께 넘기는 것이 계약이다 — 안 넘기면 아침 자리가 환자 의자가 되고, 그 자리는
+    // examSlots가 말하는 의사스팟과 달라 그 의사는 하루 종일 슬롯 밖에 선다(spots.standSpot 주석).
+    const spot = p.kind === 'DOCTOR' && p.deskAt ? standSpot(blocked, p.deskAt, seats) : null
     return spot ? { ...next, x: spot.x, y: spot.y } : next
   })
   // 어제의 이벤트도 여기서 떨어진다 — **이벤트의 지속은 그날 하루뿐**이다(events.ts). 자리가

@@ -243,6 +243,19 @@ export default function TileMap({
   const safeCenter = { x: safe.x + safe.w / 2, y: safe.y + safe.h / 2 };
   const zoomBy = (factor: number) => setCam((c) => zoomedCamera(c, safeCenter, factor, safe, BASE, fit));
 
+  /* 앉아 있는 폰을 몇 px 들어 올린다 — **의자가 화면에서 살아남게 하는 유일한 장치**다.
+     시뮬에서 "앉는다"는 의자 타일에 서는 것인데(world.blocksWalk), 폰과 의자가 같은 16px 칸을
+     쓰므로 그냥 겹쳐 그리면 의자가 통째로 가려 **선 것과 구별되지 않는다** — 기능은 들어갔는데
+     화면은 그대로인, 사용자가 처음 신고한 그 모습으로 되돌아간다.
+     4px(= 타일의 1/4)면 의자 스프라이트의 아랫단(좌석 앞면·다리)이 폰 밑으로 드러난다. */
+  const SEAT_LIFT = TILE / 4;
+  /* 의자 타일 — 건설로만 갈리는 값이라 `world.furniture` identity에 memo를 건다(지형 memo와 같은 계약:
+     폰이 매 프레임 움직여도 이 집합을 다시 만들지 않는다). */
+  const seatTiles = useMemo(
+    () => new Set(world.furniture.filter((f) => f.kind === "CHAIR").map((f) => `${f.x},${f.y}`)),
+    [world.furniture],
+  );
+
   // 진료 중인 의사 — 환자의 doctorId가 "바쁨"의 단일 출처다(patientFlow와 같은 규칙).
   // 집합을 만드는 식 자체도 simHud가 든다: 인사 패널이 태업 판정에 같은 집합을 쓰므로
   // 여기서 따로 적으면 두 화면이 각자의 "바쁨"을 갖게 된다.
@@ -492,13 +505,17 @@ export default function TileMap({
           // 자리 없음(?)은 **욕구가 없을 때만** 뜬다: 쉬러 간 의사는 자리가 없어서가 아니라
           // 스스로 자리를 뜬 것이라, 두 표시가 겹치면 이유가 뒤바뀐다(판정은 simHud가 진다).
           const activityMark = doctorActivityMark(p) ?? doctorRoomlessMark(p);
+          // 이 칸에 의자가 있으면 앉아 있는 것이다 — 폰에 자세 필드를 두지 않는 것이 계약이다:
+          // 앉음의 단일 출처는 **좌표**이고(시뮬이 그렇게 정한다), 필드를 따로 들면 자리를 뜨는
+          // 순간 되돌리는 걸 잊어 서 있는 폰이 영영 앉은 채로 그려진다.
+          const seated = seatTiles.has(`${p.x},${p.y}`);
           return (
           <div
             key={p.id}
             className="pointer-events-none absolute"
             style={{
               left: p.x * TILE,
-              top: p.y * TILE,
+              top: p.y * TILE - (seated ? SEAT_LIFT : 0),
               width: TILE,
               height: TILE,
               transition: stepMs > 0 ? `left ${stepMs}ms linear, top ${stepMs}ms linear` : "none",

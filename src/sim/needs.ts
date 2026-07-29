@@ -34,7 +34,7 @@ import type { FurnitureKind, RoomType, SimWorld } from './world'
 import { computeRegions, type Region } from './regions'
 import { priorityOf, type Pawn, type PriorityKind } from './pawn'
 import { fatigueOf, slowedDurationMin } from './fatigue'
-import { furnitureSpots, ptKey, samePt, standSpot } from './spots'
+import { furnitureSpots, ptKey, samePt, seatTiles, standSpot } from './spots'
 
 /** 휴식 한 블록의 길이(분) — 각색·튜닝값. 왕복 보행 시간과 합쳐 "휴게실 하나가 의사를 얼마나
  *  오래 빼가나"를 정한다(그 시간만큼 그 과의 외래가 멎는다). */
@@ -291,6 +291,9 @@ interface StepCtx {
   /** 누군가의 `doctorId`로 물려 있는 의사 — 외래·응급과 **같은 출처**의 바쁨 판정이다. */
   busy: Set<string>
   blocked: Set<number>
+  /** 앉는 자리(의자) 타일 — **서는 자리 계산에서 뺀다**(spots.standSpot). `blocked`와 같은 자리의
+   *  같은 이유로 여기 든다: 의사마다 다시 세면 같은 답을 인원수만큼 다시 계산한다. */
+  seats: Set<number>
   /** 이미 임자가 있는 욕구 좌석(휴게실 의자·식당 의자를 함께 담는다). 이번 분에 새로 잡은
    *  자리도 여기 얹혀 둘이 겹치지 않는다. */
   taken: Set<string>
@@ -338,6 +341,7 @@ export function stepDoctors(
   const ctx: StepCtx = {
     busy: new Set(w.pawns.map(p => p.doctorId).filter((id): id is string => !!id)),
     blocked: buildBlockedSet(w),
+    seats: seatTiles(w),
     // 좌석 점유는 **다른 의사의 dest**로 표현된다(환자 좌석 freeSeat와 같은 기계) — 별도
     // 점유 테이블을 두면 의사가 응급에 끌려가거나 아침이 오는 순간 되돌리는 걸 잊어
     // 의자가 영구히 잠긴다. dest는 어차피 재탐색용으로 이미 있다.
@@ -430,7 +434,7 @@ function maybeStartBreak(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
  *  파생식을 복제하면 복귀 자리와 아침 자리가 갈려 의사가 어제와 다른 칸에 선다.
  *  ⚠️ 슬롯 점유(`deskAt`)는 쉬러 가도 **유지된다** — 자기 책상으로 돌아온다(옛 roomId 계승). */
 function backToDesk(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
-  const spot = p.deskAt ? standSpot(ctx.blocked, p.deskAt) : null
+  const spot = p.deskAt ? standSpot(ctx.blocked, p.deskAt, ctx.seats) : null
   const path = spot ? findPath(w, { x: p.x, y: p.y }, spot) : null
   if (!spot || !path) {
     const stay: Pawn = { ...p, path: [] }
