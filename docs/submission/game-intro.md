@@ -247,7 +247,7 @@ git clone https://github.com/Goospel/hospital-sim
 cd hospital-sim
 npm install
 npm run dev        # http://localhost:3000
-npm test           # 전체 테스트 (1,056개 · 37파일)
+npm test           # 전체 테스트 (1,309개 · 42파일)
 ```
 
 기술 스택: Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · vitest · `@anthropic-ai/sdk`(스토리텔러 프록시 전용).
