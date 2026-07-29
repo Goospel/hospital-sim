@@ -2,7 +2,7 @@
 
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import type { Pawn } from "@/sim/pawn";
-import { doctorCountByDept, formatManwon } from "./simHud";
+import { doctorCountByDept, formatManwon, startingRosterMet, STARTING_ROSTER_MIN } from "./simHud";
 
 /**
  * 채용 패널 — 이 게임에서 플레이어가 내리는 **첫 결정**이 여기서 일어난다(개원 시 의사 0명).
@@ -25,6 +25,7 @@ export default function HirePanel({
   pawns,
   hirePool,
   treasuryManwon,
+  starting = false,
   onHire,
   onClose,
 }: {
@@ -32,28 +33,46 @@ export default function HirePanel({
   /** 과별 **전국 잔여 인원** — 세계가 들고 있는 값을 그대로 읽는다(화면이 세지 않는다). */
   hirePool: Record<SimDeptKey, number>;
   treasuryManwon: number;
+  /** **개원 전 스타팅 로스터 모드**(사용자 지시 2026-07-29) — 같은 패널을 게이트로 쓴다.
+   *  새 화면을 만들지 않은 이유: 이 패널은 이미 "플레이어의 첫 결정"으로 설계돼 있다(머리말).
+   *  과별 주급이 나란히 서고 아래에 주 고정비 합계가 붙어, **필수과를 채울수록 그 숫자가
+   *  커지는 것**을 뽑기 전에 보게 한다 — 스타팅 로스터가 딜레마여야 하는 이유가 이미 여기 있다.
+   *  화면이 둘이면 그 대조를 두 번 그려야 하고, 그중 하나는 반드시 낡는다. */
+  starting?: boolean;
   onHire: (dept: SimDeptKey) => void;
+  /** 닫기 — 스타팅 모드에서는 **최소 인원을 채워야** 열린다(부모가 판정한다). */
   onClose: () => void;
 }) {
   const counts = doctorCountByDept(pawns);
   const weeklyTotal = HIRABLE_DEPTS.reduce((sum, k) => sum + counts[k] * simDept(k).weeklyCostManwon, 0);
+  const hired = HIRABLE_DEPTS.reduce((n, k) => n + counts[k], 0);
+  const met = startingRosterMet(pawns);
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="의사 채용"
+      aria-label={starting ? "개원 준비 — 의사 채용" : "의사 채용"}
       /* 세로 가운데는 아이의 `my-auto`로 잡는다(T-088) — 스크롤 컨테이너에서 items-center는
          내용이 뷰포트보다 길어지면 아이의 위쪽을 스크롤로 닿을 수 없는 곳으로 밀어낸다. */
       className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-desk/85 p-4"
     >
       <div className="my-auto flex w-full max-w-md flex-col gap-3 border border-frame bg-desk-2 px-5 py-5">
         <div className="flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold text-on-desk">의사 채용</h2>
+          <h2 className="text-sm font-semibold text-on-desk">{starting ? "개원 준비 — 의사 채용" : "의사 채용"}</h2>
           <span className="font-mono text-xs tabular-nums text-on-desk-muted">
             금고 {formatManwon(treasuryManwon)}
           </span>
         </div>
+
+        {/* 스타팅 모드의 첫 문장 — **왜 강제인지**를 먼저 말한다. 이유 없이 막힌 화면은
+            튜토리얼이 아니라 장애물이다. 아래 진행 표시는 "몇 명 남았나"를 숫자로 준다. */}
+        {starting && (
+          <p className="text-xs text-on-desk">
+            의사가 없으면 환자는 접수처에서 전부 돌아갑니다. 진료할 사람을 최소{" "}
+            <span className="font-mono tabular-nums">{STARTING_ROSTER_MIN}</span>명 뽑고 시작합니다.
+          </p>
+        )}
 
         {/* 해석 카피 없이 사실만 — "필수과는 적자입니다" 같은 문장을 쓰지 않는다. 주급 표가
             나란히 서 있으면 대조는 플레이어가 읽는다. */}
@@ -108,12 +127,21 @@ export default function HirePanel({
           <span className="text-on-desk">{formatManwon(weeklyTotal)}</span>
         </div>
 
+        {/* 스타팅 모드의 진행 — **버튼이 왜 잠겼는지**가 버튼 바로 위에 있어야 한다.
+            잠긴 버튼만 있고 이유가 멀면 그건 고장으로 읽힌다. */}
+        {starting && !met && (
+          <p className="font-mono text-xs tabular-nums text-on-desk-muted">
+            {hired} / {STARTING_ROSTER_MIN}명 — {STARTING_ROSTER_MIN - hired}명 더 뽑으면 시작합니다
+          </p>
+        )}
+
         <button
           type="button"
+          disabled={starting && !met}
           onClick={onClose}
-          className="mt-1 rounded-xs border border-frame bg-desk py-2.5 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+          className="mt-1 rounded-xs border border-frame bg-desk py-2.5 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted disabled:cursor-not-allowed disabled:text-on-desk-muted/40 disabled:hover:bg-desk"
         >
-          닫기
+          {starting ? "개원 준비 시작" : "닫기"}
         </button>
       </div>
     </div>

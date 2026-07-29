@@ -655,7 +655,7 @@ export function alertsOf(w: SimWorld): SimAlert[] {
   const blocked = buildBlockedSet(w)
 
   const alerts: SimAlert[] = []
-  const setup = setupAlert(w, doctors, regions, blocked)
+  const setup = setupAlert(w)
   if (setup) alerts.push(setup)
 
   // ── 운영 경고 — 배치는 끝났는데 지금 무언가가 모자란 상태. 셋 다 기존 판정·상수의 재사용이다.
@@ -704,27 +704,43 @@ export function alertsOf(w: SimWorld): SimAlert[] {
 }
 
 /**
- * 이 배치가 **구조적으로 아무 일도 안 일어나는** 상태면 그 한 건 — 아니면 `null`.
+ * 개원 전에 갖춰야 하는 것 — **순서대로**, 각 단계가 끝났는지와 함께.
  *
- * 전부 코어에서는 조용한 사실이다: 대기실이 없으면 환자가 아예 도착하지 않고(patientFlow는
- * 의자를 목적지로 잡는다), 자기 과 진료실이 없는 의사는 배정 후보에서 빠진다. 어느 쪽도
- * 에러가 아니라 **아무것도 안 보이는 화면**으로만 나타나 시뮬 고장과 구별되지 않는다.
+ * 사용자 결정(2026-07-29): *"튜토리얼을 필요로 하는 사용자에게는 건설도 안내해 줘야 한다고
+ * 생각해. 림월드가 한국에서는 그렇게 일반적인 장르는 아니거든."*
  *
- * **한 건만 내는 것이 계약이다** — 순서가 곧 할 일의 순서라서다: 대기실이 없으면 진료실을
- * 아무리 지어도 환자가 안 오므로, 넷을 한꺼번에 쌓으면 무엇부터 지어야 하는지가 사라진다
- * (옛 `setupWarningText`가 조기 반환 체인이던 그 이유를 그대로 승계한다).
+ * **순서 자체는 원래 `setupAlert` 체인에 있었다**(대기실 → 문 → 진료실 → 책상). 없던 것은 그
+ * 순서를 **한눈에 보여주는 형태**뿐이라, 새 판정을 만들지 않고 이 함수를 단일 출처로 세운 뒤
+ * 경고를 **첫 미완 단계**의 파생으로 뒤집었다. 두 곳이 각자 판정하면 "경고는 진료실을
+ * 말하는데 체크리스트는 대기실에 체크가 없는" 화면이 나오고, 그 어긋남은 어디에도 안 뜬다.
+ *
+ * 순서가 곧 **인과**다: 대기실이 없으면 진료실을 아무리 지어도 환자가 안 온다. 그래서 경고는
+ * 여전히 **한 건만** 낸다(넷을 쌓으면 무엇부터 할지가 사라진다) — 체크리스트만 전부 보여준다.
+ *
+ * `hint`가 `label`과 나란히 있는 이유: **조작을 모르면 할 일을 알아도 못 한다.** 이 장르의
+ * 드래그 건설·용도 지정은 처음 보면 추측이 안 되는 조작이다.
  */
-function setupAlert(
-  w: SimWorld, doctors: readonly Pawn[], regions: readonly Region[], blocked: Set<number>,
-): SimAlert | null {
-  const at = (key: string, text: string): SimAlert => ({ key, kind: 'setup', severity: 'warn', text })
-  if (!regions.some(r => r.type === 'WAITING')) return at('no-waiting', '대기실이 없습니다 — 환자가 들어오지 못합니다')
+export interface SetupStep {
+  /** 경고 key와 **같은 값** — 체크리스트 줄과 경고 칩이 같은 단계를 가리킨다는 증거다. */
+  key: string
+  /** 체크리스트 한 줄 — 할 일. */
+  label: string
+  /** 어떻게 하는가 — 눌러야 할 버튼 이름을 그대로 적는다(팔레트 라벨과 같은 말). */
+  hint: string
+  done: boolean
+  /** 경고 칩에 뜨는 문구 — 왜 지금 아무 일도 안 일어나는가(단계가 안 끝났을 때만 읽힌다). */
+  alert: string
+}
+
+export function setupSteps(w: SimWorld): SetupStep[] {
+  const doctors = w.pawns.filter(p => p.kind === 'DOCTOR')
+  const regions = computeRegions(w)
+  const blocked = buildBlockedSet(w)
+
   // 문 없는 밀실 — 벽만 두르면 영역은 인식되지만 통로가 없어 아무도 못 들어간다(설계 §7).
   // 버그가 아니라 배치의 결과지만, 화면에는 멀쩡한 방으로 보여 이유를 영영 못 찾는다.
   const sealed = regions.filter(r => r.type && r.doors.size === 0).length
-  if (sealed > 0) return at('sealed-rooms', `문이 없는 방 ${sealed}개 — 벽 한 칸을 골라 문을 내세요`)
   const roomless = doctors.filter(d => !regions.some(r => r.type === 'EXAM' && r.dept === d.dept)).length
-  if (roomless > 0) return at('no-exam-room', `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요`)
   // 방은 있는데 **앉을 책상**이 모자란 경우(설계 §4) — 정원은 방 크기가 아니라 슬롯 수다.
   // 과별로 세는 것이 계약이다: 미용 진료실에 책상이 남아돌아도 내과 의사는 못 앉는다.
   const byDept = new Map<SimDeptKey | undefined, number>()
@@ -741,10 +757,75 @@ function setupAlert(
     )
     lonelyDesks += desks - slots
   }
-  if (missing === 0) return null
-  return lonelyDesks > 0
-    ? at('lonely-desks', `의자 없는 진료 책상 ${lonelyDesks}개 — 책상 옆에 의자를 붙이세요`)
-    : at('no-desk', `진료 책상이 부족합니다 — 앉지 못한 의사 ${missing}명`)
+
+  return [
+    {
+      key: 'no-doctor',
+      label: '의사를 뽑습니다',
+      hint: '왼쪽 [사람] > [채용]. 과마다 주급과 수가가 다릅니다.',
+      done: doctors.length > 0,
+      // 접수처 반려가 생긴 뒤로 의사 0명은 **도착 0명**이다(patientFlow.servesDept) — 옛
+      // "진료가 안 된다"보다 훨씬 센 상태라 문구도 그 사실을 그대로 말한다.
+      alert: '의사가 없습니다 — 환자가 문 앞에서 전부 돌아갑니다',
+    },
+    {
+      key: 'no-waiting',
+      label: '대기실을 만듭니다',
+      hint: '[건설] > [벽]으로 사각형을 끌고 → [문]으로 벽 한 칸을 뚫고 → [용도] > [대기실] → [의자]를 채웁니다.',
+      done: regions.some(r => r.type === 'WAITING'),
+      alert: '대기실이 없습니다 — 환자가 들어오지 못합니다',
+    },
+    {
+      key: 'sealed-rooms',
+      label: '모든 방에 문을 냅니다',
+      hint: '[건설] > [문]으로 벽 한 칸을 클릭합니다. 문이 없으면 방이 아니라 밀실입니다.',
+      /* ⚠️ **"문제가 없다"가 아니라 "실제로 갖췄다"가 done이다.** 방이 하나도 없는 빈 판에서
+         `sealed === 0`만 보면 체크리스트가 「문 내기 ✅」로 떠 처음 보는 사람을 속인다.
+         앞 조건이 붙어도 경고는 안 바뀐다 — 경고는 **첫** 미완 단계만 내는데, 방이 없는 판은
+         그 앞의 `no-waiting`이 먼저 걸려 이 줄까지 오지 않는다(아래 둘도 같은 그늘). */
+      done: regions.some(r => r.type) && sealed === 0,
+      alert: `문이 없는 방 ${sealed}개 — 벽 한 칸을 골라 문을 내세요`,
+    },
+    {
+      key: 'no-exam-room',
+      label: '뽑은 과마다 진료실을 만듭니다',
+      hint: '대기실과 같은 순서로 짓고 [용도] > [진료실] > 그 과를 고릅니다. 과가 다르면 못 들어갑니다.',
+      done: doctors.length > 0 && roomless === 0,
+      alert: `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요`,
+    },
+    {
+      key: 'no-desk',
+      label: '진료실에 책상과 의자를 붙여 놓습니다',
+      hint: '[건설] > [책상] 옆칸에 [의자]. **책상+의자 한 쌍이 의사 한 명 자리**라, 쌍이 모자라면 그만큼 못 앉습니다.',
+      done: doctors.length > 0 && missing === 0,
+      alert: lonelyDesks > 0
+        ? `의자 없는 진료 책상 ${lonelyDesks}개 — 책상 옆에 의자를 붙이세요`
+        : `진료 책상이 부족합니다 — 앉지 못한 의사 ${missing}명`,
+    },
+  ]
+}
+
+/** 개원 전에 반드시 뽑아야 하는 의사 수 — **하한이지 상한이 아니다**(더 뽑아도 된다).
+ *
+ *  왜 강제인가: 접수처 반려가 생긴 뒤로 의사 0명은 곧 **도착 0명**이라, 안 뽑으면 판이
+ *  문자 그대로 아무 일도 안 일어난다(빈 화면과 고장이 구별되지 않는다).
+ *  왜 3인가: 림월드의 개척자 3명과 같은 수이고, 전국 풀 18명(미용 8·내과 5·외과 3·순환기 2)에
+ *  부담이 없으면서 **첫 결정이 곧 딜레마**가 되는 최소 인원이다 — 셋을 다 미용으로 뽑으면
+ *  흑자지만 나머지 과 환자를 전부 돌려보낸다. 그 선택이 이 게임의 질문이다. */
+export const STARTING_ROSTER_MIN = 3
+
+/** 개원 게이트가 열렸는가 — 세는 것은 **의사**다(환자는 세지 않는다). */
+export const startingRosterMet = (pawns: readonly Pawn[]): boolean =>
+  pawns.filter(p => p.kind === 'DOCTOR').length >= STARTING_ROSTER_MIN
+
+/**
+ * 이 배치가 **구조적으로 아무 일도 안 일어나는** 상태면 그 한 건 — 아니면 `null`.
+ *
+ * `setupSteps`의 **첫 미완 단계**다. 판정을 여기서 다시 쓰지 않는 것이 계약이다(위 머리말).
+ */
+function setupAlert(w: SimWorld): SimAlert | null {
+  const first = setupSteps(w).find(s => !s.done)
+  return first ? { key: first.key, kind: 'setup', severity: 'warn', text: first.alert } : null
 }
 
 /** 상태줄이 쓰는 배치 경고 한 줄 — **`alertsOf`의 파생**이다(문구·판정의 단일 출처는 그쪽).

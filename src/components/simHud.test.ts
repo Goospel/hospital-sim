@@ -4,7 +4,8 @@ import {
   alertsOf, escTarget, inspectCard, regionOverlayOn, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
-  previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
+  previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText,
+  startingRosterMet, STARTING_ROSTER_MIN, statusLineText, TOOL_LABEL,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
   clampCamera, pannedCamera, safeArea, zoomedCamera, ZOOM_MAX, ZOOM_MIN, type Camera,
 } from './simHud'
@@ -648,6 +649,79 @@ const worldOf = (pawns: Pawn[], rooms: Array<ReturnType<typeof room>>): SimWorld
   })
   return { ...w, pawns }
 }
+
+/*
+  ── 개원 준비 체크리스트 ─────────────────────────────────────────────────────
+  사용자 결정: *"튜토리얼을 필요로 하는 사용자에게는 건설도 안내해 줘야 한다고 생각해.
+  림월드가 한국에서는 그렇게 일반적인 장르는 아니거든."*
+
+  **순서는 이미 `setupAlert` 체인에 있었다**(대기실 → 문 → 진료실 → 책상). 없던 것은 그
+  순서를 **한눈에 보여주는 형태**뿐이다. 그래서 체크리스트를 새 판정으로 만들지 않고,
+  경고가 그 체크리스트의 **첫 미완 단계**가 되도록 뒤집었다 — 두 곳이 각자 판정하면
+  "경고는 진료실을 말하는데 체크리스트는 대기실에 체크가 없는" 화면이 나온다.
+*/
+describe('setupSteps — 개원 준비 단계', () => {
+  const keysOf = (w: SimWorld) => setupSteps(w).map(s => s.key)
+
+  it('순서가 곧 **인과**다 — 대기실이 없으면 진료실을 아무리 지어도 환자가 안 온다', () => {
+    expect(keysOf(worldOf([], []))).toEqual(['no-doctor', 'no-waiting', 'sealed-rooms', 'no-exam-room', 'no-desk'])
+  })
+
+  it('세계가 바뀌면 done이 따라온다 — 빈 판은 전부 미완, 갖춰진 병원은 전부 완료', () => {
+    expect(setupSteps(worldOf([], [])).every(s => !s.done)).toBe(true)
+    const ready = worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')])
+    expect(setupSteps(ready).every(s => s.done)).toBe(true)
+  })
+
+  it('**경고는 첫 미완 단계다** — 단일 출처라 체크리스트와 경고가 갈릴 자리가 없다', () => {
+    for (const w of [
+      worldOf([doctor()], []),
+      worldOf([doctor()], [room('WAITING')]),
+      worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')]),
+    ]) {
+      const first = setupSteps(w).find(s => !s.done)
+      expect(alertsOf(w).find(a => a.kind === 'setup')?.key ?? null).toBe(first?.key ?? null)
+    }
+  })
+
+  it('각 단계는 **어떻게 하는지**를 든다 — 조작을 모르면 할 일을 알아도 못 한다', () => {
+    for (const s of setupSteps(worldOf([], []))) {
+      expect(s.hint.length).toBeGreaterThan(0)
+      expect(s.label.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('톤 가드레일 — 체크리스트도 비난하지 않는다', () => {
+    for (const s of setupSteps(worldOf([], []))) {
+      for (const word of ['당신', '실패', '했어야', '탓']) {
+        expect(`${s.label} ${s.hint}`).not.toContain(word)
+      }
+    }
+  })
+})
+
+describe('startingRosterMet — 개원 전 최소 인원', () => {
+  const docs = (n: number) => Array.from({ length: n }, (_, i) => doctor({ id: `d${i}` }))
+
+  it(`빈 판은 못 넘어간다 — 의사 0명이면 이제 환자가 **한 명도** 안 들어온다(접수처 반려)`, () => {
+    expect(startingRosterMet(worldOf([], []).pawns)).toBe(false)
+  })
+
+  it(`${STARTING_ROSTER_MIN}명을 채우면 열린다`, () => {
+    expect(startingRosterMet(docs(STARTING_ROSTER_MIN - 1))).toBe(false)
+    expect(startingRosterMet(docs(STARTING_ROSTER_MIN))).toBe(true)
+  })
+
+  it('**하한이지 상한이 아니다** — 더 뽑아도 열린 채로 남는다', () => {
+    expect(startingRosterMet(docs(STARTING_ROSTER_MIN + 3))).toBe(true)
+  })
+
+  it('환자는 안 센다 — 이 게이트가 세는 것은 의사다', () => {
+    const patients: Pawn[] = Array.from({ length: 9 }, (_, i) =>
+      ({ id: `p${i}`, kind: 'PATIENT', x: 0, y: 0, path: [], stage: 'WAITING', wantsDept: 'CARDIOLOGY' }))
+    expect(startingRosterMet([...docs(1), ...patients])).toBe(false)
+  })
+})
 
 describe('setupWarningText — 왜 아무 일도 안 일어나는가', () => {
   it('의사도 방도 없는 첫 판엔 경고가 없다 — 아직 아무것도 안 한 사람에게 경고부터 띄우지 않는다', () => {
