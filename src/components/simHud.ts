@@ -20,6 +20,8 @@ import { TRAITS, type TraitKey } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
 import type { Pt } from '../sim/path'
 import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld } from '../sim/world'
+// 타입 전용 — 컴파일에 지워지므로 이 파일은 여전히 React를 모른다(vitest가 그대로 돈다).
+import type { SimSpeed } from './useSimClock'
 
 /**
  * 금액 한 곳 — **|금액| ≥ 1억이면 「N.N억」, 미만이면 「N만원」**(계획 §0-8).
@@ -671,6 +673,42 @@ function setupAlert(
  *  서로 다른 배치 문제를 말하게 되고, 그 어긋남은 화면 어디에도 안 뜬다. */
 export function setupWarningText(w: SimWorld): string | null {
   return alertsOf(w).find(a => a.kind === 'setup')?.text ?? null
+}
+
+/*
+  ── 키보드 최소셋 ───────────────────────────────────────────────────────────
+  스페이스(일시정지)·ESC(한 겹 닫기) 둘뿐이다. **어떤 기능도 키보드 전용이 되지 않는다** —
+  "마우스 클릭·드래그만으로 완주"는 제출 문서의 계약이라, 이 둘은 이미 마우스로 되는 일의
+  가속 수단이다(배속 버튼 · 패널 닫기 버튼이 각각 제자리에 남는다).
+
+  판정이 컴포넌트 밖인 이유는 이 파일 머리말 그대로다 — 리스너 안에 있으면 "무엇을 먼저
+  닫는가"라는 화면 계약을 겨눌 수 있는 테스트가 하나도 없다.
+*/
+
+/** 스페이스 한 번 — 돌고 있으면 멈추고, 멈춰 있으면 **직전 배속**으로 돌아간다.
+ *  1×로 되돌리지 않는 것이 요점이다: 3배속으로 보던 사람이 잠깐 멈췄다 풀 때마다 속도를
+ *  다시 골라야 하면, 토글이 아니라 "정지 + 배속 초기화" 두 조작이 된다.
+ *  `lastRun`을 인자로 받는 것은 기억의 소유가 화면 상태이기 때문이다(이 함수는 순수하다). */
+export const toggledSpeed = (cur: SimSpeed, lastRun: SimSpeed): SimSpeed => (cur === 0 ? lastRun : 0)
+
+/** ESC 한 번이 닫는 겹 — 없으면 `null`(아무 일도 안 한다). */
+export type EscTarget = 'modal' | 'inspect' | 'tool' | null
+
+/**
+ * 지금 ESC가 겨누는 것 — **위가 이긴다**(statusLineText 체인과 같은 관례).
+ *
+ * 순서의 근거는 화면을 덮은 순서다: 모달이 떠 있는데 뒤의 도구를 놓으면 아무 일도 안 일어난
+ * 것처럼 보이고(모달이 그대로다), 카드가 떠 있는데 도구를 놓으면 그 다음 ESC가 할 일이
+ * 바뀐다. 한 번에 한 겹씩 벗겨야 ESC가 예측 가능한 손잡이가 된다.
+ *
+ * ⚠️ **결산 오버레이(DAY_END·WEEK_END)는 입력에 없다** — 닫으면 다음 행동([다음 날] 버튼)이
+ * 화면에서 통째로 사라져 판이 멈춘 것처럼 보인다. 넣지 않은 것이 곧 계약이다.
+ */
+export function escTarget(s: { modalOpen: boolean; inspectOpen: boolean; tool: BuildTool | null }): EscTarget {
+  if (s.modalOpen) return 'modal'
+  if (s.inspectOpen) return 'inspect'
+  if (s.tool !== null) return 'tool'
+  return null
 }
 
 /** 시계를 세운 것이 무엇인가 — 없으면 안 멈춰 있다. */

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { placeRoom } from '../sim/testHelpers'
 import {
-  alertsOf,
+  alertsOf, escTarget, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
@@ -832,6 +832,49 @@ describe('statusLineText — footer 상태줄의 우선순위 체인', () => {
   it('아무것도 안 골랐으면 **건설 순서**를 알려 준다 — 벽부터라는 걸 모르면 첫 5분이 통째로 막힌다', () => {
     const text = line()
     for (const word of ['벽', '문', '용도', '가구']) expect(text).toContain(word)
+  })
+})
+
+/*
+  ── 키보드 최소셋 ───────────────────────────────────────────────────────────
+  스페이스·ESC 둘뿐이고, 둘 다 **가속 수단**이다(마우스만으로 완주할 수 있다는 계약은 그대로).
+  판정이 여기 있는 이유는 이 파일 머리말 그대로다 — 리스너 안에 있으면 "무엇을 먼저 닫는가"를
+  겨눌 수 있는 테스트가 하나도 없다.
+*/
+describe('toggledSpeed — 스페이스 한 번', () => {
+  it('돌고 있으면 멈춘다 — 배속이 얼마든 0이다', () => {
+    expect(toggledSpeed(1, 1)).toBe(0)
+    expect(toggledSpeed(3, 1)).toBe(0)
+  })
+
+  it('멈춰 있으면 **직전 배속**으로 돌아간다 — 3배속으로 보던 사람이 1배속으로 떨어지지 않는다', () => {
+    expect(toggledSpeed(0, 3)).toBe(3)
+  })
+
+  it('직전 배속의 초기값은 1이다 — 첫 스페이스가 곧 개원이 된다(판은 일시정지로 시작한다)', () => {
+    expect(toggledSpeed(0, 1)).toBe(1)
+  })
+})
+
+describe('escTarget — ESC가 닫는 한 겹', () => {
+  const target = (over: Partial<Parameters<typeof escTarget>[0]> = {}) =>
+    escTarget({ modalOpen: false, inspectOpen: false, tool: null, ...over })
+
+  it('모달이 최우선이다 — 화면을 덮고 있는 것을 두고 뒤엣것을 닫으면 조작이 사라진 것처럼 보인다', () => {
+    expect(target({ modalOpen: true, inspectOpen: true, tool: 'WALL' })).toBe('modal')
+  })
+
+  it('모달이 없으면 인스펙트 카드', () => {
+    expect(target({ inspectOpen: true, tool: 'WALL' })).toBe('inspect')
+  })
+
+  it('둘 다 없으면 손에 든 도구를 놓는다 — 무장 해제가 ESC의 마지막 겹이다', () => {
+    expect(target({ tool: 'WALL' })).toBe('tool')
+  })
+
+  it('아무것도 안 열려 있으면 **아무 일도 안 한다** — 결산 오버레이는 ESC로 닫히지 않는다', () => {
+    // 닫으면 다음 행동(다음 날 버튼)이 화면에서 사라진다 — 그래서 결산은 이 판정의 입력에 없다.
+    expect(target()).toBeNull()
   })
 })
 

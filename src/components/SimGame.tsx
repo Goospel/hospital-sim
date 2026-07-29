@@ -10,10 +10,11 @@ import WeekEndOverlay from "@/components/WeekEndOverlay";
 import {
   BUILD_TOOLS,
   ROOM_LABEL,
-  alertsOf,
   TOOL_LABEL,
+  alertsOf,
   buildBlockReason,
   buildResultText,
+  escTarget,
   formatManwon,
   isDragTool,
   previewLabel,
@@ -22,6 +23,7 @@ import {
   resigningNotices,
   setupWarningText,
   statusLineText,
+  toggledSpeed,
   toolCostText,
   traitBadges,
   turnAwayBatchText,
@@ -112,6 +114,14 @@ export default function SimGame() {
      사람이 화면을 파악하는 동안 하루가 흘러 버린다. 개원 시점을 플레이어가 정하게 두면 방을 짓고
      의사를 뽑은 뒤 1×를 누르는 것이 곧 "개원"이 된다(그 안내는 팔레트 상태줄이 맡는다). */
   const [speed, setSpeed] = useState<SimSpeed>(0);
+  /* 스페이스가 되돌아갈 배속 — **0이 아닌 값만** 기억한다(그래야 토글이 왕복이 된다).
+     상태가 아니라 ref인 이유: 이 값은 화면에 하나도 안 나오므로 바뀌었다고 다시 그릴 게 없다.
+     초기값 1은 "첫 스페이스 = 개원"이라는 뜻이다(판은 일시정지로 시작한다). */
+  const lastRunSpeed = useRef<SimSpeed>(1);
+  const changeSpeed = (s: SimSpeed) => {
+    if (s !== 0) lastRunSpeed.current = s;
+    setSpeed(s);
+  };
   /** 지금 펼쳐 둔 좌측 패널 묶음 — **한 번에 하나**(아코디언)이고 `null`이면 전부 접혀 있다.
    *  묶은 이유는 평평한 10줄이 곧 스크롤이기 때문이다: 카테고리만 서 있으면 패널이 짧게 유지되고,
    *  펼친 하나만 아래로 자란다(사용자 지시 *"건설은 건설로 묶자"*). */
@@ -221,6 +231,51 @@ export default function SimGame() {
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  /*
+    ── 키보드 최소셋 — 스페이스(일시정지) · ESC(한 겹 닫기) ──────────────────
+    둘 다 **가속 수단**이다: 배속 버튼도 패널 닫기 버튼도 그대로 남는다("마우스만으로 완주"는
+    제출 문서의 계약이라 어떤 기능도 키보드 전용이 되면 안 된다).
+
+    리스너가 `window`에 하나인 이유: 맵은 포커스를 받지 않는 div라 거기 붙이면 클릭 전에는
+    키가 안 듣는다. 무엇을 할지는 전부 simHud의 순수 함수가 정하고 여기선 부르기만 한다.
+
+    ⚠️ `preventDefault`가 필수다 — 스페이스는 페이지를 스크롤하고, 직전에 배속 버튼을 눌렀다면
+       그 버튼을 한 번 더 누른다(포커스가 남아 있다).
+    ⚠️ `e.repeat` 무시 — 누르고 있으면 시계가 초당 수십 번 서고 돈다.
+    ⚠️ 배속은 **업데이터**로 뒤집는다: 그러면 이 효과가 speed에 안 묶여 배속을 바꿀 때마다
+       리스너를 갈아 끼우지 않는다. 업데이터 안에 부수 효과가 없어 StrictMode 이중 호출에도
+       같은 값이 나온다(기억은 `changeSpeed`가 버튼 경로에서만 갱신한다 — 토글은 그 기억을
+       읽기만 하므로 여기서 다시 쓸 것이 없다).
+  */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        setSpeed((cur) => toggledSpeed(cur, lastRunSpeed.current));
+        return;
+      }
+      if (e.key !== "Escape") return;
+      // 결산 오버레이(DAY_END·WEEK_END)는 입력에 없다 — 닫으면 [다음 날]이 사라진다(escTarget 주석).
+      switch (escTarget({ modalOpen: hireOpen || priorityOpen || eventOpen, inspectOpen: false, tool })) {
+        case "modal":
+          // 한 번에 한 겹 — 겹쳐 떠 있어도 위엣것부터 닫는다(이벤트 카드는 「읽음」으로 접힌다).
+          if (hireOpen) setHireOpen(false);
+          else if (priorityOpen) setPriorityOpen(false);
+          else setSeenEvent(eventKey);
+          break;
+        case "tool":
+          // 도구를 놓을 땐 용도·과도 함께 비운다 — 팔레트의 초기화(toggleSection)와 같은 세 줄이다.
+          setTool(null);
+          setRoomType(null);
+          setExamDept(null);
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hireOpen, priorityOpen, eventOpen, eventKey, tool]);
 
   /*
     되돌아간 응급 알림 — 폰이 만들어지지 않는 사건이라(문전 판정) 화면에 아무 흔적이 없다.
@@ -548,7 +603,7 @@ export default function SimGame() {
               type="button"
               title={s.title}
               aria-pressed={speed === s.value}
-              onClick={() => setSpeed(s.value)}
+              onClick={() => changeSpeed(s.value)}
               className={`min-w-9 border px-2 py-1 text-xs transition-colors ${
                 speed === s.value
                   ? "border-on-desk-muted bg-frame text-on-desk"
