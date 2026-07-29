@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { placeRoom } from '../sim/testHelpers'
 import {
+  alertsOf,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
@@ -11,6 +12,7 @@ import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
 import { createWorld, GRID_W, GRID_H, type RoomType, type SimWorld } from '../sim/world'
 import { simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
+import { HUNGRY_AFTER_MIN } from '../sim/needs'
 import { TRAITS } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
 import { FATIGUE_RED, RESIGN_SATURATED_DAYS } from '../game/doctor'
@@ -647,6 +649,114 @@ describe('setupWarningText — 왜 아무 일도 안 일어나는가', () => {
     const sealed = { ...w, walls: new Set([...w.walls, ...w.doors]), doors: new Set<number>() }
     const text = setupWarningText(sealed)!
     expect(text).toContain('문')
+  })
+})
+
+/*
+  ── 경고 스택 ───────────────────────────────────────────────────────────────
+  배치 경고(setup)는 상태줄 한 줄에서 **스택**으로 옮겨 왔고, 그 옆에 운영 경고(ops) 셋이
+  섰다. 두 계열을 한 함수가 내는 이유는 화면이 **한 자리**에 쌓기 때문이고, 판정이 여기
+  있는 이유는 이 파일 머리말 그대로다 — JSX 안에 있으면 순서도 문구도 겨눌 수 없다.
+*/
+describe('alertsOf — 경고 스택(배치 문제 + 운영 경고)', () => {
+  /** 침대까지 갖춘 병원 — ops 경고 하나만 겨누기 위한 바닥 상태(setup은 조용하다). */
+  const healthy = (pawns: Pawn[]) =>
+    worldOf(pawns, [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD')])
+  const keysOf = (w: SimWorld) => alertsOf(w).map(a => a.key)
+
+  it('setupWarningText가 alertsOf의 **파생**이다 — 같은 세계에서 같은 문구가 나온다(이관 무변)', () => {
+    // 이 등식이 깨지면 이관이 아니라 개변이다 — 상태줄과 스택이 서로 다른 배치 문제를 말한다.
+    const sealedBase = worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')])
+    const worlds: SimWorld[] = [
+      worldOf([], []),                                                   // 첫 판 — 침묵
+      worldOf([doctor()], [room('EXAM', 'CARDIOLOGY')]),                 // 대기실 없음
+      { ...sealedBase, walls: new Set([...sealedBase.walls, ...sealedBase.doors]), doors: new Set<number>() },
+      worldOf([doctor(), doctor({ id: 'd2', dept: 'INTERNAL_MEDICINE' })], [room('WAITING'), room('EXAM', 'CARDIOLOGY')]),
+      worldOf([doctor({ id: 'd1' }), doctor({ id: 'd2' })], [room('WAITING'), room('EXAM', 'CARDIOLOGY')]),
+      worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')]),
+    ]
+    for (const w of worlds) {
+      expect(setupWarningText(w)).toBe(alertsOf(w).find(a => a.kind === 'setup')?.text ?? null)
+    }
+  })
+
+  it('배치 경고는 **한 번에 하나**다 — 체인의 앞선 문제를 먼저 풀어야 뒤가 뜻을 갖는다', () => {
+    // 대기실이 없으면 진료실을 아무리 지어도 환자가 안 오므로, 둘을 같이 띄우면 무엇부터
+    // 지어야 하는지가 사라진다(옛 setupWarningText 체인이 조기 반환이던 그 이유).
+    const w = worldOf([doctor({ dept: 'INTERNAL_MEDICINE' })], [room('EXAM', 'CARDIOLOGY')])
+    expect(alertsOf(w).filter(a => a.kind === 'setup')).toHaveLength(1)
+  })
+
+  it('배치 경고는 전부 warn이다 — 아직 고칠 수 있는 상태이지 지금 일어나는 사고가 아니다', () => {
+    const w = worldOf([doctor()], [room('EXAM', 'CARDIOLOGY')])
+    for (const a of alertsOf(w).filter(x => x.kind === 'setup')) expect(a.severity).toBe('warn')
+  })
+
+  it('멀쩡한 병원엔 경고가 하나도 없다 — 늘 켜져 있는 경고는 경고가 아니다', () => {
+    expect(alertsOf(healthy([doctor()]))).toEqual([])
+  })
+
+  it('no-bed — 침대 자리가 0이고 의사가 있으면 danger다(오는 응급이 전부 되돌아간다)', () => {
+    const w = worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY')])
+    const bed = alertsOf(w).find(a => a.key === 'no-bed')
+    expect(bed).toBeDefined()
+    expect(bed!.severity).toBe('danger')
+    expect(bed!.text).toContain('병상')
+  })
+
+  it('no-bed — 의사가 0명이면 침묵한다(setup이 침묵하는 것과 같은 이유: 아직 아무것도 안 한 판이다)', () => {
+    expect(keysOf(worldOf([], [room('WAITING')]))).not.toContain('no-bed')
+  })
+
+  it('no-bed — 병동을 지으면 사라진다. 판정은 코어의 침대 **자리**(wardBeds)다', () => {
+    expect(keysOf(healthy([doctor()]))).not.toContain('no-bed')
+  })
+
+  it('fatigue-risk — 레드존 한 칸 아래는 조용하다(경계가 밀리면 멀쩡한 병원이 붉어진다)', () => {
+    expect(keysOf(healthy([doctor({ fatigue: FATIGUE_RED - 1 })]))).not.toContain('fatigue-risk')
+  })
+
+  it('fatigue-risk — 레드존에 닿으면 danger다. 경계는 `>=`이고 값은 코어 상수에서 온다', () => {
+    const a = alertsOf(healthy([doctor({ fatigue: FATIGUE_RED })])).find(x => x.key === 'fatigue-risk')
+    expect(a).toBeDefined()
+    expect(a!.severity).toBe('danger')
+  })
+
+  it('fatigue-risk — 인원수를 센다(몇 명이 위험한지가 곧 대응 규모다)', () => {
+    const w = healthy([
+      doctor({ id: 'd1', fatigue: FATIGUE_RED }),
+      doctor({ id: 'd2', fatigue: FATIGUE_RED }),
+      doctor({ id: 'd3', fatigue: 0 }),
+    ])
+    expect(alertsOf(w).find(a => a.key === 'fatigue-risk')!.text).toContain('2')
+  })
+
+  it('starving — 식당이 없고 굶은 의사가 있으면 warn이다(스스로 갈 데가 없다)', () => {
+    const a = alertsOf(healthy([doctor({ hungerMin: HUNGRY_AFTER_MIN })])).find(x => x.key === 'starving')
+    expect(a).toBeDefined()
+    expect(a!.severity).toBe('warn')
+    expect(a!.text).toContain('식당')
+  })
+
+  it('starving — 식당이 있으면 경고가 아니라 **대기**다(밥때가 되면 스스로 간다)', () => {
+    const w = worldOf(
+      [doctor({ hungerMin: HUNGRY_AFTER_MIN })],
+      [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD'), room('CAFETERIA')],
+    )
+    expect(keysOf(w)).not.toContain('starving')
+  })
+
+  it('starving — 허기 임계 아래면 없다. 판정은 코어(needs)의 술어를 그대로 쓴다', () => {
+    expect(keysOf(healthy([doctor({ hungerMin: HUNGRY_AFTER_MIN - 1 })]))).not.toContain('starving')
+  })
+
+  it('danger가 warn보다 **앞**에 선다 — 먼저 읽히는 자리가 더 급한 것이어야 한다', () => {
+    // 대기실 없음(warn·setup) + 침대 없음·피로 위험(danger·ops)이 한 화면에 겹치는 판.
+    const w = worldOf([doctor({ fatigue: FATIGUE_RED })], [room('EXAM', 'CARDIOLOGY')])
+    const severities = alertsOf(w).map(a => a.severity)
+    expect(severities).toContain('danger')
+    expect(severities).toContain('warn')
+    expect(severities.lastIndexOf('danger')).toBeLessThan(severities.indexOf('warn'))
   })
 })
 

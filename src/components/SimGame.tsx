@@ -10,6 +10,7 @@ import WeekEndOverlay from "@/components/WeekEndOverlay";
 import {
   BUILD_TOOLS,
   ROOM_LABEL,
+  alertsOf,
   TOOL_LABEL,
   buildBlockReason,
   buildResultText,
@@ -421,6 +422,10 @@ export default function SimGame() {
 
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 
+  /* 경고 스택이 읽는 목록 — 판정·문구·순서는 전부 simHud.alertsOf가 소유한다.
+     상태줄의 배치 경고(setupWarningText)도 같은 함수의 파생이라 두 자리가 갈릴 수 없다. */
+  const alerts = alertsOf(world);
+
   /*
     ── HUD가 덮는 두께 ─────────────────────────────────────────────────────
     맵의 fit·클램프 기준이 뷰포트가 아니라 **안전 영역**이라(TileMap.useCamera), 바가 몇 px인지를
@@ -594,6 +599,37 @@ export default function SimGame() {
         onTileCancel={() => setDrag(null)}
       />
       </div>
+
+      {/*
+        ── 경고 스택 — **지금 이 병원에 대해 할 말 전부**(simHud.alertsOf가 정한다).
+
+        상태줄은 한 줄이라 배치 경고 하나만 말할 수 있었고, 그 한 줄마저 토스트·정지 사유에
+        늘 밀렸다 — 즉 급한 말일수록 안 보였다. 스택은 그 경합을 없앤다(상태줄은 그대로 둔다:
+        손이 가 있는 자리의 도구 안내는 여전히 거기가 제자리다).
+
+        `pointer-events-none`이라 맵 조작을 막지 않는다 — 클릭 동작이 없으니(카메라 점프는
+        나중) 이 칩들이 부지 위에 뜬 채로 드래그를 삼킬 이유가 없다.
+        `top`이 헤더 높이를 따르는 것은 팔레트와 같다(상단 바가 오버레이라 자리를 안 비켜 준다).
+      */}
+      {alerts.length > 0 && (
+        <div
+          style={{ top: insets.top + 8 }}
+          className="pointer-events-none absolute right-2 z-10 flex flex-col items-end gap-1"
+        >
+          {alerts.map((a) => (
+            <span
+              key={a.key}
+              className={`border px-2 py-1 font-mono text-[11px] leading-snug backdrop-blur-sm bg-desk-2/80 ${
+                // 색 단독 신호 금지(관통 규칙) — 등급이 갈리는 자리지만 문구가 이미 사실을
+                // 통째로 말한다. 색은 읽는 순서를 돕는 보조일 뿐이다.
+                a.severity === "danger" ? "border-alarm text-alarm" : "border-frame text-on-desk-muted"
+              }`}
+            >
+              {a.text}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/*
         ── 좌측 패널 — **판을 바꾸는 행동이 전부 여기 있다.** 상단 바에 남은 것은 읽는 값과 시계뿐이다.

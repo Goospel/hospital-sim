@@ -10,11 +10,11 @@ import { FATIGUE_RED, FATIGUE_SLOW_FROM, RESIGN_SATURATED_DAYS } from '../game/d
 import { formatManwon as absManwon } from '../game/labels'
 import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from '../sim/dept'
-import { emergencySpec, type EmergencyTurnAway, type TurnAwayReason } from '../sim/emergency'
+import { emergencySpec, wardBeds, type EmergencyTurnAway, type TurnAwayReason } from '../sim/emergency'
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
-import { prefersRestOverExam } from '../sim/needs'
+import { prefersRestOverExam, starvedSlowFactor } from '../sim/needs'
 import { buildBlockedSet } from '../sim/path'
-import { computeRegions } from '../sim/regions'
+import { computeRegions, type Region } from '../sim/regions'
 import { examSlots } from '../sim/spots'
 import { TRAITS, type TraitKey } from '../sim/traits'
 import type { Pawn, Priority } from '../sim/pawn'
@@ -556,34 +556,96 @@ export function doctorRoomlessMark(p: Pawn): ActivityMark | null {
 }
 
 /**
- * 이 배치가 **구조적으로 아무 일도 안 일어나는** 상태면 그 사유 — 아니면 `null`.
+ * 화면 우측에 쌓이는 경고 한 건 — 림월드 alerts의 이식.
  *
- * 둘 다 코어에서는 조용한 사실이다: 대기실이 없으면 환자가 아예 도착하지 않고(patientFlow는
+ * `kind`가 갈리는 이유는 **할 일의 종류**가 다르기 때문이다: `setup`은 "아무 일도 안 일어나는
+ * 이유"(지어야 한다)이고 `ops`는 "지금 일어나고 있는 일"(사람·병상이 모자란다)이다.
+ * `key`는 React key이자 테스트가 겨누는 이름 — 문구가 바뀌어도 그 경고의 신원은 안 흔들린다.
+ */
+export interface SimAlert {
+  key: string
+  kind: 'setup' | 'ops'
+  severity: 'warn' | 'danger'
+  text: string
+}
+
+/**
+ * 지금 이 병원에 대해 할 말 전부 — **danger가 앞, 같은 등급 안에서는 고정 순서**.
+ *
+ * 상태줄이 한 줄뿐이라 배치 경고 하나만 말할 수 있었는데(statusLineText), 그 한 줄은 정지
+ * 사유·토스트에 늘 밀린다 — 즉 **급한 말일수록 안 보였다**. 스택은 그 경합을 없앤다.
+ *
+ * 정렬을 sort가 아니라 두 필터의 이어붙이기로 하는 것은 **같은 등급 안의 순서가 계약**이라서다:
+ * setup 체인 순서와 ops 나열 순서가 그대로 보존돼야 하고, 그건 정렬 안정성에 기대는 것보다
+ * 여기서 눈에 보이는 편이 낫다.
+ *
+ * 의사가 0명이면 빈 배열이다 — 아직 아무것도 안 한 첫 판은 "잘못된 배치"가 아니고(그 자리는
+ * 상태줄의 개원 안내가 맡는다), ops 셋도 전부 의사를 세는 판정이라 어차피 조용하다.
+ */
+export function alertsOf(w: SimWorld): SimAlert[] {
+  const doctors = w.pawns.filter(p => p.kind === 'DOCTOR')
+  if (doctors.length === 0) return []
+  // **영역**을 센다 — 규칙이 보는 방과 경고가 세는 방이 갈리면, 벽이 뚫린 대기실(= 마당이라
+  // 좌석이 안 열린다)에서 "대기실은 있는데 환자가 안 온다"가 되어 경고가 정확히 거짓말을 한다.
+  // 한 번 계산해 아래 판정들이 나눠 쓴다 — 경고마다 다시 돌면 매 프레임 flood fill이 여러 번이다.
+  const regions = computeRegions(w)
+  const blocked = buildBlockedSet(w)
+
+  const alerts: SimAlert[] = []
+  const setup = setupAlert(w, doctors, regions, blocked)
+  if (setup) alerts.push(setup)
+
+  // ── 운영 경고 — 배치는 끝났는데 지금 무언가가 모자란 상태. 셋 다 기존 판정·상수의 재사용이다.
+  // 병상 0: 응급은 **문 앞에서** 되돌아가고 폰조차 안 만들어져(emergency.ts) 화면에 흔적이 없다.
+  if (wardBeds(w, blocked, regions).length === 0) {
+    alerts.push({ key: 'no-bed', kind: 'ops', severity: 'danger', text: '병상이 없습니다 — 응급을 받을 수 없습니다' })
+  }
+  // 임계를 다시 적지 않는다 — 막대가 붉어지는 그 판정(fatigueTone)이 곧 이 경고의 조건이다.
+  const tired = doctors.filter(d => fatigueTone(d.fatigue ?? 0) === 'RED').length
+  if (tired > 0) {
+    alerts.push({
+      key: 'fatigue-risk', kind: 'ops', severity: 'danger',
+      text: `피로 위험 의사 ${tired}명 — 쉬지 못하면 사직으로 이어집니다`,
+    })
+  }
+  // 허기 판정도 코어 술어를 지난다(needs.starvedSlowFactor) — 임계를 여기 적으면 "경고는 뜨는데
+  // 안 느려지는" 구간이 조용히 생긴다. **식당이 없을 때만** 경고인 이유: 식당이 있으면 밥때가
+  // 되는 대로 스스로 가므로 그건 문제가 아니라 대기다.
+  const starving = doctors.filter(d => starvedSlowFactor(d) > 1).length
+  if (starving > 0 && !regions.some(r => r.type === 'CAFETERIA')) {
+    alerts.push({
+      key: 'starving', kind: 'ops', severity: 'warn',
+      text: `식당이 없어 굶는 의사 ${starving}명 — 모든 일이 느려집니다`,
+    })
+  }
+
+  return [...alerts.filter(a => a.severity === 'danger'), ...alerts.filter(a => a.severity === 'warn')]
+}
+
+/**
+ * 이 배치가 **구조적으로 아무 일도 안 일어나는** 상태면 그 한 건 — 아니면 `null`.
+ *
+ * 전부 코어에서는 조용한 사실이다: 대기실이 없으면 환자가 아예 도착하지 않고(patientFlow는
  * 의자를 목적지로 잡는다), 자기 과 진료실이 없는 의사는 배정 후보에서 빠진다. 어느 쪽도
  * 에러가 아니라 **아무것도 안 보이는 화면**으로만 나타나 시뮬 고장과 구별되지 않는다.
  *
- * 순서가 계약이다 — 대기실이 먼저다: 대기실이 없으면 진료실을 아무리 지어도 환자가 안 오므로,
- * 두 경고가 겹칠 때 진료실을 먼저 말하면 플레이어가 엉뚱한 것을 짓는다.
- *
- * 의사가 0명이면 `null`이다 — 아직 아무것도 안 한 첫 판은 "잘못된 배치"가 아니다(그 자리는
- * 상태줄의 개원 안내가 맡는다).
+ * **한 건만 내는 것이 계약이다** — 순서가 곧 할 일의 순서라서다: 대기실이 없으면 진료실을
+ * 아무리 지어도 환자가 안 오므로, 넷을 한꺼번에 쌓으면 무엇부터 지어야 하는지가 사라진다
+ * (옛 `setupWarningText`가 조기 반환 체인이던 그 이유를 그대로 승계한다).
  */
-export function setupWarningText(w: SimWorld): string | null {
-  const doctors = w.pawns.filter(p => p.kind === 'DOCTOR')
-  if (doctors.length === 0) return null
-  // **영역**을 센다 — 규칙이 보는 방과 경고가 세는 방이 갈리면, 벽이 뚫린 대기실(= 마당이라
-  // 좌석이 안 열린다)에서 "대기실은 있는데 환자가 안 온다"가 되어 경고가 정확히 거짓말을 한다.
-  const regions = computeRegions(w)
-  if (!regions.some(r => r.type === 'WAITING')) return '대기실이 없습니다 — 환자가 들어오지 못합니다'
+function setupAlert(
+  w: SimWorld, doctors: readonly Pawn[], regions: readonly Region[], blocked: Set<number>,
+): SimAlert | null {
+  const at = (key: string, text: string): SimAlert => ({ key, kind: 'setup', severity: 'warn', text })
+  if (!regions.some(r => r.type === 'WAITING')) return at('no-waiting', '대기실이 없습니다 — 환자가 들어오지 못합니다')
   // 문 없는 밀실 — 벽만 두르면 영역은 인식되지만 통로가 없어 아무도 못 들어간다(설계 §7).
   // 버그가 아니라 배치의 결과지만, 화면에는 멀쩡한 방으로 보여 이유를 영영 못 찾는다.
   const sealed = regions.filter(r => r.type && r.doors.size === 0).length
-  if (sealed > 0) return `문이 없는 방 ${sealed}개 — 벽 한 칸을 골라 문을 내세요`
+  if (sealed > 0) return at('sealed-rooms', `문이 없는 방 ${sealed}개 — 벽 한 칸을 골라 문을 내세요`)
   const roomless = doctors.filter(d => !regions.some(r => r.type === 'EXAM' && r.dept === d.dept)).length
-  if (roomless > 0) return `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요`
+  if (roomless > 0) return at('no-exam-room', `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요`)
   // 방은 있는데 **앉을 책상**이 모자란 경우(설계 §4) — 정원은 방 크기가 아니라 슬롯 수다.
   // 과별로 세는 것이 계약이다: 미용 진료실에 책상이 남아돌아도 내과 의사는 못 앉는다.
-  const blocked = buildBlockedSet(w)
   const byDept = new Map<SimDeptKey | undefined, number>()
   for (const d of doctors) byDept.set(d.dept, (byDept.get(d.dept) ?? 0) + 1)
   let missing = 0
@@ -600,8 +662,15 @@ export function setupWarningText(w: SimWorld): string | null {
   }
   if (missing === 0) return null
   return lonelyDesks > 0
-    ? `의자 없는 진료 책상 ${lonelyDesks}개 — 책상 옆에 의자를 붙이세요`
-    : `진료 책상이 부족합니다 — 앉지 못한 의사 ${missing}명`
+    ? at('lonely-desks', `의자 없는 진료 책상 ${lonelyDesks}개 — 책상 옆에 의자를 붙이세요`)
+    : at('no-desk', `진료 책상이 부족합니다 — 앉지 못한 의사 ${missing}명`)
+}
+
+/** 상태줄이 쓰는 배치 경고 한 줄 — **`alertsOf`의 파생**이다(문구·판정의 단일 출처는 그쪽).
+ *  줄이 하나뿐인 자리라 스택의 첫 setup만 취한다: 두 곳이 각자 판정하면 상태줄과 스택이
+ *  서로 다른 배치 문제를 말하게 되고, 그 어긋남은 화면 어디에도 안 뜬다. */
+export function setupWarningText(w: SimWorld): string | null {
+  return alertsOf(w).find(a => a.kind === 'setup')?.text ?? null
 }
 
 /** 시계를 세운 것이 무엇인가 — 없으면 안 멈춰 있다. */
