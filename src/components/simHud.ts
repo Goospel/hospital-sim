@@ -263,6 +263,66 @@ export function traitBadges(p: Pawn): Array<{ key: TraitKey; label: string; stor
   return (p.traits ?? []).map(key => ({ key, label: TRAITS[key].label, story: TRAITS[key].story }))
 }
 
+/**
+ * 인사 명단 필터 하나 — 칩에 뜨는 **인원수와 그 목록이 같은 배열**이다.
+ *
+ * `count` 같은 숫자 필드를 따로 두지 않는 것이 이 타입의 요지다: 두 벌이 되는 순간 한쪽만 고치는
+ * 날이 오고, 그러면 「3명」이라 적힌 칩이 두 명을 보여준다. 이 저장소가 세 번 경고한 이중 기재의
+ * 가장 작은 판이다 — 배열 하나면 갈릴 자리가 없다.
+ */
+export interface RosterFilter {
+  key: string
+  label: string
+  /** 이 필터에 걸린 의사들 — 칩의 숫자(`doctors.length`)이자 선택했을 때 뜨는 목록 그 자체. */
+  doctors: Pawn[]
+  /** 경고 톤으로 칠할 근거 — **색은 표시층이 정한다**(여기서 클래스 이름을 주지 않는다). */
+  alarm?: boolean
+}
+
+/**
+ * 인사 패널의 명단 필터 — **전체 → 과별 → 상태별** 순으로, 인원이 있는 것만.
+ *
+ * 명단이 길어지면(전국 풀이 총 18명이라 후반엔 두 자릿수) 손잡이를 찾는 데 스크롤이 든다.
+ * 그런데 이 패널에서 찾는 대상은 늘 둘 중 하나다 — *어느 과를 통째로 조정할 것인가*, 아니면
+ * *지금 갈리고 있는 사람이 누구인가*. 두 축이 곧 두 묶음의 칩이다.
+ *
+ * **인원수를 항상 함께 내는 것이 이 함수의 절반**이다: 「피로 위험 3」은 누르지 않아도 이미
+ * 정보다. 그리고 그 숫자야말로 이 게임이 말하려는 것이라(사람이 갈린다) 칩은 편의 장치이면서
+ * 동시에 인간 비용의 요약이 된다 — 우측 경고 스택(alertsOf)과 같은 자리의 같은 논리다.
+ *
+ * ⚠️ **인원 0인 칩은 아예 안 뜬다.** 「이번 주말 떠남 0」이 떠 있으면 아무 일도 없는 병원이
+ * 사고가 난 병원처럼 읽힌다 — 회차 내역이 0줄을 빼는 것과 같은 규칙(`turnAwayBreakdownText`).
+ * 전체 칩만은 0명이어도 남는다(패널이 "필터가 하나도 없는" 상태를 다룰 필요가 없게).
+ *
+ * ⚠️ **응급 끔에는 `alarm`을 달지 않는다.** 피로·사직은 사람에게 일어난 일이지만 응급 토글은
+ * 플레이어의 선택이고, 그것을 붉게 칠하는 순간 화면이 "그러면 안 된다"고 말하게 된다 — 이
+ * 패널이 카피에서 지키는 톤(*"응급을 끈 과는 그 과가 없는 것과 같습니다"*까지만)을 색에서도
+ * 지킨다. 판단은 플레이어 몫이다.
+ *
+ * 판정은 전부 **이미 있는 술어**를 부른다(`fatigueTone`·`priorityOf`·코어의 사직 명단) — 여기서
+ * 임계나 기본값을 다시 적으면 필터에 걸리는 사람과 화면이 붉게 칠하는 사람이 갈린다.
+ */
+export function rosterFilters(pawns: readonly Pawn[], resigningIds: ReadonlySet<string>): RosterFilter[] {
+  const doctors = pawns.filter(p => p.kind === 'DOCTOR')
+  const out: RosterFilter[] = [{ key: 'ALL', label: '전체', doctors }]
+  // 과 순서는 **카탈로그 순서**다(HIRABLE_DEPTS) — 명단 등장 순(채용 순)으로 세우면 같은 병원을
+  // 두 번 열었을 때 칩 순서가 달라 손이 기억하는 자리가 없어진다.
+  for (const dept of HIRABLE_DEPTS) {
+    const list = doctors.filter(p => p.dept === dept)
+    if (list.length > 0) out.push({ key: `dept:${dept}`, label: simDept(dept).label, doctors: list })
+  }
+  const flags: Array<{ key: string; label: string; alarm?: true; match: (p: Pawn) => boolean }> = [
+    { key: 'fatigue', label: '피로 위험', alarm: true, match: p => fatigueTone(p.fatigue ?? 0) === 'RED' },
+    { key: 'leaving', label: '이번 주말 떠남', alarm: true, match: p => resigningIds.has(p.id) },
+    { key: 'no-emergency', label: '응급 끔', match: p => priorityOf(p, 'emergency') === 0 },
+  ]
+  for (const f of flags) {
+    const list = doctors.filter(f.match)
+    if (list.length > 0) out.push({ key: f.key, label: f.label, doctors: list, alarm: f.alarm })
+  }
+  return out
+}
+
 /** 지금 누군가를 보고 있는 의사들 — 판정의 출처는 **환자의 `doctorId`**다(외래·응급·욕구가 쓰는 그 집합).
  *  의사 쪽에 바쁨 플래그를 따로 두면 환자가 사라질 때 되돌리는 걸 잊어 영영 안 풀린다. */
 export function busyDoctorIds(pawns: readonly Pawn[]): Set<string> {

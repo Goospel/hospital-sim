@@ -1,10 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { simDept } from "@/sim/dept";
 import { priorityOf, type Pawn, type Priority, type PriorityKind } from "@/sim/pawn";
 import {
   busyDoctorIds, doctorActivityMark, fatigueTone, FATIGUE_COLOR, nextPriority, noRestSpotIdle,
-  PRIORITY_LABEL, saturationText, traitBadges,
+  PRIORITY_LABEL, rosterFilters, saturationText, traitBadges,
 } from "./simHud";
 import { FATIGUE_MAX } from "@/game/doctor";
 
@@ -35,8 +36,16 @@ export default function PriorityPanel({
   onSetPriority: (doctorId: string, kind: PriorityKind, value: Priority) => void;
   onClose: () => void;
 }) {
-  const doctors = pawns.filter((p) => p.kind === "DOCTOR");
   const busy = busyDoctorIds(pawns);
+  /* 명단 필터 — 칩과 목록이 **같은 배열**을 본다(simHud.rosterFilters).
+     고른 칩이 사라질 수 있는 경우가 하나 있다: 마지막 「응급 끔」 의사를 이 화면에서 다시 켜면
+     그 칩의 인원이 0이 되어 목록에서 빠진다. 그때는 전체로 되돌아간다(`?? filters[0]`) — 별도
+     상태 정리(useEffect)를 두지 않는 이유는 그 폴백이 곧 정답이기 때문이다: 그 조건에 해당하는
+     사람이 더는 없다. 나머지 축(과·피로·사직)은 패널이 열려 있는 동안 시계가 서 있어 안 변한다. */
+  const [filterKey, setFilterKey] = useState("ALL");
+  const filters = rosterFilters(pawns, resigningIds);
+  const active = filters.find((f) => f.key === filterKey) ?? filters[0];
+  const doctors = active.doctors;
 
   return (
     <div
@@ -59,6 +68,37 @@ export default function PriorityPanel({
           칸을 누르면 {PRIORITY_LABEL[2]} → {PRIORITY_LABEL[3]} → {PRIORITY_LABEL[1]} → {PRIORITY_LABEL[0]} 순으로
           바뀝니다. 「{PRIORITY_LABEL[0]}」 칸으로 내린 일은 아예 하지 않습니다 — 응급을 끈 과는 그 과가 없는 것과 같습니다.
         </p>
+
+        {/* 명단 필터 — **누르지 않아도 이미 정보다.** 「피로 위험 3」은 그 자체로 지금 이 병원의
+            인간 비용 요약이고(우측 경고 스택과 같은 자리의 같은 논리), 누르면 그 세 사람만 남는다.
+            인원 0인 축은 칩 자체가 없다 — 「떠남 0」이 떠 있으면 멀쩡한 병원이 사고 난 병원처럼
+            읽힌다(rosterFilters 주석). 그래서 이 줄의 길이가 곧 "지금 신경 쓸 축이 몇 개인가"다. */}
+        {filters[0].doctors.length > 0 && (
+          <div role="group" aria-label="명단 필터" className="flex flex-wrap gap-1">
+            {filters.map((f) => {
+              const on = f.key === active.key;
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setFilterKey(f.key)}
+                  className={`flex items-baseline gap-1 border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted ${
+                    on
+                      ? "border-on-desk-muted bg-frame text-on-desk"
+                      : f.alarm
+                        ? "border-alarm/60 text-alarm hover:border-alarm"
+                        : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+                  }`}
+                >
+                  {f.label}
+                  {/* 숫자는 **고정폭**이라 칩이 옆으로 흔들리지 않는다(자릿수가 바뀌어도 줄이 안 밀린다). */}
+                  <span className="font-mono tabular-nums">{f.doctors.length}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {doctors.length === 0 ? (
           <p className="border-y border-frame py-6 text-center text-sm text-on-desk-muted">
