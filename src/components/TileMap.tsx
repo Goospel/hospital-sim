@@ -61,6 +61,10 @@ const BASE: Size = { w: GRID_W * TILE, h: GRID_H * TILE };
 /** 인셋 기본값(바 없음) — 모듈 상수라 렌더마다 새 객체가 생기지 않는다. */
 const NO_INSETS: Insets = { top: 0, left: 0 };
 
+/** 이만큼 안 움직였으면 팬이 아니라 **클릭**이다(px). 손가락·트랙패드는 누르는 동안 몇 px씩
+ *  흔들리므로 0으로 두면 클릭이 거의 성립하지 않고, 크게 두면 짧은 팬이 폰 선택으로 새어 나간다. */
+const CLICK_SLOP = 5;
+
 /**
  * 뷰포트 측정(fit) + 그 위에 얹힌 카메라(줌·팬).
  *
@@ -186,8 +190,13 @@ export interface TileMapProps {
    *  알 수 있고, 맵이 되짚으면 DOM을 가로질러 형제를 캐야 한다.
    *  기본 0이면 옛 계약(뷰포트 전체가 안전 영역)이다. */
   insets?: Insets;
+  /** 지금 카드가 떠 있는 폰 — 그 아바타에 선택 링이 붙는다. 판정은 부모가 갖는다(SimGame.inspectId). */
+  selectedId?: string;
   onTileDown?: (t: { x: number; y: number }) => void;
   onTileMove?: (t: { x: number; y: number }) => void;
+  /** **팬이 아니라 클릭**이었다 — 주버튼을 누른 자리에서 `CLICK_SLOP` 안에서 뗐다는 뜻이다.
+   *  도구를 들었을 땐 오지 않는다(그 클릭은 건설이다 — `buildReady` 경로가 먼저 가져간다). */
+  onTileClick?: (t: { x: number; y: number }) => void;
   /** 손을 뗐다 — **확정**. 여기서만 건설이 일어난다. */
   onTileUp?: (t: { x: number; y: number }) => void;
   /** 포인터가 취소됐다 — **파기**. 타일 좌표를 넘기지 않는 것이 계약이다(확정과 섞이지 않게). */
@@ -206,8 +215,10 @@ export default function TileMap({
   stepMs,
   buildReady = false,
   insets = NO_INSETS,
+  selectedId,
   onTileDown,
   onTileMove,
+  onTileClick,
   onTileUp,
   onTileCancel,
 }: TileMapProps) {
@@ -216,8 +227,10 @@ export default function TileMap({
   const scale = fit * cam.zoom;
 
   /* 팬 중인 포인터와 직전 위치 — **상태가 아니라 ref**다: 드래그 한 프레임마다 리렌더를 유발하면
-     수백 개 타일 div가 딸려 오고, 무엇보다 다음 델타는 *직전 이벤트*에서 오지 렌더에서 오지 않는다. */
-  const panRef = useRef<{ id: number; x: number; y: number } | null>(null);
+     수백 개 타일 div가 딸려 오고, 무엇보다 다음 델타는 *직전 이벤트*에서 오지 렌더에서 오지 않는다.
+     `sx`·`sy`는 **누른 자리**라 팬 중에도 안 움직인다(x·y는 매 move마다 갈린다) — 손을 뗄 때
+     이 둘과의 거리로 "밀었나 눌렀나"를 가른다. `click`은 주버튼이었는가다(중·우클릭은 순수 팬). */
+  const panRef = useRef<{ id: number; x: number; y: number; sx: number; sy: number; click: boolean } | null>(null);
   const [panning, setPanning] = useState(false);
 
   /* 휠 줌 — **네이티브 리스너 + passive:false**여야 한다. React의 onWheel은 패시브로 붙어
@@ -435,7 +448,10 @@ export default function TileMap({
           // 아무 말이 없어 판이 죽은 것으로 보인다(SimGame onTileDown).
           if (e.button === 0) onTileDown?.(tileOf(e));
           e.preventDefault(); // 중클릭 자동 스크롤(십자 커서)이 뜨면 드래그가 통째로 가로채인다
-          panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+          panRef.current = {
+            id: e.pointerId, x: e.clientX, y: e.clientY,
+            sx: e.clientX, sy: e.clientY, click: e.button === 0,
+          };
           setPanning(true);
           try {
             e.currentTarget.setPointerCapture(e.pointerId);
@@ -447,15 +463,22 @@ export default function TileMap({
           const p = panRef.current;
           if (p) {
             setCam((c) => pannedCamera(c, e.clientX - p.x, e.clientY - p.y, safe, BASE, fit));
-            panRef.current = { id: p.id, x: e.clientX, y: e.clientY };
+            panRef.current = { ...p, x: e.clientX, y: e.clientY };
             return;
           }
           onTileMove?.(tileOf(e));
         }}
         onPointerUp={(e) => {
-          if (panRef.current) {
+          const p = panRef.current;
+          if (p) {
             panRef.current = null;
             setPanning(false);
+            /* 팬 경로에서 **클릭을 되찾는다** — 도구를 안 든 주버튼 누름은 여기로 오는데, 거의
+               안 움직였으면 그건 화면을 민 것이 아니라 무언가를 가리킨 것이다. 거리는 팬 델타의
+               누적이 아니라 **시작·끝 비교**다(왕복 드래그가 클릭이 되는 건 무시할 코너다). */
+            if (p.click && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) < CLICK_SLOP) {
+              onTileClick?.(tileOf(e));
+            }
             return; // 팬은 아무것도 짓지 않는다
           }
           onTileUp?.(tileOf(e));
@@ -522,6 +545,15 @@ export default function TileMap({
               zIndex: 2,
             }}
           >
+            {/* 선택 링 — 지금 카드가 보고 있는 폰. **네모**인 것이 계약이다: 응급의 둥근 링과
+                겹쳐 서도 둘이 구별돼야 한다(응급 표시는 손대지 않는다 — 겹치면 두 링이 다 보인다). */}
+            {p.id === selectedId && (
+              <div
+                className="absolute -inset-px"
+                style={{ boxShadow: "inset 0 0 0 1px var(--on-desk)" }}
+                aria-hidden
+              />
+            )}
             {/* 응급 환자 — 붉은 링. 스프라이트는 익명 회색 하나뿐이라(character-design.md: 환자에
                 개인 서사를 붙이지 않는다) 링만으로 "지금 병원 안에 응급이 있다"를 나른다. */}
             {p.emergency && (

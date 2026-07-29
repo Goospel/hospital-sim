@@ -11,9 +11,12 @@ import {
   BUILD_TOOLS,
   ROOM_LABEL,
   TOOL_LABEL,
+  alertsOf,
   buildBlockReason,
   buildResultText,
+  escTarget,
   formatManwon,
+  inspectCard,
   isDragTool,
   previewLabel,
   rectModeOf,
@@ -21,6 +24,7 @@ import {
   resigningNotices,
   setupWarningText,
   statusLineText,
+  toggledSpeed,
   toolCostText,
   traitBadges,
   turnAwayBatchText,
@@ -111,6 +115,14 @@ export default function SimGame() {
      사람이 화면을 파악하는 동안 하루가 흘러 버린다. 개원 시점을 플레이어가 정하게 두면 방을 짓고
      의사를 뽑은 뒤 1×를 누르는 것이 곧 "개원"이 된다(그 안내는 팔레트 상태줄이 맡는다). */
   const [speed, setSpeed] = useState<SimSpeed>(0);
+  /* 스페이스가 되돌아갈 배속 — **0이 아닌 값만** 기억한다(그래야 토글이 왕복이 된다).
+     상태가 아니라 ref인 이유: 이 값은 화면에 하나도 안 나오므로 바뀌었다고 다시 그릴 게 없다.
+     초기값 1은 "첫 스페이스 = 개원"이라는 뜻이다(판은 일시정지로 시작한다). */
+  const lastRunSpeed = useRef<SimSpeed>(1);
+  const changeSpeed = (s: SimSpeed) => {
+    if (s !== 0) lastRunSpeed.current = s;
+    setSpeed(s);
+  };
   /** 지금 펼쳐 둔 좌측 패널 묶음 — **한 번에 하나**(아코디언)이고 `null`이면 전부 접혀 있다.
    *  묶은 이유는 평평한 10줄이 곧 스크롤이기 때문이다: 카테고리만 서 있으면 패널이 짧게 유지되고,
    *  펼친 하나만 아래로 자란다(사용자 지시 *"건설은 건설로 묶자"*). */
@@ -123,6 +135,9 @@ export default function SimGame() {
   /** 지정할 진료실의 과 — 진료실을 고른 뒤 **한 번 더** 고르게 한다(과 없는 진료실은 코어가 던진다). */
   const [examDept, setExamDept] = useState<SimDeptKey | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  /** 지금 카드를 열어 둔 폰의 id — **id만** 든다. 폰 자체를 스냅샷으로 들면 그 사람이 걸어가도
+   *  카드의 수치가 그 순간에 굳고, 퇴장(배열에서 제거)한 뒤에도 유령 카드가 남는다. */
+  const [inspectId, setInspectId] = useState<string | null>(null);
   const [hireOpen, setHireOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   /* 이미 읽은 이벤트 카드 — **닫힘을 상태로 두지 않고 "읽은 것"을 기억한다.** 카드가 뜨는
@@ -220,6 +235,58 @@ export default function SimGame() {
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  /*
+    ── 키보드 최소셋 — 스페이스(일시정지) · ESC(한 겹 닫기) ──────────────────
+    둘 다 **가속 수단**이다: 배속 버튼도 패널 닫기 버튼도 그대로 남는다("마우스만으로 완주"는
+    제출 문서의 계약이라 어떤 기능도 키보드 전용이 되면 안 된다).
+
+    리스너가 `window`에 하나인 이유: 맵은 포커스를 받지 않는 div라 거기 붙이면 클릭 전에는
+    키가 안 듣는다. 무엇을 할지는 전부 simHud의 순수 함수가 정하고 여기선 부르기만 한다.
+
+    ⚠️ `preventDefault`가 필수다 — 스페이스는 페이지를 스크롤하고, 직전에 배속 버튼을 눌렀다면
+       그 버튼을 한 번 더 누른다(포커스가 남아 있다).
+    ⚠️ `e.repeat` 무시 — 누르고 있으면 시계가 초당 수십 번 서고 돈다.
+    ⚠️ 배속은 **업데이터**로 뒤집는다: 그러면 이 효과가 speed에 안 묶여 배속을 바꿀 때마다
+       리스너를 갈아 끼우지 않는다. 업데이터 안에 부수 효과가 없어 StrictMode 이중 호출에도
+       같은 값이 나온다(기억은 `changeSpeed`가 버튼 경로에서만 갱신한다 — 토글은 그 기억을
+       읽기만 하므로 여기서 다시 쓸 것이 없다).
+  */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        setSpeed((cur) => toggledSpeed(cur, lastRunSpeed.current));
+        return;
+      }
+      if (e.key !== "Escape") return;
+      // 결산 오버레이(DAY_END·WEEK_END)는 입력에 없다 — 닫으면 [다음 날]이 사라진다(escTarget 주석).
+      switch (escTarget({
+        modalOpen: hireOpen || priorityOpen || eventOpen,
+        inspectOpen: inspectId !== null,
+        tool,
+      })) {
+        case "modal":
+          // 한 번에 한 겹 — 겹쳐 떠 있어도 위엣것부터 닫는다(이벤트 카드는 「읽음」으로 접힌다).
+          if (hireOpen) setHireOpen(false);
+          else if (priorityOpen) setPriorityOpen(false);
+          else setSeenEvent(eventKey);
+          break;
+        case "inspect":
+          setInspectId(null);
+          break;
+        case "tool":
+          // 도구를 놓을 땐 용도·과도 함께 비운다 — 팔레트의 초기화(toggleSection)와 같은 세 줄이다.
+          setTool(null);
+          setRoomType(null);
+          setExamDept(null);
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hireOpen, priorityOpen, eventOpen, eventKey, tool, inspectId]);
 
   /*
     되돌아간 응급 알림 — 폰이 만들어지지 않는 사건이라(문전 판정) 화면에 아무 흔적이 없다.
@@ -421,6 +488,16 @@ export default function SimGame() {
 
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 
+  /* 경고 스택이 읽는 목록 — 판정·문구·순서는 전부 simHud.alertsOf가 소유한다.
+     상태줄의 배치 경고(setupWarningText)도 같은 함수의 파생이라 두 자리가 갈릴 수 없다. */
+  const alerts = alertsOf(world);
+
+  /* 인스펙트 카드 — **매 렌더 세계에서 폰을 다시 찾는다**(스냅샷 금지). 그래서 그 사람이
+     걸어가면 카드의 수치가 따라 살고, 퇴장하면(배열에서 빠지면) 찾기가 실패해 카드가 저절로
+     닫힌다 — 남은 id는 무해하므로 상태를 따로 비울 필요가 없다. */
+  const inspected = inspectId === null ? undefined : world.pawns.find((p) => p.id === inspectId);
+  const card = inspected ? inspectCard(inspected, world) : null;
+
   /*
     ── HUD가 덮는 두께 ─────────────────────────────────────────────────────
     맵의 fit·클램프 기준이 뷰포트가 아니라 **안전 영역**이라(TileMap.useCamera), 바가 몇 px인지를
@@ -543,7 +620,7 @@ export default function SimGame() {
               type="button"
               title={s.title}
               aria-pressed={speed === s.value}
-              onClick={() => setSpeed(s.value)}
+              onClick={() => changeSpeed(s.value)}
               className={`min-w-9 border px-2 py-1 text-xs transition-colors ${
                 speed === s.value
                   ? "border-on-desk-muted bg-frame text-on-desk"
@@ -584,6 +661,16 @@ export default function SimGame() {
           else commit(tool, [t]);
         }}
         onTileMove={(t) => setDrag((d) => (d ? { ...d, cur: t } : d))}
+        // 지금 카드를 보고 있는 폰 — 아바타에 선택 링이 붙는다(맵이 판정하지 않는다).
+        selectedId={inspectId ?? undefined}
+        // 도구를 안 든 주버튼 클릭 = **가리키기**. 도구를 들었으면 이 콜백은 오지 않는다(건설이 먼저다).
+        onTileClick={(t) => {
+          // 한 칸에 겹쳐 선 폰 중 **마지막**을 고른다 — 배열 뒤가 화면 위에 그려지는 쪽이라,
+          // 눈에 보이는 사람과 카드가 가리키는 사람이 같아진다.
+          const hit = [...world.pawns].reverse().find((p) => p.x === t.x && p.y === t.y);
+          // 빈 타일 클릭은 **닫기**다 — 카드를 닫는 데 마우스 경로가 하나 더 생긴다(× 버튼과 함께).
+          setInspectId(hit?.id ?? null);
+        }}
         onTileUp={(t) => {
           // 확정은 setState **바깥**에서 한다 — 업데이터 안에서 건설하면 StrictMode가
           // 업데이터를 두 번 불러 벽이 두 번 서고 비용도 두 번 빠진다.
@@ -594,6 +681,37 @@ export default function SimGame() {
         onTileCancel={() => setDrag(null)}
       />
       </div>
+
+      {/*
+        ── 경고 스택 — **지금 이 병원에 대해 할 말 전부**(simHud.alertsOf가 정한다).
+
+        상태줄은 한 줄이라 배치 경고 하나만 말할 수 있었고, 그 한 줄마저 토스트·정지 사유에
+        늘 밀렸다 — 즉 급한 말일수록 안 보였다. 스택은 그 경합을 없앤다(상태줄은 그대로 둔다:
+        손이 가 있는 자리의 도구 안내는 여전히 거기가 제자리다).
+
+        `pointer-events-none`이라 맵 조작을 막지 않는다 — 클릭 동작이 없으니(카메라 점프는
+        나중) 이 칩들이 부지 위에 뜬 채로 드래그를 삼킬 이유가 없다.
+        `top`이 헤더 높이를 따르는 것은 팔레트와 같다(상단 바가 오버레이라 자리를 안 비켜 준다).
+      */}
+      {alerts.length > 0 && (
+        <div
+          style={{ top: insets.top + 8 }}
+          className="pointer-events-none absolute right-2 z-10 flex flex-col items-end gap-1"
+        >
+          {alerts.map((a) => (
+            <span
+              key={a.key}
+              className={`border px-2 py-1 font-mono text-[11px] leading-snug backdrop-blur-sm bg-desk-2/80 ${
+                // 색 단독 신호 금지(관통 규칙) — 등급이 갈리는 자리지만 문구가 이미 사실을
+                // 통째로 말한다. 색은 읽는 순서를 돕는 보조일 뿐이다.
+                a.severity === "danger" ? "border-alarm text-alarm" : "border-frame text-on-desk-muted"
+              }`}
+            >
+              {a.text}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/*
         ── 좌측 패널 — **판을 바꾸는 행동이 전부 여기 있다.** 상단 바에 남은 것은 읽는 값과 시계뿐이다.
@@ -787,6 +905,43 @@ export default function SimGame() {
           </span>
         </p>
       </aside>
+
+      {/*
+        ── 인스펙트 카드 — 클릭한 폰 한 명. **팔레트 오른쪽 아래**에 선다(insets.left를 그대로
+        재활용한다 — 팔레트 폭이 갈려도 카드가 그 밑에 깔리지 않는다).
+
+        z-10이라 오버레이(채용·인사·속보·결산 = z-20) **아래** 층이다: 모달이 뜨면 가려지는
+        것이 옳다(그때 플레이어가 보는 것은 그 모달이다).
+
+        닫는 길이 셋이다 — ESC(§키보드) · 빈 타일 클릭 · 이 × 버튼. 마지막 것이 있어야
+        "마우스만으로 완주"가 유지된다(키보드는 언제나 가속 수단일 뿐이다).
+      */}
+      {card && (
+        <aside
+          style={{ left: insets.left + 8 }}
+          className="absolute bottom-2 z-10 w-56 border border-frame bg-desk-2/80 px-3 py-2 backdrop-blur-sm"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="font-mono text-xs leading-snug text-on-desk">{card.title}</h2>
+            <button
+              type="button"
+              title="닫기"
+              onClick={() => setInspectId(null)}
+              className="-mr-1 -mt-0.5 px-1 font-mono text-xs text-on-desk-muted transition-colors hover:text-on-desk"
+            >
+              ×
+            </button>
+          </div>
+          <ul className="mt-1.5 flex flex-col gap-1 border-t border-frame pt-1.5">
+            {card.lines.map((l, i) => (
+              // 줄은 순수 함수가 만든 문장 배열이라 자리가 곧 신원이다(같은 문장이 두 줄 설 수 있다).
+              <li key={i} className="font-mono text-[11px] leading-snug text-on-desk-muted">
+                {l}
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
 
       {/*
         마감·결산은 라우트를 바꾸지 않고 부지 위에 덮는다 — 타일 병원은 한 장면으로 이어지는 게
