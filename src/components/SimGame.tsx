@@ -65,6 +65,23 @@ const HIRE_REASON_TEXT: Record<Exclude<HireResult, { ok: true }>["reason"], stri
   NO_POOL: "전국에 남은 그 과 의사가 없습니다",
 };
 
+/**
+ * 좌측 패널의 최상위 묶음 — 누르면 그 아래가 열린다(아코디언: 한 번에 하나).
+ *
+ * 가른 축은 **무엇을 바꾸는가**다: `PEOPLE`은 사람을, `BUILD`는 부지를 바꾼다. 도구 8종이
+ * 전부 `BUILD`인 것은 용도·철거도 결국 부지 편집이라서다 — 「용도」를 따로 세우면 최상위가
+ * 셋이 되는데, 그 셋째는 클릭 한 번에 도구까지 무장하는 **다른 종류의 버튼**이 되어
+ * "카테고리는 열기만 한다"는 규칙이 첫 줄부터 깨진다(보이는 것보다 규칙이 먼저다).
+ *
+ * ⚠️ 여기 있고 `simHud`에 없는 이유: 라벨을 읽는 것이 JSX뿐이다. `TOOL_LABEL`이 저쪽에 있는
+ * 것은 순수 함수(`statusLineText`·`toolCostText`)가 그 표를 읽기 때문이지 라벨이라서가 아니다.
+ */
+type PaletteSection = "PEOPLE" | "BUILD";
+const PALETTE_SECTIONS: Array<{ key: PaletteSection; label: string }> = [
+  { key: "PEOPLE", label: "사람" },
+  { key: "BUILD", label: "건설" },
+];
+
 const SPEEDS: Array<{ value: SimSpeed; label: string; title: string }> = [
   { value: 0, label: "❚❚", title: "일시정지" },
   { value: 1, label: "1×", title: "보통 속도" },
@@ -94,6 +111,10 @@ export default function SimGame() {
      사람이 화면을 파악하는 동안 하루가 흘러 버린다. 개원 시점을 플레이어가 정하게 두면 방을 짓고
      의사를 뽑은 뒤 1×를 누르는 것이 곧 "개원"이 된다(그 안내는 팔레트 상태줄이 맡는다). */
   const [speed, setSpeed] = useState<SimSpeed>(0);
+  /** 지금 펼쳐 둔 좌측 패널 묶음 — **한 번에 하나**(아코디언)이고 `null`이면 전부 접혀 있다.
+   *  묶은 이유는 평평한 10줄이 곧 스크롤이기 때문이다: 카테고리만 서 있으면 패널이 짧게 유지되고,
+   *  펼친 하나만 아래로 자란다(사용자 지시 *"건설은 건설로 묶자"*). */
+  const [section, setSection] = useState<PaletteSection | null>(null);
   /** 손에 든 건설 도구 — 벽·문·가구 4종·용도·철거. 없으면 맵은 구경거리다(클릭이 조용히 지나간다). */
   const [tool, setTool] = useState<BuildTool | null>(null);
   /** 용도 도구가 지정할 방 종류. 도구를 바꾸면 함께 비운다 — 남겨 두면 다음에 용도를 고르는
@@ -436,6 +457,21 @@ export default function SimGame() {
     return () => ro.disconnect();
   }, []);
 
+  /** 카테고리 토글 — 같은 것을 다시 누르면 접힌다.
+   *
+   *  **접거나 갈아탈 때 들고 있던 도구를 놓는 것**이 이 함수의 요점이다: 안 보이는 도구가 무장된
+   *  채로 남으면 부지를 눌렀을 때 벽이 서는데 화면 어디에도 그 이유가 없다(팔레트가 접혀 있으니
+   *  무엇을 들었는지 볼 자리가 없다). 도구 버튼이 이미 쓰는 초기화와 같은 세 줄이다.
+   *
+   *  ⚠️ 업데이터 **바깥**에서 초기화한다 — 안에서 부르면 StrictMode의 이중 호출에 side effect가
+   *  두 번 실린다(이 파일의 `onTileUp`이 같은 이유로 setState 밖에서 확정한다). */
+  const toggleSection = (s: PaletteSection) => {
+    setSection((cur) => (cur === s ? null : s));
+    setTool(null);
+    setRoomType(null);
+    setExamDept(null);
+  };
+
   return (
     /*
       한 화면 = 부지 하나. **맵이 화면 전체이고 HUD는 그 위에 뜬 패널**이다(림월드의 배치).
@@ -560,8 +596,12 @@ export default function SimGame() {
       </div>
 
       {/*
-        ── 좌측 패널 — **판을 바꾸는 행동이 전부 여기 있다.** 사람을 들이고(채용·인사) → 벽을 두르고
-        → 문을 내고 → 용도를 정하고 → 가구를 놓는다. 상단 바에 남은 것은 읽는 값과 시계뿐이다. ──
+        ── 좌측 패널 — **판을 바꾸는 행동이 전부 여기 있다.** 상단 바에 남은 것은 읽는 값과 시계뿐이다.
+
+        행동은 **카테고리로 묶여 접혀 있다**(사용자 지시 *"건설은 건설로 묶자"*): [사람]·[건설]이
+        서 있고 누른 하나만 아래로 열린다. 평평하게 늘어놓던 10줄이 짧은 창에서 곧 스크롤이었고
+        (600px에서 실측 `878 > 558`), 그 스크롤은 맨 아래 상태줄까지 밀어냈다.
+        도구가 아니라 **묶음**이 최상위인 것이 계약이다 — 카테고리는 열기만 하고 도구는 안 든다. ──
 
         **하단 전폭 바에서 좌측 세로 패널로 옮겨 왔다.** 부지는 가로로 넓은 48×32라 zoom 1에서
         좌우에 늘 여백이 남는데(fit이 세로에 걸린다), 하단 바는 그 남는 가로를 못 쓰면서 세로만
@@ -581,62 +621,101 @@ export default function SimGame() {
         style={{ top: insets.top }}
         className="absolute bottom-0 left-0 z-10 flex w-40 flex-col gap-2 overflow-y-auto border-r border-frame bg-desk-2/80 px-3 py-3 backdrop-blur-sm"
       >
-        {/* ── 사람 — [채용]·[인사]. **상단 바에서 옮겨 왔다**(사용자 지시). ──
-            도구 목록 **위**에 서는 이유는 순서가 곧 인과라서다: 의사 없이 지은 진료실은 빈 방이고,
-            판을 여는 첫 동작이 채용이다. 패널이 `overflow-y-auto`라 목록이 길어지면 아래가 잘리는데
-            맨 위는 언제나 기본 시야이기도 하다 — 상단 바가 주던 "항상 보임"에 가장 가까운 자리다. */}
-        <div className="flex flex-col gap-1.5 border-b border-frame pb-2">
-          <button
-            type="button"
-            onClick={() => setHireOpen(true)}
-            className="border border-frame px-3 py-1.5 text-sm text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk"
-          >
-            채용
-          </button>
-          {/* [인사] — 채용 바로 아래. 채용이 "사람을 들이는" 버튼이면 이쪽은 **들인 사람이
-              무엇을 할지** 정하는 버튼이다. 떠날 사람이 있으면 붉게 — 주말 통지를 기다리지
-              않고 주중에 눈에 띄어야 대응할 시간이 생긴다. */}
-          <button
-            type="button"
-            onClick={() => setPriorityOpen(true)}
-            className={`border px-3 py-1.5 text-sm transition-colors ${
-              resigning.length > 0
-                ? "border-alarm text-alarm hover:bg-alarm/10"
-                : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
-            }`}
-          >
-            인사{resigning.length > 0 ? ` · 이탈 ${resigning.length}` : ""}
-          </button>
+        {/* ── 카테고리 — 누르면 **바로 아래에** 그 묶음이 열린다(아코디언: 한 번에 하나). ──
+            평평한 10줄이 곧 스크롤이었다: 600px 높이에서 [용도]·[진료실]까지 펼치면 패널이
+            잘렸다. 카테고리만 서 있으면 패널이 두 줄로 유지되고 펼친 하나만 아래로 자란다.
+
+            ⚠️ [사람]에 **이탈 경고를 승계**한다 — 안쪽 [인사]에만 두면 묶음이 접힌 동안 붉은
+            신호가 통째로 사라진다. 주말 통지를 기다리지 않고 **주중에 눈에 띄어야** 대응할
+            시간이 생기는 것이 그 경고의 존재 이유라, 접힌 채로 안 보이면 없는 것과 같다. */}
+        <div className="flex flex-col gap-1.5">
+          {PALETTE_SECTIONS.map((s) => {
+            const open = section === s.key;
+            const alarm = s.key === "PEOPLE" && resigning.length > 0;
+            return (
+              <button
+                key={s.key}
+                type="button"
+                aria-expanded={open}
+                onClick={() => toggleSection(s.key)}
+                className={`flex items-center justify-between border px-3 py-1.5 text-sm transition-colors ${
+                  open
+                    ? "border-on-desk-muted bg-frame text-on-desk"
+                    : alarm
+                      ? "border-alarm text-alarm hover:bg-alarm/10"
+                      : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+                }`}
+              >
+                <span>
+                  {s.label}
+                  {alarm ? ` · 이탈 ${resigning.length}` : ""}
+                </span>
+                {/* 펼침 표시 — 화살표 하나가 "이 버튼은 창을 여는 버튼"임을 말한다(도구 버튼과 구별). */}
+                <span aria-hidden className="font-mono text-xs">
+                  {open ? "▾" : "▸"}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          {BUILD_TOOLS.map((t) => (
+        {/* ── 사람 — [채용]·[인사]. 채용이 "사람을 들이는" 버튼이면 인사는 **들인 사람이
+            무엇을 할지** 정하는 버튼이다. ── */}
+        {section === "PEOPLE" && (
+          <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
             <button
-              key={t}
               type="button"
-              aria-pressed={tool === t}
-              onClick={() => {
-                setTool((cur) => (cur === t ? null : t));
-                // 도구를 바꾸거나 놓으면 용도 선택도 함께 비운다 — 남겨 두면 다음에 용도 도구를
-                // 고르는 순간 고르지도 않은 방 종류로 클릭이 열린다.
-                setRoomType(null);
-                setExamDept(null);
-              }}
+              onClick={() => setHireOpen(true)}
+              className="border border-frame px-3 py-1.5 text-sm text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk"
+            >
+              채용
+            </button>
+            <button
+              type="button"
+              onClick={() => setPriorityOpen(true)}
               className={`border px-3 py-1.5 text-sm transition-colors ${
-                tool === t
-                  ? "border-on-desk-muted bg-frame text-on-desk"
+                resigning.length > 0
+                  ? "border-alarm text-alarm hover:bg-alarm/10"
                   : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
               }`}
             >
-              {TOOL_LABEL[t]}
+              인사{resigning.length > 0 ? ` · 이탈 ${resigning.length}` : ""}
             </button>
-          ))}
-        </div>
+          </div>
+        )}
 
-        {/* 가격표는 **고른 도구의 값**이다 — 값 자체는 코어 표에서 온다(simHud.toolCostText). */}
-        <p className="font-mono text-[11px] leading-snug tabular-nums text-on-desk-muted">
-          {tool ? toolCostText(tool) : "도구를 고르면 비용이 표시됩니다"}
-        </p>
+        {/* ── 건설 — 도구 8종. 벽을 두르고 → 문을 내고 → 가구를 놓고 → 용도를 정하고 → 철거한다.
+            용도·철거까지 여기 드는 것은 셋 다 **부지를 바꾸는 행위**라서다(PALETTE_SECTIONS 주석). ── */}
+        {section === "BUILD" && (
+          <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
+            {BUILD_TOOLS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                aria-pressed={tool === t}
+                onClick={() => {
+                  setTool((cur) => (cur === t ? null : t));
+                  // 도구를 바꾸거나 놓으면 용도 선택도 함께 비운다 — 남겨 두면 다음에 용도 도구를
+                  // 고르는 순간 고르지도 않은 방 종류로 클릭이 열린다.
+                  setRoomType(null);
+                  setExamDept(null);
+                }}
+                className={`border px-3 py-1.5 text-sm transition-colors ${
+                  tool === t
+                    ? "border-on-desk-muted bg-frame text-on-desk"
+                    : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+                }`}
+              >
+                {TOOL_LABEL[t]}
+              </button>
+            ))}
+            {/* 가격표는 **고른 도구의 값**이다 — 값 자체는 코어 표에서 온다(simHud.toolCostText).
+                건설 묶음 안에 있는 이유: 도구가 없으면 말할 값도 없다(접혀 있을 땐 빈 줄이 된다). */}
+            <p className="font-mono text-[11px] leading-snug tabular-nums text-on-desk-muted">
+              {tool ? toolCostText(tool) : "도구를 고르면 비용이 표시됩니다"}
+            </p>
+          </div>
+        )}
 
         {/* 용도 6종 — [용도]를 고르면 열린다. 벽이 방을 만드는 게 아니라 **용도가** 만든다는 것을
             이 목록이 말한다(둘러싸인 실내 + 용도 = 규칙이 보는 방). */}
