@@ -192,6 +192,12 @@ export interface TileMapProps {
   insets?: Insets;
   /** 지금 카드가 떠 있는 폰 — 그 아바타에 선택 링이 붙는다. 판정은 부모가 갖는다(SimGame.inspectId). */
   selectedId?: string;
+  /** 영역 오버레이(과 색 틴트 + 방 이름표)를 그리는가. **기본은 안 그린다** — 판정은 부모가
+   *  소유한다(`simHud.regionOverlayOn`: 토글 + 용도 도구). 여기선 그릴지 말지만 받는다. */
+  regionOverlay?: boolean;
+  /** 오버레이 버튼을 눌렀다 — 버튼이 **줌 버튼 옆**에 사는 것은 둘 다 "무엇을 보는가"라서다
+   *  (판을 바꾸는 행동은 좌측 패널에 있다 — SimGame의 관통 규칙). */
+  onToggleRegionOverlay?: () => void;
   onTileDown?: (t: { x: number; y: number }) => void;
   onTileMove?: (t: { x: number; y: number }) => void;
   /** **팬이 아니라 클릭**이었다 — 주버튼을 누른 자리에서 `CLICK_SLOP` 안에서 뗐다는 뜻이다.
@@ -216,6 +222,8 @@ export default function TileMap({
   buildReady = false,
   insets = NO_INSETS,
   selectedId,
+  regionOverlay = false,
+  onToggleRegionOverlay,
   onTileDown,
   onTileMove,
   onTileClick,
@@ -317,11 +325,16 @@ export default function TileMap({
     const at = (t: number) => ({ left: (t % GRID_W) * TILE, top: Math.floor(t / GRID_W) * TILE });
 
     const nodes: ReactNode[] = [];
-    // ① 바닥 — 영역 타일마다 한 칸. 진료실은 과 색을 옅게 얹는다(색 단독 신호 금지: 아래 라벨이
-    //    과 이름을 함께 쓴다 — 옛 렌더에서 이어받은 관통 규칙).
+    // ① 바닥 — 영역 타일마다 한 칸. 진료실은 과 색을 옅게 얹는다(색 단독 신호 금지: 같은 조건에서
+    //    켜지는 아래 라벨이 과 이름을 함께 쓴다 — 옛 렌더에서 이어받은 관통 규칙).
+    //
+    //    ⚠️ **바닥색 자체는 오버레이를 안 탄다** — 방 색(#16232a 계열)은 바깥(#0d0d11)과 겨우
+    //    구별되는 농도라 "여기는 실내다"만 나르고, 그건 주석이 아니라 건물의 일부다. 오버레이가
+    //    감추는 것은 그 위에 얹힌 **판독용 표시**(과 색·이름표)뿐이다.
     for (const r of regions) {
       const style = r.type ? ROOM_STYLE[r.type] : NEUTRAL_STYLE;
-      const tint = r.type === "EXAM" && r.dept ? `${DEPT_COLOR[r.dept]}${DEPT_TINT_ALPHA}` : null;
+      const tint =
+        regionOverlay && r.type === "EXAM" && r.dept ? `${DEPT_COLOR[r.dept]}${DEPT_TINT_ALPHA}` : null;
       for (const t of r.tiles) {
         nodes.push(
           <div
@@ -372,21 +385,29 @@ export default function TileMap({
     }
     // ④ 라벨 — 영역 id가 곧 성분의 최소 타일 인덱스라(regions.ts) 왼쪽 위 칸에 선다. 옛 렌더가
     //    (방 좌상단 + 1칸)에 놓던 그 자리다(벽이 테두리라 내부 좌상단 = 최소 인덱스).
-    for (const r of regions) {
-      if (!r.type) continue;
-      const p = at(r.id);
-      nodes.push(
-        <span
-          key={`l${r.id}`}
-          className="pointer-events-none absolute font-mono text-[9px] leading-none text-on-desk/45"
-          style={{ left: p.left + 1, top: p.top + 1 }}
-        >
-          {roomLabel({ type: r.type, dept: r.dept })}
-        </span>,
-      );
+    //
+    //    이름표에 **바탕과 z**를 준 것은 방이 이름보다 좁기 때문이다: 3칸(48px) 방에 「진료실 ·
+    //    미용·피부」가 90px로 서면 옆방까지 넘어가 이름 여럿이 한 덩어리로 뭉갠다. 바탕이 있으면
+    //    적어도 맨 위 하나는 읽힌다(겹침 자체는 방 폭이 정하는 값이라 여기서 못 없앤다).
+    if (regionOverlay) {
+      for (const r of regions) {
+        if (!r.type) continue;
+        const p = at(r.id);
+        nodes.push(
+          <span
+            key={`l${r.id}`}
+            className="pointer-events-none absolute whitespace-nowrap px-0.5 font-mono text-[9px] leading-[1.4] text-on-desk/70"
+            style={{ left: p.left + 1, top: p.top + 1, backgroundColor: "rgba(13,13,17,0.72)", zIndex: 1 }}
+          >
+            {roomLabel({ type: r.type, dept: r.dept })}
+          </span>,
+        );
+      }
     }
     return { terrain: nodes, roomCount: regions.filter((r) => r.type).length };
-  }, [walls, doors, designations]);
+    // ⚠️ `regionOverlay`가 deps에 있어 토글마다 타일 div가 통째로 다시 만들어진다 — 사람 손이
+    //    누를 때만 일어나는 일이라 프레임 예산과 무관하다(memo의 성능 계약은 폰 이동이 기준이다).
+  }, [walls, doors, designations, regionOverlay]);
 
   return (
     /* 부모가 준 자리를 꽉 채우고 그 안에서 맵을 **카메라로 밀고 당긴다** — 림월드처럼 부지가 화면이 된다.
@@ -643,6 +664,24 @@ export default function TileMap({
             {b.label}
           </button>
         ))}
+        {/* 영역 보기 — 줌과 **같은 묶음**인 것이 자리의 근거다: 둘 다 판을 안 바꾸고 무엇을 보는지만
+            바꾼다. 한 칸 띄워 둔 것은 그래도 축(배율 ↔ 표시층)이 다르기 때문이다.
+            ⚠️ 용도 도구를 든 동안에는 부모가 강제로 켜므로(regionOverlayOn) 이 버튼이 눌린 채로
+            굳은 것처럼 보인다 — 화면에 켜져 있는 것이 사실이라 그대로 비춘다. */}
+        <button
+          type="button"
+          title="영역 보기 — 방 색과 이름표를 겹쳐 봅니다(용도 도구를 들면 자동으로 켜집니다)"
+          aria-label="영역 보기"
+          aria-pressed={regionOverlay}
+          onClick={onToggleRegionOverlay}
+          className={`mt-2 h-7 w-7 border bg-desk-2/80 font-mono text-sm backdrop-blur-sm transition-colors ${
+            regionOverlay
+              ? "border-on-desk text-on-desk"
+              : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+          }`}
+        >
+          ▦
+        </button>
       </div>
     </div>
   );

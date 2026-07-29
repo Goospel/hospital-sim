@@ -858,6 +858,20 @@ export function escTarget(s: { modalOpen: boolean; inspectOpen: boolean; tool: B
   return null
 }
 
+/**
+ * 지금 **영역 오버레이**(과 색 틴트 + 방 이름표)를 그리는가 — 안 그리는 것이 기본이다.
+ *
+ * 이 판정이 생긴 이유는 그 오버레이가 늘 켜져 있었기 때문이다. 부지를 채워 갈수록 색 블록과
+ * 이름표가 서로 겹쳐(방이 좁으면 이름이 옆방까지 넘친다) 정작 봐야 할 사람·가구·벽이 그 밑에
+ * 묻혔다 — 주석이 지도를 덮은 꼴이다. 영역은 **물어볼 때만** 답하는 층이어야 한다.
+ *
+ * ⚠️ **용도 도구를 들면 토글과 무관하게 켜진다.** 안 그러면 어디가 이미 지정됐는지 안 보이는
+ * 채로 지정해야 해서, 이 변경이 건설 흐름을 통째로 망가뜨린다(꺼진 기본값이 곧 함정이 된다).
+ * 도구를 놓을 때 토글을 되돌리지 않는 것도 계약이다 — 도구는 잠깐 빌려 쓸 뿐 소유하지 않는다.
+ */
+export const regionOverlayOn = (s: { toggled: boolean; tool: BuildTool | null }): boolean =>
+  s.toggled || s.tool === 'DESIGNATE'
+
 /** 시계를 세운 것이 무엇인가 — 없으면 안 멈춰 있다. */
 export type PauseCause = 'BUILD' | 'HIRE' | 'PRIORITY' | 'EVENT' | null
 
