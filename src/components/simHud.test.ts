@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { placeRoom } from '../sim/testHelpers'
 import {
-  alertsOf, escTarget, inspectCard, toggledSpeed,
+  alertsOf, escTarget, inspectCard, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupWarningText, statusLineText, TOOL_LABEL,
@@ -183,6 +183,69 @@ describe('doctorCountByDept — 채용 패널의 현재 인원', () => {
 /** 우선순위 패널이 쓰는 의사 한 명 — 필요한 필드만 얹어 쓴다. */
 const doctor = (over: Partial<Pawn> = {}): Pawn =>
   ({ id: 'd1', kind: 'DOCTOR', x: 0, y: 0, path: [], dept: 'CARDIOLOGY', ...over })
+
+describe('rosterFilters — 인사 명단 필터와 인원수', () => {
+  const none = new Set<string>()
+  /** 과·상태를 섞은 명단 — 필터마다 걸리는 사람이 다르게 잡히도록 짠 픽스처. */
+  const roster = (): Pawn[] => [
+    doctor({ id: 'd1', dept: 'CARDIOLOGY' }),
+    doctor({ id: 'd2', dept: 'CARDIOLOGY', fatigue: FATIGUE_RED }),
+    doctor({ id: 'd3', dept: 'INTERNAL_MEDICINE', priorities: { exam: 2, emergency: 0, rest: 2 } }),
+    { id: 'p1', kind: 'PATIENT', x: 0, y: 0, path: [] },
+  ]
+
+  it('첫 칩은 **전체**이고 의사 전원을 담는다 — 환자는 세지 않는다', () => {
+    const [all] = rosterFilters(roster(), none)
+    expect(all.key).toBe('ALL')
+    expect(all.doctors.map(p => p.id)).toEqual(['d1', 'd2', 'd3'])
+  })
+
+  it('**인원수와 목록이 같은 배열이다** — 칩의 숫자와 걸러진 명단이 갈릴 수가 없다', () => {
+    // 이 계약이 이 함수가 `count`를 따로 안 들고 `doctors`만 주는 이유다: 두 필드를 두면
+    // 한쪽만 고치는 날 "3명"이라 적힌 칩이 2명을 보여준다.
+    for (const f of rosterFilters(roster(), none)) expect(f.doctors.length).toBeGreaterThan(0)
+  })
+
+  it('과 칩은 **인원이 있는 과만**, 카탈로그 순서로 선다', () => {
+    const keys = rosterFilters(roster(), none).filter(f => f.key.startsWith('dept:')).map(f => f.key)
+    // HIRABLE_DEPTS 순서 — 뽑지 않은 과(외과·미용)는 칩 자체가 없다.
+    expect(keys).toEqual(['dept:INTERNAL_MEDICINE', 'dept:CARDIOLOGY'])
+  })
+
+  it('피로 위험은 **막대가 붉어지는 그 경계**를 쓴다 — 화면과 필터가 같은 판정을 본다', () => {
+    const at = (fatigue: number) =>
+      rosterFilters([doctor({ fatigue })], none).find(f => f.key === 'fatigue')
+    expect(at(FATIGUE_RED - 1)).toBeUndefined()
+    expect(at(FATIGUE_RED)?.doctors).toHaveLength(1)
+  })
+
+  it('떠남 칩은 코어 명단(resigningIds)을 그대로 읽는다 — 여기서 다시 세지 않는다', () => {
+    const f = rosterFilters(roster(), new Set(['d2'])).find(f => f.key === 'leaving')
+    expect(f?.doctors.map(p => p.id)).toEqual(['d2'])
+  })
+
+  it('응급 끔은 priorityOf 0이다 — 필드 없는 폰은 기본 2라 안 걸린다', () => {
+    const f = rosterFilters(roster(), none).find(f => f.key === 'no-emergency')
+    expect(f?.doctors.map(p => p.id)).toEqual(['d3'])
+  })
+
+  it('**인원 0인 칩은 아예 안 뜬다** — 「떠남 0」이 뜨면 아무 일도 없는데 사고처럼 읽힌다', () => {
+    // 회차 내역 문구가 0줄을 빼는 것과 같은 규칙(turnAwayBreakdownText).
+    const keys = rosterFilters([doctor()], none).map(f => f.key)
+    expect(keys).toEqual(['ALL', 'dept:CARDIOLOGY'])
+  })
+
+  it('의사가 없으면 전체 칩 하나뿐이고 그 안도 비어 있다 — 패널이 죽지 않는다', () => {
+    expect(rosterFilters([], none)).toEqual([{ key: 'ALL', label: '전체', doctors: [] }])
+  })
+
+  it('톤 — 응급 끔은 **경고가 아니다**. 플레이어의 선택을 화면이 판정하지 않는다', () => {
+    const fs = rosterFilters(roster(), new Set(['d2']))
+    expect(fs.find(f => f.key === 'no-emergency')?.alarm).toBeUndefined()
+    expect(fs.find(f => f.key === 'fatigue')?.alarm).toBe(true)
+    expect(fs.find(f => f.key === 'leaving')?.alarm).toBe(true)
+  })
+})
 
 describe('nextPriority — 우선순위 칸의 클릭 순환(2→3→1→0→2)', () => {
   it('기본값 2에서 첫 클릭은 **올림**(3) — 손잡이를 처음 만지는 사람이 "높음"부터 본다', () => {
