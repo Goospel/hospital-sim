@@ -5,7 +5,7 @@ import type { DayRecord } from "@/sim/day";
 import { simDept, type SimDeptKey } from "@/sim/dept";
 import type { WeekDeptLine, WeekSummary } from "@/sim/week";
 import type { EndingKind } from "@/sim/world";
-import { formatManwon, type ResigningNotice } from "./simHud";
+import { formatManwon, NURSE_GRADE_TEXT, type ResigningNotice } from "./simHud";
 
 /**
  * 주간 결산 오버레이 — 7일이 끝나고 **비용이 청구되는** 자리.
@@ -158,12 +158,26 @@ export default function WeekEndOverlay({
             </div>
             {/* 간호 인력 — 과별 표 **밖**의 줄이다(간호사는 과가 없다 · week.WeekSummary.nursing).
                 인원 0이어도 뜬다: 위 고정비와 나란히 서 있어야 "사람을 더 두면 이 줄이 는다"가
-                읽히고, 창구가 없어 진료비가 새는 병원에서 0이 그 사실을 말한다. */}
+                읽히고, 창구가 없어 진료비가 새는 병원에서 0이 그 사실을 말한다.
+                **기준을 인원 옆에 붙이는 것**이 등급 줄의 절반이다 — 아래 가감산이 왜 붙었는지가
+                숫자 두 개의 대소로 먼저 읽힌다(해석 카피 없이). */}
             <div className="flex items-baseline justify-between">
               <dt className="font-sans text-xs text-ink-2">
-                간호 인력 ({summary.nursing.count}명)
+                간호 인력 ({summary.nursing.count}명 · 기준 {summary.nursing.required}명)
               </dt>
               <dd className="text-stamp-ink">−{formatManwon(summary.nursing.wageManwon)}</dd>
+            </div>
+            {/* 간호등급 가감산 — **0이어도 줄이 선다**(기준을 채운 주도 판정을 받았다는 사실이
+                화면에 남아야 "이 줄은 미달일 때만 뜨는 경고"로 오독되지 않는다).
+                라벨이 곧 판정 문구다: 문장은 simHud(NURSE_GRADE_TEXT)가 소유하고 여기선 놓기만
+                한다 — 톤 가드레일(상태 서술만)이 테스트로 잠겨 있는 자리가 거기다. */}
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="font-sans text-xs text-ink-2">
+                {NURSE_GRADE_TEXT[summary.nursing.grade]}
+              </dt>
+              <dd className={summary.nursing.adjustManwon < 0 ? "text-stamp-ink" : "text-ink"}>
+                {formatSignedManwon(summary.nursing.adjustManwon)}
+              </dd>
             </div>
             {/* 응급 줄 — **문앞 판정** 기준이다. 수용은 "받아들인 시점"에 세므로, 처치까지 못
                 간 채 마감을 맞은 건은 여기 수용에 들어 있으면서 위 과별 표의 수익에는 없다.

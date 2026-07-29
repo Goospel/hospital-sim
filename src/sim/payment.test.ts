@@ -269,7 +269,9 @@ describe('주간 결산 — 간호사 주급(공짜 노동 금지)', () => {
 
   it('결산이 간호 인원과 주급을 싣는다', () => {
     const s = weekSummary(weekEnd(2))
-    expect(s.nursing).toEqual({ count: 2, wageManwon: 2 * NURSE_WEEKLY_COST_MANWON })
+    // 등급 축(required·grade·adjustManwon)은 이 describe의 관심사가 아니다 — 여기서 함께 박으면
+    // 등급 튜닝이 수납 테스트를 깨뜨린다(그 계약은 week.test 「간호등급」이 잰다).
+    expect(s.nursing).toMatchObject({ count: 2, wageManwon: 2 * NURSE_WEEKLY_COST_MANWON })
   })
 
   it('총액은 블록에서 **유도**한다 — 표와 총액이 갈릴 자리가 없다', () => {
@@ -278,6 +280,6 @@ describe('주간 결산 — 간호사 주급(공짜 노동 금지)', () => {
   })
 
   it('간호사가 없으면 주급도 0이다 — 없는 사람에게 돈이 나가지 않는다', () => {
-    expect(weekSummary(weekEnd(0)).nursing).toEqual({ count: 0, wageManwon: 0 })
+    expect(weekSummary(weekEnd(0)).nursing).toMatchObject({ count: 0, wageManwon: 0 })
   })
 })

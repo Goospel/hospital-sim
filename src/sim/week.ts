@@ -27,6 +27,48 @@ export const INSOLVENCY_WEEKS_TO_CLOSE = 2
  */
 export const NURSE_WEEKLY_COST_MANWON = 300
 
+/**
+ * 간호등급 가감산율 — 주간 진료 수익에 얹히는 비율(가산 +10% / 감산 −10%).
+ *
+ * **대칭인 것은 각색이다**: 실제 제도는 가산 10~70%·감산 5~10%의 비대칭이지만, 이 게임이 하려는
+ * 말은 "인력이 자동으로 돈으로 번역된다"이지 등급표의 재현이 아니다(설계 §6 · 리서치 §3 각색 고지).
+ */
+export const NURSE_GRADE_RATE = 0.1
+
+/** 간호등급 3단 — 기준 초과 / 충족 / 미달. */
+export type NurseGrade = 'BONUS' | 'MET' | 'SHORT'
+
+/** 결산의 간호 블록 — 인원·기준·등급과 그 돈(주급은 항상 나가고, 가감산은 등급이 정한다). */
+export interface WeekNursing {
+  count: number
+  /** 이 병원이 있어야 할 간호사 수 — `ceil(의사 수 / 2)`. */
+  required: number
+  grade: NurseGrade
+  /** 항상 양수(빼는 쪽은 총액 유도가 한다). */
+  wageManwon: number
+  /** 등급 가감산 — SHORT면 음수·BONUS면 양수·MET이면 0. */
+  adjustManwon: number
+}
+
+/**
+ * 이번 주말의 간호등급 — **주말 시점의 인원만** 본다(주중 변동은 이 슬라이스에 없다).
+ *
+ * 기준은 `ceil(의사 수 / 2)`다. 정확한 제도 재현이 아니라 **번역**이다 — 실제 등급제는 병상당·
+ * 환자수당 7단계지만 이 병원은 외래 중심이라 "진료 규모 대비 간호 인력"의 최소 형태로 옮겼다.
+ *
+ * ⚠️ **의사가 0명이면 등급이 없다(MET 고정)** — 기준이 0이라 간호사 하나만 있어도 산술로는
+ * BONUS가 서는데, 그 주는 **수익이 0이 아닐 수 있다**: 주중에 벌고 주말 전에 의사가 전부 떠난
+ * 주가 실재한다(weekDeptTable 주석의 그 경우). 그러면 아무도 진료하지 않는 병원이 간호사만으로
+ * 가산을 받는다. 기준이 없는 곳에는 초과도 없다 — 미달도 마찬가지라 감산도 없다.
+ */
+export function nurseGradeOf(w: SimWorld): { count: number; required: number; grade: NurseGrade } {
+  const count = nurseCount(w.pawns)
+  const required = Math.ceil(w.pawns.filter(p => p.kind === 'DOCTOR').length / 2)
+  const grade: NurseGrade =
+    required === 0 ? 'MET' : count > required ? 'BONUS' : count === required ? 'MET' : 'SHORT'
+  return { count, required, grade }
+}
+
 /** 한 판의 길이 — 이 주차의 결산이 끝나면 무조건 에필로그다.
  *  상한이 없으면 흑자 빌드(미용 단독 등)가 무한히 굴러가 판에 결말이 없다. */
 export const CAMPAIGN_WEEKS = 12
@@ -54,11 +96,10 @@ export interface WeekSummary {
   /** 과별 표 — **관계가 있는 과만** 줄이 선다(의사가 있거나 그 주에 돈을 벌었거나).
    *  0줄을 채우지 않는 것은 `SimDeptStats`(dept.ts)의 Partial 계승이다. */
   byDept: Partial<Record<SimDeptKey, WeekDeptLine>>
-  /** 간호 인력 — 인원과 그 주급 합. **과별 표에 섞지 않는 것이 계약이다**: 간호사는 과가 없어
-   *  줄을 세울 자리가 없고, 억지로 한 과에 얹으면 그 과의 순익이 거짓이 된다.
-   *  ⚠️ 등급 가감산(`grade`·`adjustManwon`)은 **아직 없다** — 다음 PR의 자리다. 주급만 먼저
-   *  드는 이유는 공짜 노동을 만들지 않기 위해서다(뽑는 순간 대가가 확정된다는 채용의 계약). */
-  nursing: { count: number; wageManwon: number }
+  /** 간호 인력 — 인원·기준·등급과 그 돈(주급 + 등급 가감산). **과별 표에 섞지 않는 것이
+   *  계약이다**: 간호사는 과가 없어 줄을 세울 자리가 없고, 억지로 한 과에 얹으면 그 과의 순익이
+   *  거짓이 된다. 가감산도 과별로 쪼개지 않는다 — 등급은 병원 하나에 하나다. */
+  nursing: WeekNursing
   /** 이번 주 응급 — 몇 건 받았고 몇 건 되돌아갔나. **사유별 내역은 여기 없다**(그건 그날
    *  그 순간의 메시지라 `stats.emergencyTurnedAway`가 소유한다 — DayRecord와 같은 분담). */
   emergencies: { accepted: number; turnedAway: number }
@@ -74,14 +115,22 @@ export function weekSummary(w: SimWorld): WeekSummary {
   const fixedCostManwon = Object.values(byDept).reduce((sum, line) => sum + line.fixedCostManwon, 0)
   // 간호 주급도 **블록에서 유도한다** — 총액을 따로 더하면 표의 인원과 총액이 갈릴 수 있고,
   // 갈려도 화면엔 둘 중 하나만 보인다(byDept 유도와 같은 계약).
-  const count = nurseCount(w.pawns)
-  const nursing = { count, wageManwon: count * NURSE_WEEKLY_COST_MANWON }
+  const { count, required, grade } = nurseGradeOf(w)
+  // 가감산은 **진료 수익**에만 붙는다(고정비·주급은 등급과 무관하다). 만원 단위 정수를 지키려
+  // 반올림하고, 크기를 먼저 구한 뒤 부호를 고른다 — 부호를 먼저 곱하면 수익 0인 감산 주가
+  // `-0`이 되어 "MET만 0"이라는 부호 불변식이 표기 수준에서 흐려진다.
+  const magnitude = Math.round(revenueManwon * NURSE_GRADE_RATE)
+  const adjustManwon =
+    grade === 'MET' || magnitude === 0 ? 0 : grade === 'BONUS' ? magnitude : -magnitude
+  const nursing: WeekNursing = {
+    count, required, grade, wageManwon: count * NURSE_WEEKLY_COST_MANWON, adjustManwon,
+  }
   return {
     week: w.week,
     revenueManwon,
     fixedCostManwon,
     nursing,
-    netManwon: revenueManwon - fixedCostManwon - nursing.wageManwon,
+    netManwon: revenueManwon - fixedCostManwon - nursing.wageManwon + nursing.adjustManwon,
     examsDone: w.days.reduce((sum, d) => sum + d.examsDone, 0),
     leftCount: w.days.reduce((sum, d) => sum + d.leftCount, 0),
     byDept,
@@ -135,10 +184,11 @@ function weekDeptTable(w: SimWorld): Partial<Record<SimDeptKey, WeekDeptLine>> {
 export function settleWeek(w: SimWorld): SimWorld {
   if (w.phase !== 'WEEK_END') throw new Error(`settleWeek: WEEK_END가 아닌 세계(${w.phase})`)
   if (w.weekSettled) throw new Error('settleWeek: 이번 주는 이미 결산했다(고정비 이중 차감)')
-  // 나가는 돈은 **결산이 이미 유도해 둔 둘**이다(과별 고정비 + 간호 주급) — 여기서 항목을 다시
-  // 나열하면 새 인건비가 붙는 날 한쪽만 빠져 화면의 순익과 금고가 조용히 갈린다.
+  // 청구액은 **수익과 순익의 차**로 유도한다(= 고정비 + 간호 주급 − 등급 가감산). 항목을 여기서
+  // 다시 나열하면 새 인건비나 가감산이 붙는 날 한쪽만 빠져 화면의 순익과 금고가 조용히 갈린다 —
+  // 실제로 등급 가감산이 붙으며 그 목록이 셋이 됐다. 수익 자체는 진료 시점에 이미 들어와 있다.
   const bill = weekSummary(w)
-  const treasuryManwon = w.treasuryManwon - bill.fixedCostManwon - bill.nursing.wageManwon
+  const treasuryManwon = w.treasuryManwon - (bill.revenueManwon - bill.netManwon)
   // 0은 음수가 아니다 — 딱 고정비만큼 벌어 금고를 비운 주는 살아남는다.
   const insolvencyStreak = treasuryManwon < 0 ? w.insolvencyStreak + 1 : 0
   const ending = endingOf(w, insolvencyStreak)

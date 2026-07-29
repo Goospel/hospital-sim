@@ -15,7 +15,7 @@ import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam, starvedSlowFactor } from '../sim/needs'
 import { buildBlockedSet } from '../sim/path'
 import { hasCashier, unservedDepts } from '../sim/patientFlow'
-import { NURSE_WEEKLY_COST_MANWON } from '../sim/week'
+import { NURSE_WEEKLY_COST_MANWON, type NurseGrade } from '../sim/week'
 import { computeRegions, type Region } from '../sim/regions'
 import { examSlots } from '../sim/spots'
 import { TRAITS, type TraitKey } from '../sim/traits'
@@ -106,6 +106,22 @@ export function turnAwayBatchText(pending: readonly EmergencyTurnAway[]): string
  */
 export function unpaidText(manwon: number): string {
   return manwon > 0 ? `못 받은 진료비 ${formatManwon(manwon)}` : ''
+}
+
+/**
+ * 주간 결산의 간호등급 한 줄 — **왜 이 숫자가 얹혔는가**.
+ *
+ * 세 등급 모두 문장을 갖는다: 감산에만 말이 붙으면 그 줄 자체가 경고로 읽혀, 기준을 채운 주에
+ * 「가감 0」이 무슨 뜻인지 화면 어디에도 없게 된다.
+ *
+ * 톤: **상태 서술만** 한다(§톤 가드레일 · unpaidText와 같은 규칙). 미달은 제도가 병원을 그렇게
+ * 읽었다는 사실이지 플레이어의 실수가 아니다 — 「당신」·「실패」·「탓」이 붙는 순간 구조의 결과가
+ * 개인의 잘못으로 미끄러진다.
+ */
+export const NURSE_GRADE_TEXT: Record<NurseGrade, string> = {
+  BONUS: '간호 인력이 기준을 넘어 수가가 가산되었습니다',
+  MET: '간호 인력이 기준을 채웠습니다',
+  SHORT: '간호 인력이 기준에 못 미쳐 수가가 감산되었습니다',
 }
 
 /** 사유별 회차 집계 — 0도 자리를 지킨다(문구 쪽에서 0줄을 빼는 판단을 한다). */
