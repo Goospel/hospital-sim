@@ -773,6 +773,9 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
   const BASE = { w: GRID_W * 16, h: GRID_H * 16 }
   /** 뷰포트. 부지보다 가로가 살짝 넓어 fit이 가로에 안 걸리게 잡았다(세로가 짧은 쪽). */
   const VIEW = { w: 800, h: 600 }
+  /** **인셋 0**의 안전 영역 = 뷰포트 전체. 아래 8개는 옛 계약을 그대로 겨누는 회귀 가드다 —
+   *  바가 없으면(HUD를 걷어내면) 카메라는 예전과 한 픽셀도 다르게 굴면 안 된다. */
+  const SAFE = { x: 0, y: 0, w: VIEW.w, h: VIEW.h }
   const FIT = Math.min(VIEW.w / BASE.w, VIEW.h / BASE.h)
   /** 그 배율에서 화면에 그려지는 맵 크기 — 클램프의 경계는 전부 이 값에서 나온다. */
   const content = (zoom: number) => ({ w: BASE.w * FIT * zoom, h: BASE.h * FIT * zoom })
@@ -785,7 +788,7 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
   it('콘텐츠가 뷰포트보다 작으면 **중앙 정렬**이다 — 팬 입력은 무시된다', () => {
     // zoom 1 = 부지 전체가 들어오는 배율이라 짧은 쪽엔 늘 여백이 남는다. 그 축을 밀 수 있으면
     // 부지가 뷰포트 밖으로 흘러가고 화면 절반이 빈 배경이 된다.
-    const c = clampCamera({ zoom: 1, x: -400, y: 250 }, VIEW, content(1))
+    const c = clampCamera({ zoom: 1, x: -400, y: 250 }, SAFE, content(1))
     expect(c.x).toBeCloseTo((VIEW.w - content(1).w) / 2)
     expect(c.y).toBeCloseTo((VIEW.h - content(1).h) / 2)
   })
@@ -793,16 +796,16 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
   it('줌 상태에서는 [view − content, 0]으로 잘린다 — 맵 가장자리가 뷰포트 안으로 못 들어온다', () => {
     const big = content(2)
     // 오른쪽·아래로 아무리 끌어도 맵 좌상단은 뷰포트 좌상단을 못 넘어선다(넘으면 왼쪽에 빈틈).
-    expect(clampCamera({ zoom: 2, x: 999, y: 999 }, VIEW, big)).toMatchObject({ x: 0, y: 0 })
+    expect(clampCamera({ zoom: 2, x: 999, y: 999 }, SAFE, big)).toMatchObject({ x: 0, y: 0 })
     // 반대쪽도 같다 — 맵 우하단이 뷰포트 우하단 안쪽으로 들어오면 그쪽에 빈틈이 생긴다.
-    const c = clampCamera({ zoom: 2, x: -99_999, y: -99_999 }, VIEW, big)
+    const c = clampCamera({ zoom: 2, x: -99_999, y: -99_999 }, SAFE, big)
     expect(c.x).toBeCloseTo(VIEW.w - big.w)
     expect(c.y).toBeCloseTo(VIEW.h - big.h)
   })
 
   it('zoom은 [1, ZOOM_MAX] 밖으로 못 나간다 — 1보다 작으면 부지가 화면보다 작아진다', () => {
     const at = (cam: Camera, factor: number) =>
-      zoomedCamera(cam, { x: 400, y: 300 }, factor, VIEW, BASE, FIT).zoom
+      zoomedCamera(cam, { x: 400, y: 300 }, factor, SAFE, BASE, FIT).zoom
     expect(at({ zoom: 1, x: 0, y: 0 }, 0.1)).toBe(1)
     expect(at({ zoom: 2, x: -200, y: -200 }, 100)).toBe(ZOOM_MAX)
   })
@@ -810,7 +813,7 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
   it('**앵커 불변식** — 줌 전후로 커서 아래 맵 좌표가 그대로다(클램프에 안 걸리는 중간 줌)', () => {
     const anchor = { x: 400, y: 300 }
     const before: Camera = { zoom: 1.5, x: -200, y: -100 }
-    const after = zoomedCamera(before, anchor, 1.2, VIEW, BASE, FIT)
+    const after = zoomedCamera(before, anchor, 1.2, SAFE, BASE, FIT)
     expect(after.zoom).toBeCloseTo(1.8)
     expect(under(after, anchor).x).toBeCloseTo(under(before, anchor).x)
     expect(under(after, anchor).y).toBeCloseTo(under(before, anchor).y)
@@ -822,34 +825,75 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
   it('앵커 산술의 기준은 저장값이 아니라 **클램프된 유효 팬**이다 — zoom 1에서 첫 줌인이 튀지 않는다', () => {
     const anchor = { x: 100, y: 500 }
     // 같은 화면(zoom 1은 언제나 중앙 정렬)인데 저장된 팬만 다른 두 카메라.
-    const a = zoomedCamera({ zoom: 1, x: 0, y: 0 }, anchor, 1.5, VIEW, BASE, FIT)
-    const b = zoomedCamera({ zoom: 1, x: -777, y: 555 }, anchor, 1.5, VIEW, BASE, FIT)
+    const a = zoomedCamera({ zoom: 1, x: 0, y: 0 }, anchor, 1.5, SAFE, BASE, FIT)
+    const b = zoomedCamera({ zoom: 1, x: -777, y: 555 }, anchor, 1.5, SAFE, BASE, FIT)
     expect(b).toEqual(a)
     // 그리고 그 화면의 앵커 아래 지점이 유지된다.
-    const shown = clampCamera({ zoom: 1, x: 0, y: 0 }, VIEW, content(1))
+    const shown = clampCamera({ zoom: 1, x: 0, y: 0 }, SAFE, content(1))
     expect(under(a, anchor).x).toBeCloseTo(under(shown, anchor).x)
     expect(under(a, anchor).y).toBeCloseTo(under(shown, anchor).y)
   })
 
   it('ZOOM_MAX에서 더 줌인하면 카메라가 통째로 그대로다 — 앵커만 옮겨도 화면이 안 흔들린다', () => {
-    const at: Camera = zoomedCamera({ zoom: ZOOM_MAX, x: -300, y: -200 }, { x: 400, y: 300 }, 1, VIEW, BASE, FIT)
-    expect(zoomedCamera(at, { x: 10, y: 590 }, 1.4, VIEW, BASE, FIT)).toEqual(at)
+    const at: Camera = zoomedCamera({ zoom: ZOOM_MAX, x: -300, y: -200 }, { x: 400, y: 300 }, 1, SAFE, BASE, FIT)
+    expect(zoomedCamera(at, { x: 10, y: 590 }, 1.4, SAFE, BASE, FIT)).toEqual(at)
   })
 
   it('pannedCamera — 델타를 그대로 더하고 가장자리에서 잘린다', () => {
     const cam: Camera = { zoom: 2, x: -300, y: -200 }
-    expect(pannedCamera(cam, 40, -25, VIEW, BASE, FIT)).toMatchObject({ zoom: 2, x: -260, y: -225 })
+    expect(pannedCamera(cam, 40, -25, SAFE, BASE, FIT)).toMatchObject({ zoom: 2, x: -260, y: -225 })
     // 위·왼쪽으로 끝까지 밀면 맵 우하단이 뷰포트 우하단에 붙는다.
-    const edge = pannedCamera(cam, -9999, -9999, VIEW, BASE, FIT)
+    const edge = pannedCamera(cam, -9999, -9999, SAFE, BASE, FIT)
     expect(edge.x).toBeCloseTo(VIEW.w - content(2).w)
     expect(edge.y).toBeCloseTo(VIEW.h - content(2).h)
   })
 
   it('줌아웃으로 zoom 1로 돌아오면 중앙 정렬로 수렴한다 — [⌂]가 없어도 화면이 복구된다', () => {
     const zoomed: Camera = { zoom: 2.5, x: -900, y: -600 }
-    const home = zoomedCamera(zoomed, { x: 0, y: 0 }, 1 / 2.5, VIEW, BASE, FIT)
+    const home = zoomedCamera(zoomed, { x: 0, y: 0 }, 1 / 2.5, SAFE, BASE, FIT)
     expect(home.zoom).toBeCloseTo(1)
     expect(home.x).toBeCloseTo((VIEW.w - content(1).w) / 2)
     expect(home.y).toBeCloseTo((VIEW.h - content(1).h) / 2)
+  })
+
+  /*
+    ── 안전 영역(HUD 바가 덮지 않는 구간) ───────────────────────────────────
+    header·footer는 맵 **위에 뜬 오버레이**라 뷰포트를 줄이지 않는다. 그래서 클램프가 뷰포트
+    전체를 기준으로 잡으면 zoom 1에서 아래쪽 타일 줄이 **영구히** footer 밑에 깔린다 — 그 배율에선
+    콘텐츠가 기준과 같은 크기라 팬 슬랙이 0이어서 꺼낼 수도 없다([T-102](../../claude-docs/troubleshooting/T-102.md)).
+    아래 셋은 기준이 뷰포트가 아니라 **안전 영역**임을 겨눈다(세로만 — 두 바 모두 가로 전폭이다).
+  */
+  /** header 56 · footer 90이 덮은 화면. 좌우 인셋은 없다. */
+  const INSET = { top: 56, bottom: 90 }
+  const SAFE_I = { x: 0, y: INSET.top, w: VIEW.w, h: VIEW.h - INSET.top - INSET.bottom }
+
+  it('인셋이 있으면 중앙은 **안전 영역의 중앙**이다 — 뷰포트 중앙이 아니다', () => {
+    const small = { w: 400, h: 300 }
+    const c = clampCamera({ zoom: 1, x: -400, y: 250 }, SAFE_I, small)
+    expect(c.y).toBeCloseTo(SAFE_I.y + (SAFE_I.h - small.h) / 2) // 133
+    // 뷰포트 중앙(150)이면 맵이 아래로 17px 내려가 footer 밑에 파묻힌다.
+    expect(c.y).not.toBeCloseTo((VIEW.h - small.h) / 2)
+    expect(c.x).toBeCloseTo((VIEW.w - small.w) / 2) // 가로는 인셋 0이라 그대로
+  })
+
+  it('인셋이 있으면 클램프 경계는 [top + safeH − content, top]이다 — 맵은 바 밑으로만 나간다', () => {
+    const big = { w: 1600, h: 900 }
+    // 아래·오른쪽으로 아무리 끌어도 맵 위 가장자리는 **안전 영역 위 끝**을 못 넘어선다.
+    // (뷰포트 기준이면 0까지 갔고, 그 56px이 header 밑 빈틈으로 남는다.)
+    expect(clampCamera({ zoom: 1, x: 9999, y: 9999 }, SAFE_I, big)).toMatchObject({ x: 0, y: INSET.top })
+    const c = clampCamera({ zoom: 1, x: -99_999, y: -99_999 }, SAFE_I, big)
+    expect(c.y).toBeCloseTo(SAFE_I.y + SAFE_I.h - big.h)
+    expect(c.x).toBeCloseTo(VIEW.w - big.w)
+  })
+
+  it('zoom 1 + 인셋 — 부지가 안전 영역에 꼭 맞아 세로 팬 슬랙이 0이다(y가 top에 고정)', () => {
+    // 호출부(TileMap)가 재는 fit — 세로는 **안전 영역**으로 나눈다. 이 화면에선 세로가 짧은 쪽이라
+    // 콘텐츠 높이가 safeH와 정확히 같아진다: 부지 전체가 어느 바에도 안 가리고 다 보인다.
+    const fitI = Math.min(VIEW.w / BASE.w, SAFE_I.h / BASE.h)
+    expect(BASE.h * fitI).toBeCloseTo(SAFE_I.h)
+    const cam: Camera = { zoom: 1, x: 0, y: INSET.top }
+    for (const dy of [300, -300]) {
+      expect(pannedCamera(cam, 0, dy, SAFE_I, BASE, fitI).y).toBeCloseTo(INSET.top)
+    }
   })
 })

@@ -400,6 +400,38 @@ export default function SimGame() {
 
   const closed = world.minute >= ARRIVAL_WINDOW_MIN;
 
+  /*
+    ── HUD 두 바가 덮는 두께 ───────────────────────────────────────────────
+    맵의 fit·클램프 기준이 뷰포트가 아니라 **안전 영역**이라(TileMap.useCamera), 두 바가 몇 px인지를
+    맵에 알려 줘야 한다. 높이를 **재는** 이유는 셀 수 없기 때문이다: 두 바는 글꼴·창 폭·줄바꿈에
+    따라 높이가 갈리고, 상수로 박으면 좁은 화면에서 즉시 어긋난다(T-101이 고정 px을 버린 그 이유).
+
+    측정 방식은 useCamera와 **같은 패턴**이고 이유도 같다 — 마운트에 한 번 직접 재고(옵저버 첫
+    콜백은 다음 렌더링 스텝에 오고, 프레임을 안 그리는 창에서는 아예 안 온다 · T-086) 그 뒤는
+    ResizeObserver가 잇는다. 창 폭이 줄어 도구 팔레트가 줄바꿈되면 footer 높이가 실제로 변한다.
+  */
+  const headerRef = useRef<HTMLElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
+  const [insets, setInsets] = useState({ top: 0, bottom: 0 });
+  useEffect(() => {
+    const header = headerRef.current;
+    const footer = footerRef.current;
+    if (!header || !footer) return;
+    // 같은 값이면 **같은 객체를 돌려준다** — RO는 레이아웃이 흔들릴 때마다 부르는데, 매번 새
+    // 객체를 넣으면 이 컴포넌트가 그때마다 다시 렌더된다(값은 하나도 안 바뀐 채로).
+    const measure = () =>
+      setInsets((prev) =>
+        prev.top === header.offsetHeight && prev.bottom === footer.offsetHeight
+          ? prev
+          : { top: header.offsetHeight, bottom: footer.offsetHeight },
+      );
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(header);
+    ro.observe(footer);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     /*
       한 화면 = 부지 하나. **맵이 화면 전체이고 HUD는 그 위에 뜬 패널**이다(림월드의 배치).
@@ -415,7 +447,7 @@ export default function SimGame() {
     */
     <main className="relative h-dvh overflow-hidden" style={{ backgroundColor: OUTSIDE_FLOOR }}>
       {/* ── 상단 바 — 시각·금고·오늘 집계·시간 조작 ── */}
-      <header className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-frame bg-desk-2/80 px-4 py-2 font-mono text-sm tabular-nums text-on-desk backdrop-blur-sm">
+      <header ref={headerRef} className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-frame bg-desk-2/80 px-4 py-2 font-mono text-sm tabular-nums text-on-desk backdrop-blur-sm">
         <span className="text-base font-semibold">{formatClockFromOpen(world.minute)}</span>
         {/* 하루 안의 시각만으로는 지금이 몇 번째 하루인지 알 수 없다 — 주·일이 리듬의 좌표다. */}
         <span className="text-on-desk-muted">
@@ -501,11 +533,15 @@ export default function SimGame() {
         </div>
       </header>
 
-      {/* 부지 — 화면 전체. HUD 두 줄이 그 위에 뜨고, 가려진 타일은 팬·줌으로 끌어내 짓는다. */}
+      {/* 부지 — 화면 전체(`inset-0`). HUD 두 줄이 그 위에 뜨지만 **zoom 1에서는 아무것도 안 가린다**:
+          맵이 뷰포트가 아니라 **두 바 사이(안전 영역)**에 맞춰 fit되기 때문이다. 줌인하면 그때부터
+          바 밑으로 미끄러져 들어가고, 그 자리는 팬으로 끌어내 짓는다. */}
       <div className="absolute inset-0">
       <TileMap
         world={world}
         preview={preview}
+        // 두 바가 덮는 두께 — fit·클램프의 기준을 안전 영역으로 만든다(위 측정 효과).
+        insets={insets}
         // 주버튼 드래그가 건설인가 팬인가 — 판정은 여기(`ready`) 하나가 소유한다.
         // 도구를 안 골랐으면 드래그는 카메라를 미는 동작이 된다(그 클릭은 원래도 탐색이었다).
         buildReady={ready}
@@ -537,7 +573,7 @@ export default function SimGame() {
       </div>
 
       {/* ── 하단 바 — 건설 도구 팔레트. 벽을 두르고 → 문을 내고 → 용도를 정하고 → 가구를 놓는다. ── */}
-      <footer className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 border-t border-frame bg-desk-2/80 px-4 py-3 backdrop-blur-sm">
+      <footer ref={footerRef} className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 border-t border-frame bg-desk-2/80 px-4 py-3 backdrop-blur-sm">
         <div className="flex flex-wrap items-center gap-2">
           {BUILD_TOOLS.map((t) => (
             <button
@@ -570,17 +606,22 @@ export default function SimGame() {
           용도 6종 — [용도]를 고르면 한 줄이 열린다. 벽이 방을 만드는 게 아니라 **용도가** 만든다는
           것을 이 줄이 말한다(둘러싸인 실내 + 용도 = 규칙이 보는 방).
 
-          ⚠️ **조건부 렌더로 돌아왔다**(2026-07-29 · 이 줄과 아래 과 줄). 직전 판은 `invisible`로
-          자리를 늘 예약했는데([T-101](../../claude-docs/troubleshooting/T-101.md): 접었다 펴면
-          footer가 86→173px로 자라고 맵이 남은 공간을 받아 **화면 전체 배율이 바뀌었다** — *"하단
-          메뉴를 클릭하면 해상도가 바뀌어 어지럽다"*), **HUD가 오버레이가 되면서 그 결합 자체가
-          사라졌다**: footer는 맵과 자리를 나눠 갖지 않고 맵 위에 뜨며, 맵은 뷰포트 크기만 본다.
-          이제 이 줄이 펴지면 부지를 조금 더 가릴 뿐 **배율은 불변**이고, 가려진 타일은 팬으로
-          끌어내면 된다. 자리를 예약할 이유가 없어졌으므로 11% 작아졌던 맵을 되돌려 받는다.
-          T-101의 원칙(①~④)은 그대로 유효하다 — 없앤 것은 그 원칙이 겨눈 **결합**이다.
+          ⚠️ **`invisible` 자리 예약이다**(이 줄과 아래 과 줄) — 조건부 렌더로 두면 도구를 고를
+          때마다 화면 전체 배율이 흔들린다([T-101](../../claude-docs/troubleshooting/T-101.md):
+          *"하단 메뉴를 클릭하면 해상도가 바뀌어 어지럽다"*).
+          **결합의 경로는 두 번 갈렸다**: 처음엔 footer가 맵과 자리를 나눠 갖는 그리드(`1fr`)였고,
+          HUD를 오버레이로 올리면서 그 경로가 끊겨 조건부 렌더로 되돌렸다. 그런데 이제 맵의 fit이
+          **footer 높이를 다시 읽는다**(안전 영역 기준 — T-102) — 자리를 나눠 갖지 않아도 결합은
+          살아 있다. 그래서 예약을 복원한다. 높이가 무엇이 열려 있든 같으므로 배율이 고정된다.
+          고정 px 대신 **실제 내용으로** 예약하는 이유는 T-101 그대로다(글꼴·줄바꿈에 안 깨진다).
+          T-101 원칙 ①("남은 공간을 채우는 요소 옆에 가변 UI를 두지 않는다")이 옳았다 —
+          경로가 바뀌었을 뿐 결합은 안 죽었다.
         */}
-        {tool === "DESIGNATE" && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-frame pt-2">
+        <div
+          className={`flex flex-wrap items-center gap-2 border-t border-frame pt-2 ${
+            tool === "DESIGNATE" ? "" : "invisible"
+          }`}
+        >
             <span className="text-xs text-on-desk-muted">용도</span>
             {ROOM_TYPES.map((t) => (
               <button
@@ -600,15 +641,17 @@ export default function SimGame() {
                 {ROOM_LABEL[t]}
               </button>
             ))}
-          </div>
-        )}
+        </div>
 
         {/* 진료실의 과 — 진료가 성립하려면 환자·진료실·의사의 과가 셋 다 같아야 하므로
             (코어의 삼중 일치), 무슨 과로 지정하는지가 건설의 절반이다.
-            위 용도 줄과 **같은 이유로** 조건부 렌더다(오버레이 전환으로 자리 예약이 불필요해졌다). */}
-        {tool === "DESIGNATE" && roomType === "EXAM" && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-frame pt-2">
-            <span className="text-xs text-on-desk-muted">과</span>
+            위 용도 줄과 **같은 이유로** 조건부 렌더가 아니라 `invisible`이다(자리 고정 → 배율 고정). */}
+        <div
+          className={`flex flex-wrap items-center gap-2 border-t border-frame pt-2 ${
+            tool === "DESIGNATE" && roomType === "EXAM" ? "" : "invisible"
+          }`}
+        >
+          <span className="text-xs text-on-desk-muted">과</span>
             {HIRABLE_DEPTS.map((d) => (
               <button
                 key={d}
@@ -624,8 +667,7 @@ export default function SimGame() {
                 {simDept(d).label}
               </button>
             ))}
-          </div>
-        )}
+        </div>
 
         {/* 상태줄 — **화면에서 유일하게 문구가 바뀌는 자리**이자 맵 아래 예약된 한 줄(min-h-5)이다.
             무엇을 쓸지는 simHud.statusLineText(우선순위 체인)가 정하고 여기선 칠만 한다:
