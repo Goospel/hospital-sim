@@ -15,8 +15,8 @@ import { computeRegions, type Region } from "@/sim/regions";
 import Backdrop from "./Backdrop";
 import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, NurseSprite, PatientSprite } from "./PixelSprite";
 import {
+  BACKDROP_MARGIN,
   busyDoctorIds,
-  clampCamera,
   doctorActivityMark,
   doctorRoomlessMark,
   fatigueTone,
@@ -24,11 +24,12 @@ import {
   pannedCamera,
   roomLabel,
   safeArea,
+  settledCamera,
   tileFromPoint,
   zoomedCamera,
   type Camera,
+  type CameraView,
   type Insets,
-  type Rect,
   type Size,
 } from "./simHud";
 
@@ -59,6 +60,10 @@ export const TILE = 16;
 /** 부지 원본 크기(px) — 카메라 산술이 받는 `base`. 화면에 보이는 크기는 여기 × fit × zoom이다. */
 const BASE: Size = { w: GRID_W * TILE, h: GRID_H * TILE };
 
+/** 배경이 부지 밖으로 뻗는 여백(px) — 타일 값은 simHud(BACKDROP_MARGIN)가 소유하고 여기선 TILE만 곱한다.
+ *  카메라는 이 사각형 밖(= 페이지 공백)을 화면에 들이지 않는다(simHud.zoomFloor·clampCamera). */
+const MARGIN: Size = { w: BACKDROP_MARGIN.x * TILE, h: BACKDROP_MARGIN.y * TILE };
+
 /** 인셋 기본값(바 없음) — 모듈 상수라 렌더마다 새 객체가 생기지 않는다. */
 const NO_INSETS: Insets = { top: 0, left: 0 };
 
@@ -79,24 +84,28 @@ const CLICK_SLOP = 5;
  * 새로 만드는 순간 이 효과가 무한히 재실행된다.
  */
 function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetLeft: number) {
-  const [fit, setFit] = useState(1);
-  const [safe, setSafe] = useState<Rect>({ x: 0, y: 0, w: 0, h: 0 });
+  /** 카메라 산술의 입력 한 벌. 낱개 state로 쪼개면 리사이즈 중간에 fit만 새 값이고 host는 옛 값인
+   *  프레임이 생겨, 그 한 프레임 동안 클램프가 엉뚱한 화면을 기준으로 돈다. */
+  const [view, setView] = useState<CameraView>({
+    host: { w: 0, h: 0 }, safe: { x: 0, y: 0, w: 0, h: 0 }, base: BASE, margin: MARGIN, fit: 1,
+  });
   const [cam, setCam] = useState<Camera>({ zoom: 1, x: 0, y: 0 });
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const measure = (width: number, height: number) => {
+      const host: Size = { w: width, h: height };
       // 안전 영역 — 상단 바가 위를, 도구 패널이 왼쪽을 덮는다(아래·오른쪽은 비어 있다).
-      const s = safeArea({ w: width, h: height }, { top: insetTop, left: insetLeft });
+      const s = safeArea(host, { top: insetTop, left: insetLeft });
       if (s.w <= 0 || s.h <= 0) return; // 아직 배치 전(또는 바가 화면을 다 먹은 극단) — 접으면 맵이 사라진다
-      const f = Math.min(s.w / BASE.w, s.h / BASE.h);
-      setFit(f);
-      setSafe(s);
-      /* 리사이즈: **zoom은 유지하고 다시 클램프만** 한다 — 창을 줄였다고 플레이어가 당겨 둔
-         배율까지 되돌리면 조작이 사라진다.
+      const next: CameraView = { host, safe: s, base: BASE, margin: MARGIN, fit: Math.min(s.w / BASE.w, s.h / BASE.h) };
+      setView(next);
+      /* 리사이즈: **zoom은 유지하고 다시 앉히기만** 한다 — 창을 줄였다고 플레이어가 당겨 둔
+         배율까지 되돌리면 조작이 사라진다. 다만 창을 **키우면** 옛 배율이 새 하한 아래로 떨어질
+         수 있어(배경이 화면보다 작아진다) settledCamera가 하한으로 받친다.
          ponytail: 보던 **중심 유지**는 안 한다 — 창 크기를 바꾸면 화면이 조금 밀린다. 필요해지면
          리사이즈 직전 중심을 앵커로 zoomedCamera(factor 1)를 한 번 태우면 된다. */
-      setCam((c) => clampCamera(c, s, { w: BASE.w * f * c.zoom, h: BASE.h * f * c.zoom }));
+      setCam((c) => settledCamera(c, next));
     };
     /* ⚠️ **마운트 시 한 번은 직접 잰다** — ResizeObserver의 첫 콜백에 기대면 안 된다.
        그 콜백은 다음 *렌더링 스텝*에 오므로 ① 첫 프레임이 배율 1(768×512)로 그려졌다가 튀고,
@@ -109,7 +118,7 @@ function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetLe
     return () => ro.disconnect();
     // 인셋이 바뀌면(상단 바가 줄바꿈되거나 패널 폭이 갈림) **다시 재고 다시 클램프**해야 한다.
   }, [ref, insetTop, insetLeft]);
-  return { cam, setCam, fit, safe };
+  return { cam, setCam, view };
 }
 
 /**
@@ -232,8 +241,8 @@ export default function TileMap({
   onTileCancel,
 }: TileMapProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const { cam, setCam, fit, safe } = useCamera(hostRef, insets.top, insets.left);
-  const scale = fit * cam.zoom;
+  const { cam, setCam, view } = useCamera(hostRef, insets.top, insets.left);
+  const scale = view.fit * cam.zoom;
 
   /* 팬 중인 포인터와 직전 위치 — **상태가 아니라 ref**다: 드래그 한 프레임마다 리렌더를 유발하면
      수백 개 타일 div가 딸려 오고, 무엇보다 다음 델타는 *직전 이벤트*에서 오지 렌더에서 오지 않는다.
@@ -254,16 +263,16 @@ export default function TileMap({
       // 트랙패드에서 거의 안 움직이거나 휠 한 칸에 화면이 튄다).
       const factor = Math.exp(-e.deltaY * 0.0015);
       // 앵커는 **커서가 있는 뷰포트 px** 그대로다 — 커서는 바 위에도 올라간다(인셋은 클램프에만 든다).
-      setCam((c) => zoomedCamera(c, { x: e.clientX - r.left, y: e.clientY - r.top }, factor, safe, BASE, fit));
+      setCam((c) => zoomedCamera(c, { x: e.clientX - r.left, y: e.clientY - r.top }, factor, view));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [fit, safe, setCam]);
+  }, [view, setCam]);
 
   /** 줌 버튼 한 번 — 앵커는 **안전 영역의 중앙**이다(커서가 없는 조작이라 중앙이 유일하게 뜻을
    *  갖고, 지금 보이는 곳의 중앙은 뷰포트 중앙이 아니라 상단 바·좌측 패널을 뺀 구간의 중앙이다). */
-  const safeCenter = { x: safe.x + safe.w / 2, y: safe.y + safe.h / 2 };
-  const zoomBy = (factor: number) => setCam((c) => zoomedCamera(c, safeCenter, factor, safe, BASE, fit));
+  const safeCenter = { x: view.safe.x + view.safe.w / 2, y: view.safe.y + view.safe.h / 2 };
+  const zoomBy = (factor: number) => setCam((c) => zoomedCamera(c, safeCenter, factor, view));
 
   /* 앉아 있는 폰을 몇 px 들어 올린다 — **의자가 화면에서 살아남게 하는 유일한 장치**다.
      시뮬에서 "앉는다"는 의자 타일에 서는 것인데(world.blocksWalk), 폰과 의자가 같은 16px 칸을
@@ -484,7 +493,7 @@ export default function TileMap({
         onPointerMove={(e) => {
           const p = panRef.current;
           if (p) {
-            setCam((c) => pannedCamera(c, e.clientX - p.x, e.clientY - p.y, safe, BASE, fit));
+            setCam((c) => pannedCamera(c, e.clientX - p.x, e.clientY - p.y, view));
             panRef.current = { ...p, x: e.clientX, y: e.clientY };
             return;
           }
@@ -663,7 +672,7 @@ export default function TileMap({
       <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1">
         {[
           { label: "+", title: "확대", run: () => zoomBy(1.4) },
-          { label: "⌂", title: "부지 전체 보기", run: () => setCam((c) => zoomedCamera(c, safeCenter, 1 / c.zoom, safe, BASE, fit)) },
+          { label: "⌂", title: "부지 전체 보기", run: () => setCam((c) => zoomedCamera(c, safeCenter, 1 / c.zoom, view)) },
           { label: "−", title: "축소", run: () => zoomBy(1 / 1.4) },
         ].map((b) => (
           <button

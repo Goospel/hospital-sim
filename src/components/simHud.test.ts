@@ -8,7 +8,8 @@ import {
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidText,
   startingRosterMet, STARTING_ROSTER_MIN, statusLineText, TOOL_LABEL,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
-  clampCamera, pannedCamera, safeArea, zoomedCamera, ZOOM_MAX, ZOOM_MIN, type Camera,
+  clampCamera, pannedCamera, safeArea, settledCamera, zoomedCamera, zoomFloor,
+  BACKDROP_MARGIN, ZOOM_MAX, ZOOM_MIN, type Camera, type CameraView, type Insets, type Rect, type Size,
 } from './simHud'
 import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
 import { createWorld, GRID_W, GRID_H, type RoomType, type SimWorld } from '../sim/world'
@@ -1406,24 +1407,47 @@ describe('tileFromPoint — 포인터 위치 → 타일 좌표', () => {
 describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () => {
   /** 부지 원본 크기(타일 16px) — TileMap의 TILE을 임포트하면 React가 딸려 온다(위 rectAt와 같은 관례). */
   const BASE = { w: GRID_W * 16, h: GRID_H * 16 }
+  /** 배경이 부지 밖으로 뻗는 여백(부지 px) — 타일 값은 simHud가 소유하고 여기선 TILE만 곱한다. */
+  const MARGIN = { w: BACKDROP_MARGIN.x * 16, h: BACKDROP_MARGIN.y * 16 }
   /** 뷰포트. 부지보다 가로가 살짝 넓어 fit이 가로에 안 걸리게 잡았다(세로가 짧은 쪽). */
   const VIEW = { w: 800, h: 600 }
   /** **인셋 0**의 안전 영역 = 뷰포트 전체. 아래 8개는 옛 계약을 그대로 겨누는 회귀 가드다 —
    *  바가 없으면(HUD를 걷어내면) 카메라는 예전과 한 픽셀도 다르게 굴면 안 된다. */
   const SAFE = { x: 0, y: 0, w: VIEW.w, h: VIEW.h }
   const FIT = Math.min(VIEW.w / BASE.w, VIEW.h / BASE.h)
+  /** 화면 형상 한 벌 — 창·바가 갈리는 시나리오마다 이걸로 만든다(카메라 산술의 유일한 입력). */
+  const viewOf = (safe: Rect, fit: number, host: Size = VIEW): CameraView =>
+    ({ host, safe, base: BASE, margin: MARGIN, fit })
+  const V = viewOf(SAFE, FIT)
   /** 그 배율에서 화면에 그려지는 맵 크기 — 클램프의 경계는 전부 이 값에서 나온다. */
-  const content = (zoom: number) => ({ w: BASE.w * FIT * zoom, h: BASE.h * FIT * zoom })
+  const content = (zoom: number, v: CameraView = V) => ({ w: v.base.w * v.fit * zoom, h: v.base.h * v.fit * zoom })
   /** 앵커 아래에 있는 **맵 좌표** — 줌의 유일한 계약이 이 값의 불변성이다. */
   const under = (cam: Camera, anchor: { x: number; y: number }) => ({
     x: (anchor.x - cam.x) / (FIT * cam.zoom),
     y: (anchor.y - cam.y) / (FIT * cam.zoom),
   })
+  /** 배경 사각형(화면 px) — 부지 rect를 여백만큼 넓힌 것. Backdrop이 실제로 덮는 범위 그 자체다. */
+  const backdropOf = (cam: Camera, v: CameraView) => {
+    const s = v.fit * cam.zoom
+    return {
+      left: cam.x - v.margin.w * s,
+      top: cam.y - v.margin.h * s,
+      right: cam.x + (v.base.w + v.margin.w) * s,
+      bottom: cam.y + (v.base.h + v.margin.h) * s,
+    }
+  }
+  /** 하한에서는 배경 변과 뷰포트 변이 **정확히 맞물리므로** 부동소수 오차만큼은 봐준다. */
+  const EPS = 1e-9
+  /** 불변식 — 뷰포트(바 밑까지 전부)가 배경 사각형 안에 있는가. */
+  const covers = (cam: Camera, v: CameraView) => {
+    const b = backdropOf(cam, v)
+    return b.left <= EPS && b.top <= EPS && b.right >= v.host.w - EPS && b.bottom >= v.host.h - EPS
+  }
 
   it('콘텐츠가 뷰포트보다 작으면 **중앙 정렬**이다 — 팬 입력은 무시된다', () => {
     // zoom 1 = 부지 전체가 들어오는 배율이라 짧은 쪽엔 늘 여백이 남는다. 그 축을 밀 수 있으면
     // 부지가 뷰포트 밖으로 흘러가고 화면 절반이 빈 배경이 된다.
-    const c = clampCamera({ zoom: 1, x: -400, y: 250 }, SAFE, content(1))
+    const c = clampCamera({ zoom: 1, x: -400, y: 250 }, V)
     expect(c.x).toBeCloseTo((VIEW.w - content(1).w) / 2)
     expect(c.y).toBeCloseTo((VIEW.h - content(1).h) / 2)
   })
@@ -1431,40 +1455,44 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
   it('줌 상태에서는 [view − content, 0]으로 잘린다 — 맵 가장자리가 뷰포트 안으로 못 들어온다', () => {
     const big = content(2)
     // 오른쪽·아래로 아무리 끌어도 맵 좌상단은 뷰포트 좌상단을 못 넘어선다(넘으면 왼쪽에 빈틈).
-    expect(clampCamera({ zoom: 2, x: 999, y: 999 }, SAFE, big)).toMatchObject({ x: 0, y: 0 })
+    expect(clampCamera({ zoom: 2, x: 999, y: 999 }, V)).toMatchObject({ x: 0, y: 0 })
     // 반대쪽도 같다 — 맵 우하단이 뷰포트 우하단 안쪽으로 들어오면 그쪽에 빈틈이 생긴다.
-    const c = clampCamera({ zoom: 2, x: -99_999, y: -99_999 }, SAFE, big)
+    const c = clampCamera({ zoom: 2, x: -99_999, y: -99_999 }, V)
     expect(c.x).toBeCloseTo(VIEW.w - big.w)
     expect(c.y).toBeCloseTo(VIEW.h - big.h)
   })
 
-  it('zoom은 [ZOOM_MIN, ZOOM_MAX] 밖으로 못 나간다', () => {
-    const at = (cam: Camera, factor: number) =>
-      zoomedCamera(cam, { x: 400, y: 300 }, factor, SAFE, BASE, FIT).zoom
-    expect(at({ zoom: 1, x: 0, y: 0 }, 0.1)).toBe(ZOOM_MIN)
+  it('zoom은 [동적 하한, ZOOM_MAX] 밖으로 못 나간다', () => {
+    // ⚠️ 하한이 상수(ZOOM_MIN)가 아니라 **이 창에서 배경이 뷰포트를 덮는 최소 배율**로 갈렸다.
+    // 800×600·바 없음에서는 0.75라 ZOOM_MIN(0.5)보다 높다 — 0.5까지 내려가면 공백이 드러난다.
+    const at = (cam: Camera, factor: number) => zoomedCamera(cam, { x: 400, y: 300 }, factor, V).zoom
+    expect(at({ zoom: 1, x: 0, y: 0 }, 0.1)).toBeCloseTo(zoomFloor(V))
+    expect(zoomFloor(V)).toBeGreaterThan(ZOOM_MIN)
     expect(at({ zoom: 2, x: -200, y: -200 }, 100)).toBe(ZOOM_MAX)
   })
 
   it('**fit보다 더 축소된다** — 시작 화면(zoom 1)에서 [−]가 죽은 버튼이면 안 된다', () => {
     // 신고된 결함: zoom 1이 곧 하한이라 처음 화면에서 축소가 아무 일도 하지 않았다.
     // 부지 전체가 이미 보이는 배율이라도 더 당겨 둘레 여백까지 보는 것이 축소의 모습이다.
-    const out = zoomedCamera({ zoom: 1, x: 0, y: 0 }, { x: 400, y: 300 }, 1 / 1.4, SAFE, BASE, FIT)
-    expect(out.zoom).toBeCloseTo(1 / 1.4)
+    // (배수는 하한 0.75 위로 잡았다 — 하한 자체의 계약은 아래 두 테스트가 따로 겨눈다.)
+    const out = zoomedCamera({ zoom: 1, x: 0, y: 0 }, { x: 400, y: 300 }, 1 / 1.2, V)
+    expect(out.zoom).toBeCloseTo(1 / 1.2)
+    expect(out.zoom).toBeGreaterThan(zoomFloor(V))
     // 그 배율에선 콘텐츠가 안전 영역보다 작으므로 중앙 정렬이다(clampAxis의 계약).
     expect(out.x).toBeCloseTo((VIEW.w - content(out.zoom).w) / 2)
     expect(out.y).toBeCloseTo((VIEW.h - content(out.zoom).h) / 2)
   })
 
-  it('ZOOM_MIN에서 더 축소하면 카메라가 통째로 그대로다 — 바닥에서 화면이 안 흔들린다', () => {
-    const floor: Camera = zoomedCamera({ zoom: 1, x: 0, y: 0 }, { x: 400, y: 300 }, 0.01, SAFE, BASE, FIT)
-    expect(floor.zoom).toBe(ZOOM_MIN)
-    expect(zoomedCamera(floor, { x: 10, y: 590 }, 0.5, SAFE, BASE, FIT)).toEqual(floor)
+  it('하한에서 더 축소하면 카메라가 통째로 그대로다 — 바닥에서 화면이 안 흔들린다', () => {
+    const floor: Camera = zoomedCamera({ zoom: 1, x: 0, y: 0 }, { x: 400, y: 300 }, 0.01, V)
+    expect(floor.zoom).toBe(zoomFloor(V))
+    expect(zoomedCamera(floor, { x: 10, y: 590 }, 0.5, V)).toEqual(floor)
   })
 
   it('**앵커 불변식** — 줌 전후로 커서 아래 맵 좌표가 그대로다(클램프에 안 걸리는 중간 줌)', () => {
     const anchor = { x: 400, y: 300 }
     const before: Camera = { zoom: 1.5, x: -200, y: -100 }
-    const after = zoomedCamera(before, anchor, 1.2, SAFE, BASE, FIT)
+    const after = zoomedCamera(before, anchor, 1.2, V)
     expect(after.zoom).toBeCloseTo(1.8)
     expect(under(after, anchor).x).toBeCloseTo(under(before, anchor).x)
     expect(under(after, anchor).y).toBeCloseTo(under(before, anchor).y)
@@ -1476,32 +1504,32 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
   it('앵커 산술의 기준은 저장값이 아니라 **클램프된 유효 팬**이다 — zoom 1에서 첫 줌인이 튀지 않는다', () => {
     const anchor = { x: 100, y: 500 }
     // 같은 화면(zoom 1은 언제나 중앙 정렬)인데 저장된 팬만 다른 두 카메라.
-    const a = zoomedCamera({ zoom: 1, x: 0, y: 0 }, anchor, 1.5, SAFE, BASE, FIT)
-    const b = zoomedCamera({ zoom: 1, x: -777, y: 555 }, anchor, 1.5, SAFE, BASE, FIT)
+    const a = zoomedCamera({ zoom: 1, x: 0, y: 0 }, anchor, 1.5, V)
+    const b = zoomedCamera({ zoom: 1, x: -777, y: 555 }, anchor, 1.5, V)
     expect(b).toEqual(a)
     // 그리고 그 화면의 앵커 아래 지점이 유지된다.
-    const shown = clampCamera({ zoom: 1, x: 0, y: 0 }, SAFE, content(1))
+    const shown = clampCamera({ zoom: 1, x: 0, y: 0 }, V)
     expect(under(a, anchor).x).toBeCloseTo(under(shown, anchor).x)
     expect(under(a, anchor).y).toBeCloseTo(under(shown, anchor).y)
   })
 
   it('ZOOM_MAX에서 더 줌인하면 카메라가 통째로 그대로다 — 앵커만 옮겨도 화면이 안 흔들린다', () => {
-    const at: Camera = zoomedCamera({ zoom: ZOOM_MAX, x: -300, y: -200 }, { x: 400, y: 300 }, 1, SAFE, BASE, FIT)
-    expect(zoomedCamera(at, { x: 10, y: 590 }, 1.4, SAFE, BASE, FIT)).toEqual(at)
+    const at: Camera = zoomedCamera({ zoom: ZOOM_MAX, x: -300, y: -200 }, { x: 400, y: 300 }, 1, V)
+    expect(zoomedCamera(at, { x: 10, y: 590 }, 1.4, V)).toEqual(at)
   })
 
   it('pannedCamera — 델타를 그대로 더하고 가장자리에서 잘린다', () => {
     const cam: Camera = { zoom: 2, x: -300, y: -200 }
-    expect(pannedCamera(cam, 40, -25, SAFE, BASE, FIT)).toMatchObject({ zoom: 2, x: -260, y: -225 })
+    expect(pannedCamera(cam, 40, -25, V)).toMatchObject({ zoom: 2, x: -260, y: -225 })
     // 위·왼쪽으로 끝까지 밀면 맵 우하단이 뷰포트 우하단에 붙는다.
-    const edge = pannedCamera(cam, -9999, -9999, SAFE, BASE, FIT)
+    const edge = pannedCamera(cam, -9999, -9999, V)
     expect(edge.x).toBeCloseTo(VIEW.w - content(2).w)
     expect(edge.y).toBeCloseTo(VIEW.h - content(2).h)
   })
 
   it('줌아웃으로 zoom 1로 돌아오면 중앙 정렬로 수렴한다 — [⌂]가 없어도 화면이 복구된다', () => {
     const zoomed: Camera = { zoom: 2.5, x: -900, y: -600 }
-    const home = zoomedCamera(zoomed, { x: 0, y: 0 }, 1 / 2.5, SAFE, BASE, FIT)
+    const home = zoomedCamera(zoomed, { x: 0, y: 0 }, 1 / 2.5, V)
     expect(home.zoom).toBeCloseTo(1)
     expect(home.x).toBeCloseTo((VIEW.w - content(1).w) / 2)
     expect(home.y).toBeCloseTo((VIEW.h - content(1).h) / 2)
@@ -1517,22 +1545,24 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
   /** header 56 · footer 90이 덮은 화면. 좌우 인셋은 없다. */
   const INSET = { top: 56, bottom: 90 }
   const SAFE_I = { x: 0, y: INSET.top, w: VIEW.w, h: VIEW.h - INSET.top - INSET.bottom }
+  const V_I = viewOf(SAFE_I, FIT)
 
   it('인셋이 있으면 중앙은 **안전 영역의 중앙**이다 — 뷰포트 중앙이 아니다', () => {
-    const small = { w: 400, h: 300 }
-    const c = clampCamera({ zoom: 1, x: -400, y: 250 }, SAFE_I, small)
-    expect(c.y).toBeCloseTo(SAFE_I.y + (SAFE_I.h - small.h) / 2) // 133
-    // 뷰포트 중앙(150)이면 맵이 아래로 17px 내려가 footer 밑에 파묻힌다.
+    // 배율 0.8 — 콘텐츠가 안전 영역보다 작아 중앙 정렬이 걸리면서, 배경 커버리지에는 안 걸린다.
+    const small = content(0.8, V_I)
+    const c = clampCamera({ zoom: 0.8, x: -400, y: 250 }, V_I)
+    expect(c.y).toBeCloseTo(SAFE_I.y + (SAFE_I.h - small.h) / 2)
+    // 뷰포트 중앙이면 맵이 아래로 내려가 footer 밑에 파묻힌다.
     expect(c.y).not.toBeCloseTo((VIEW.h - small.h) / 2)
     expect(c.x).toBeCloseTo((VIEW.w - small.w) / 2) // 가로는 인셋 0이라 그대로
   })
 
   it('인셋이 있으면 클램프 경계는 [top + safeH − content, top]이다 — 맵은 바 밑으로만 나간다', () => {
-    const big = { w: 1600, h: 900 }
+    const big = content(2, V_I)
     // 아래·오른쪽으로 아무리 끌어도 맵 위 가장자리는 **안전 영역 위 끝**을 못 넘어선다.
     // (뷰포트 기준이면 0까지 갔고, 그 56px이 header 밑 빈틈으로 남는다.)
-    expect(clampCamera({ zoom: 1, x: 9999, y: 9999 }, SAFE_I, big)).toMatchObject({ x: 0, y: INSET.top })
-    const c = clampCamera({ zoom: 1, x: -99_999, y: -99_999 }, SAFE_I, big)
+    expect(clampCamera({ zoom: 2, x: 9999, y: 9999 }, V_I)).toMatchObject({ x: 0, y: INSET.top })
+    const c = clampCamera({ zoom: 2, x: -99_999, y: -99_999 }, V_I)
     expect(c.y).toBeCloseTo(SAFE_I.y + SAFE_I.h - big.h)
     expect(c.x).toBeCloseTo(VIEW.w - big.w)
   })
@@ -1545,18 +1575,26 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
     (세로만 겨눈 위 셋의 가로판 — 회귀하면 부지 왼쪽 줄이 팔레트 밑에 영구히 깔린다 · T-102).
   */
   const SAFE_L = { x: 160, y: INSET.top, w: VIEW.w - 160, h: VIEW.h - INSET.top }
+  const V_L = viewOf(SAFE_L, Math.min(SAFE_L.w / BASE.w, SAFE_L.h / BASE.h))
 
-  it('좌측 인셋 — 중앙은 **패널 오른쪽 구간**의 중앙이다(뷰포트 중앙이면 팔레트 밑에 깔린다)', () => {
-    const small = { w: 400, h: 300 }
-    const c = clampCamera({ zoom: 1, x: -400, y: 250 }, SAFE_L, small)
-    expect(c.x).toBeCloseTo(SAFE_L.x + (SAFE_L.w - small.w) / 2) // 280
-    expect(c.x).not.toBeCloseTo((VIEW.w - small.w) / 2) // 뷰포트 중앙(200)이면 왼쪽 80px이 패널 밑
+  it('좌측 인셋 — 축소 구간에서는 **커버리지가 안전 영역 중앙을 이긴다**(공백 노출이 먼저다)', () => {
+    /* 계약이 갈린 자리다. 좌측 패널 160px 때문에 안전 영역의 중심은 뷰포트 중심보다 오른쪽에
+       있는데, 축소할수록 배경 여백(= 여백 × 배율)이 같이 줄어 **중앙에 놓으면 왼쪽 끝이 뚫린다**.
+       그래서 이 구간에서 중앙 정렬은 성립할 수 없다 — 둘 중 하나만 지킬 수 있고, 이 게임이
+       고른 쪽은 커버리지다(림월드식 축소 하한: 배경 밖 공백은 절대 안 보인다). */
+    const zoom = 0.95
+    const c = clampCamera({ zoom, x: -400, y: 250 }, V_L)
+    const small = content(zoom, V_L)
+    expect(small.w).toBeLessThan(SAFE_L.w) // 옛 계약이라면 중앙 정렬이 걸렸을 크기
+    expect(c.x).not.toBeCloseTo(SAFE_L.x + (SAFE_L.w - small.w) / 2) // 그 중앙은 왼쪽을 못 덮는다
+    expect(c.x).toBeCloseTo(V_L.margin.w * V_L.fit * zoom) // 배경 왼쪽 변이 뷰포트 왼쪽에 딱 붙는다
+    expect(covers(c, V_L)).toBe(true)
   })
 
   it('좌측 인셋 — 가로 클램프 경계는 [left + safeW − content, left]다', () => {
-    const big = { w: 1600, h: 900 }
-    expect(clampCamera({ zoom: 1, x: 9999, y: 9999 }, SAFE_L, big).x).toBeCloseTo(SAFE_L.x)
-    expect(clampCamera({ zoom: 1, x: -99_999, y: -99_999 }, SAFE_L, big).x).toBeCloseTo(SAFE_L.x + SAFE_L.w - big.w)
+    const big = content(2, V_L)
+    expect(clampCamera({ zoom: 2, x: 9999, y: 9999 }, V_L).x).toBeCloseTo(SAFE_L.x)
+    expect(clampCamera({ zoom: 2, x: -99_999, y: -99_999 }, V_L).x).toBeCloseTo(SAFE_L.x + SAFE_L.w - big.w)
   })
 
   /*
@@ -1587,10 +1625,82 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
     // 호출부(TileMap)가 재는 fit — 세로는 **안전 영역**으로 나눈다. 이 화면에선 세로가 짧은 쪽이라
     // 콘텐츠 높이가 safeH와 정확히 같아진다: 부지 전체가 어느 바에도 안 가리고 다 보인다.
     const fitI = Math.min(VIEW.w / BASE.w, SAFE_I.h / BASE.h)
+    const v = viewOf(SAFE_I, fitI)
     expect(BASE.h * fitI).toBeCloseTo(SAFE_I.h)
     const cam: Camera = { zoom: 1, x: 0, y: INSET.top }
     for (const dy of [300, -300]) {
-      expect(pannedCamera(cam, 0, dy, SAFE_I, BASE, fitI).y).toBeCloseTo(INSET.top)
+      expect(pannedCamera(cam, 0, dy, v).y).toBeCloseTo(INSET.top)
+    }
+  })
+
+  /*
+    ── 배경 커버리지(림월드식 축소 하한) ──────────────────────────────────────
+    신고: 축소하면 배경 그림 바깥의 페이지 배경(공백)이 넓게 드러났다. 하한이 상수 0.5라
+    **창이 크거나 형상이 극단이면 배경이 화면을 다 못 덮는** 배율까지 내려갈 수 있었다.
+    아래 셋은 그 계약을 셋으로 나눠 겨눈다: ① 어떤 조작 연쇄 뒤에도 덮는가(성질) ②
+    하한이 **가장 낮은** 값인가(최소성) ③ 줌인 구간의 옛 동작이 그대로인가(회귀).
+  */
+  const SHAPES: Array<{ name: string; view: Size; insets: Insets }> = [
+    { name: '가로로 긴 창 · 바 없음', view: { w: 1600, h: 400 }, insets: { top: 0, left: 0 } },
+    { name: '세로로 긴 창 · 바 없음', view: { w: 420, h: 1000 }, insets: { top: 0, left: 0 } },
+    { name: '정사각 창 · 인셋 있음', view: { w: 800, h: 800 }, insets: { top: 56, left: 160 } },
+    { name: '가로로 긴 창 · 인셋 있음', view: { w: 1440, h: 720 }, insets: { top: 56, left: 160 } },
+    { name: '작은 창 · 인셋 있음', view: { w: 640, h: 480 }, insets: { top: 56, left: 160 } },
+  ]
+  /** 그 창의 화면 형상 — TileMap.useCamera가 재는 것과 같은 산술(safeArea → fit). */
+  const shapeView = (s: { view: Size; insets: Insets }): CameraView => {
+    const safe = safeArea(s.view, s.insets)
+    return viewOf(safe, Math.min(safe.w / BASE.w, safe.h / BASE.h), s.view)
+  }
+  /** 결정적 격자 — 무작위가 아니라 고정 수열이라 실패가 언제나 같은 자리에서 재현된다. */
+  const FACTORS = [0.01, 0.5, 1.4, 1 / 3, 3, 0.7, 100, 0.9]
+  const PANS = [[9999, 9999], [-9999, -9999], [9999, -9999], [-9999, 9999], [320, -140], [-40, 500]]
+
+  it.each(SHAPES)('성질 — $name: 줌·팬을 어떻게 굴려도 뷰포트가 배경 안에 있다', (shape) => {
+    const v = shapeView(shape)
+    // 첫 화면(zoom 1)도 하한을 지나야 한다 — 극단 창에서는 fit 배율조차 배경을 못 덮는다.
+    let cam = settledCamera({ zoom: 1, x: 0, y: 0 }, v)
+    expect(covers(cam, v)).toBe(true)
+    for (const [ax, ay] of [[0, 0], [v.host.w, v.host.h], [v.host.w / 2, v.host.h / 3]]) {
+      for (const f of FACTORS) {
+        cam = zoomedCamera(cam, { x: ax, y: ay }, f, v)
+        expect(covers(cam, v)).toBe(true)
+        for (const [dx, dy] of PANS) expect(covers(pannedCamera(cam, dx, dy, v), v)).toBe(true)
+      }
+    }
+  })
+
+  it.each(SHAPES)('최소성 — $name: 하한에서는 덮고, 5% 아래는 반드시 깨진다', (shape) => {
+    const v = shapeView(shape)
+    const floor = zoomFloor(v)
+    // 이 창들은 전부 상수 하한(ZOOM_MIN)보다 높은 하한을 요구한다 — 아니면 아래 단언이 공허해진다.
+    expect(floor).toBeGreaterThan(ZOOM_MIN)
+    expect(covers(settledCamera({ zoom: floor, x: 0, y: 0 }, v), v)).toBe(true)
+    // 5% 아래에서는 클램프가 최선을 다해도(양쪽 제약을 다 태워도) 어느 변엔가 공백이 남는다.
+    // 하한을 필요 이상으로 높게 잡으면 이 단언이 실패한다(예: 2로 올리면 1.9도 덮는다).
+    for (const pan of [{ x: 0, y: 0 }, { x: -9999, y: -9999 }, { x: 9999, y: 9999 }]) {
+      expect(covers(clampCamera({ zoom: floor * 0.95, ...pan }, v), v)).toBe(false)
+    }
+  })
+
+  it('하한은 ZOOM_MAX를 넘지 않는다 — 아무리 극단인 창이어도 줌이 뒤집히지 않는다', () => {
+    // 배경(72×48타일)의 가로세로비를 벗어난 창은 애초에 다 덮을 수 없다 — 그때는 최대 줌에서
+    // 멈춘다(공백이 남는 것은 이 창의 천장이고, 배경 여백을 늘리는 것이 유일한 상향 경로다).
+    const v = shapeView({ view: { w: 300, h: 3000 }, insets: { top: 0, left: 0 } })
+    expect(zoomFloor(v)).toBe(ZOOM_MAX)
+  })
+
+  it('회귀 — 줌인 구간(zoom ≥ 1)에서는 커버리지가 안 걸린다: 맵이 바 밑으로 미끄러지는 옛 동작 그대로', () => {
+    // 콘텐츠가 두 축 모두 안전 영역을 덮는 배율들(1.28배 아래는 세로가 아직 작아 중앙 정렬 구간이다).
+    for (const zoom of [1.4, 2, 3]) {
+      const big = content(zoom, V_L)
+      expect(big.w).toBeGreaterThan(SAFE_L.w)
+      expect(big.h).toBeGreaterThan(SAFE_L.h)
+      // 팬 경계는 여전히 **안전 영역**이 정한다(T-102) — 커버리지가 끼어들면 이 값이 달라진다.
+      expect(clampCamera({ zoom, x: 9999, y: 9999 }, V_L)).toMatchObject({ x: SAFE_L.x, y: SAFE_L.y })
+      const c = clampCamera({ zoom, x: -99_999, y: -99_999 }, V_L)
+      expect(c.x).toBeCloseTo(SAFE_L.x + SAFE_L.w - big.w)
+      expect(c.y).toBeCloseTo(SAFE_L.y + SAFE_L.h - big.h)
     }
   })
 })
