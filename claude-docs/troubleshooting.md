@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-114](troubleshooting/T-114.md) · Browser pane이 숨겨져 있으면 document.timeline이 멈춰 CSS 트랜지션이 시작색에 고정된다 — 계산색이 「클래스가 안 먹었다」와 똑같이 보이므로, 색을 재기 전에 getAnimations().finish()로 끝까지 민다
 - [T-113](troubleshooting/T-113.md) · 배율 훅에 심은 「시드에 곱하기」 돌연변이가 살아남았는데, 그건 테스트의 구멍이 아니라 그 돌연변이가 원본과 대수적으로 동일했기 때문이다 — 생존한 돌연변이는 먼저 등가성을 의심한다
 - [T-112](troubleshooting/T-112.md) · 돌연변이 원복을 `git checkout -- <file>`로 했더니 아직 커밋 안 한 구현까지 HEAD로 되돌아가 통째로 사라졌다 — 원복 기준은 HEAD가 아니라 「돌연변이 직전의 워킹 트리」다
 - [T-111](troubleshooting/T-111.md) · 회귀 밴드의 기대값을 카탈로그에서 파생했더니 기대값과 실측이 같은 표를 보게 되어 튜닝 돌연변이가 통째로 살아남았다 — 값을 잠그는 테스트만은 그 값을 두 번째로 적어야 한다

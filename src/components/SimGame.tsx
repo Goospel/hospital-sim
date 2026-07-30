@@ -6,6 +6,7 @@ import DayEndOverlay from "@/components/DayEndOverlay";
 import EventCard from "@/components/EventCard";
 import HirePanel from "@/components/HirePanel";
 import PriorityPanel from "@/components/PriorityPanel";
+import RegionPicker from "@/components/RegionPicker";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
 import {
   BUILD_TOOLS,
@@ -22,7 +23,6 @@ import {
   rectModeOf,
   rectTiles,
   regionOverlayOn,
-  regionRuleText,
   resigningNotices,
   setupSteps,
   setupWarningText,
@@ -36,7 +36,7 @@ import {
 } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
-import { BACKDROP_COUNT, REGIONS, createWorld, type RoomType, type SimWorld } from "@/sim/world";
+import { BACKDROP_COUNT, createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions } from "@/sim/regions";
 import { buildWalls, demolish, designateRegion, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
@@ -88,16 +88,6 @@ const PALETTE_SECTIONS: Array<{ key: PaletteSection; label: string }> = [
   { key: "PEOPLE", label: "사람" },
   { key: "BUILD", label: "건설" },
 ];
-
-/**
- * 지역 선택 카드 — **표는 카탈로그가 소유한다**(world.REGIONS).
- *
- * 제목·서사·규칙 요약 셋 다 파생이라 이 파일에는 문자열 리터럴이 하나도 없다: 지역이 규칙에
- * 닿은 뒤로 카드의 문장은 **약속**이고 그 약속을 지불하는 수치는 카탈로그에 있다 — 두 곳에
- * 적히는 순간 수치를 고치며 약속을 안 고치는 drift가 시작되고, 그 어긋남은 화면에만 보인다
- * (설계 2026-07-30 §4·§13-2). 순서는 카탈로그 기재 순서 = 도심 → 신도시 → 지방 → 농어촌.
- */
-const REGION_CARDS = Object.values(REGIONS);
 
 const SPEEDS: Array<{ value: SimSpeed; label: string; title: string }> = [
   { value: 0, label: "❚❚", title: "일시정지" },
@@ -1057,60 +1047,28 @@ export default function SimGame() {
       {/* 채용 패널 — 결산 오버레이와 **같은 층**에 뜨지만 국면과 무관하다(운영 중에도 뽑는다).
           시계는 phase가 아니라 hireOpen이 세운다(위 paused 파생). */}
       {/*
-        ── 지역 선택 — 판이 열리기 전의 **첫 화면**.
+        ── 지역 선택 — 판이 열리기 전의 **첫 화면**(RegionPicker).
 
         림월드가 시작 시 지형을 고르듯, 이 게임은 대한민국의 어느 지역에 병원을 지을지 고른다.
         지역별 의료 격차가 그 지형의 자리이고, 그 격차는 **규칙에 닿는다**(world.REGIONS).
-        그래서 카드마다 서사 아래에 규칙 요약 한 줄이 선다(simHud.regionRuleText) — 고를 때
-        무엇을 주고 무엇을 뺏는지 보여야 첫 선택이 도박이 아니라 플레이어의 것이 된다.
 
-        배경은 플레이어가 안 고른다 — 지역 후보 3종 중 하나가 **클릭 시점에** 무작위로 정해져
+        화면(지도·문구·두 단계 흐름)은 전부 RegionPicker가 갖고, 여기 남는 것은 **고른 뒤에
+        무슨 일이 일어나는가**뿐이다 — 이 파일이 1,200줄이라 첫 화면부터 떼어냈다.
+
+        배경은 플레이어가 안 고른다 — 지역 후보 3종 중 하나가 **확정 시점에** 무작위로 정해져
         세계에 저장된다. 시뮬 안이 아니라 여기서 `Math.random`을 부르는 것이 계약이다: 세계가
         만들어진 뒤로는 지금까지와 똑같이 완전 결정론이다(world.SimWorld.backdrop 주석).
       */}
       {!regionPicked && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="지역 선택"
-          className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-desk/85 p-4"
-        >
-          {/* 세로 가운데는 아이의 `my-auto`로 잡는다 — 채용 패널과 같은 이유(T-088). */}
-          <div className="my-auto flex w-full max-w-lg flex-col gap-3 border border-frame bg-desk-2 px-5 py-5">
-            <div>
-              <h2 className="font-mono text-sm text-on-desk">어디에 병원을 지을까요</h2>
-              <p className="mt-1 text-xs leading-relaxed text-on-desk-muted">
-                지역마다 아픈 데가 다릅니다. 고르고 나면 바꿀 수 없습니다.
-              </p>
-            </div>
-            <ul className="flex flex-col gap-2">
-              {REGION_CARDS.map((r) => (
-                <li key={r.key}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      /* 세계를 **갈아 끼운다** — 판은 일시정지로 시작하고 아직 아무도 없으므로
-                         버릴 것이 없다(기본 세계는 이 화면 뒤를 채우기 위한 임시판이다).
-                         world를 nullable로 만들지 않는 이유: 조기 return이 훅 순서와 충돌한다. */
-                      setWorld(createWorld(1, { region: r.key, backdrop: Math.floor(Math.random() * BACKDROP_COUNT) }));
-                      setRegionPicked(true);
-                    }}
-                    className="w-full border border-frame px-3 py-2.5 text-left transition-colors hover:border-on-desk-muted hover:bg-frame/40"
-                  >
-                    <span className="block text-sm text-on-desk">{r.label}</span>
-                    <span className="mt-0.5 block text-xs leading-relaxed text-on-desk-muted">{r.line}</span>
-                    {/* 규칙 요약 — **카탈로그에서 파생한다**(simHud.regionRuleText). 규칙이 생겼는데
-                        안 보이면 첫 선택이 도박이 된다(설계 §13-2). 서사보다 한 단계 더 작고 흐리게
-                        놓아, 읽는 순서가 「이 지역은 어떤 곳인가」 → 「그래서 무엇이 달라지나」가 된다. */}
-                    <span className="mt-1 block font-mono text-[11px] leading-relaxed text-on-desk-muted/80 tabular-nums">
-                      {regionRuleText(r.key)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+        <RegionPicker
+          onPick={(region) => {
+            /* 세계를 **갈아 끼운다** — 판은 일시정지로 시작하고 아직 아무도 없으므로
+               버릴 것이 없다(기본 세계는 이 화면 뒤를 채우기 위한 임시판이다).
+               world를 nullable로 만들지 않는 이유: 조기 return이 훅 순서와 충돌한다. */
+            setWorld(createWorld(1, { region, backdrop: Math.floor(Math.random() * BACKDROP_COUNT) }));
+            setRegionPicked(true);
+          }}
+        />
       )}
 
       {/* ⚠️ `regionPicked` 조건이 **순서**를 강제한다 — 지역 카드가 세계를 갈아 끼우므로
