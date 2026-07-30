@@ -9,7 +9,7 @@ import { seededUnit, callSeed } from '../game/daysim'
 import { buildBlockedSet, findPath, type Pt } from './path'
 // ENTRANCE(정문)는 world가 단일 출처다 — 격자에서 파생하는 상수이고, 의사의 출근(pawn.hireDoctor)도
 // 같은 문을 쓴다. 여기 두면 하위 모듈인 pawn이 이 파일을 값으로 당겨 레이어가 뒤집힌다.
-import { ENTRANCE, tileIndex, type SimWorld } from './world'
+import { ENTRANCE, simRegion, tileIndex, type SimWorld } from './world'
 // 방은 이제 **파생값**이다 — 선언형 사각형(w.rooms)이 아니라 벽·문이 낳은 영역이 규칙의 방이다.
 import { computeRegions, type Region } from './regions'
 // 좌표 파생은 spots.ts가 **단일 출처**다(leaf). 이 파일에 두면 욕구(needs)가 좌석을 찾느라
@@ -231,12 +231,19 @@ function maybeArrive(w: SimWorld, regions: readonly Region[]): SimWorld {
   // **평일의 도착 스트림은 이 훅이 붙기 전과 완전히 같다**(기존 결정론 테스트가 그걸 잠근다).
   // 시드가 아니라 **문턱**을 곱하는 것이 핵심이다: 시드를 흔들면 이벤트 유무가 도착 시각의
   // 배열 자체를 바꿔 "평일 대비 몇 배"를 잴 수 없고, 문턱을 올리면 평일 도착이 부분집합으로 남는다.
-  if (seededUnit(arrivalSeed(w)) >= ARRIVAL_PROB_PER_MIN * arrivalProbMulOf(w)) return w
+  // 지역 배율도 **같은 자리에 곱으로 중첩된다**(world.REGIONS) — 같은 이유로 도착 분 집합이
+  // RURAL(0.7) ⊂ URBAN(1.0) ⊂ NEWTOWN(1.2)의 부분집합 관계로 남는다. URBAN이 1이라
+  // 기본 세계의 도착 스트림은 이 훅이 붙기 전과 완전히 같다(기존 결정론 회귀 보존).
+  const threshold = ARRIVAL_PROB_PER_MIN * arrivalProbMulOf(w) * simRegion(w.region).arrivalMul
+  if (seededUnit(arrivalSeed(w)) >= threshold) return w
   // 무엇을 보러 왔는가는 문을 들어서는 순간 정해지고 이후 바뀌지 않는다. 시드는 (판·주·날·분)의
   // 순수 함수라 **호출 순서에 의존하지 않는다** — 발길을 돌린 사람 몫을 건너뛰어도 뒤 환자의
   // 과가 밀리지 않는다(순차 소비형 RNG였다면 좌석 수가 과 분포를 흔들었을 것이다).
-  // 전염병 날은 표가 내과 중심으로 갈린다(events.arrivalDeptMixOf) — 없으면 평시 표다.
-  const wantsDept = pickWantsDept(seededUnit(wantsDeptSeed(w)), arrivalDeptMixOf(w) ?? ARRIVAL_DEPT_MIX)
+  // 표는 **세 칸짜리 폴백 사슬**이고 순서가 계약이다 — 이벤트 > 지역 > 전국:
+  // 전염병 날은 어느 지역이든 내과로 쏠린다(NEWTOWN의 미용 표가 그날 하루 꺼지는 것이 의도다).
+  // 지역 표가 없으면(URBAN) 전국 표로 떨어져 기존 분포가 그대로 유지된다.
+  const mix = arrivalDeptMixOf(w) ?? simRegion(w.region).deptMix ?? ARRIVAL_DEPT_MIX
+  const wantsDept = pickWantsDept(seededUnit(wantsDeptSeed(w)), mix)
   /* 접수처 반려 — **그 과를 아예 안 보는 병원이면 대기실까지 들어오지 않는다.**
      좌석 판정보다 **먼저**인 것이 이 분기의 전부다: 뒤에 두면 안 보는 과 환자가 의자를 잡고
      PATIENCE_MIN(90분)을 앉아 있다가 떠나는데, 그동안 그 자리가 잠겨 **볼 수 있었던 환자까지**

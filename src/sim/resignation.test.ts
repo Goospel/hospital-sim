@@ -7,7 +7,7 @@
 // 셋 중 하나만 끊겨도 "장부가 아니라 인사에서 창발한다"가 통째로 무너지는데, 그 실패는 어느
 // 화면에도 에러로 안 뜬다(그냥 아무도 안 떠나거나, 떠난 자리가 무한히 다시 채워진다).
 import { describe, it, expect } from 'vitest'
-import { createWorld, type SimWorld } from './world'
+import { createWorld, simRegion, type SimWorld } from './world'
 import { hireDoctor, DEFAULT_PRIORITY, setDoctorPriority, priorityOf, type Pawn } from './pawn'
 import { hire } from './testHelpers'
 import { DAYS_PER_WEEK, settleDay, startNextDay, type DayRecord } from './day'
@@ -155,7 +155,9 @@ describe('사직 — 포화가 사람을 데려간다', () => {
     )
     expect(weekSummary(w).byDept.CARDIOLOGY!.doctors).toBe(1) // 결산 표엔 아직 서 있다
     const settled = settleWeek(w)
-    expect(settled.treasuryManwon).toBe(100_000 - simDept('CARDIOLOGY').weeklyCostManwon)
+    // 임대료도 함께 빠진다 — 기본 세계가 URBAN이라 1,200이다(지역 슬라이스 2026-07-30).
+    expect(settled.treasuryManwon)
+      .toBe(100_000 - simDept('CARDIOLOGY').weeklyCostManwon - simRegion(w.region).rentManwon)
     expect(startNextWeek(settled).pawns).toEqual([])
   })
 

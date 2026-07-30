@@ -1,6 +1,6 @@
 // 타일 세계 — 순수 데이터와 통행 판정. 렌더·React 임포트 금지.
 // dept.ts는 world를 모른다(단방향) — 그래서 값(freshHirePool)까지 당겨도 순환이 없다.
-import { freshHirePool, type SimDeptKey, type SimDeptStats } from './dept'
+import { freshHirePool, type DeptMix, type SimDeptKey, type SimDeptStats } from './dept'
 import type { EmergencyTurnAway } from './emergency' // 타입 전용 — emergency.ts가 world를 되받아도 런타임 순환 없음
 import type { SimEventKind } from './events' // 타입 전용 — events.ts는 leaf라 값도 순환은 없지만 필요한 건 타입뿐이다
 import type { Pawn } from './pawn' // 타입 전용 임포트 — pawn.ts가 world를 되받아도 순환 무해
@@ -28,12 +28,175 @@ export const tileIndex = (x: number, y: number): number => y * GRID_W + x
  * 전국 세계 시뮬의 권역이고 이쪽은 병원이 선 자리다. 뜻이 다른 두 축에 같은 이름을 주면 나중에
  * 매핑이 생기는 날 어느 쪽 RURAL인지 읽는 사람이 못 가린다(그래서 METRO를 값에서도 뺐다).
  *
- * **이번 슬라이스에서 이 값은 규칙에 하나도 안 닿는다** — 배경을 고르는 데만 쓰인다.
+ * 이 값은 **규칙에 닿는다** — 도착·믹스·응급·임대료·소송·시작 풀이 전부 아래 `REGIONS`의
+ * 파생이다(설계 2026-07-30 「지역이 규칙에 닿는다」). 배경 선택은 그중 하나일 뿐이다.
  */
 export type SimRegionKey = 'URBAN' | 'NEWTOWN' | 'PROVINCIAL' | 'RURAL'
 
 /** 지역당 배경 후보 수 — 12종 카탈로그(Backdrop.tsx)가 지역마다 이만큼 든다. */
 export const BACKDROP_COUNT = 3
+
+/**
+ * 한 지역이 쥐는 손잡이 전부 — **새 시스템은 하나도 없다.** 여섯 값이 각각 기존 훅포인트
+ * (외래 도착 문턱 · 희망 과 표 · 응급 도착 문턱 · 주간 결산 · 소송 비용 · 시작 풀)에 곱해지거나
+ * 갈아 끼워진다. `SimWorld`에 필드가 하나도 안 느는 이유가 그것이다: 규칙은 `region` 값의
+ * **순수 파생**이라, 저장하면 카탈로그와 갈릴 값을 세계에 두지 않는다(events.ts의 "오늘의
+ * 보정치를 저장하지 않는다"와 같은 계약).
+ *
+ * ⚠️ **문구(`label`·`line`)가 값 옆에 사는 것이 계약이다.** 카드가 약속하는 문장과 그 약속을
+ * 지불하는 수치가 같은 리터럴 블록에 있어야, 수치를 고치며 약속을 안 고치는 drift가 리뷰에서
+ * 보인다(화면이 표를 다시 적으면 그 순간 두 곳이 된다).
+ *
+ * ⚠️ **금액·배율은 전부 각색·튜닝값이다**(의료정책 주장 아님). 잠그는 것은 값이 아니라
+ * **부호·대소·순서**이고, 그 불변식은 world.test.ts(I-R1~R6)가 소유한다.
+ */
+export interface SimRegionSpec {
+  key: SimRegionKey
+  /** 카드 제목 — 화면(SimGame)이 여기서 파생한다. */
+  label: string
+  /** 카드 서사 한 줄 — 이 지역이 하는 약속. 그 줄마다 아래 값 하나가 대응한다(설계 §3). */
+  line: string
+  /** 외래 도착 **문턱** 배율(patientFlow.maybeArrive). 시드가 아니라 문턱에 곱해야
+   *  도착 분 집합이 부분집합 관계(RURAL ⊂ URBAN ⊂ NEWTOWN)로 남는다. */
+  arrivalMul: number
+  /** 희망 과 분포 — `null`이면 전국 표(patientFlow.ARRIVAL_DEPT_MIX) 그대로다.
+   *  평시 표를 여기 복사하지 않는 이유는 events.arrivalDeptMixOf와 같다: 두 벌이 되는 순간
+   *  전국 표를 튜닝해도 지역 표만 옛 값으로 남는다. */
+  deptMix: DeptMix | null
+  /** 응급 도착 **문턱** 배율(emergency.emergencyArrivalAt). */
+  emergencyMul: number
+  /** 주당 임대료(만원) — 주간 결산에서 청구된다. 과가 없으므로 과별 표에 섞지 않는다
+   *  (간호 블록과 같은 이유 · week.WeekSummary). */
+  rentManwon: number
+  /** 의료소송 즉시 비용의 배율(events.applyEvent). 돌려보낸 환자가 갈 곳이 **있는가**가 이 값의 뜻이다. */
+  lawsuitMul: number
+  /** 전국 풀(dept.nationalPool) 대비 **가감**. 실제로는 감뿐이다 — 어느 지역도 전국보다
+   *  두껍지 않다(I-R3ⓑ가 잠근다). 적지 않은 과는 전국 그대로. */
+  hirePoolDelta: Partial<Record<SimDeptKey, number>>
+}
+
+/**
+ * 지역 카탈로그 — 값 표의 **단일 출처**(설계 §5).
+ *
+ * ⚠️ **URBAN은 스트림 중립 지역이다**(배율 1 · 믹스 null · 델타 0). `createWorld`의 기본
+ * 지역이라, 이 중립이 곧 이 설계의 결정론 회귀 잠금이다: 기존 스트림·풀 테스트 전체가
+ * **수정 없이** 초록이어야 한다. URBAN의 정체성은 스트림이 아니라 경제(임대료 1,200 ·
+ * 소송 절반)에만 있다 — 그래서 "옆 건물에도 병원이 있다"는 도착이 아니라 **소송 0.5**로
+ * 번역된다(돌려보내도 옆 병원이 받으니 책임이 절반만 돌아온다).
+ */
+export const REGIONS: Record<SimRegionKey, SimRegionSpec> = {
+  URBAN: {
+    key: 'URBAN',
+    label: '대도시 도심',
+    line: '병상은 남아도는데 옆 건물에도 병원이 있다. 임대료가 먼저 나간다.',
+    arrivalMul: 1,
+    deptMix: null,
+    emergencyMul: 1,
+    // 1,200 = 내과 의사 1명 주급(1,500)의 8할 — "의사 한 명 몫이 건물주에게".
+    // 12주 총 14,400 = 개원 자본의 29%. 유일하게 풀 델타가 0인 자유의 값이 이 줄이다.
+    rentManwon: 1_200,
+    lawsuitMul: 0.5,
+    hirePoolDelta: {},
+  },
+  NEWTOWN: {
+    key: 'NEWTOWN',
+    label: '신도시·중소도시',
+    // ⚠️ 둘째 문장은 **교체된 것이다**(설계 §13-1). 옛 문구 "아이를 볼 곳은 그만큼 늘지
+    // 않았다"는 소아과를 요구하는데 이 슬라이스에 그 과가 없어 **번역 불가**였다 —
+    // 규칙 없는 약속을 남기지 않으려고 문구 쪽을 바꿨다(과 신설은 범위 밖).
+    line: '젊은 인구가 계속 들어온다. 미용 간판은 늘고, 필수과는 오지 않는다.',
+    // 1.2 — 하루 기대 60→72명. 대기실·수납 압박이 체감되는 최소 폭이고,
+    // 이벤트 최대 겹침(전염병 ×1.6)에도 분당 확률 0.24 < 1이라 안전하다.
+    arrivalMul: 1.2,
+    // 40/18/7/35 — 젊은 도시의 수요 형태(미용 최대·순환기 최소).
+    deptMix: [
+      ['INTERNAL_MEDICINE', 0.40],
+      ['GENERAL_SURGERY', 0.58],
+      ['CARDIOLOGY', 0.65],
+      ['AESTHETICS', 1.00],
+    ],
+    // 0.8 — 하루 기대 4→3.2건. 응급 수익 기회가 얇아지는 것이 이 지역의 뺏는 쪽 절반이다.
+    emergencyMul: 0.8,
+    // 800 — 신도시 상가 임대료는 실제로 높다(미용 의사 주급과 같은 값).
+    rentManwon: 800,
+    lawsuitMul: 1,
+    // "필수과는 오지 않는다"의 번역 — 외과·순환기만 얇아진다(미용·내과는 전국 그대로).
+    hirePoolDelta: { GENERAL_SURGERY: -1, CARDIOLOGY: -1 },
+  },
+  PROVINCIAL: {
+    key: 'PROVINCIAL',
+    label: '지방 소도시',
+    line: '환자는 늙어 가고, 의사를 구한다는 공고는 해를 넘긴다.',
+    arrivalMul: 1,
+    // 55/20/20/5 — 고령 수요. **미용 5%가 이 지역의 정체**다: 흑자 엔진이 없는 도시라
+    // 저수가 내과 박리다매로 버텨야 한다.
+    deptMix: [
+      ['INTERNAL_MEDICINE', 0.55],
+      ['GENERAL_SURGERY', 0.75],
+      ['CARDIOLOGY', 0.95],
+      ['AESTHETICS', 1.00],
+    ],
+    emergencyMul: 1,
+    rentManwon: 300, // 간호사 주급 수준
+    lawsuitMul: 1,
+    // 전 과 기근 — 지방일수록, 미용일수록 격차가 크다(수도권 인력 집중의 각색).
+    hirePoolDelta: {
+      AESTHETICS: -4, INTERNAL_MEDICINE: -2, GENERAL_SURGERY: -1, CARDIOLOGY: -1,
+    },
+  },
+  RURAL: {
+    key: 'RURAL',
+    label: '농어촌',
+    line: '가장 가까운 큰 병원까지 한 시간. 그 한 시간이 사람을 가른다.',
+    // 0.7 — 하루 기대 42명. 외래 경제가 "안 되는" 것을 체감시키되 내과 1~2명 빌드는 도는 선.
+    arrivalMul: 0.7,
+    deptMix: [
+      ['INTERNAL_MEDICINE', 0.50],
+      ['GENERAL_SURGERY', 0.75],
+      ['CARDIOLOGY', 0.95],
+      ['AESTHETICS', 1.00],
+    ],
+    // ⚠️ **1.2는 취향이 아니라 상한이다.** 부호 불변식 I-B1 ⓑ("응급을 최대로 받아도 순환기는
+    // 적자")가 천장을 정한다: STEMI 주 상한 17건 × 1.2 ≈ 20건 × 350 = 7,000 + 순환기 외래
+    // (0.7볼륨 · 20%믹스 ≈ 520) = 7,520 < 주급 8,000. ×1.25부터 부호가 뒤집힐 수 있다 —
+    // emergency.test.ts의 I-R4가 이 계산을 카탈로그 값으로 다시 세워 잠근다.
+    emergencyMul: 1.2,
+    rentManwon: 0, // 빈 건물은 많다 — 임대인이 없는 것이 이 지역의 유일한 "준다"에 가깝다
+    // 2.0 — 갈 곳이 없는 곳에서 돌려보낸 응급은 두 배로 돌아온다(1,600만원).
+    lawsuitMul: 2.0,
+    // 미용 −6이 가장 크다 — 농어촌에 미용 의사가 둘뿐이라는 것이 이 표의 주장이다.
+    hirePoolDelta: {
+      AESTHETICS: -6, INTERNAL_MEDICINE: -2, GENERAL_SURGERY: -1, CARDIOLOGY: -1,
+    },
+  },
+}
+
+/** 지역 조회 — 카탈로그의 유일한 진입점. 없는 지역에 `undefined`를 돌려주면 호출부에서
+ *  `undefined.arrivalMul`이 되어 도착 문턱이 NaN이 되고, NaN 비교는 항상 거짓이라 **환자가
+ *  한 명도 안 오는 병원**이 예외 하나 없이 선다(simDept가 던지는 것과 같은 이유). */
+export function simRegion(key: SimRegionKey): SimRegionSpec {
+  const spec = REGIONS[key]
+  if (!spec) throw new Error(`simRegion: 카탈로그에 없는 지역(${key}) — 오타이거나 새 지역을 표에 안 넣었다`)
+  return spec
+}
+
+/**
+ * 그 지역에서 판을 열 때의 **시작 채용 풀** — 전국 풀(카탈로그 파생) + 지역 델타.
+ *
+ * **음수 클램프를 두지 않는다**: 클램프가 있으면 오타 델타(순환기 −3 같은)가 조용히 0으로
+ * 접혀 "그 과를 영영 못 뽑는 지역"이 에러 하나 없이 서고, 하한 불변식(I-R3)이 죽여야 할
+ * 돌연변이가 안 죽는다. 실수는 컴파일 다음 단계(테스트)에서 잡는 편이 낫다.
+ *
+ * ⚠️ 매번 **새 객체**다(freshHirePool이 그렇다) — 카탈로그의 델타 객체를 세계가 공유하면
+ * 한 판의 채용이 다음 판의 시작 풀을 깎는다.
+ */
+export function regionHirePool(key: SimRegionKey): Record<SimDeptKey, number> {
+  const pool = freshHirePool()
+  for (const [dept, delta] of Object.entries(simRegion(key).hirePoolDelta) as [SimDeptKey, number][]) {
+    pool[dept] += delta
+  }
+  return pool
+}
 
 export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION' | 'CAFETERIA'
 
@@ -120,7 +283,8 @@ export interface SimWorld {
    * 단조 증가하는 축은 이 층에 산다 — `turnedAwayTotal`과 같은 계약이다(*떠난 일은 남는다*).
    */
   nursesResignedTotal: number
-  /** 부지가 선 지역 — 이번 슬라이스에서는 **배경 선택에만** 쓰인다(환자·수가·채용 무영향). */
+  /** 부지가 선 지역 — 도착·믹스·응급·임대료·소송·시작 풀이 전부 이 값의 파생이다(`REGIONS`).
+   *  판이 열릴 때 정해지고 그 뒤 불변이다(지역 재선택은 범위 밖). */
   region: SimRegionKey
   /** 그 지역 안에서 뽑힌 배경 변형(0..2) — 새 판을 열 때 한 번 정해지고 그 뒤 불변.
    *  시드에서 파생하지 않는 이유는 시드가 1로 고정돼 있어서다(SimGame) — 파생하면 지역마다
@@ -185,13 +349,17 @@ export function createWorld(
   seed: number,
   start?: { region?: SimRegionKey; backdrop?: number },
 ): SimWorld {
+  const region = start?.region ?? 'URBAN'
   return {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
     walls: new Set(), doors: new Set(), designations: [],
     furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
-    hirePool: freshHirePool(), turnedAwayTotal: 0, nursesResignedTotal: 0,
-    region: start?.region ?? 'URBAN', backdrop: safeBackdrop(start?.backdrop),
+    // 시작 풀은 **지역이 정한다** — URBAN은 델타 0이라 전국 풀 그대로다(기존 회귀 무변).
+    // ⚠️ 이 한 줄이 `pawn.hiredEver`의 기준까지 바꾼다: 의사 이름 서수가 "초기 풀 − 남은 풀"의
+    // 합이라, 그쪽 기준을 함께 옮기지 않으면 PROVINCIAL이 시작부터 서수 8이 된다(에러 0).
+    hirePool: regionHirePool(region), turnedAwayTotal: 0, nursesResignedTotal: 0,
+    region, backdrop: safeBackdrop(start?.backdrop),
   }
 }
 

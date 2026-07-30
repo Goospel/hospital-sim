@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-110](troubleshooting/T-110.md) · 배율 훅에 심은 「시드에 곱하기」 돌연변이가 살아남았는데, 그건 테스트의 구멍이 아니라 그 돌연변이가 원본과 대수적으로 동일했기 때문이다 — 생존한 돌연변이는 먼저 등가성을 의심한다
 - [T-109](troubleshooting/T-109.md) · transform div에 얹은 자식 캔버스가 부모 div의 background(부지 바닥·격자)를 통째로 가림 — 에러 0의 무성 실패
 - [T-108](troubleshooting/T-108.md) · 돌연변이 확인 스크립트가 vitest 출력을 파싱하려다 CP949 디코딩으로 죽었는데, 그 예외가 원복 줄보다 앞이라 소스가 부서진 채 남았다 — 판정은 종료 코드로, 원복은 try/finally로
 - [T-107](troubleshooting/T-107.md) · HMR이 남긴 useEffect deps 경고가 하드 리로드 뒤에도 콘솔에 남아 새 로드의 결함처럼 보였다 — 브라우저 콘솔 버퍼는 리로드를 건너 살아남는다

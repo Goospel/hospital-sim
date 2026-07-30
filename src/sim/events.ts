@@ -6,7 +6,7 @@
 // `applyEvent`가 순수 함수이고 상태 전이 규칙을 바꾸는 경로가 타입 수준에 없기 때문이다
 // (LLM이 만질 수 있는 것은 선택지 enum과 연출문 string뿐이다).
 //
-// **거의 leaf다** — world·dept는 **타입만** 임포트한다. 상위 층(patientFlow·emergency·director)의
+// **거의 leaf다** — dept는 **타입만**, world는 타입 + 카탈로그 조회(simRegion) 하나뿐이다. 상위 층(patientFlow·emergency·director)의
 // 값을 하나라도 당기면 T-093(값 임포트 순환)에 걸린다: `patientFlow`가 이 파일의 배율을 값으로
 // 읽는데, 폴백 디렉터(`director.ts`)는 반대로 patientFlow의 시드 폴딩을 값으로 읽는다.
 // 효과(여기)와 선택(director)을 두 파일로 가른 것이 그 순환을 끊는 방법이다.
@@ -17,7 +17,9 @@
 // 아래 leaf를 당기는 것은 다른 일이고, 갈리는 지점이 여기다.
 import type { DeptMix } from './dept'
 import { computeRegions } from './regions'
-import type { SimWorld } from './world'
+// ⚠️ world를 **값으로도** 당긴다(simRegion) — 이 파일이 "거의 leaf"인 상태는 그대로다:
+// world→events는 타입 전용이라(world.ts:5) 런타임 순환이 없고, computeRegions와 같은 예외다.
+import { simRegion, type SimWorld } from './world'
 
 /** 이벤트 종류 — **배열이 단일 출처**이고 유니온은 거기서 파생한다(traits.TRAIT_KEYS와 같은 형태).
  *  전수 순회(`eligibleEvents`·테스트)가 이 배열 하나만 보면 되므로 종류가 늘어도 빠뜨릴 자리가 없다. */
@@ -108,8 +110,11 @@ export function applyEvent(w: SimWorld, kind: SimEventKind): SimWorld {
     throw new Error(`applyEvent: 전제를 어긴 이벤트(${kind}) — eligibleEvents로 먼저 걸러야 한다`)
   }
   const next: SimWorld = { ...w, event: { kind } }
+  // 소송 비용에는 **지역 배율**이 곱해진다(world.REGIONS): URBAN 0.5 = 400(옆 건물에도 병원이
+  // 있으니 돌려보내도 책임이 절반만 돌아온다) · RURAL 2.0 = 1,600(한 시간 거리에 갈 곳이
+  // 없었다). 만원 단위 정수가 유지되는지는 카탈로그 불변식 I-R6이 잠근다.
   return kind === 'LAWSUIT'
-    ? { ...next, treasuryManwon: next.treasuryManwon - LAWSUIT_COST_MANWON }
+    ? { ...next, treasuryManwon: next.treasuryManwon - LAWSUIT_COST_MANWON * simRegion(w.region).lawsuitMul }
     : next
 }
 

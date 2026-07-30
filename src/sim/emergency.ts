@@ -17,7 +17,7 @@
 // 두 곳에 적힌다(이 저장소가 세 번 경고한 이중 기재).
 import { seededUnit } from '../game/daysim'
 import { buildBlockedSet, findPath, type Pt } from './path'
-import { ENTRANCE, type SimWorld } from './world'
+import { ENTRANCE, simRegion, type SimWorld } from './world'
 import { computeRegions, type Region } from './regions'
 import { priorityOf, type Pawn } from './pawn'
 import { addRevenueToDeptStats, type SimDeptKey, type SimDeptStats } from './dept'
@@ -174,7 +174,10 @@ export function emergencyArrivalAt(w: SimWorld): EmergencyKind | null {
   // 대량 응급(MASS_CASUALTY) 날은 문턱이 3배가 된다 — 이벤트가 없으면 배율이 1이라 평일
   // 스트림은 이 훅이 붙기 전과 완전히 같다. 시드가 아니라 문턱을 곱하는 이유는 외래와 같다
   // (patientFlow.maybeArrive): 평일 도착이 이벤트 날의 부분집합으로 남아 "몇 배"가 관측된다.
-  if (seededUnit(emergencyArrivalSeed(w)) >= EMERGENCY_PROB_PER_MIN * emergencyProbMulOf(w)) return null
+  // 지역 배율도 **같은 자리에 곱으로 중첩된다**: RURAL 1.2("갈 곳이 없어 전부 여기로 온다") ·
+  // NEWTOWN 0.8(젊은 도시라 응급 수익 기회가 얇다) · URBAN 1(기존 스트림 무변).
+  const threshold = EMERGENCY_PROB_PER_MIN * emergencyProbMulOf(w) * simRegion(w.region).emergencyMul
+  if (seededUnit(emergencyArrivalSeed(w)) >= threshold) return null
   return pickEmergencyKind(seededUnit(emergencyKindSeed(w)))
 }
 

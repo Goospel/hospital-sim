@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, type SimWorld } from './world'
+import { createWorld, simRegion, type SimRegionKey, type SimWorld } from './world'
 import {
   CAMPAIGN_WEEKS, INSOLVENCY_WEEKS_TO_CLOSE, NURSE_GRADE_RATE, NURSE_WEEKLY_COST_MANWON,
   nurseGradeOf, weekSummary, settleWeek, startNextWeek,
@@ -51,6 +51,12 @@ const FIXTURE_FIXED_COST =
  *  구현이 틀려도 함께 틀려 아무것도 관측하지 않는다(등급 자체의 계약은 「간호등급」 describe). */
 const FIXTURE_NURSE_ADJUST = -210
 
+/** 픽스처 병원의 **주간 임대료** — 기본 세계가 URBAN이라 1,200이다(world.REGIONS).
+ *  카탈로그에서 파생하는 이유는 `FIXTURE_FIXED_COST`와 같다: 값을 손으로 적으면 튜닝하는 날
+ *  이 파일만 옛 값으로 남는다. 지역이 결산에 닿은 뒤로 **모든 결산 단언에 이 항이 붙는다**
+ *  (설계 2026-07-30 §7이 예고한, 의식적으로 갱신되는 유일한 회귀군이다). */
+const FIXTURE_RENT = simRegion('URBAN').rentManwon
+
 function weekEndWorld(over: Partial<SimWorld> = {}): SimWorld {
   const base = createWorld(1)
   return {
@@ -75,7 +81,9 @@ describe('주간 요약', () => {
     expect(s.fixedCostManwon).toBe(FIXTURE_FIXED_COST)
     // 순이익에는 간호 블록도 들어간다 — 이 픽스처는 간호사가 0명이라 주급은 0이고, 등급
     // 감산만 남는다(간호사 없는 병원의 기본 상태다 · 「간호등급」 describe).
-    expect(s.netManwon).toBe(s.revenueManwon - s.fixedCostManwon + FIXTURE_NURSE_ADJUST)
+    // **임대료도 여기서 빠진다** — 기본 세계가 URBAN이라 1,200이다(「임대료」 describe).
+    expect(s.netManwon)
+      .toBe(s.revenueManwon - s.fixedCostManwon + FIXTURE_NURSE_ADJUST - FIXTURE_RENT)
   })
 
   it('진료·이탈도 7일 **합**이다(하루치나 마지막 날이 아니라)', () => {
@@ -96,11 +104,12 @@ describe('주간 요약', () => {
     expect(weekSummary(w).fixedCostManwon).toBe(FIXTURE_FIXED_COST)
   })
 
-  it('기록이 없는 주는 수익 0 — 고정비는 그대로 나간다', () => {
+  it('기록이 없는 주는 수익 0 — 고정비·임대료는 그대로 나간다', () => {
     const s = weekSummary(weekEndWorld({ days: [] }))
     expect(s.revenueManwon).toBe(0)
     expect(s.fixedCostManwon).toBe(FIXTURE_FIXED_COST)
-    expect(s.netManwon).toBe(-FIXTURE_FIXED_COST)
+    // 한 푼도 못 번 주에도 건물주는 받아 간다 — 그게 URBAN 카드가 약속한 문장이다.
+    expect(s.netManwon).toBe(-FIXTURE_FIXED_COST - FIXTURE_RENT)
   })
 })
 
@@ -154,10 +163,10 @@ describe('주간 요약 — 과별 표·응급 줄', () => {
     const lines = Object.values(s.byDept)
     expect(lines.reduce((a, l) => a + l.revenueManwon, 0)).toBe(s.revenueManwon)
     expect(lines.reduce((a, l) => a + l.fixedCostManwon, 0)).toBe(s.fixedCostManwon)
-    // 순익만은 **간호 블록만큼 벌어진다** — 간호 주급·등급 가감산은 과가 없어 표 밖에 산다
-    // (그래서 총액에서 그 둘을 되돌려야 표와 만난다 · WeekSummary.nursing).
+    // 순익만은 **표 밖 항목만큼 벌어진다** — 간호 주급·등급 가감산·임대료는 셋 다 과가 없어
+    // 표 밖에 산다(그래서 총액에서 그것들을 되돌려야 표와 만난다 · WeekSummary.nursing·rentManwon).
     expect(lines.reduce((a, l) => a + l.netManwon, 0))
-      .toBe(s.netManwon + s.nursing.wageManwon - s.nursing.adjustManwon)
+      .toBe(s.netManwon + s.nursing.wageManwon - s.nursing.adjustManwon + s.rentManwon)
   })
 
   it('의사가 있는 과는 수익 0이어도 줄이 선다 — 진료를 한 건도 안 봐도 고정비는 나간다', () => {
@@ -186,6 +195,72 @@ describe('주간 요약 — 과별 표·응급 줄', () => {
     // 날마다 값을 다르게 준다 — 전부 같으면 "합" 대신 "첫날 × N"이나 "마지막 날"로 바꿔도 안 걸린다.
     const days = [1, 2, 3].map(n => dayOf(n, {}, { accepted: n, turnedAway: n * 2 }))
     expect(weekSummary(weekEndWorld({ days })).emergencies).toEqual({ accepted: 6, turnedAway: 12 })
+  })
+})
+
+// ─── 임대료 — 지역이 결산에 닿는 자리 ────────────────────────────────────────
+// "임대료가 먼저 나간다"(URBAN 카드)의 지불. **과가 없는 비용**이라 과별 표가 아니라 별도
+// 줄이다(간호 블록과 같은 층위 · WeekSummary.rentManwon).
+describe('임대료 — 지역이 매주 청구한다', () => {
+  /** 지역만 다른 주말 세계 — 방·의사·기록은 완전히 같다. 차이를 지역으로 좁혀야
+   *  임대료 차이가 카탈로그에서 왔다고 말할 수 있다.
+   *  (`hirePool`은 손대지 않는다 — 이 describe는 채용을 안 하고 결산만 잰다.) */
+  const regional = (region: SimRegionKey, over: Partial<SimWorld> = {}) =>
+    weekEndWorld({ region, ...over })
+
+  it('요약에 지역 임대료가 실린다 — 네 지역이 각자 다른 값이다', () => {
+    for (const region of ['URBAN', 'NEWTOWN', 'PROVINCIAL', 'RURAL'] as const) {
+      expect(weekSummary(regional(region)).rentManwon, region).toBe(simRegion(region).rentManwon)
+    }
+    // 계측기 자기검사 — 네 값이 전부 같으면 위 루프는 아무것도 관측하지 않는다.
+    expect(weekSummary(regional('URBAN')).rentManwon)
+      .not.toBe(weekSummary(regional('RURAL')).rentManwon)
+  })
+
+  it('순익에서 **차감된다** — 요약에 싣기만 하고 공식에서 빼먹으면 여기서 걸린다', () => {
+    const urban = weekSummary(regional('URBAN'))
+    const rural = weekSummary(regional('RURAL'))
+    // 같은 병원인데 순익 차이는 정확히 임대료 차이다(다른 항목은 지역과 무관하다).
+    expect(rural.netManwon - urban.netManwon).toBe(urban.rentManwon - rural.rentManwon)
+    expect(urban.netManwon)
+      .toBe(urban.revenueManwon - urban.fixedCostManwon - urban.nursing.wageManwon
+        + urban.nursing.adjustManwon - urban.rentManwon)
+  })
+
+  it('금고에서도 그만큼 더 빠진다 — 청구액 유도(revenue − net)가 임대료를 자동으로 싣는다', () => {
+    const w = regional('URBAN', { treasuryManwon: 100_000 })
+    const s = weekSummary(w)
+    const settled = settleWeek(w)
+    expect(settled.treasuryManwon).toBe(100_000 - (s.revenueManwon - s.netManwon))
+    // 임대료가 실제로 물렸다 — 이 줄이 없으면 위 단언은 유도식의 항진명제다.
+    const rural = settleWeek(regional('RURAL', { treasuryManwon: 100_000 }))
+    expect(rural.treasuryManwon - settled.treasuryManwon).toBe(simRegion('URBAN').rentManwon)
+  })
+
+  it('**수익 0인 1주차에도 청구된다** — "임대료가 먼저 나간다"의 문자 그대로', () => {
+    // 카드가 약속하는 것이 이 한 줄이다: 아직 아무도 안 왔는데 건물주는 이미 받아 간다.
+    const w = regional('URBAN', { days: [], pawns: [], treasuryManwon: 100_000, week: 1 })
+    const s = weekSummary(w)
+    expect(s.revenueManwon).toBe(0)      // 전제 — 한 푼도 못 벌었다
+    expect(s.fixedCostManwon).toBe(0)    // 전제 — 의사도 없다
+    expect(s.rentManwon).toBe(1_200)
+    expect(settleWeek(w).treasuryManwon).toBe(100_000 - 1_200)
+  })
+
+  it('RURAL(0)의 결산은 임대료가 붙기 전과 **완전히 같다** — 0을 특별 취급하지 않는다', () => {
+    const w = regional('RURAL', { treasuryManwon: 100_000 })
+    const s = weekSummary(w)
+    expect(s.rentManwon).toBe(0)
+    expect(s.netManwon)
+      .toBe(s.revenueManwon - s.fixedCostManwon - s.nursing.wageManwon + s.nursing.adjustManwon)
+  })
+
+  it('과별 표에 섞이지 않는다 — 임대료는 과가 없다(간호 블록과 같은 계약)', () => {
+    const s = weekSummary(regional('URBAN'))
+    // 어느 과 줄도 임대료를 자기 고정비로 떠안지 않았다 — Σ 고정비는 과별 주급의 합 그대로다.
+    expect(Object.values(s.byDept).reduce((a, l) => a + l.fixedCostManwon, 0))
+      .toBe(s.fixedCostManwon)
+    expect(s.fixedCostManwon).toBe(FIXTURE_FIXED_COST)
   })
 })
 
@@ -261,7 +336,8 @@ describe('간호등급 — 인원이 수가로 번역된다', () => {
     const s = weekSummary(graded(3, 1))
     expect(s.nursing.wageManwon).toBe(NURSE_WEEKLY_COST_MANWON)
     expect(s.netManwon).toBe(
-      s.revenueManwon - s.fixedCostManwon - s.nursing.wageManwon + s.nursing.adjustManwon,
+      s.revenueManwon - s.fixedCostManwon - s.nursing.wageManwon + s.nursing.adjustManwon
+        - s.rentManwon,
     )
   })
 
@@ -289,9 +365,10 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
   }
 
   /** 표준 시나리오 — **과 하나만 다르고 나머지는 완전히 같은** 병원(같은 시드·같은 방 배치·
-   *  의사 1명·병동까지 동일). 차이를 과로 좁혀야 순익 차이가 카탈로그에서 왔다고 말할 수 있다. */
-  function standardHospital(dept: SimDeptKey, seed: number): SimWorld {
-    let w = createWorld(seed)
+   *  의사 1명·병동까지 동일). 차이를 과로 좁혀야 순익 차이가 카탈로그에서 왔다고 말할 수 있다.
+   *  지역은 기본 URBAN이다(스트림 중립 — I-R1) — 아래 I-R4만 RURAL로 바꿔 부른다. */
+  function standardHospital(dept: SimDeptKey, seed: number, region: SimRegionKey = 'URBAN'): SimWorld {
+    let w = createWorld(seed, { region })
     w = place(w, { type: 'WAITING', x: 18, y: 20, w: 8, h: 6 })
     w = place(w, { type: 'EXAM', dept, x: 6, y: 6, w: 6, h: 5 })
     // 병동은 **양쪽 다** 짓는다 — 순환기만 지어 주면 "응급을 받을 수 있어서" 진 게 아니라
@@ -302,8 +379,8 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
     return withCashier(hire(w, dept))
   }
 
-  function runWeek(dept: SimDeptKey, seed = I_B1_SEED) {
-    let w = standardHospital(dept, seed)
+  function runWeek(dept: SimDeptKey, seed = I_B1_SEED, region: SimRegionKey = 'URBAN') {
+    let w = standardHospital(dept, seed, region)
     for (let d = 0; d < DAYS_PER_WEEK; d++) {
       w = tick(w, DAY_END_MIN)
       if (w.phase === 'DAY_END') w = startNextDay(w)
@@ -319,13 +396,25 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
     return s
   }
 
+  /**
+   * ⚠️ **부호를 재는 자리가 과별 줄로 내려왔다**(지역 슬라이스 2026-07-30).
+   *
+   * 옛 단언은 병원 **총** 순익이 양수인지를 물었다. 그건 임대료가 없던 동안에만 "미용은
+   * 흑자 후보다"와 같은 말이었다 — 지금은 총 순익에 **지역세**(임대료)가 섞여, URBAN 표준
+   * 병원은 미용 단독이어도 총액이 음수다(설계 §5의 URBAN ≈ −1,100이 그 예측이다).
+   *
+   * I-B1이 잠그려는 것은 **카탈로그의 과별 경제**이지 입지의 비용이 아니다. 그래서 부호는
+   * `byDept` 줄에서 재고(임대료는 과가 없어 그 줄에 없다), 총액에서는 **대소만** 잰다 —
+   * 임대료는 두 병원에 똑같이 붙으므로 그 비교는 여전히 과의 비교다.
+   * (지역이 총 장부를 어디까지 밀어내는지는 §10 밸런스 프로브의 관심사다.)
+   */
   it('ⓐ 미용 1명 병원의 주 순익 > 순환기 1명 병원의 주 순익', () => {
     const aesthetics = runWeek('AESTHETICS')
     const cardiology = runWeek('CARDIOLOGY')
     expect(aesthetics.netManwon).toBeGreaterThan(cardiology.netManwon)
     // 부호까지 못박는다 — 대소만 재면 둘 다 흑자여도(혹은 둘 다 적자여도) 통과한다.
-    expect(aesthetics.netManwon).toBeGreaterThan(0)
-    expect(cardiology.netManwon).toBeLessThan(0)
+    expect(aesthetics.byDept.AESTHETICS!.netManwon).toBeGreaterThan(0)
+    expect(cardiology.byDept.CARDIOLOGY!.netManwon).toBeLessThan(0)
     expect(aesthetics.examsDone).toBeGreaterThan(0) // 계측기가 빈 병원으로 헛돌지 않았다
   })
 
@@ -345,9 +434,39 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
       const a = runWeek('AESTHETICS', seed)
       const c = runWeek('CARDIOLOGY', seed)
       expect(a.netManwon, `시드 ${seed}`).toBeGreaterThan(c.netManwon)
-      expect(a.netManwon, `시드 ${seed}`).toBeGreaterThan(0)
+      // 부호는 과별 줄에서 잰다(ⓐ 주석 — 총액에는 지역세인 임대료가 섞인다).
+      expect(a.byDept.AESTHETICS!.netManwon, `시드 ${seed}`).toBeGreaterThan(0)
       expect(c.byDept.CARDIOLOGY!.netManwon, `시드 ${seed}`).toBeLessThanOrEqual(0)
     }
+  })
+
+  /**
+   * **I-R4 — 응급 배율의 천장**(설계 2026-07-30 §5·§9-6).
+   *
+   * RURAL의 `emergencyMul: 1.2`는 취향이 아니라 **ⓑ가 정한 상한**이다: 응급 수요가 가장 큰
+   * 지역에서도 순환기 1명 병원의 과별 순익이 0을 넘으면 안 된다. 넘는 순간 이 게임의 논지가
+   * 그 지역에서만 거꾸로 서고(응급을 받을수록 흑자), 지역 선택이 **논지의 우회로**가 된다.
+   *
+   * ⚠️ §5는 이 천장을 종이 계산(7,520 < 8,000)으로 어림했지만 여기서는 **실제 주를 돌려 잰다** —
+   * 종이 계산은 도착 상한·의사 처리량·침대 회전 중 무엇이 먼저 묶이는지를 모른다. 실측 여유는
+   * 좁다(가장 나쁜 시드에서 순익 −700 · 수익 7,300): 응급 배율이나 STEMI 수가를 올리는 튜닝은
+   * 여기서 먼저 걸린다. **그게 이 테스트의 목적이다.**
+   */
+  it('I-R4 응급 수요가 최대인 RURAL에서도 순환기는 적자다 — 지역이 논지의 우회로가 아니다', () => {
+    for (const seed of [1, 3, 4, 7, 11]) {
+      const s = runWeek('CARDIOLOGY', seed, 'RURAL')
+      // 전제 — 응급이 실제로 수용됐다(0건인 세계에서 적자인 건 아무 말도 아니다).
+      expect(s.emergencies.accepted, `시드 ${seed}`).toBeGreaterThan(0)
+      expect(s.byDept.CARDIOLOGY!.netManwon, `시드 ${seed}`).toBeLessThanOrEqual(0)
+    }
+  })
+
+  it('I-R4ⓑ RURAL은 URBAN보다 응급을 **더 받는다** — 천장이 헛돌지 않았다', () => {
+    // 위 단언만 있으면 응급 배율을 0으로 만들어도 통과한다(안 받으니 당연히 적자).
+    // 배율이 실제로 수요를 늘렸는데도 부호가 유지된다는 것이 I-R4의 내용이다.
+    const urban = [1, 3, 4, 7, 11].reduce((s, seed) => s + runWeek('CARDIOLOGY', seed).emergencies.accepted, 0)
+    const rural = [1, 3, 4, 7, 11].reduce((s, seed) => s + runWeek('CARDIOLOGY', seed, 'RURAL').emergencies.accepted, 0)
+    expect(rural).toBeGreaterThan(urban)
   })
 })
 
@@ -355,7 +474,8 @@ describe('주간 결산', () => {
   it('settleWeek: 고정비가 금고에서 빠진다(수익은 진료 시점에 이미 들어옴 — 이중 지급 금지)', () => {
     const w = weekEndWorld({ treasuryManwon: 10_000 })
     const settled = settleWeek(w)
-    expect(settled.treasuryManwon).toBe(10_000 - FIXTURE_FIXED_COST + FIXTURE_NURSE_ADJUST)
+    expect(settled.treasuryManwon)
+      .toBe(10_000 - FIXTURE_FIXED_COST + FIXTURE_NURSE_ADJUST - FIXTURE_RENT)
     expect(settled.phase).toBe('WEEK_END') // 결산해도 결산 화면은 남는다(플레이어가 읽고 넘긴다)
   })
 
@@ -378,9 +498,9 @@ describe('주간 결산', () => {
 
   it('금고 0은 음수가 아니다 — 딱 고정비만큼 벌면 살아남는다', () => {
     // 경계 앞에서 기준을 캡처한다(T-085): 고정비와 금고가 같은 순간이 폐업 판정의 경계다.
-    // 청구액은 고정비 + 등급 감산이다(간호사 0명이라 주급은 없다) — 그만큼만 벌어 둔 금고.
+    // 청구액은 고정비 + 등급 감산 + 임대료다(간호사 0명이라 주급은 없다) — 그만큼만 벌어 둔 금고.
     const exact = settleWeek(weekEndWorld({
-      treasuryManwon: FIXTURE_FIXED_COST - FIXTURE_NURSE_ADJUST, insolvencyStreak: 1,
+      treasuryManwon: FIXTURE_FIXED_COST - FIXTURE_NURSE_ADJUST + FIXTURE_RENT, insolvencyStreak: 1,
     }))
     expect(exact.treasuryManwon).toBe(0)
     expect(exact.insolvencyStreak).toBe(0) // `<= 0`으로 쓰면 여기서 걸린다
@@ -418,7 +538,8 @@ describe('주간 결산', () => {
   it('두 번 결산하면 거부한다 — 고정비가 두 번 빠지지 않는다(이중 정산 방지)', () => {
     const settled = settleWeek(weekEndWorld({ treasuryManwon: 100_000 }))
     expect(() => settleWeek(settled)).toThrow()
-    expect(settled.treasuryManwon).toBe(100_000 - FIXTURE_FIXED_COST + FIXTURE_NURSE_ADJUST) // 한 번만 빠졌다
+    expect(settled.treasuryManwon)
+      .toBe(100_000 - FIXTURE_FIXED_COST + FIXTURE_NURSE_ADJUST - FIXTURE_RENT) // 한 번만 빠졌다
   })
 })
 
@@ -439,8 +560,9 @@ describe('판 종결 — 엔딩 3종', () => {
     const settled = settleWeek(weekEndWorld({
       pawns: [], hirePool: emptyPool(), treasuryManwon: 100_000, week: 3,
     }))
-    // 돈이 아니라 **사람이** 바닥나서 끝났다는 것을 두 숫자로 못박는다.
-    expect(settled.treasuryManwon).toBe(100_000)
+    // 돈이 아니라 **사람이** 바닥나서 끝났다는 것을 두 숫자로 못박는다: 의사가 0명이라
+    // **고정비는 한 푼도 안 빠졌고**, 줄어든 것은 사람과 무관한 임대료뿐이다.
+    expect(settled.treasuryManwon).toBe(100_000 - FIXTURE_RENT)
     expect(settled.insolvencyStreak).toBe(0)
     expect(settled.phase).toBe('CLOSED')
     expect(settled.ending).toBe('NO_PEOPLE')
@@ -600,7 +722,8 @@ describe('다음 주', () => {
     const next = startNextWeek(settleWeek(weekEndWorld({ treasuryManwon: 100_000 })))
     const week2End: SimWorld = { ...next, phase: 'WEEK_END', days: [1, 2, 3, 4, 5, 6, 7].map(n => day(n, 10)) }
     const settled2 = settleWeek(week2End)
-    expect(settled2.treasuryManwon).toBe(next.treasuryManwon - FIXTURE_FIXED_COST + FIXTURE_NURSE_ADJUST)
+    expect(settled2.treasuryManwon)
+      .toBe(next.treasuryManwon - FIXTURE_FIXED_COST + FIXTURE_NURSE_ADJUST - FIXTURE_RENT)
   })
 
   it('startNextWeek는 WEEK_END가 아닌 세계를 거부한다', () => {

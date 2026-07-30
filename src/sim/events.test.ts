@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { hire, placeRoom } from './testHelpers'
-import { createWorld, type SimWorld } from './world'
+import { createWorld, simRegion, type SimWorld } from './world'
 import { tick } from './tick'
 import { DAYS_PER_WEEK, freshMorning, startNextDay } from './day'
 import { startNextWeek } from './week'
@@ -128,8 +128,21 @@ describe('applyEvent — 전제와 효과', () => {
     expect(w0.turnedAwayTotal).toBe(0)
     const w1 = { ...w0, turnedAwayTotal: 1 }
     const after = applyEvent(w1, 'LAWSUIT')
-    expect(after.treasuryManwon).toBe(w1.treasuryManwon - LAWSUIT_COST_MANWON)
+    // 기본 세계는 URBAN이라 배율 0.5가 물린다 — 액수 자체의 계약은 아래 「소송 비용」이 잰다.
+    expect(after.treasuryManwon)
+      .toBe(w1.treasuryManwon - LAWSUIT_COST_MANWON * simRegion('URBAN').lawsuitMul)
     expect(after.event).toEqual({ kind: 'LAWSUIT' })
+  })
+
+  it('소송 비용은 **지역 배율이 곱해진다** — 갈 곳이 있는가가 이 값의 뜻이다', () => {
+    // URBAN 0.5(옆 건물에도 병원이 있다 — 돌려보내도 책임이 절반) / RURAL 2.0(한 시간 거리에
+    // 갈 곳이 없다 — 두 배로 돌아온다) / 나머지는 1.0. 카드 문장 두 개가 이 한 줄로 지불된다.
+    for (const [region, expected] of [
+      ['URBAN', 400], ['NEWTOWN', 800], ['PROVINCIAL', 800], ['RURAL', 1_600],
+    ] as const) {
+      const w = { ...createWorld(1, { region }), turnedAwayTotal: 1 }
+      expect(w.treasuryManwon - applyEvent(w, 'LAWSUIT').treasuryManwon, region).toBe(expected)
+    }
   })
 
   it('LAWSUIT 말고는 금고를 건드리지 않는다 — 나머지는 배율로만 아프다', () => {

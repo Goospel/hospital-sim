@@ -16,6 +16,7 @@ import {
   HIRABLE_DEPTS, simDept, deptRevenueSum, type SimDeptKey, type SimDeptStats,
 } from './dept'
 import { seededUnit } from '../game/daysim'
+import { applyEvent } from './events'
 import { DAY_END_MIN, DAYS_PER_WEEK } from './day'
 
 const DAY_TICKS = 600 // 도착 창(480분) + 뒷정리 여유 — 마감(DAY_END_MIN)과 같은 지점이다
@@ -855,6 +856,105 @@ describe('희망 과 배정 — 분포와 스트림 축', () => {
     const { wants } = runCollectingWants(fourDeptWorld(3))
     expect(wants.length).toBeGreaterThan(20) // 계측기가 헛돌지 않았다
     expect([...new Set(wants)].sort()).toEqual([...HIRABLE_DEPTS].sort())
+  })
+})
+
+describe('지역 — 도착 배율과 믹스 폴백', () => {
+  /** 도착만 관측되는 큰 병원 — 대기실 하나(의자 35개) + 4과 의사.
+   *  진료실이 없어 아무도 안 불리고, 4과가 다 있어 접수처 반려도 없다: 남는 것은 **도착뿐**이다.
+   *  ⚠️ 4과 채용이 전제라 풀이 가장 얇은 RURAL(미2/내3/외2/순1)에서도 성립해야 한다. */
+  function arrivalProbe(region: 'URBAN' | 'NEWTOWN' | 'PROVINCIAL' | 'RURAL', seed = 5): SimWorld {
+    const r = placeRoom(createWorld(seed, { region }), { type: 'WAITING', x: 2, y: 2, w: 16, h: 11 })
+    if (!r.ok) throw new Error(`전제 실패 — 건설 거부(${r.reason})`)
+    let w = r.world
+    for (const dept of HIRABLE_DEPTS) w = hire(w, dept)
+    return w
+  }
+
+  /**
+   * 하루 동안 **실제로 환자 폰이 태어난 분**의 집합 — 판정식을 테스트에 복제하지 않고
+   * 진짜 경로(tick)로 잰다. 공식을 옮겨 적으면 훅을 통째로 떼어내도 초록으로 남는다.
+   */
+  function arrivalMinutes(w0: SimWorld, days = 3): Set<string> {
+    const out = new Set<string>()
+    const seats = waitingSeats(w0).length
+    for (let day = 1; day <= days; day++) {
+      let w: SimWorld = { ...w0, day, minute: 0 }
+      for (let i = 0; i < ARRIVAL_WINDOW_MIN - 1; i++) {
+        const before = w.nextId
+        w = tick(w, 1)
+        if (w.nextId > before) out.add(`${day}:${w.minute}`)
+        // 계측기 자기검사 — 좌석이 차는 순간 문간 반려가 시작되고, 그때부터 이 함수는
+        // 배율이 아니라 **대기실 크기**를 잰다(배율이 클수록 더 깎여 부분집합이 거짓 실패한다).
+        expect(w.pawns.filter(p => p.kind === 'PATIENT').length).toBeLessThan(seats)
+      }
+      // 아무도 반려되지 않았다 — 4과가 다 있으니 leftNoDept는 0이어야 한다.
+      expect(w.stats.leftNoDept).toBe(0)
+    }
+    return out
+  }
+
+  it('배율은 **시드가 아니라 문턱**을 곱한다 — RURAL ⊆ URBAN ⊆ NEWTOWN', () => {
+    // 시드 쪽을 흔들어 확률을 올리는 구현도 "몇 배"는 만족한다. 그러나 그러면 지역이 도착
+    // **시각의 배열 자체**를 바꿔 "지역 간 몇 배"를 잴 수 없고, 기존 회귀는 URBAN만 재므로
+    // 그 변조가 어디에도 안 걸린다. 부분집합이 그 구별점이다(이벤트 배율 때와 같은 계측).
+    const rural = arrivalMinutes(arrivalProbe('RURAL'))
+    const urban = arrivalMinutes(arrivalProbe('URBAN'))
+    const newtown = arrivalMinutes(arrivalProbe('NEWTOWN'))
+    expect(urban.size).toBeGreaterThan(100) // 계측기가 헛돌지 않았다
+    expect([...rural].filter(m => !urban.has(m))).toEqual([])
+    expect([...urban].filter(m => !newtown.has(m))).toEqual([])
+    // 건수 단조 — 부분집합만으로는 세 지역이 전부 같아도 통과한다(배율을 통째로 뗀 구현).
+    expect(rural.size).toBeLessThan(urban.size)
+    expect(urban.size).toBeLessThan(newtown.size)
+  })
+
+  it('배율 1인 지역은 스트림이 **완전히 같다** — PROVINCIAL의 도착은 URBAN과 한 분도 안 다르다', () => {
+    // 두 지역은 믹스만 다르고 도착 배율은 둘 다 1이다. 믹스가 도착 판정 쪽으로 새면
+    // (희망 과 시드가 도착 시드와 얽히면) 여기서 갈린다.
+    expect([...arrivalMinutes(arrivalProbe('PROVINCIAL'))])
+      .toEqual([...arrivalMinutes(arrivalProbe('URBAN'))])
+  })
+
+  it('믹스 폴백 사슬 — 평시엔 **지역 표**가, 전염병 날엔 **이벤트 표**가 이긴다', () => {
+    // `arrivalDeptMixOf(w) ?? simRegion(w.region).deptMix ?? ARRIVAL_DEPT_MIX` — 순서가 계약이다.
+    // 전염병 날은 어느 지역이든 내과로 쏠린다(PROVINCIAL의 미용 5% 표가 그날 하루 꺼진다).
+    // 사슬을 뒤집으면(지역이 이벤트를 이기면) 아래 두 밴드 중 하나가 반드시 깨진다.
+    const shareOf = (w0: SimWorld) => {
+      const wants = new Map<string, SimDeptKey>()
+      let w: SimWorld = { ...w0, day: 1, minute: 0 }
+      for (let i = 0; i < ARRIVAL_WINDOW_MIN - 1; i++) {
+        w = tick(w, 1)
+        for (const p of w.pawns) if (p.kind === 'PATIENT' && p.wantsDept) wants.set(p.id, p.wantsDept)
+      }
+      const all = [...wants.values()]
+      expect(all.length).toBeGreaterThan(30) // 계측기 자기검사
+      return (d: SimDeptKey) => all.filter(x => x === d).length / all.length
+    }
+    // PROVINCIAL 평시 — 지역 표(내과 55% · 미용 5%)가 전국 표(45/20)를 대체했다.
+    const plain = shareOf(arrivalProbe('PROVINCIAL'))
+    expect(plain('INTERNAL_MEDICINE')).toBeGreaterThan(0.48)
+    expect(plain('AESTHETICS')).toBeLessThan(0.12)
+    // 같은 지역, 전염병 날 — 이벤트 표(내과 75%)가 지역 표를 **이긴다**.
+    const epidemic = shareOf(applyEvent(arrivalProbe('PROVINCIAL'), 'EPIDEMIC'))
+    expect(epidemic('INTERNAL_MEDICINE')).toBeGreaterThan(0.70)
+  })
+
+  it('지역 표가 없으면 전국 표로 떨어진다 — URBAN 믹스는 45/20/15/20 그대로다', () => {
+    // 사슬의 마지막 칸(`?? ARRIVAL_DEPT_MIX`)을 잰다. URBAN이 deptMix null인 것이 곧
+    // 기존 분포 회귀가 무변인 이유다(I-R1 스트림 중립).
+    const w0 = arrivalProbe('URBAN')
+    const wants = new Map<string, SimDeptKey>()
+    let w: SimWorld = { ...w0, day: 1, minute: 0 }
+    for (let i = 0; i < ARRIVAL_WINDOW_MIN - 1; i++) {
+      w = tick(w, 1)
+      for (const p of w.pawns) if (p.kind === 'PATIENT' && p.wantsDept) wants.set(p.id, p.wantsDept)
+    }
+    const all = [...wants.values()]
+    const share = (d: SimDeptKey) => all.filter(x => x === d).length / all.length
+    expect(share('INTERNAL_MEDICINE')).toBeGreaterThan(0.35)
+    expect(share('INTERNAL_MEDICINE')).toBeLessThan(0.55)
+    expect(share('AESTHETICS')).toBeGreaterThan(0.12) // 지역 표(미용 5%)가 잘못 섞이면 여기서 걸린다
   })
 })
 

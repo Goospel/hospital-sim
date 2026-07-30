@@ -1,8 +1,8 @@
 // 폰 — 세계를 걸어다니는 개체(의사·환자)와 그 이동 계산. 순수 데이터·순수 함수.
 // 경로는 목적지가 정해질 때 findPath로 1회 계산해 path에 저장하고, 틱은 소비만 한다
 // (findPath는 최장 경로 ~3ms라 매 틱 재탐색하면 폰 수만큼 곱해져 프레임을 먹는다).
-import { GRID_W, GRID_H, ENTRANCE, isWalkable, type SimWorld } from './world'
-import { HIRABLE_DEPTS, simDept, type SimDeptKey } from './dept'
+import { GRID_W, GRID_H, ENTRANCE, isWalkable, regionHirePool, type SimWorld } from './world'
+import { HIRABLE_DEPTS, type SimDeptKey } from './dept'
 import type { EmergencyKind } from './emergency' // 타입 전용 — emergency.ts가 pawn을 되받아도 순환 무해
 import type { Pt } from './path'
 // traits.ts는 leaf라 값으로 당겨도 순환이 없다(아무것도 임포트하지 않는다).
@@ -242,13 +242,20 @@ export function doctorDeptOf(p: Pawn): SimDeptKey {
  * (사직자는 돌아오지 않는다 — week.startNextWeek) 채용마다 정확히 1 줄어드니, 이 합은 판 안에서
  * 단조 증가하고 값마다 유일하다. 새 필드를 하나도 안 늘리고 그 성질을 얻는 것이 요점이다.
  *
+ * ⚠️ **기준은 전국 풀이 아니라 그 지역의 시작 풀이다**(world.regionHirePool). 지역이 초기
+ * 풀을 깎으면서 "초기 풀 = 전국 풀"이라는 옛 전제가 깨졌다: 전국 기준으로 세면 PROVINCIAL은
+ * 아무도 안 뽑았는데 이미 8을 소진한 것으로 읽혀 **목록 8번부터** 이름이 붙는다 — 에러는
+ * 하나도 안 나고 이름만 조용히 밀린다(traits.test.ts가 잠근다). 새 필드를 만들지 않는 것은
+ * 그대로다: 시작 풀도 `region`의 순수 파생이라 이중 기재가 아니다.
+ *
  * ⚠️ `hireDoctor`가 `spawnDoctor`를 **차감 전에** 부르므로 첫 채용자의 서수는 0이다. 순서를
  * 뒤집으면 목록의 첫 이름이 영영 안 쓰인다(에러 0 — 테스트가 잠근다).
  * ⚠️ 채용을 거치지 않는 `spawnDoctor` 직접 호출(테스트의 손세계 폰)은 풀을 안 건드리므로 전부
  * 서수 0을 받는다 — 의도된 결과다. 이름의 유일성은 **채용 경로의 성질**이지 스폰의 성질이 아니다.
  */
 function hiredEver(w: SimWorld): number {
-  return HIRABLE_DEPTS.reduce((sum, key) => sum + (simDept(key).nationalPool - w.hirePool[key]), 0)
+  const initial = regionHirePool(w.region)
+  return HIRABLE_DEPTS.reduce((sum, key) => sum + (initial[key] - w.hirePool[key]), 0)
 }
 
 export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {

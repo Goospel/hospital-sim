@@ -113,6 +113,27 @@ describe('spawnDoctor — 이름·특성 부여', () => {
       .toEqual(DOCTOR_NAMES.slice(0, TOTAL_POOL))
   })
 
+  it('서수의 기준은 **그 지역의 시작 풀**이다 — 얇은 지역도 첫 채용자가 0번이다', () => {
+    // 서수는 `Σ(초기 풀 − 남은 풀)`이라 "초기 풀 = 전국 풀"이라는 전제가 깔려 있었다. 지역이
+    // 초기 풀을 깎으면 그 전제가 깨진다: 전국 기준으로 세면 PROVINCIAL은 아무도 안 뽑았는데
+    // 이미 8을 소진한 것으로 읽혀 **목록 8번부터** 이름이 붙는다(에러 0 — 이름만 조용히 밀린다).
+    for (const region of ['PROVINCIAL', 'NEWTOWN', 'RURAL'] as const) {
+      const w = hire(createWorld(1, { region }), 'INTERNAL_MEDICINE')
+      expect(doctorsOf(w)[0].name, region).toBe(DOCTOR_NAMES[0])
+    }
+  })
+
+  it('얇은 지역에서도 이름은 **0번부터 순서대로** 붙는다 — 목록을 건너뛰지 않는다', () => {
+    // 첫 한 명만 재면 "초기 − 남은" 대신 "채용 횟수"를 세는 구현도 통과한다. 풀을 통째로
+    // 비워 서수가 끝까지 단조 증가·유일함을 잠근다(전국 기준 회귀는 여기서 8번부터 시작한다).
+    let w = createWorld(1, { region: 'RURAL' })
+    const start = { ...w.hirePool }
+    for (const dept of HIRABLE_DEPTS) for (let i = 0; i < start[dept]; i++) w = hire(w, dept)
+    const total = HIRABLE_DEPTS.reduce((s, k) => s + start[k], 0)
+    expect(total).toBe(8) // 계측기 자기검사 — RURAL 2/3/2/1
+    expect(doctorsOf(w).map(p => p.name)).toEqual(DOCTOR_NAMES.slice(0, total))
+  })
+
   it('이름·특성 어느 쪽도 **난수를 뽑지 않는다** — 같은 채용 순서면 같은 사람이 온다', () => {
     // 이 계약이 깨지면(RNG로 뽑으면) 이름·특성이 도착·응급 스트림과 한 축을 나눠 갖게 되어,
     // 채용 순서가 아니라 "그 주에 무슨 일이 있었나"가 사람을 바꾼다.
