@@ -512,6 +512,22 @@ describe('LAWSUIT 위축 — 소송이 사람의 손을 끌어내린다', () => 
     expect(CHILL_DEPTS.slice().sort()).toEqual(['CARDIOLOGY', 'GENERAL_SURGERY'])
   })
 
+  it('priorities 미지정 폰도 **세 축이 채워진다** — setDoctorPriority를 지나는 계약', () => {
+    // ⚠️ **eslint leaf 가드에서 `**/pawn`을 events.ts에만 열어 준 유일한 근거가 이 성질이다**
+    // (eslint.config.mjs). 폰 배열을 `map` 한 줄로 직접 갈아 끼우는 구현도 다른 모든 테스트를
+    // 통과한다 — 리뷰어 실측: 인라인 쓰기로 바꿔도 1502건 전원 생존했다. 갈리는 자리는 여기
+    // 하나뿐이다: 손세계·저장된 옛 세계의 폰은 `priorities`가 없어서, 인라인 복제는
+    // `{ emergency: 1 }`만 남기고 나머지 두 축을 undefined로 둔다. 그러면 "필드에 있는 값"과
+    // "읽히는 값(폴백 2)"이 갈려 그 의사만 다른 계약으로 산다(pawn.setDoctorPriority 주석).
+    // 검사기 없는 근거는 다음 사람이 "map 한 줄이면 되는데"로 되돌려도 초록이다.
+    const doc: Pawn = { id: 'd1', kind: 'DOCTOR', x: 0, y: 0, path: [], dept: 'CARDIOLOGY', name: '김서준' }
+    const w: SimWorld = { ...createWorld(1), turnedAwayTotal: 1, pawns: [doc] }
+    const after = applyEvent(w, 'LAWSUIT')
+    // 미지정은 전부 2로 읽히므로(priorityOf 폴백) 위축은 2 → 1이다.
+    expect(after.pawns[0].priorities).toEqual({ exam: 2, emergency: 1, rest: 2 })
+    expect(after.event?.chilledName).toBe('김서준')
+  })
+
   it('순수 함수다 — 입력 세계의 우선순위는 스치지도 않는다', () => {
     const w = chillWorld('GENERAL_SURGERY')
     const [only] = docIds(w)
