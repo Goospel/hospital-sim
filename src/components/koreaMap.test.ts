@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { KOREA_MASK, MAP_COLS, MAP_ROWS, PLACES, isLand, landRuns, placesByRegion } from './koreaMap'
+import {
+  DESIGNATIONS, KOREA_MASK, MAP_COLS, MAP_ROWS, PLACES,
+  designationText, isLand, landRuns, placesByRegion,
+  type DesignationKey,
+} from './koreaMap'
 import { REGIONS, type SimRegionKey } from '@/sim/world'
 
 /**
@@ -99,5 +103,65 @@ describe('koreaMap — 선택 지역', () => {
     for (const key of Object.keys(REGIONS) as SimRegionKey[]) {
       for (const p of placesByRegion(key)) expect(p.region).toBe(key)
     }
+  })
+})
+
+describe('koreaMap — 공식 지정 (고시 원문 대조)', () => {
+  /**
+   * ⚠️ **이 표를 고치려면 고시 원문을 다시 확인해야 한다.**
+   *
+   * 카탈로그에서 파생하면 무엇을 넣어도 통과하므로(T-111) 여기 기대값은 **저장소 밖**에서 온다 —
+   * 복지부 고시 제2024-261호 제2조와 행안부 인구감소지역 89개 목록을 2026-07-30에 직접 대조한
+   * 결과다. 출처와 전체 목록은 `docs/research/medical-vulnerable-area-designations.md`.
+   *
+   * 그래서 이 테스트가 깨지는 정상적인 경로는 **재지정 고시가 나왔을 때뿐**이고, 그때는 코드가
+   * 아니라 원문을 먼저 봐야 한다. 화면이 "확인한 것만 말한다"를 지키는 마지막 잠금이다.
+   */
+  const VERIFIED: Record<string, DesignationKey[]> = {
+    seoul: [], busan: [], daegu: [], gwangju: [],
+    hwaseong: [], sejong: [], gimpo: [], yangsan: [],
+    andong: ['POPULATION_DECLINING'],
+    mokpo: [],
+    jeongeup: ['EMERGENCY_VULNERABLE', 'POPULATION_DECLINING'],
+    samcheok: ['EMERGENCY_VULNERABLE', 'POPULATION_DECLINING'],
+    seogwipo: ['EMERGENCY_VULNERABLE'],
+    sinan: ['EMERGENCY_VULNERABLE', 'POPULATION_DECLINING'],
+    yeongyang: ['EMERGENCY_VULNERABLE', 'POPULATION_DECLINING'],
+    hadong: ['EMERGENCY_VULNERABLE', 'POPULATION_DECLINING'],
+    goseong: ['EMERGENCY_VULNERABLE', 'POPULATION_DECLINING'],
+  }
+
+  it('17곳의 지정이 고시 대조 결과와 일치한다', () => {
+    const actual = Object.fromEntries(PLACES.map(p => [p.key, [...p.designations]]))
+    expect(actual).toEqual(VERIFIED)
+  })
+
+  it('대도시·신도시 여덟 곳은 어느 지정도 없다', () => {
+    // 규칙이 "임대료가 먼저 나간다"인 지역에 취약지 딱지가 붙으면 화면이 거짓말을 한다.
+    for (const p of PLACES) {
+      if (p.region === 'URBAN' || p.region === 'NEWTOWN') {
+        expect(p.designations, p.label).toHaveLength(0)
+      }
+    }
+  })
+
+  it('모든 지정 키가 카탈로그에 있고 한 지역 안에서 중복되지 않는다', () => {
+    for (const p of PLACES) {
+      for (const d of p.designations) expect(DESIGNATIONS[d], `${p.label}/${d}`).toBeDefined()
+      expect(new Set(p.designations).size, p.label).toBe(p.designations.length)
+    }
+  })
+
+  it('designationText는 지정이 없으면 침묵한다', () => {
+    // 「중립 축은 안 적는다」 — 서울에 "취약지 아님"을 적는 건 정보가 아니라 소음이다
+    // (regionRuleText가 URBAN의 배율 1을 안 적는 것과 같은 계약).
+    const seoul = PLACES.find(p => p.key === 'seoul')!
+    expect(designationText(seoul)).toBe('')
+  })
+
+  it('designationText는 지정 라벨을 카탈로그에서 파생한다', () => {
+    const sinan = PLACES.find(p => p.key === 'sinan')!
+    const text = designationText(sinan)
+    for (const d of sinan.designations) expect(text).toContain(DESIGNATIONS[d].label)
   })
 })
