@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, isWalkable, tileIndex, ENTRANCE, type SimWorld } from './world'
+import { createWorld, isWalkable, tileIndex, ENTRANCE, type SimRegionKey, type SimWorld } from './world'
 import { computeRegions } from './regions'
 import type { Pt } from './path'
 import { spawnDoctor, type Pawn } from './pawn'
@@ -9,7 +9,7 @@ import { hire, placeRoom, withCashier } from './testHelpers'
 import { tick } from './tick'
 import {
   EXAM_DURATION_MIN, PATIENCE_MIN,
-  ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats, arrivalSeed,
+  ARRIVAL_WINDOW_MIN, ARRIVAL_PROB_PER_MIN, waitingSeats, arrivalSeed, arrivalAt,
   wantsDeptSeed, pickWantsDept, wantsDeptOf, ARRIVAL_DEPT_MIX,
 } from './patientFlow'
 import {
@@ -907,6 +907,45 @@ describe('지역 — 도착 배율과 믹스 폴백', () => {
     // 건수 단조 — 부분집합만으로는 세 지역이 전부 같아도 통과한다(배율을 통째로 뗀 구현).
     expect(rural.size).toBeLessThan(urban.size)
     expect(urban.size).toBeLessThan(newtown.size)
+  })
+
+  /** 12주 × 7일 전수에서 **도착 판정이 성립한 (주,일,분)의 수** — 응급 축의 `emergencyMinutes`와
+   *  같은 계측이다. 판정의 단일 출처(`arrivalAt`)를 그대로 부른다: 문턱 공식을 여기 복제하면
+   *  훅을 통째로 떼어내도 초록으로 남는다.
+   *
+   *  ⚠️ 위 `arrivalMinutes`(tick 경로)와 **역할이 다르다**. 저쪽은 "진짜 경로로 도착이 실제로
+   *  일어나는가"를 재느라 하루치 표본(≈180건)이 한계인데, 그 크기에서는 배율 오차 1σ가 0.05라
+   *  좁은 밴드를 세울 수 없다(실측: NEWTOWN 3일 표본의 비율이 1.135 — ±0.08 밴드의 가장자리에서
+   *  0.015 떨어져 있었다). 크기를 재는 자리에는 40,320분 전수가 필요하다. */
+  function arrivalHitCount(region: SimRegionKey, seed = 7): number {
+    const w0 = createWorld(seed, { region })
+    let n = 0
+    for (let week = 1; week <= 12; week++) {
+      for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+        for (let minute = 0; minute < ARRIVAL_WINDOW_MIN; minute++) {
+          if (arrivalAt({ ...w0, week, day, minute })) n += 1
+        }
+      }
+    }
+    return n
+  }
+
+  it('건수가 카탈로그 배율에 붙는다 — 0.7 / 1.0 / 1.2', () => {
+    // 부분집합·단조만으로는 배율의 **크기**를 못 잰다: 1.05도 부분집합이고 단조다(NEWTOWN을
+    // 1.2에서 1.05로 낮춘 돌연변이가 위 테스트에서 실제로 살아남았다). 응급 축에는 같은 형태의
+    // 밴드가 이미 있다(emergency.test 「0.8 / 1.0 / 1.2」) — 여기가 그 대칭 자리다.
+    //
+    // ⚠️ 배율을 **손으로 적는 것이 이 테스트의 요지다** — 이 저장소가 싫어하는 이중 기재의
+    // 유일한 예외 자리다. `simRegion(region).arrivalMul`로 파생하면 기대값과 실측이 같은
+    // 카탈로그를 보게 되어 배율을 어떻게 튜닝해도 초록으로 남는다(실측: 그렇게 쓴 초안이
+    // 1.2→1.05 돌연변이를 통과시켰다). 회귀 잠금은 값을 **두 번째로** 적어야 성립한다.
+    const urban = arrivalHitCount('URBAN')
+    expect(urban).toBeGreaterThan(1_000) // 계측기가 헛돌지 않았다
+    for (const [region, mul] of [['RURAL', 0.7], ['NEWTOWN', 1.2]] as const) {
+      const ratio = arrivalHitCount(region) / urban
+      expect(ratio, region).toBeGreaterThan(mul - 0.08)
+      expect(ratio, region).toBeLessThan(mul + 0.08)
+    }
   })
 
   it('배율 1인 지역은 스트림이 **완전히 같다** — PROVINCIAL의 도착은 URBAN과 한 분도 안 다르다', () => {

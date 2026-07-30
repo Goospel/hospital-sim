@@ -9,12 +9,12 @@
 import { FATIGUE_RED, FATIGUE_SLOW_FROM, RESIGN_SATURATED_DAYS } from '../game/doctor'
 import { formatManwon as absManwon } from '../game/labels'
 import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
-import { HIRABLE_DEPTS, simDept, type SimDeptKey } from '../sim/dept'
+import { HIRABLE_DEPTS, simDept, type DeptMix, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, wardBeds, type EmergencyTurnAway, type TurnAwayReason } from '../sim/emergency'
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam, starvedSlowFactor } from '../sim/needs'
 import { buildBlockedSet } from '../sim/path'
-import { hasCashier, unservedDepts } from '../sim/patientFlow'
+import { ARRIVAL_DEPT_MIX, hasCashier, unservedDepts } from '../sim/patientFlow'
 import { resigningNurses } from '../sim/nurse'
 import { NURSE_WEEKLY_COST_MANWON, type NurseGrade } from '../sim/week'
 import { computeRegions, type Region } from '../sim/regions'
@@ -168,11 +168,61 @@ export function nurseAttritionText(leaving: number, resignedTotal: number): stri
  * 왜 카드에 규칙을 노출하나 — 규칙이 생겼는데 안 보이면 첫 선택이 도박이 된다(림월드가 지형
  * 효과를 보여 주는 것과 같은 이유). 고를 때 알 수 있어야 그 선택이 플레이어의 것이 된다.
  */
+/** 누적 상한 표 → 과별 **구간 폭**(정수 %). 화면이 쓰는 단위로 먼저 반올림하는 것이 계약이다:
+ *  0.95−0.75가 0.19999…로 떨어지는 이진수 잔차 때문에, 실수인 채로 편차를 비교하면 눈으로는
+ *  동률인 두 과의 순서가 부동소수점 노이즈로 갈린다(RURAL의 세 과가 정확히 그 자리다). */
+function mixSharePct(mix: DeptMix): Map<SimDeptKey, number> {
+  const out = new Map<SimDeptKey, number>()
+  let lower = 0
+  for (const [dept, upper] of mix) {
+    out.set(dept, Math.round((upper - lower) * 100))
+    lower = upper
+  }
+  return out
+}
+
+/**
+ * 환자 구성 한 토막 — **전국 표에서 가장 멀리 떨어진 두 과**만 그 지역의 실제 비중으로 적는다.
+ *
+ * 네 과를 다 적으면 카드가 두 줄이 되어 아무도 안 읽고, 안 적으면 설계 §5가 이 지역의 정체라고
+ * 못박은 규칙(PROVINCIAL의 미용 5%)이 화면에서 사라진다. 그 사이의 답이 「가장 다른 둘」이다 —
+ * 나머지 두 과는 전국과 비슷하다는 뜻이라, 말하지 않는 것이 곧 정보다.
+ *
+ * **편차가 아니라 비중을 적는다**: 플레이어가 물은 것은 "여기 미용 환자가 얼마나 오나"이지
+ * "전국보다 몇 %p 많나"가 아니다. 편차는 무엇을 말할지 **고르는 데만** 쓴다.
+ *
+ * 동률은 카탈로그 순서(HIRABLE_DEPTS)가 깬다 — `Array.sort`가 안정 정렬이라 그 순서가 그대로
+ * 남는다. 안 정하면 RURAL의 세 과(전부 5%p)가 엔진에 따라 자리를 바꿔 화면이 흔들린다.
+ *
+ * 전국 표와 같은 표(편차 0)면 빈 문자열이다 — 「중립 축은 안 적는다」의 믹스판.
+ */
+export function deptMixText(mix: DeptMix): string {
+  const here = mixSharePct(mix)
+  const nationwide = mixSharePct(ARRIVAL_DEPT_MIX)
+  const top = HIRABLE_DEPTS
+    .map(dept => ({
+      dept,
+      pct: here.get(dept) ?? 0,
+      dev: Math.abs((here.get(dept) ?? 0) - (nationwide.get(dept) ?? 0)),
+    }))
+    .filter(x => x.dev > 0)
+    .sort((a, b) => b.dev - a.dev)
+    .slice(0, 2)
+  if (top.length === 0) return ''
+  return `환자 ${top.map(x => `${simDept(x.dept).label} ${x.pct}%`).join('·')}`
+}
+
 export function regionRuleText(key: SimRegionKey): string {
   const r = simRegion(key)
   const parts: string[] = [
     r.rentManwon === 0 ? '임대료 없음' : `임대료 주 ${formatManwon(r.rentManwon)}`,
   ]
+  // 임대료 바로 다음 — "돈 되는 과가 오는가"가 입지 선택의 절반이라, 나갈 돈 옆에 들어올
+  // 환자가 서야 두 값이 한눈에 견줘진다. `null`(전국 표 그대로)이면 아무 말도 안 한다.
+  if (r.deptMix) {
+    const mix = deptMixText(r.deptMix)
+    if (mix) parts.push(mix)
+  }
   if (r.arrivalMul !== 1) parts.push(`외래 ×${r.arrivalMul}`)
   if (r.emergencyMul !== 1) parts.push(`응급 ×${r.emergencyMul}`)
   if (r.lawsuitMul !== 1) parts.push(`소송 ×${r.lawsuitMul}`)

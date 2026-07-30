@@ -222,20 +222,33 @@ function freeSeat(
   return null
 }
 
-function maybeArrive(w: SimWorld, regions: readonly Region[]): SimWorld {
-  // 실효 구간은 분 1~479다 — tick이 minute을 먼저 올리고 부르므로 0분은 판정 자체가 없고,
-  // 480분은 창이 닫힌 쪽이다(경계 테스트가 이 두 끝을 잠근다).
-  if (w.minute >= ARRIVAL_WINDOW_MIN) return w
-  // 분마다 독립 판정 — 이래야 도착이 몰릴 때 몰리고(대기열이 생기고) 빌 때 빈다.
-  // 오늘의 이벤트 배율이 여기서 곱해진다(events.arrivalProbMulOf) — 이벤트가 없으면 1이라
-  // **평일의 도착 스트림은 이 훅이 붙기 전과 완전히 같다**(기존 결정론 테스트가 그걸 잠근다).
-  // 시드가 아니라 **문턱**을 곱하는 것이 핵심이다: 시드를 흔들면 이벤트 유무가 도착 시각의
-  // 배열 자체를 바꿔 "평일 대비 몇 배"를 잴 수 없고, 문턱을 올리면 평일 도착이 부분집합으로 남는다.
-  // 지역 배율도 **같은 자리에 곱으로 중첩된다**(world.REGIONS) — 같은 이유로 도착 분 집합이
-  // RURAL(0.7) ⊂ URBAN(1.0) ⊂ NEWTOWN(1.2)의 부분집합 관계로 남는다. URBAN이 1이라
-  // 기본 세계의 도착 스트림은 이 훅이 붙기 전과 완전히 같다(기존 결정론 회귀 보존).
+/**
+ * 이 분에 외래 환자가 문을 들어서는가 — **도착 문턱 판정의 단일 출처**. 좌석·과·의사는 안 본다
+ * (그건 들어선 뒤의 이야기다). 응급 축의 `emergency.emergencyArrivalAt`과 같은 자리이고,
+ * 같은 이유로 **export 한다**: 배율의 *크기*를 재려면 40,320분 전수 표본이 필요한데 tick 경로로는
+ * 하루치가 한계라(patientFlow.test 「건수가 카탈로그 배율에 붙는다」) 판정만 따로 부를 수 있어야
+ * 한다. 테스트가 문턱 공식을 복제하면 훅을 통째로 떼어내도 초록으로 남는다.
+ *
+ * 실효 구간은 분 1~479다 — tick이 minute을 먼저 올리고 부르므로 0분은 판정 자체가 없고,
+ * 480분은 창이 닫힌 쪽이다(경계 테스트가 이 두 끝을 잠근다).
+ *
+ * 분마다 독립 판정 — 이래야 도착이 몰릴 때 몰리고(대기열이 생기고) 빌 때 빈다.
+ * 오늘의 이벤트 배율이 여기서 곱해진다(events.arrivalProbMulOf) — 이벤트가 없으면 1이라
+ * **평일의 도착 스트림은 이 훅이 붙기 전과 완전히 같다**(기존 결정론 테스트가 그걸 잠근다).
+ * 시드가 아니라 **문턱**을 곱하는 것이 핵심이다: 시드를 흔들면 이벤트 유무가 도착 시각의
+ * 배열 자체를 바꿔 "평일 대비 몇 배"를 잴 수 없고, 문턱을 올리면 평일 도착이 부분집합으로 남는다.
+ * 지역 배율도 **같은 자리에 곱으로 중첩된다**(world.REGIONS) — 같은 이유로 도착 분 집합이
+ * RURAL(0.7) ⊂ URBAN(1.0) ⊂ NEWTOWN(1.2)의 부분집합 관계로 남는다. URBAN이 1이라
+ * 기본 세계의 도착 스트림은 이 훅이 붙기 전과 완전히 같다(기존 결정론 회귀 보존).
+ */
+export function arrivalAt(w: SimWorld): boolean {
+  if (w.minute >= ARRIVAL_WINDOW_MIN) return false
   const threshold = ARRIVAL_PROB_PER_MIN * arrivalProbMulOf(w) * simRegion(w.region).arrivalMul
-  if (seededUnit(arrivalSeed(w)) >= threshold) return w
+  return seededUnit(arrivalSeed(w)) < threshold
+}
+
+function maybeArrive(w: SimWorld, regions: readonly Region[]): SimWorld {
+  if (!arrivalAt(w)) return w
   // 무엇을 보러 왔는가는 문을 들어서는 순간 정해지고 이후 바뀌지 않는다. 시드는 (판·주·날·분)의
   // 순수 함수라 **호출 순서에 의존하지 않는다** — 발길을 돌린 사람 몫을 건너뛰어도 뒤 환자의
   // 과가 밀리지 않는다(순차 소비형 RNG였다면 좌석 수가 과 분포를 흔들었을 것이다).
