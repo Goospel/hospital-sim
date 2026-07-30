@@ -12,6 +12,7 @@ import {
 import { FATIGUE_MAX } from "@/game/doctor";
 import { GRID_W, GRID_H, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions, type Region } from "@/sim/regions";
+import Backdrop from "./Backdrop";
 import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, NurseSprite, PatientSprite } from "./PixelSprite";
 import {
   busyDoctorIds,
@@ -516,6 +517,12 @@ export default function TileMap({
           onTileCancel?.();
         }}
       >
+        {/* 부지 밖 풍경 — **첫 자식**이라 지형·가구·폰 전부가 그 위에 선다. 부지 안쪽은 이
+            캔버스가 투명하게 비워 두므로(Backdrop.drawBackdrop) 이 div의 바닥색과 격자가
+            그 구멍으로 그대로 비친다. 지역·배경은 세계가 든 값을 그대로 읽는다 — 같은 값을
+            props로 한 번 더 받으면 world와 갈릴 자리가 생긴다(가구·폰과 같은 규약). */}
+        <Backdrop region={world.region} variant={world.backdrop} />
+
         {/* 지형(벽·문·영역 바닥·라벨) — 위 useMemo가 만든다. */}
         {terrain}
 

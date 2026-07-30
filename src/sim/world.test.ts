@@ -27,6 +27,27 @@ describe('createWorld', () => {
     expect(w.seed).toBe(7)
     expect(w.minute).toBe(0)
   })
+
+  it('지역·배경 기본값 — 인자를 안 주면 도심(URBAN)의 0번 배경이다', () => {
+    // 두 번째 인자는 **가산**이다 — 기존 호출부(테스트·픽스처 전부)가 무변이어야 한다.
+    const w = createWorld(1)
+    expect(w.region).toBe('URBAN')
+    expect(w.backdrop).toBe(0)
+  })
+
+  it('지역·배경은 준 대로 저장된다 — 새 판을 여는 UI가 정한 값이 그대로 세계가 된다', () => {
+    const w = createWorld(1, { region: 'RURAL', backdrop: 2 })
+    expect(w.region).toBe('RURAL')
+    expect(w.backdrop).toBe(2)
+  })
+
+  it('배경 번호가 0..2 밖이면 **0으로 떨어진다** — 조용한 NaN·음수 인덱스로 새지 않는다', () => {
+    // 폴백을 고른 이유: 나머지 연산은 음수에서 음수를 낳고(-1 % 3 === -1) clamp는 3과 99를
+    // 서로 다른 뜻으로 보존한다. 후보 3종은 **동등**하므로 잘못된 값에는 뜻이 없다 — 0이 맞다.
+    for (const bad of [3, -1, 1.5, Number.NaN]) {
+      expect(createWorld(1, { backdrop: bad }).backdrop).toBe(0)
+    }
+  })
 })
 
 describe('isWalkable', () => {

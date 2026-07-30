@@ -21,6 +21,20 @@ export const ENTRANCE: Pt = { x: 24, y: GRID_H - 1 }
  *  호출부가 `y * GRID_W + x`를 다시 쓰면 어느 한 곳이 바뀌는 날 조용히 갈린다. */
 export const tileIndex = (x: number, y: number): number => y * GRID_W + x
 
+/**
+ * 부지가 선 **입지** — 새 판을 열 때 플레이어가 고르는 유일한 값이다.
+ *
+ * ⚠️ `src/game/types.ts`의 `RegionKey`(CAPITAL/METRO/RURAL)와 **이름을 공유하지 않는다** — 그쪽은
+ * 전국 세계 시뮬의 권역이고 이쪽은 병원이 선 자리다. 뜻이 다른 두 축에 같은 이름을 주면 나중에
+ * 매핑이 생기는 날 어느 쪽 RURAL인지 읽는 사람이 못 가린다(그래서 METRO를 값에서도 뺐다).
+ *
+ * **이번 슬라이스에서 이 값은 규칙에 하나도 안 닿는다** — 배경을 고르는 데만 쓰인다.
+ */
+export type SimRegionKey = 'URBAN' | 'NEWTOWN' | 'PROVINCIAL' | 'RURAL'
+
+/** 지역당 배경 후보 수 — 12종 카탈로그(Backdrop.tsx)가 지역마다 이만큼 든다. */
+export const BACKDROP_COUNT = 3
+
 export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION' | 'CAFETERIA'
 
 /** 용도 앵커 — "이 좌표가 속한 방은 이 용도다". 방이 아니라 **타일**을 가리키는 것이 핵심이다:
@@ -106,6 +120,13 @@ export interface SimWorld {
    * 단조 증가하는 축은 이 층에 산다 — `turnedAwayTotal`과 같은 계약이다(*떠난 일은 남는다*).
    */
   nursesResignedTotal: number
+  /** 부지가 선 지역 — 이번 슬라이스에서는 **배경 선택에만** 쓰인다(환자·수가·채용 무영향). */
+  region: SimRegionKey
+  /** 그 지역 안에서 뽑힌 배경 변형(0..2) — 새 판을 열 때 한 번 정해지고 그 뒤 불변.
+   *  시드에서 파생하지 않는 이유는 시드가 1로 고정돼 있어서다(SimGame) — 파생하면 지역마다
+   *  배경이 영영 한 장으로 굳는다. 무작위는 시뮬 밖(새 판 클릭 핸들러)에서 한 번 일어나고
+   *  결과만 여기 저장되므로, 세계가 만들어진 뒤는 지금까지와 똑같이 결정론이다. */
+  backdrop: number
 }
 
 export interface SimStats {
@@ -149,13 +170,28 @@ export function freshStats(): SimStats {
   }
 }
 
-export function createWorld(seed: number): SimWorld {
+/**
+ * 배경 번호를 0..2로 **떨어뜨린다** — 범위 밖은 뜻이 없으므로 0이다.
+ *
+ * clamp도 나머지 연산도 아닌 것이 결정이다: 나머지는 음수에서 음수를 낳아(-1 % 3 === -1) 캔버스가
+ * 없는 인덱스를 그리려 들고, clamp는 3과 99를 서로 다른 뜻으로 보존한다 — 후보 3종은 **동등**해서
+ * 잘못된 값에 담을 뜻이 없다. NaN·소수도 같은 문에서 걸린다(조용히 undefined로 새지 않는다).
+ */
+const safeBackdrop = (v: number | undefined): number =>
+  Number.isInteger(v) && (v as number) >= 0 && (v as number) < BACKDROP_COUNT ? (v as number) : 0
+
+/** 새 세계 — 두 번째 인자는 **가산**이다(생략하면 도심 0번, 기존 호출부 전부 무변). */
+export function createWorld(
+  seed: number,
+  start?: { region?: SimRegionKey; backdrop?: number },
+): SimWorld {
   return {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
     walls: new Set(), doors: new Set(), designations: [],
     furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
     hirePool: freshHirePool(), turnedAwayTotal: 0, nursesResignedTotal: 0,
+    region: start?.region ?? 'URBAN', backdrop: safeBackdrop(start?.backdrop),
   }
 }
 
