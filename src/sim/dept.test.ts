@@ -127,7 +127,8 @@ describe('hireDoctor', () => {
     const base = createWorld(1)
     const blockedEntrance = {
       ...base,
-      furniture: [{ kind: 'BED' as const, x: ENTRANCE.x, y: ENTRANCE.y, roomId: 'ghost' }],
+      // 침대가 아니라 **책상**이다 — 침대는 이제 통행을 막지 않는다(그 위에 눕는다 · world.blocksWalk).
+      furniture: [{ kind: 'DESK' as const, x: ENTRANCE.x, y: ENTRANCE.y, roomId: 'ghost' }],
     }
     const w = hire(blockedEntrance, 'GENERAL_SURGERY')
     const at = { x: w.pawns[0].x, y: w.pawns[0].y }

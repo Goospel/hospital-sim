@@ -28,8 +28,9 @@ export const ptKey = (p: Pt) => `${p.x},${p.y}`
 /** 4방향 탐색 순서 — findPath의 DIRS와 같은 (위·우·아래·좌). 이 순서가 결정론의 일부다. */
 const NEIGHBORS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
 
-/** 앉는 자리(= 통행을 막지 않는 가구 = 의자) 타일 — **서 있을 자리에서 빼는 집합**이다.
- *  종류를 여기서 세지 않고 `world.blocksWalk`를 되묻는 것이 계약이다(판정의 단일 출처). */
+/** 몸을 얹는 자리(= 통행을 막지 않는 가구 = 의자·침대) 타일 — **서 있을 자리에서 빼는 집합**이다.
+ *  종류를 여기서 세지 않고 `world.blocksWalk`를 되묻는 것이 계약이다(판정의 단일 출처) — 침대가
+ *  그 집합에 합류한 날 이 함수가 저절로 따라온 것이 그 계약의 값이다(의사는 침대에도 안 선다). */
 export function seatTiles(w: SimWorld): Set<number> {
   const out = new Set<number>()
   for (const f of w.furniture) if (!blocksWalk(f)) out.add(tileIndex(f.x, f.y))
@@ -116,9 +117,28 @@ export function examSlots(
       if (!chair || paired.has(key)) continue
       const patientSpot = occupySpot(blocked, chair) // 환자는 **의자 위**에 앉는다
       if (!patientSpot) continue // 앞이 막힌 가구는 짝으로 잡지 않는다 — 다음 의자를 본다
-      // ⓘ 두 스팟이 겹칠 수는 없다 — 의사스팟은 `seats`를 건너뛰고 환자스팟은 언제나 의자다.
+      // ⓘ 두 스팟이 겹칠 수는 없다 — 의사스팟은 `seats`를 건너뛰고 환자스팟은 언제나 의자다
+      //   (아래 2패스가 의사를 의자에 앉힐 때도 **아직 짝이 없는** 의자만 집으므로 그대로다).
       paired.add(key)
       out.push({ desk, chair, doctorSpot, patientSpot })
+      break
+    }
+  }
+  /* 2패스 — 짝짓고 **남은** 인접 의자를 의사에게 준다. 사용자 보고 *"의사가 의자에 앉지 않는다"*가
+     여기 있었다: 의사스팟은 정의상 `seats`를 건너뛰므로(위 standSpot) 의자가 아무리 많아도
+     의사는 영영 선 채였다.
+
+     ⚠️ **패스를 나누는 것이 계약이다.** 책상 하나를 처리하며 곧바로 남는 의자를 의사에게 주면
+     그 의자가 뒤 책상의 **환자 의자였을 수** 있어, 진료실 정원이 조용히 줄어든다(책상 수 = 정원이
+     이 파일의 계약이고, 앉는 연출이 그 규칙을 깎아서는 안 된다). 환자 짝짓기를 전부 끝낸 뒤에
+     남은 것만 집으면 정원은 정의상 무변이다 — spots.test.ts의 「정원을 깎지 않는다」가 그 경로를 잰다. */
+  for (const slot of out) {
+    for (const d of NEIGHBORS) {
+      const key = ptKey({ x: slot.desk.x + d.x, y: slot.desk.y + d.y })
+      const chair = chairs.get(key)
+      if (!chair || paired.has(key)) continue
+      paired.add(key)
+      slot.doctorSpot = chair
       break
     }
   }
@@ -137,21 +157,40 @@ export function furnitureSpots(
   blocked: Set<number> = buildBlockedSet(w),
   regions: readonly Region[] = computeRegions(w),
 ): Pt[] {
-  // 기본값이 있어도 **호출부가 넘기는 것이 기본 경로**다(설계 §1-2) — 틱 하나가 이 함수를
-  // 여러 번 지나므로, 매번 flood fill을 새로 돌면 같은 답을 인원수만큼 다시 계산한다.
-  // 폴백을 남기는 것은 테스트·단발 조회용이고, 그때도 답은 같다(순수 함수).
-  const inType = new Set<number>()
-  for (const r of regions) if (r.type === roomType) for (const t of r.tiles) inType.add(t)
   const seen = new Set<string>()
   const out: Pt[] = []
-  // 순회는 여전히 **furniture 배열 순서**(= 설치 순서)다 — 영역을 먼저 훑어 그 안의 가구를
-  // 모으면 순서가 좌표 정렬로 바뀌어, 좌석이 모자랄 때 누가 먼저 앉는지가 조용히 달라진다.
-  for (const f of w.furniture) {
-    if (f.kind !== kind || !inType.has(tileIndex(f.x, f.y))) continue
+  for (const f of furnitureIn(w, roomType, kind, regions)) {
     const spot = occupySpot(blocked, f)
     if (!spot || seen.has(ptKey(spot))) continue
     seen.add(ptKey(spot))
     out.push(spot)
+  }
+  return out
+}
+
+/**
+ * 그 종류의 방에 놓인 그 가구의 **타일 그 자체** — `furnitureSpots`의 앞 절반이다.
+ *
+ * 따로 열어 둔 이유는 수납 창구다(patientFlow.cashierSlots): 카운터는 **양쪽**에 자리를 내므로
+ * "가구 하나 = 자리 하나"인 위 함수로는 물을 수 없고, 그렇다고 열거를 거기서 다시 적으면
+ * 방 종류 필터와 **순회 순서**(= 설치 순서)가 두 곳이 된다.
+ *
+ * 기본값이 있어도 **호출부가 넘기는 것이 기본 경로**다(설계 §1-2) — 틱 하나가 이 함수를
+ * 여러 번 지나므로, 매번 flood fill을 새로 돌면 같은 답을 인원수만큼 다시 계산한다.
+ * 폴백을 남기는 것은 테스트·단발 조회용이고, 그때도 답은 같다(순수 함수).
+ */
+export function furnitureIn(
+  w: SimWorld, roomType: RoomType, kind: FurnitureKind,
+  regions: readonly Region[] = computeRegions(w),
+): Pt[] {
+  const inType = new Set<number>()
+  for (const r of regions) if (r.type === roomType) for (const t of r.tiles) inType.add(t)
+  const out: Pt[] = []
+  // 순회는 **furniture 배열 순서**(= 설치 순서)다 — 영역을 먼저 훑어 그 안의 가구를
+  // 모으면 순서가 좌표 정렬로 바뀌어, 좌석이 모자랄 때 누가 먼저 앉는지가 조용히 달라진다.
+  for (const f of w.furniture) {
+    if (f.kind !== kind || !inType.has(tileIndex(f.x, f.y))) continue
+    out.push({ x: f.x, y: f.y })
   }
   return out
 }

@@ -293,6 +293,20 @@ export default function TileMap({
     () => new Set(world.furniture.filter((f) => f.kind === "CHAIR").map((f) => `${f.x},${f.y}`)),
     [world.furniture],
   );
+  /* 침대 타일 — 의자와 같은 이유의 같은 집합이다. 시뮬에서 "눕는다"도 그 칸에 서는 것이라
+     (world.blocksWalk에 침대가 합류한 뒤로) **화면이 눕혀 그리지 않으면 서 있는 것과 구별되지
+     않는다** — 사용자 보고 *"응급 환자가 침대에 눕지 않고 옆에 서 있다"*를 고친 자리가 시뮬과
+     이 두 곳이고, 한쪽만 가면 고치기 전과 같아 보인다. */
+  const bedTiles = useMemo(
+    () => new Set(world.furniture.filter((f) => f.kind === "BED").map((f) => `${f.x},${f.y}`)),
+    [world.furniture],
+  );
+  /* 지금 누가 누워 있는 침대 — 매트리스 색이 갈린다(BedSprite.occupied). 폰이 타일을 거의 다
+     덮으므로 이 단서는 **가장자리**에서만 보이지만, 그래서 스프라이트를 줄여 그린다(아래 회전). */
+  const occupiedTiles = useMemo(
+    () => new Set(world.pawns.map((p) => `${p.x},${p.y}`)),
+    [world.pawns],
+  );
 
   // 진료 중인 의사 — 환자의 doctorId가 "바쁨"의 단일 출처다(patientFlow와 같은 규칙).
   // 집합을 만드는 식 자체도 simHud가 든다: 인사 패널이 태업 판정에 같은 집합을 쓰므로
@@ -557,7 +571,7 @@ export default function TileMap({
             ) : f.kind === "CHAIR" ? (
               <ChairSprite />
             ) : f.kind === "BED" ? (
-              <BedSprite occupied={false} />
+              <BedSprite occupied={occupiedTiles.has(`${f.x},${f.y}`)} />
             ) : (
               <CounterSprite />
             )}
@@ -576,6 +590,8 @@ export default function TileMap({
           // 앉음의 단일 출처는 **좌표**이고(시뮬이 그렇게 정한다), 필드를 따로 들면 자리를 뜨는
           // 순간 되돌리는 걸 잊어 서 있는 폰이 영영 앉은 채로 그려진다.
           const seated = seatTiles.has(`${p.x},${p.y}`);
+          // 누움도 **좌표가 단일 출처**다(앉음과 같은 계약 — 폰에 자세 필드를 두지 않는다).
+          const lying = bedTiles.has(`${p.x},${p.y}`);
           return (
           <div
             key={p.id}
@@ -610,13 +626,21 @@ export default function TileMap({
             {/* 간호사가 **먼저**다 — 과가 없어서(pawn.hireNurse) 아래 의사 분기의 `p.dept`
                 조건에 걸리지 않으면 그대로 환자로 그려진다(익명 회색). 종류를 명시로 갈라
                 그 폴백에 안 얹는 것이 계약이다. */}
-            {p.kind === "NURSE" ? (
-              <NurseSprite variantKey={p.id} />
-            ) : p.kind === "DOCTOR" && p.dept ? (
-              <DoctorSprite dept={p.dept} busy={busyDoctors.has(p.id)} variantKey={p.id} />
-            ) : (
-              <PatientSprite />
-            )}
+            {/* 누운 자세 — **가로로 눕히고 조금 줄인다**. 회전만으로는 8×8 실루엣이 서 있는 것과
+                거의 같아 보이고(머리가 위인 건 매한가지다), 줄이지 않으면 폰이 타일을 꽉 채워
+                침대가 통째로 가려 "무엇 위에 누웠는지"가 사라진다 — 의자에 SEAT_LIFT가 필요했던
+                것과 정확히 같은 문제이고, 침대는 눕는 가구라 들어 올리는 대신 눕혀 줄인다.
+                래퍼는 자세와 무관하게 **늘 있다** — 조건부로 감싸면 React 트리가 갈려 이동
+                transition이 remount로 끊긴다(이 파일 머리말의 폰 규칙). */}
+            <div className="absolute inset-0" style={{ transform: lying ? "rotate(90deg) scale(0.8)" : undefined }}>
+              {p.kind === "NURSE" ? (
+                <NurseSprite variantKey={p.id} />
+              ) : p.kind === "DOCTOR" && p.dept ? (
+                <DoctorSprite dept={p.dept} busy={busyDoctors.has(p.id)} variantKey={p.id} />
+              ) : (
+                <PatientSprite />
+              )}
+            </div>
             {/* 피로 막대 — 의사 머리 위. 기존 게임 FatigueBar의 표현 계승(저=회백 / 중=밝음 /
                 고=적)이고 경계 판정은 simHud.fatigueTone 하나가 진다. 색이 아니라 **길이**가
                 판정을 나르는 것도 그대로다 — 흑백으로 찍어도 읽힌다. */}

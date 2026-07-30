@@ -168,9 +168,11 @@ interface BreakDef {
   going: NonNullable<Pawn['activity']>
   /** 자리에 **앉아 하는 중**인 상태 이름 */
   doing: NonNullable<Pawn['activity']>
-  /** 그 자리가 있는 방과 가구 — 없는 병원에서는 이 욕구가 통째로 성립하지 않는다 */
+  /** 그 자리가 있는 방과 가구 — 없는 병원에서는 이 욕구가 통째로 성립하지 않는다.
+   *  가구가 **배열인 것은 휴게실의 당직 침대 때문**이고, **그 순서가 곧 선호**다(앞이 먼저 찬다):
+   *  침대를 놓고도 의자가 다 찰 때까지 아무도 안 누우면 그 300만원은 화면에서 아무 말도 못 한다. */
   roomType: RoomType
-  furnitureKind: FurnitureKind
+  furnitureKinds: readonly FurnitureKind[]
   durationMin: number
   /**
    * 이 갈래를 끄고 켜는 **우선순위 축** — 없으면 토글이 없는 갈래다.
@@ -205,7 +207,8 @@ interface BreakDef {
  */
 const REST_BREAK: BreakDef = {
   going: 'TO_LOUNGE', doing: 'RESTING',
-  roomType: 'LOUNGE', furnitureKind: 'CHAIR',
+  // 침대가 앞이다 — 당직실의 침대는 "의자가 다 차면 쓰는 예비석"이 아니라 **눕는 자리**다.
+  roomType: 'LOUNGE', furnitureKinds: ['BED', 'CHAIR'],
   durationMin: REST_BREAK_MIN,
   priority: 'rest',
   wants: restThresholdReached,
@@ -214,7 +217,8 @@ const REST_BREAK: BreakDef = {
 
 const MEAL_BREAK: BreakDef = {
   going: 'TO_MEAL', doing: 'EATING',
-  roomType: 'CAFETERIA', furnitureKind: 'CHAIR',
+  // 식당에는 침대를 두지 않는다 — 밥은 앉아서 먹는다(자리 종류가 곧 그 방의 뜻이다).
+  roomType: 'CAFETERIA', furnitureKinds: ['CHAIR'],
   durationMin: MEAL_MIN,
   // `priority` 칸이 **없다** — 식사는 플레이어가 끌 수 없다(위 BreakDef.priority 주석).
   wants: wantsMealNow,
@@ -415,15 +419,18 @@ function maybeStartBreak(w: SimWorld, p: Pawn, ctx: StepCtx): Pawn {
   for (const def of BREAKS) {
     // 임계 **그리고** 토글 — 0으로 끈 갈래는 자리가 비어 있어도 통째로 건너뛴다(breakActive).
     if (!breakActive(def, p)) continue
-    for (const spot of furnitureSpots(w, def.roomType, def.furnitureKind, ctx.blocked, ctx.regions)) {
-      if (ctx.taken.has(ptKey(spot))) continue
-      // 첫 후보가 도달 불가라고 여기서 끝내지 않는다 — 봉인된 휴게실 하나가 멀쩡한 다른
-      // 휴게실을 통째로 가려 아무도 못 쉬게 되고, 철거가 없어 세션 내 비가역이다
-      // (patientFlow.freeSeat의 선례). 정상 상황에선 첫 후보가 곧바로 닿는다.
-      const path = findPath(w, { x: p.x, y: p.y }, spot)
-      if (!path) continue
-      ctx.taken.add(ptKey(spot))
-      return { ...p, activity: def.going, dest: spot, path }
+    // 가구 종류도 **표 순서대로** 훑는다 — 갈래 순서와 같은 규칙이라 읽는 규칙이 하나뿐이다.
+    for (const kind of def.furnitureKinds) {
+      for (const spot of furnitureSpots(w, def.roomType, kind, ctx.blocked, ctx.regions)) {
+        if (ctx.taken.has(ptKey(spot))) continue
+        // 첫 후보가 도달 불가라고 여기서 끝내지 않는다 — 봉인된 휴게실 하나가 멀쩡한 다른
+        // 휴게실을 통째로 가려 아무도 못 쉬게 되고, 철거가 없어 세션 내 비가역이다
+        // (patientFlow.freeSeat의 선례). 정상 상황에선 첫 후보가 곧바로 닿는다.
+        const path = findPath(w, { x: p.x, y: p.y }, spot)
+        if (!path) continue
+        ctx.taken.add(ptKey(spot))
+        return { ...p, activity: def.going, dest: spot, path }
+      }
     }
   }
   return p

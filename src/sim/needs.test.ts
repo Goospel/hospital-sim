@@ -3,6 +3,7 @@ import { createWorld, tileIndex, type SimWorld } from './world'
 import { computeRegions } from './regions'
 import { PAWN_TILES_PER_MIN, type Pawn } from './pawn'
 import { hire, FURNITURE_OF, placeRoom } from './testHelpers'
+import { demolish, placeFurniture } from './build'
 import { buildBlockedSet, findPath } from './path'
 import { tick } from './tick'
 import { freshMorning } from './day'
@@ -75,6 +76,8 @@ function deskSpot(w: SimWorld, p: Pawn = doctorOf(w)) {
 }
 
 const loungeSeats = (w: SimWorld) => furnitureSpots(w, 'LOUNGE', 'CHAIR')
+/** 휴게실의 **당직 침대** 자리 — 의자와 같은 기계(furnitureSpots)로 열린다. */
+const loungeBeds = (w: SimWorld) => furnitureSpots(w, 'LOUNGE', 'BED')
 const mealSeats = (w: SimWorld) => furnitureSpots(w, 'CAFETERIA', 'CHAIR')
 
 /** 그 자리까지 길이 있는가 — 봉인 테스트의 전제를 실제로 확인한다(구현과 같은 findPath). */
@@ -105,6 +108,22 @@ function restWorld(
     return !!d.deskAt && !!d.dest && d.x === d.dest.x && d.y === d.dest.y
   }, 90)
   return { ...w, minute: ARRIVAL_WINDOW_MIN }
+}
+
+/**
+ * LOUNGE_1에 **당직 침대**를 놓은 세계 — 침대는 늘 (17,8)이고, 자동 배치 의자(17,7)는 옵션이다.
+ * 둘을 함께 두면 "무엇에 먼저 눕는가"(BREAKS의 가구 순서)가 관측된다.
+ */
+function loungeBedWorld({ chair = false, seed = 3 } = {}): SimWorld {
+  let w = restWorld({ seed })
+  if (!chair) {
+    const gone = demolish(w, [{ x: 17, y: 7 }])
+    if (!gone.ok) throw new Error(`전제 실패 — 의자 철거 거부(${gone.reason})`)
+    w = gone.world
+  }
+  const bed = placeFurniture(w, 'BED', [{ x: 17, y: 8 }])
+  if (!bed.ok) throw new Error(`전제 실패 — 침대 설치 거부(${bed.reason})`)
+  return bed.world
 }
 
 /** 모든 의사의 피로를 못박는다 — 임계 근처를 손으로 세워야 경계가 관측된다. */
@@ -204,6 +223,33 @@ describe('휴식 — 개시·전이·종료', () => {
     expect(doc.activity).toBeUndefined()
     expect(doc.fatigue).toBe(FATIGUE_RED)
     expect(at(doc)).toEqual(before)
+  })
+
+  it('휴게실 침대에 **눕는다** — 의자가 없어도 쉴 수 있다(당직실)', () => {
+    // 사용자 요구: *"휴게실에도 침대를 놓았다. 당직 서는 의사들은 휴게실에서 잔다."*
+    // 자리 계산은 의자와 **같은 기계**다(furnitureSpots) — 갈리는 것은 가구 종류 하나뿐이라,
+    // 침대가 통행을 안 막게 된 뒤로는 그 위가 곧 자리(= 누운 자리)다.
+    let w = tired(loungeBedWorld({ chair: false }), FATIGUE_RED)
+    expect(loungeSeats(w)).toEqual([])              // 전제: 의자가 없는 당직실
+    const bed = loungeBeds(w)[0]
+    expect(bed).toEqual({ x: 17, y: 8 })            // 전제: 자리 = 침대 타일 그 자체
+
+    w = tick(w, 1)
+    expect(doctorOf(w).activity).toBe('TO_LOUNGE')
+    expect(doctorOf(w).dest).toEqual(bed)
+
+    w = until(w, x => doctorOf(x).activity === 'RESTING')
+    expect(at(doctorOf(w))).toEqual(bed)            // 침대 위에 있다 = 누웠다
+    w = run(w, REST_BREAK_MIN)
+    expect(doctorOf(w).fatigue).toBe(FATIGUE_RED - REST_BREAK_RECOVER) // 회복은 의자와 같다
+  })
+
+  it('의자와 침대가 다 있으면 **침대에 먼저 눕는다** — 당직실의 침대는 장식이 아니다', () => {
+    // 순서를 뒤집으면(의자 먼저) 침대는 의자가 다 찰 때까지 영영 비어 있다 — 300만원짜리
+    // 가구를 놓고도 화면에 아무 변화가 없다는 뜻이라, 이 순서가 곧 그 지출의 대가다.
+    const w = tick(tired(loungeBedWorld({ chair: true }), FATIGUE_RED), 1)
+    expect(loungeSeats(w)).toHaveLength(1)          // 전제: 의자도 있다
+    expect(doctorOf(w).dest).toEqual(loungeBeds(w)[0])
   })
 
   it('의자 하나에 둘이 앉지 않는다 — 좌석 점유는 다른 의사의 dest로 판정된다', () => {

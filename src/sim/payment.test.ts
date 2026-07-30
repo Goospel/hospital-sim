@@ -14,7 +14,7 @@ import { hire, placeRoom } from './testHelpers'
 import { tick } from './tick'
 import { DAY_END_MIN, settleDay, startNextDay } from './day'
 import { simDept, deptRevenueSum } from './dept'
-import { ARRIVAL_WINDOW_MIN, EXAM_DURATION_MIN, cashierSpots, hasCashier } from './patientFlow'
+import { ARRIVAL_WINDOW_MIN, EXAM_DURATION_MIN, cashierSlots, hasCashier } from './patientFlow'
 import { emergencySpec } from './emergency'
 import { NURSE_WEEKLY_COST_MANWON, resigningSimDoctors, weekSummary } from './week'
 import { resigningNurses } from './nurse'
@@ -115,9 +115,56 @@ describe('hasCashier — 수납 판정의 단일 출처', () => {
   })
 
   it('카운터 앞 타일이 곧 수납 자리다 — 카운터는 통행을 막으므로 그 위가 아니다', () => {
+    // 자동 배치 카운터는 접수처 **내부 좌상단**이라 위·왼쪽이 벽이다 — 마주 볼 짝이 없어
+    // 폴백(한 칸을 둘이 쓴다)으로 떨어진다. 그 폴백이 옛 계약과 같은 좌표임을 여기서 못박는다.
     const w = clinic()
-    const spots = cashierSpots(w, buildBlockedSet(w), computeRegions(w))
-    expect(spots).toEqual([{ x: 30, y: 21 }])
+    const slots = cashierSlots(w, buildBlockedSet(w), computeRegions(w))
+    expect(slots).toEqual([{
+      counter: { x: 29, y: 21 }, nurseSpot: { x: 30, y: 21 }, patientSpot: { x: 30, y: 21 },
+    }])
+  })
+})
+
+describe('cashierSlots — 카운터를 **사이에 두고** 마주 선다', () => {
+  /** 접수처 안(31,22)에 카운터를 하나 더 놓는다 — 위아래가 다 트인 자리다.
+   *  자동 배치 카운터(29,21)의 폴백 자리(30,21)를 피해 x를 한 칸 옮겼다: 한 칸을 두 창구가
+   *  나눠 쓰지 않는 것이 계약이라(cashierSlots의 `used`), 겹치면 세로 짝이 거부되고 가로로 선다. */
+  function midCounter(w: SimWorld, at: Pt = { x: 31, y: 22 }): SimWorld {
+    const r = placeFurniture(w, 'COUNTER', [at])
+    if (!r.ok) throw new Error(`전제 실패 — 카운터 설치 거부(${r.reason})`)
+    return r.world
+  }
+  const slotAt = (w: SimWorld, x: number, y: number) =>
+    cashierSlots(w, buildBlockedSet(w), computeRegions(w)).find(s => s.counter.x === x && s.counter.y === y)!
+
+  it('마주 보는 두 칸이 트여 있으면 간호사와 환자가 **반대편**에 선다', () => {
+    // 사용자 보고: *"환자가 카운터 너머가 아니라 간호사 옆자리로 간다."* 옛 계약은 두 사람이
+    // **같은 한 칸**(카운터 앞 첫 이웃)을 목적지로 삼았다 — 창구가 아니라 손에서 손으로 주는 그림이다.
+    const s = slotAt(midCounter(clinic()), 31, 22)
+    expect(s.nurseSpot).not.toEqual(s.patientSpot)
+    // 환자는 **정문 쪽**(아래)에 선다 — 카운터 너머가 곧 직원 자리라는 그림의 단일 출처다.
+    expect(s.nurseSpot).toEqual({ x: 31, y: 21 })
+    expect(s.patientSpot).toEqual({ x: 31, y: 23 })
+  })
+
+  it('한쪽에 의자가 있으면 **그쪽이 간호사 자리**다 — 앉은 사람이 직원이다', () => {
+    let w = midCounter(clinic())
+    const chair = placeFurniture(w, 'CHAIR', [{ x: 31, y: 23 }]) // 정문 쪽에 의자를 놓는다
+    if (!chair.ok) throw new Error(`전제 실패 — 의자 설치 거부(${chair.reason})`)
+    w = chair.world
+    const s = slotAt(w, 31, 22)
+    expect(s.nurseSpot).toEqual({ x: 31, y: 23 }) // 거리 규칙을 **뒤집는다**
+    expect(s.patientSpot).toEqual({ x: 31, y: 21 })
+  })
+
+  it('간호사는 자기 칸으로 가고, 환자는 그 **맞은편**으로 간다', () => {
+    // 두 좌표가 실제로 라우팅까지 갈라지는가 — 슬롯만 맞고 배정이 옛 표를 보면 화면은 그대로다.
+    const w0 = midCounter(clinic())
+    const s = slotAt(w0, 31, 22)
+    // 자동 배치 카운터(29,21)가 첫 슬롯이라 간호사 하나는 그쪽을 가져간다 — 둘째 간호사가
+    // 이 슬롯의 주인이다(자리는 순서대로 하나씩: assignNurseCounters).
+    const w1 = tick(hireNurse(w0), 1)
+    expect(w1.pawns.filter(p => p.kind === 'NURSE')[1].dest).toEqual(s.nurseSpot)
   })
 })
 

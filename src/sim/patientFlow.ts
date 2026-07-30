@@ -6,7 +6,7 @@
 //  ② 도착 판정은 **위치 == dest**다. `path.length === 0`은 "길이 끊겨 비워진 폰"과 구별되지 않는다.
 //  ③ 경로는 목적지가 정해질 때 1회만 계산한다. 매 분 재탐색하면 findPath(~3ms)가 인원수만큼 곱해진다.
 import { seededUnit, callSeed } from '../game/daysim'
-import { buildBlockedSet, findPath, type Pt } from './path'
+import { buildBlockedSet, findPath, isFreeTile, type Pt } from './path'
 // ENTRANCE(정문)는 world가 단일 출처다 — 격자에서 파생하는 상수이고, 의사의 출근(pawn.hireDoctor)도
 // 같은 문을 쓴다. 여기 두면 하위 모듈인 pawn이 이 파일을 값으로 당겨 레이어가 뒤집힌다.
 import { ENTRANCE, simRegion, tileIndex, type SimWorld } from './world'
@@ -14,7 +14,7 @@ import { ENTRANCE, simRegion, tileIndex, type SimWorld } from './world'
 import { computeRegions, type Region } from './regions'
 // 좌표 파생은 spots.ts가 **단일 출처**다(leaf). 이 파일에 두면 욕구(needs)가 좌석을 찾느라
 // 상위를 값으로 당겨 needs ⇄ patientFlow 순환이 된다 — spots.ts 머리말.
-import { examSlots, furnitureSpots, ptKey, samePt, type ExamSlot } from './spots'
+import { examSlots, furnitureIn, furnitureSpots, ptKey, samePt, standSpot, type ExamSlot } from './spots'
 import { nurseCount, priorityOf, type Pawn, type PatientStage } from './pawn'
 import {
   simDept, addExamToDeptStats, type DeptMix, type SimDeptKey, type SimDeptStats,
@@ -136,14 +136,68 @@ export function wantsDeptOf(p: Pawn): SimDeptKey {
 
 // ─── 수납 ────────────────────────────────────────────────────────────────────
 
-/** 수납 자리 — **접수처 안** 카운터의 앞 통행 타일들(카운터는 `blocksWalk` 참이라 그 위가
- *  아니다 — `occupySpot`이 그 갈림의 단일 출처다). 순서는 furniture 배열 순서(= 설치 순서)라
- *  대기실 좌석·병동 침대와 같은 규칙이고, 간호사가 설 자리와 환자가 갈 자리가 **같은 표**다:
- *  두 곳이 각자 좌표를 뽑으면 간호사가 선 창구와 환자가 가는 창구가 서로 다른 카운터가 된다. */
-export function cashierSpots(
+/** 창구 하나 — 카운터와 그 **양쪽** 자리. 진료 슬롯(`spots.ExamSlot`)과 같은 이유로 한 값이다:
+ *  간호사가 설 자리와 환자가 갈 자리가 따로 계산되면 서로 다른 카운터의 것이 된다. */
+export interface CashierSlot { counter: Pt; nurseSpot: Pt; patientSpot: Pt }
+
+/** 마주 보는 이웃 쌍 — 세로 먼저, 가로 나중. 순서가 결정론의 일부다(위·아래 → 좌·우). */
+const FACING_PAIRS: ReadonlyArray<readonly [Pt, Pt]> = [
+  [{ x: 0, y: -1 }, { x: 0, y: 1 }],
+  [{ x: -1, y: 0 }, { x: 1, y: 0 }],
+]
+
+/** 그 칸이 이 창구의 **직원 쪽**인가 — 의자가 놓였으면 그렇다(앉은 사람이 직원이다). */
+const isSeatTile = (w: SimWorld, t: Pt): boolean =>
+  w.furniture.some(f => f.kind === 'CHAIR' && f.x === t.x && f.y === t.y)
+
+/** 정문에서의 맨해튼 거리 — 어느 쪽이 **손님 쪽**인가의 폴백 기준이다(가까운 쪽이 환자). */
+const fromEntrance = (t: Pt): number => Math.abs(t.x - ENTRANCE.x) + Math.abs(t.y - ENTRANCE.y)
+
+/**
+ * 수납 창구들 — **접수처 안** 카운터마다 하나. 순서는 furniture 배열 순서(= 설치 순서)라
+ * 대기실 좌석·병동 침대와 같은 규칙이다.
+ *
+ * 카운터를 **사이에 두고** 마주 서는 것이 이 함수의 요지다(설계 없음 · 사용자 보고 2026-07-30:
+ * *"환자가 카운터 너머가 아니라 간호사 옆자리로 간다"*). 옛 계약은 `furnitureSpots` 하나로
+ * "카운터 앞 첫 이웃" 한 칸만 냈고, 간호사와 환자가 **그 한 칸을 함께** 목적지로 삼았다 —
+ * 창구가 아니라 손에서 손으로 건네는 그림이었다.
+ *
+ * 어느 쪽이 직원인가는 두 규칙이 순서대로 정한다: ① 의자가 놓인 쪽(앉아 있는 사람이 직원이다)
+ * ② 정문에서 **먼** 쪽(손님은 문에서 가까운 쪽에 선다). ①이 먼저인 것이 플레이어의 손잡이다 —
+ * 카운터 뒤에 의자를 놓는 것으로 창구의 방향을 정할 수 있다.
+ *
+ * ⚠️ **마주 볼 짝이 없으면 옛 계약으로 떨어진다**(두 사람이 한 칸을 쓴다). 벽에 붙은 카운터·
+ * 구석 카운터가 그 경우이고, 폴백이 없으면 그런 카운터가 **창구로 성립하지 않아**
+ * (`hasCashier`가 거짓) 지금까지 돈을 걷던 병원이 조용히 미수 병원이 된다.
+ */
+export function cashierSlots(
   w: SimWorld, blocked: Set<number> = buildBlockedSet(w), regions?: readonly Region[],
-): Pt[] {
-  return furnitureSpots(w, 'RECEPTION', 'COUNTER', blocked, regions)
+): CashierSlot[] {
+  const out: CashierSlot[] = []
+  const used = new Set<string>() // 두 창구가 한 칸을 나눠 쓰면 두 폰이 겹친다(furnitureSpots의 dedupe와 같은 계약)
+  for (const counter of furnitureIn(w, 'RECEPTION', 'COUNTER', regions)) {
+    const pair = FACING_PAIRS
+      .map(([a, b]) => [{ x: counter.x + a.x, y: counter.y + a.y }, { x: counter.x + b.x, y: counter.y + b.y }] as const)
+      .find(([a, b]) => isFreeTile(blocked, a) && isFreeTile(blocked, b) && !used.has(ptKey(a)) && !used.has(ptKey(b)))
+    if (pair) {
+      const [a, b] = pair
+      // ① 의자 쪽이 직원 — 양쪽 다 의자면(드문 배치) ②로 떨어진다.
+      const nurseFirst = isSeatTile(w, a) !== isSeatTile(w, b)
+        ? isSeatTile(w, a)
+        : fromEntrance(a) > fromEntrance(b)
+      const [nurseSpot, patientSpot] = nurseFirst ? [a, b] : [b, a]
+      used.add(ptKey(nurseSpot))
+      used.add(ptKey(patientSpot))
+      out.push({ counter, nurseSpot, patientSpot })
+      continue
+    }
+    // 폴백 — 옛 계약 그대로 한 칸을 둘이 쓴다(그 칸조차 없으면 창구가 아니다).
+    const spot = standSpot(blocked, counter)
+    if (!spot || used.has(ptKey(spot))) continue
+    used.add(ptKey(spot))
+    out.push({ counter, nurseSpot: spot, patientSpot: spot })
+  }
+  return out
 }
 
 /**
@@ -160,7 +214,7 @@ export function cashierSpots(
 export function hasCashier(
   w: SimWorld, blocked: Set<number> = buildBlockedSet(w), regions?: readonly Region[],
 ): boolean {
-  return nurseCount(w.pawns) > 0 && cashierSpots(w, blocked, regions).length > 0
+  return nurseCount(w.pawns) > 0 && cashierSlots(w, blocked, regions).length > 0
 }
 
 /** 끝난 외래 한 건의 **표준강도분**(소요 × 과 강도) — 피로 축적의 입력.
@@ -359,11 +413,11 @@ function assignDoctorDesks(w: SimWorld, regions: readonly Region[]): SimWorld {
 function assignNurseCounters(w: SimWorld, regions: readonly Region[]): SimWorld {
   const nurses = w.pawns.map((p, i) => ({ p, i })).filter(({ p }) => p.kind === 'NURSE')
   if (nurses.length === 0) return w
-  const spots = cashierSpots(w, buildBlockedSet(w), regions)
-  if (spots.length === 0) return w // 창구가 아직 없다 — 있던 자리에 그대로 선다(의사의 "방 없음")
+  const slots = cashierSlots(w, buildBlockedSet(w), regions)
+  if (slots.length === 0) return w // 창구가 아직 없다 — 있던 자리에 그대로 선다(의사의 "방 없음")
   const updates = new Map<number, Pawn>()
   for (const [n, { p, i }] of nurses.entries()) {
-    const spot = spots[n]
+    const spot = slots[n]?.nurseSpot
     // 이미 그 자리를 겨누고 있으면 손대지 않는다 — 매 분 findPath를 다시 돌면(최장 ~3ms)
     // 인원수만큼 곱해져 프레임을 먹는다(이 파일 머리말 규칙 ③).
     if (!spot || (p.dest && samePt(p.dest, spot))) continue
@@ -482,13 +536,14 @@ function progressStages(w: SimWorld, regions: readonly Region[]): SimWorld {
   const keep = (p: Pawn | null) => { if (p) out.push(p) }
   /** 수납 자리 — **처음 필요할 때 한 번만** 계산한다. 진료가 하나도 안 끝나는 분이 대부분이라
    *  분마다 미리 뽑으면 가구 스캔이 공짜로 480번 돈다(`blocked` 집합을 공유하는 것과 같은 결). */
-  let cashier: Pt[] | undefined
+  let cashier: CashierSlot[] | undefined
   const cashierAt = (): Pt | undefined => {
     if (cashier === undefined) {
       const blocked = buildBlockedSet(w)
-      cashier = hasCashier(w, blocked, regions) ? cashierSpots(w, blocked, regions) : []
+      cashier = hasCashier(w, blocked, regions) ? cashierSlots(w, blocked, regions) : []
     }
-    return cashier[0]
+    // **환자 쪽**이다 — 간호사가 선 칸이 아니라 카운터 건너편(cashierSlots 주석).
+    return cashier[0]?.patientSpot
   }
 
   for (const p of w.pawns) {

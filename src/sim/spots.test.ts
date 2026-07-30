@@ -45,11 +45,12 @@ describe('furnitureSpots — 영역 안의 가구를 좌표로 연다', () => {
     expect(furnitureSpots(w, 'WARD', 'CHAIR')).toEqual([{ x: 22, y: 12 }])
   })
 
-  it('침대는 여전히 **앞에 선다** — 앉는 가구만 그 위에 오른다', () => {
-    // 의자와 침대를 한 규칙으로 접지 않는 것이 계약이다: 통행을 막는가(blocksWalk)가 갈림의
-    // 기준이고, 침대는 막으므로 옛 계약(앞 통행 타일) 그대로다.
+  it('침대는 **그 위에 눕는다** — 의자와 같은 규칙이다(막지 않는 가구)', () => {
+    // 갈림의 기준은 여전히 종류가 아니라 막힘(blocksWalk)이다. 침대가 그 집합에서 빠진 것은
+    // 사용자 보고 *"응급 환자가 침대에 눕지 않고 옆에 서 있다"* 때문이고, 누움을 표현할 자리가
+    // 타일뿐이라 막힘을 푸는 것이 곧 기능이다(의자가 앉음을 얻은 그 경로 그대로).
     const w = twoRooms([{ kind: 'BED', x: 22, y: 12 }])
-    expect(furnitureSpots(w, 'WARD', 'BED')).toEqual([{ x: 22, y: 11 }])
+    expect(furnitureSpots(w, 'WARD', 'BED')).toEqual([{ x: 22, y: 12 }])
   })
 
   it('마당(둘러싸이지 않은 곳)에 놓인 가구는 어느 용도로도 열리지 않는다', () => {
@@ -72,15 +73,22 @@ describe('furnitureSpots — 영역 안의 가구를 좌표로 연다', () => {
     expect(furnitureSpots(w, 'WAITING', 'CHAIR')).toEqual([{ x: 13, y: 13 }, { x: 12, y: 11 }])
   })
 
-  it('앞 타일이 겹치는 **침대**는 자리 하나로 친다 — dedupe 안전망은 살아 있다', () => {
-    // 겹침 방지의 1차 방어는 배치(간격)에 있고 이건 모듈 경계를 넘는 안전망이다. 의자는 자리가
-    // 그 타일이라 이제 겹칠 수가 없지만, **앞 타일을 쓰는 가구는 여전히 겹칠 수 있다** — 그
-    // 경로가 살아 있음을 여기서 잠근다(안 잠그면 두 환자가 한 칸에 포개진다).
+  it('앞 타일이 겹치는 **카운터**는 자리 하나로 친다 — dedupe 안전망은 살아 있다', () => {
+    // 겹침 방지의 1차 방어는 배치(간격)에 있고 이건 모듈 경계를 넘는 안전망이다. 의자·침대는
+    // 자리가 그 타일이라 이제 겹칠 수가 없지만, **앞 타일을 쓰는 가구는 여전히 겹칠 수 있다** —
+    // 그 경로가 살아 있음을 여기서 잠근다(안 잠그면 두 폰이 한 칸에 포개진다).
     const w = twoRooms([
-      { kind: 'BED', x: 22, y: 11 }, // 위(22,10)가 벽 → 앞자리는 오른쪽 (23,11)
-      { kind: 'BED', x: 23, y: 12 }, // 위가 곧 (23,11) — 같은 자리로 겹친다
+      { kind: 'COUNTER', x: 22, y: 11 }, // 위(22,10)가 벽 → 앞자리는 오른쪽 (23,11)
+      { kind: 'COUNTER', x: 23, y: 12 }, // 위가 곧 (23,11) — 같은 자리로 겹친다
     ])
-    expect(furnitureSpots(w, 'WARD', 'BED')).toEqual([{ x: 23, y: 11 }])
+    expect(furnitureSpots(w, 'WARD', 'COUNTER')).toEqual([{ x: 23, y: 11 }])
+  })
+
+  it('침대 둘이 붙어 있어도 자리 둘이다 — 눕는 자리는 겹칠 수가 없다', () => {
+    // 옛 계약에서는 두 침대가 **앞 타일 하나**를 나눠 가져 자리가 하나로 접혔다(위 dedupe).
+    // 이제 자리가 침대 그 자체라 병동 정원이 곧 침대 수다 — 응급 수용 상한이 화면과 같아진다.
+    const w = twoRooms([{ kind: 'BED', x: 22, y: 11 }, { kind: 'BED', x: 23, y: 12 }])
+    expect(furnitureSpots(w, 'WARD', 'BED')).toEqual([{ x: 22, y: 11 }, { x: 23, y: 12 }])
   })
 
   it('의자 둘이 붙어 있어도 좌석 둘이다 — 앉는 자리는 겹칠 수가 없다', () => {
@@ -91,15 +99,17 @@ describe('furnitureSpots — 영역 안의 가구를 좌표로 연다', () => {
   })
 })
 
-describe('occupySpot — 그 가구를 쓰는 폰이 서는(앉는) 칸', () => {
-  it('통행을 막는 가구는 **앞 타일**이다 — 책상·침대·카운터', () => {
-    const w = twoRooms([{ kind: 'BED', x: 22, y: 12 }])
+describe('occupySpot — 그 가구를 쓰는 폰이 서는(앉는·눕는) 칸', () => {
+  it('통행을 막는 가구는 **앞 타일**이다 — 책상·카운터', () => {
+    const w = twoRooms([{ kind: 'COUNTER', x: 22, y: 12 }])
     expect(occupySpot(buildBlockedSet(w), { x: 22, y: 12 })).toEqual({ x: 22, y: 11 })
   })
 
-  it('막지 않는 가구는 **그 자리**다 — 의자가 유일한 경우다', () => {
-    const w = twoRooms([{ kind: 'CHAIR', x: 12, y: 12 }])
-    expect(occupySpot(buildBlockedSet(w), { x: 12, y: 12 })).toEqual({ x: 12, y: 12 })
+  it('막지 않는 가구는 **그 자리**다 — 의자와 침대', () => {
+    for (const kind of ['CHAIR', 'BED'] as const) {
+      const w = twoRooms([{ kind, x: 12, y: 12 }])
+      expect(occupySpot(buildBlockedSet(w), { x: 12, y: 12 })).toEqual({ x: 12, y: 12 })
+    }
   })
 
   it('갈림의 기준은 가구 종류가 아니라 **막힘**이다 — 좌표만 받는다', () => {
@@ -195,6 +205,37 @@ describe('examSlots — 진료 슬롯(책상·환자의자·의사스팟)', () =
       doctorSpot: { x: 11, y: 12 },  // 의자를 건너뛰고 아래 빈 칸
       patientSpot: { x: 12, y: 11 }, // 의자 그 자체
     }])
+  })
+
+  it('남는 인접 의자가 있으면 **의사도 앉는다** — 의사스팟이 그 의자다', () => {
+    // 사용자 보고: *"의사가 의자에 앉지 않는다. 환자만 앉는다."* 서는 자리(standSpot)는
+    // 여전히 폴백이고, 짝지어지지 않은 의자가 남아 있을 때만 그 위로 올라간다.
+    const slots = slotsOf(examRoom([
+      { kind: 'DESK', x: 12, y: 12 },
+      { kind: 'CHAIR', x: 12, y: 11 }, // 위 — DIRS 첫이라 **환자** 의자
+      { kind: 'CHAIR', x: 13, y: 12 }, // 오른쪽 — 남는 의자 = 의사 자리
+    ]))
+    expect(slots).toEqual([{
+      desk: { x: 12, y: 12 },
+      chair: { x: 12, y: 11 },
+      doctorSpot: { x: 13, y: 12 },
+      patientSpot: { x: 12, y: 11 },
+    }])
+  })
+
+  it('의사 의자는 **정원을 깎지 않는다** — 옆 책상의 환자 의자를 뺏지 않는다', () => {
+    // 짝짓기가 **두 패스**인 이유가 이 배치다: 한 패스로 "환자 의자 → 곧바로 남는 의자를 의사에게"를
+    // 하면 첫 책상이 (13,12)를 가져가 둘째 책상이 짝을 잃고 진료실 정원이 2 → 1로 접힌다.
+    // 앉는 연출이 **규칙(책상 수 = 정원)을 깎으면 안 된다**는 것이 이 단언이다.
+    const slots = slotsOf(examRoom([
+      { kind: 'DESK', x: 12, y: 12 },
+      { kind: 'DESK', x: 14, y: 12 },
+      { kind: 'CHAIR', x: 12, y: 11 }, // 첫 책상의 환자 의자(위)
+      { kind: 'CHAIR', x: 13, y: 12 }, // 두 책상 사이 — 둘째 책상의 환자 의자
+    ]))
+    expect(slots.map(s => s.desk)).toEqual([{ x: 12, y: 12 }, { x: 14, y: 12 }])
+    // 둘 다 의자를 못 얻어 서 있는다 — 남는 의자가 없으면 옛 계약 그대로다.
+    expect(slots.map(s => s.doctorSpot)).toEqual([{ x: 12, y: 13 }, { x: 14, y: 11 }])
   })
 
   it('열거 순서는 furniture 배열 순서다 — 좌표 정렬로 뒤집히지 않는다(배정 결정론의 축)', () => {
