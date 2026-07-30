@@ -2,6 +2,33 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+// leaf가 당기면 안 되는 같은 층 상위 모듈 — **events.ts와 traits.ts가 나눠 쓴다.**
+// 둘의 목록이 pawn 하나만 갈려서 배열을 공유하고 차이는 아래에서 얹는다: 손으로 두 벌 적으면
+// 새 모듈이 한쪽에만 들어가 그 파일만 조용히 통과한다(이 파일이 이미 경고한 그 함정).
+// ⚠️ 패턴 문자열을 **블록 주석 안에 쓰지 않는다** — 별 두 개 + 슬래시가 주석을 거기서 끝내
+//    뒤따르는 한글이 코드로 파싱된다(실측: `Unexpected identifier 'src'`).
+// ⚠️ nurse·narrative는 **양쪽 다 빠져 있던 구멍**이었다(2026-07-31 리뷰 실측: events.ts가
+//    ./nurse를 값으로 당겨도 무반응). 위 문단은 "한쪽에만 등록되는" 함정만 봤는데, 금지 목록의
+//    실패 모드는 그것 말고 **아예 등재를 잊는 것**이 하나 더 있다 — 그리고 그건 목록을 공유해도
+//    안 사라진다. 그래서 sim 모듈을 새로 만들면 여기 추가하는 것이 계약이고, 목록이 더 길어지면
+//    아래 ponytail 주석대로 「leaf가 자기 위층을 임포트하지 않는가」를 세는 테스트로 승격한다.
+const SIM_LEAF_BANNED = [
+  "**/build", "**/day", "**/director", "**/emergency", "**/fatigue",
+  "**/narrative", "**/needs", "**/nurse", "**/path", "**/patientFlow", "**/spots",
+  "**/tick", "**/week",
+  // 옛 층 전체 — leaf가 다른 레이어를 아는 순간 leaf가 아니다.
+  "**/game/*",
+  // 테스트 헬퍼(위 블록의 금지가 이 블록에 덮이므로 여기 다시 적는다).
+  "**/testHelpers",
+];
+
+const LEAF_MESSAGE =
+  "events.ts·traits.ts는 leaf입니다 — world·dept의 타입 말고는 임포트할 수 없습니다. 상위 모듈을 당기면 값 임포트 순환이 됩니다(T-093: patientFlow가 events의 배율을 값으로 읽는데 events가 되당기면 초기화 중 undefined가 된다). 필요한 값은 호출부에서 인자로 넘겨받으세요.";
+
+const leafImportRule = (group) => ({
+  "no-restricted-imports": ["error", { patterns: [{ group, message: LEAF_MESSAGE }] }],
+});
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -64,30 +91,18 @@ const eslintConfig = defineConfig([
     //    모듈만 조용히 통과). 지금은 sim 모듈이 손에 꼽아 감당되지만, 목록이 길어지거나
     //    실제로 한 번 빠뜨리는 날엔 「leaf가 자기 위층을 임포트하지 않는가」를 세는 테스트
     //    (import 문 파싱)로 승격한다 — 그쪽이 열거가 아니라 성질을 잰다.
-    files: ["src/sim/events.ts", "src/sim/traits.ts"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: [
-                // 같은 층의 상위 모듈 — 이걸 당기는 순간 값 임포트 순환이다.
-                "**/build", "**/day", "**/director", "**/emergency", "**/fatigue",
-                "**/needs", "**/path", "**/patientFlow", "**/pawn", "**/spots",
-                "**/tick", "**/week",
-                // 옛 층 전체 — leaf가 다른 레이어를 아는 순간 leaf가 아니다.
-                "**/game/*",
-                // 테스트 헬퍼(위 블록의 금지가 이 블록에 덮이므로 여기 다시 적는다).
-                "**/testHelpers",
-              ],
-              message:
-                "events.ts·traits.ts는 leaf입니다 — world·dept의 타입 말고는 임포트할 수 없습니다. 상위 모듈을 당기면 값 임포트 순환이 됩니다(T-093: patientFlow가 events의 배율을 값으로 읽는데 events가 되당기면 초기화 중 undefined가 된다). 필요한 값은 호출부에서 인자로 넘겨받으세요.",
-            },
-          ],
-        },
-      ],
-    },
+    // ⚠️ **pawn 금지는 events.ts에서만 풀린다**(2026-07-30 방어진료 위축). 소송이 의사 하나의
+    //    응급 우선순위를 내리는데, 그 읽기·쓰기 규칙(`priorityOf`의 폴백 2 · `setDoctorPriority`의
+    //    범위 검사와 나머지 축 채우기)을 events에 복제하면 **위축된 의사만 다른 계약으로 산다**.
+    //    순환이 아닌 근거: pawn은 world·dept·traits·path만 보고 events로 되돌아오지 않는다
+    //    (world→events는 타입 전용이라 그 경유도 런타임 순환이 아니다 — regions 예외와 같은 형태).
+    //    **traits.ts에는 그대로 금지다**: pawn이 traits를 값으로 읽으므로 되당기면 진짜 순환이다.
+    files: ["src/sim/events.ts"],
+    rules: leafImportRule(SIM_LEAF_BANNED),
+  },
+  {
+    files: ["src/sim/traits.ts"],
+    rules: leafImportRule([...SIM_LEAF_BANNED, "**/pawn"]),
   },
 ]);
 

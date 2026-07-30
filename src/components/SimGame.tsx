@@ -44,7 +44,7 @@ import { hireDoctor, hireNurse, setDoctorPriority, type HireResult, type Priorit
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
 import { startNextDay } from "@/sim/day";
 import { applyMorningEvent, eligibleEvents, fallbackDirectorChoice, type DirectorChoice } from "@/sim/director";
-import { epilogueText, eventNarration } from "@/sim/narrative";
+import { chillNotice, epilogueText, eventNarration } from "@/sim/narrative";
 import { resigningSimDoctors, settleWeek, startNextWeek, weekSummary } from "@/sim/week";
 import { newLlmBudget, requestDirector, requestNarrativeText, type DirectorReply } from "@/lib/storyteller";
 
@@ -1112,6 +1112,10 @@ export default function SimGame() {
               ? llmNarration.text
               : eventNarration(world.event.kind, world.week, world.day)
           }
+          // 위축 고지 — **연출문과 별개의 줄**이다. 소송이 실제로 누군가의 응급 우선순위를
+          // 내렸다는 결정론 사실이라, LLM 서사가 도착했든 폴백이든 반드시 함께 뜬다.
+          // 종류를 따로 묻지 않는 이유: 이 필드는 LAWSUIT일 때만 실린다(events.applyEvent).
+          notice={world.event.chilledName ? chillNotice(world.event.chilledName) : undefined}
           week={world.week}
           day={world.day}
           onClose={() => setSeenEvent(eventKey)}
