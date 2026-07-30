@@ -11,8 +11,23 @@ import { EVENT_NARRATIONS, chillNotice, epilogueText, eventNarration, resignatio
 
 const ENDINGS: readonly EndingKind[] = ['INSOLVENCY', 'NO_PEOPLE', 'CAMPAIGN_END']
 
-/** 톤 가드레일 — 플레이어를 탓하는 말(§톤 · simHud.test와 같은 목록). */
+/** 톤 가드레일 ① — **플레이어**를 탓하는 말(§톤 · simHud.test와 같은 목록). */
 const BANNED = ['당신', '놓쳤', '실패', '했어야', '탓', '죽었']
+
+/**
+ * 톤 가드레일 ② — **온 사람**을 탓하는 말. A3(경증 쏠림)과 함께 생긴 축이다.
+ *
+ * ①과 겨누는 방향이 반대라 목록을 나눈다: 저쪽은 화면이 플레이어에게 하는 말이고, 이쪽은
+ * 화면이 **환자에 대해** 하는 말이다. 경증 쏠림 서사가 특히 미끄러지기 쉽다 — "가벼운 증상이
+ * 몰린다"를 쓰다 보면 한 걸음이 곧 "그 사람들이 잘못 왔다"라서, 구조의 문제(경증이 갈 곳이
+ * 여기뿐이다)가 개인의 잘못으로 바뀐다. 아래 넷은 그 미끄러짐이 실제로 착지하는 표현들이다:
+ * 증상을 의심하는 말(꾀병)·사람됨을 재는 말(몰상식·얌체)·존재를 민폐로 부르는 말(민폐).
+ *
+ * 이 축은 `narrative.ts`의 MILD_SURGE 주석에 선언돼 있었지만 **검사기가 없었다** — 이 저장소가
+ * 세 번 적은 그 형태다(*검사기 없는 규약은 죽는 게 아니라 썩고, 썩음은 준수율로 안 잡힌다*).
+ * 새 연출문을 쓰는 사람이 이 주석을 못 봐도 여기서 걸린다.
+ */
+const BANNED_ABOUT_PATIENTS = ['꾀병', '몰상식', '민폐', '얌체']
 
 describe('eventNarration — 이벤트 연출문 폴백(LLM 없이 완주한다)', () => {
   it('전 종류에 폴백이 **둘 이상** 있다 — 하나뿐이면 그 이벤트는 판 내내 같은 말을 한다', () => {
@@ -59,10 +74,12 @@ describe('eventNarration — 이벤트 연출문 폴백(LLM 없이 완주한다)
     expect(new Set(sameDay).size).toBe(EVENT_KINDS.length)
   })
 
-  it('톤 가드레일 — 어떤 연출문에도 비난 카피가 없다', () => {
+  it('톤 가드레일 — 어떤 연출문에도 비난 카피가 없다(플레이어에게도, 온 사람에게도)', () => {
     for (const kind of EVENT_KINDS) {
       for (const line of EVENT_NARRATIONS[kind]) {
-        for (const word of BANNED) expect(line, `${kind}: ${line}`).not.toContain(word)
+        for (const word of [...BANNED, ...BANNED_ABOUT_PATIENTS]) {
+          expect(line, `${kind}: ${line}`).not.toContain(word)
+        }
       }
     }
   })

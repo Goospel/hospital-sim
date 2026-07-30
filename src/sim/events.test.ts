@@ -3,7 +3,7 @@ import { hire, placeRoom } from './testHelpers'
 import { createWorld, simRegion, type SimWorld } from './world'
 import { tick } from './tick'
 import { DAYS_PER_WEEK, freshMorning, startNextDay } from './day'
-import { startNextWeek } from './week'
+import { CAMPAIGN_WEEKS, startNextWeek } from './week'
 import { EMERGENCY_WINDOW_MIN, emergencyArrivalAt, emergencyArrivalSeed } from './emergency'
 import { ARRIVAL_WINDOW_MIN, arrivalSeed, waitingSeats, wantsDeptSeed } from './patientFlow'
 import { HIRABLE_DEPTS, type SimDeptKey } from './dept'
@@ -16,7 +16,7 @@ import {
 } from './events'
 import { priorityOf, setDoctorPriority, type Pawn, type Priority } from './pawn'
 import {
-  EVENT_MIX, EVENT_PROB_PER_DAY, applyMorningEvent,
+  EVENT_MIX, EVENT_PROB_PER_DAY, EVENT_WEIGHTS, applyMorningEvent,
   eligibleEvents, eventKindSeed, eventRollSeed, fallbackDirectorChoice, pickEventKind,
 } from './director'
 
@@ -436,6 +436,25 @@ describe('폴백 디렉터 — 시드 결정론 가중 랜덤', () => {
     })()
     expect(hit).not.toBeNull()
     expect(fallbackDirectorChoice({ ...rich, ...hit!, minute: 0, turnedAwayTotal: 0 })).toBeNull()
+  })
+
+  it('B7 하드락(소송 **2건**)이 한 판 안에서 도달 가능하다 — 상수들의 산술 불변식', () => {
+    // 왜 이 단언이 필요한가: 가중치는 **지분**이라 새 종류가 늘 때마다 기존 것이 함께 묽어진다.
+    // A3(경증 쏠림)를 더하며 합이 100 → 130이 됐고, LAWSUIT 기대치가 판당 3.2 → 2.47건으로
+    // 내려갔다(리뷰어 실측 200시드). 소송은 **2라는 문턱이 따로 있는** 유일한 이벤트다 —
+    // 위축이 하드락(우선순위 0)에 닿으려면 한 판에 두 번 와야 하고(events.LAWSUIT_CHILL_STEP),
+    // 그 아래로 내려가면 B7의 "한 번은 경고, 두 번은 구조"가 조용히 사라진다. 종류가 또 늘 때
+    // 같은 침식이 반복되므로, 사람이 아니라 이 산술이 바닥을 지킨다.
+    //
+    // ⚠️ **가중치 리터럴은 잠그지 않는다**(change-detector가 된다 — 튜닝할 때마다 테스트를
+    //    숫자에 맞춰 고치는 습관이 든다). 잠그는 것은 상수들에서 파생한 **한 줄**뿐이다.
+    // ⚠️ 이건 **이론 상한**이지 실현 기대치 보장이 아니다: 뽑혀도 전제 미달이면 불발이라
+    //    (`fallbackDirectorChoice` — 회차 0건인 판은 소송이 아예 안 선다) 실제 값은 이보다 낮다.
+    //    상한마저 2 밑이면 하드락은 **구조적으로** 도달 불가가 되므로, 지키는 것은 그 선이다.
+    const total = EVENT_KINDS.reduce((sum, kind) => sum + EVENT_WEIGHTS[kind], 0)
+    const expectedLawsuits =
+      CAMPAIGN_WEEKS * DAYS_PER_WEEK * EVENT_PROB_PER_DAY * (EVENT_WEIGHTS.LAWSUIT / total)
+    expect(expectedLawsuits).toBeGreaterThanOrEqual(2) // 실측 3.11 (12주 × 7일 × 0.25 × 20/135)
   })
 
   it('종류 표는 누적 상한이고 치역 밖이면 던진다', () => {
