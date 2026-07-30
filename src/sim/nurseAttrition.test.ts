@@ -11,7 +11,7 @@
 // 개인의 피로고 SHORT는 **배치 조건**이다. 임계도 별도 상수라(설계 §2) 한쪽 튜닝이 다른 쪽을
 // 끌면 안 된다 — 같은 파일에 두면 픽스처가 상수를 공유하며 그 독립이 조용히 사라진다.
 import { describe, it, expect } from 'vitest'
-import { createWorld, type SimWorld } from './world'
+import { createWorld, simRegion, type SimWorld } from './world'
 import { hireNurse, nurseCount, type Pawn } from './pawn'
 import { hire, placeRoom, withCashier } from './testHelpers'
 import { DAY_END_MIN, DAYS_PER_WEEK, settleDay, startNextDay } from './day'
@@ -358,7 +358,10 @@ describe('결산의 간호 블록 — 사직 수와 유휴 누계', () => {
     )
     expect(weekSummary(w).nursing.count).toBe(1) // 결산 표엔 아직 서 있다
     const settled = settleWeek(w)
-    expect(settled.treasuryManwon).toBe(100_000 - NURSE_WEEKLY_COST_MANWON)
+    // 임대료도 함께 빠진다 — 기본 세계가 URBAN이라 1,200이다(지역 슬라이스 2026-07-30).
+    // 이 describe가 재는 것은 **주급의 청구 시점**이라, 지역세는 카탈로그에서 파생해 더한다.
+    expect(settled.treasuryManwon)
+      .toBe(100_000 - NURSE_WEEKLY_COST_MANWON - simRegion(w.region).rentManwon)
     expect(startNextWeek(settled).pawns).toEqual([])
   })
 })

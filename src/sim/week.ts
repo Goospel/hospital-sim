@@ -4,7 +4,7 @@
 // 실패가 없다 — 폐업이 있어야 "한 판"이 성립한다.
 // 판이 끝나는 길은 폐업만이 아니다 — 사람(NO_PEOPLE)·시간(CAMPAIGN_END) 종결이 함께 있다.
 // 셋 다 이 파일의 `endingOf` 한 곳에서만 판정된다(정산의 단일 출처 계승).
-import type { EndingKind, SimWorld } from './world'
+import { simRegion, type EndingKind, type SimWorld } from './world' // 값(simRegion)까지 당긴다 — world는 week를 되받지 않아 순환 없음
 import { freshMorning } from './day'
 import { doctorDeptOf, type Pawn } from './pawn'
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from './dept'
@@ -92,6 +92,16 @@ export interface WeekSummary {
    *  계약이다**: 간호사는 과가 없어 줄을 세울 자리가 없고, 억지로 한 과에 얹으면 그 과의 순익이
    *  거짓이 된다. 가감산도 과별로 쪼개지 않는다 — 등급은 병원 하나에 하나다. */
   nursing: WeekNursing
+  /**
+   * 이번 주 **임대료**(만원, 항상 양수 — 빼는 쪽은 총액 유도가 한다). 지역당 금액은
+   * `world.REGIONS`가 소유한다 — 여기 다시 적으면 튜닝하는 날 값과 주석이 갈린다.
+   *
+   * **과별 표(`byDept`)에 섞지 않는 것이 계약이다**: 임대료는 과가 없다(간호 블록과 같은 이유).
+   * 어느 과에 얹으면 그 과의 순익이 거짓이 되고, 과가 없는 주(의사 0명)엔 얹을 자리조차 없어
+   * 청구가 조용히 사라진다 — 그런데 **바로 그 주가 이 값이 가장 아픈 주다**("수익 0인 1주차에도
+   * 나간다"가 URBAN 카드의 약속이다).
+   */
+  rentManwon: number
   /** 이번 주 응급 — 몇 건 받았고 몇 건 되돌아갔나. **사유별 내역은 여기 없다**(그건 그날
    *  그 순간의 메시지라 `stats.emergencyTurnedAway`가 소유한다 — DayRecord와 같은 분담). */
   emergencies: { accepted: number; turnedAway: number }
@@ -121,12 +131,19 @@ export function weekSummary(w: SimWorld): WeekSummary {
     leaving: resigningNurses(w).length,
     resignedTotal: w.nursesResignedTotal,
   }
+  // 임대료는 **지역의 순수 파생**이다 — 세계에 저장하지 않는다(weekSummary 전체가 그렇다).
+  const rentManwon = simRegion(w.region).rentManwon
   return {
     week: w.week,
     revenueManwon,
     fixedCostManwon,
     nursing,
-    netManwon: revenueManwon - fixedCostManwon - nursing.wageManwon + nursing.adjustManwon,
+    rentManwon,
+    // 임대료도 여기서 빠진다. **공식에 넣는 순간 금고 차감은 자동이다** — settleWeek이 청구액을
+    // `revenue − net`의 차로 유도하기 때문이다(간호 가감산이 판 길 그대로). 요약에 싣기만 하고
+    // 이 줄에서 빼먹으면 화면엔 임대료가 보이는데 금고는 안 줄어든다(week.test.ts가 잠근다).
+    netManwon:
+      revenueManwon - fixedCostManwon - nursing.wageManwon + nursing.adjustManwon - rentManwon,
     examsDone: w.days.reduce((sum, d) => sum + d.examsDone, 0),
     leftCount: w.days.reduce((sum, d) => sum + d.leftCount, 0),
     byDept,

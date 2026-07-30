@@ -183,6 +183,48 @@ describe('응급 도착 — 스트림 축', () => {
   })
 })
 
+describe('지역 — 응급 도착 배율', () => {
+  /** 12주 × 7일 전수에서 응급 판정이 성립한 (주,일,분)의 집합.
+   *  판정의 **단일 출처**(emergencyArrivalAt)를 그대로 부른다 — 문턱 공식을 여기 복제하면
+   *  훅을 통째로 떼어내도 초록으로 남는다. */
+  function emergencyMinutes(region: 'URBAN' | 'NEWTOWN' | 'RURAL', seed = 7): Set<string> {
+    const w0 = createWorld(seed, { region })
+    const out = new Set<string>()
+    for (let week = 1; week <= 12; week++) {
+      for (let day = 1; day <= DAYS_PER_WEEK; day++) {
+        for (let minute = 0; minute < EMERGENCY_WINDOW_MIN; minute++) {
+          if (emergencyArrivalAt({ ...w0, week, day, minute })) out.add(`${week}:${day}:${minute}`)
+        }
+      }
+    }
+    return out
+  }
+
+  it('배율은 **시드가 아니라 문턱**을 곱한다 — NEWTOWN ⊆ URBAN ⊆ RURAL', () => {
+    // 외래 쪽과 같은 계측이다: 시드를 흔드는 구현도 "몇 배"는 만족하지만 도착 **시각의 배열
+    // 자체**가 갈려 부분집합이 깨진다. 기존 회귀는 URBAN만 재므로 그 변조를 못 잡는다.
+    const newtown = emergencyMinutes('NEWTOWN')
+    const urban = emergencyMinutes('URBAN')
+    const rural = emergencyMinutes('RURAL')
+    expect(urban.size).toBeGreaterThan(100) // 계측기가 헛돌지 않았다
+    expect([...newtown].filter(m => !urban.has(m))).toEqual([])
+    expect([...urban].filter(m => !rural.has(m))).toEqual([])
+    expect(newtown.size).toBeLessThan(urban.size)
+    expect(urban.size).toBeLessThan(rural.size)
+  })
+
+  it('건수가 카탈로그 배율에 붙는다 — 0.8 / 1.0 / 1.2', () => {
+    // 부분집합만으로는 배율의 **크기**를 못 잰다(1.01도 부분집합이다). 표본이 40,320분이라
+    // 거의 안 흔들려 좁은 띠로 잴 수 있다(events.test의 MASS_CASUALTY 밴드와 같은 근거).
+    const urban = emergencyMinutes('URBAN').size
+    for (const [region, mul] of [['NEWTOWN', 0.8], ['RURAL', 1.2]] as const) {
+      const ratio = emergencyMinutes(region).size / urban
+      expect(ratio, region).toBeGreaterThan(mul - 0.08)
+      expect(ratio, region).toBeLessThan(mul + 0.08)
+    }
+  })
+})
+
 describe('배후과 벽 — 하드락', () => {
   it('순환기가 0명이면 STEMI는 NO_SPECIALIST로 되돌아간다 — 폰조차 만들지 않는다', () => {
     const w0 = emergencyWorld({ dept: null })          // 병동은 있는데 의사가 없다

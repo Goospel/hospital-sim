@@ -284,7 +284,9 @@ describe('주간 결산 — 간호사 주급(공짜 노동 금지)', () => {
 
   it('총액은 블록에서 **유도**한다 — 표와 총액이 갈릴 자리가 없다', () => {
     const s = weekSummary(weekEnd(1))
-    expect(s.netManwon).toBe(s.revenueManwon - s.fixedCostManwon - s.nursing.wageManwon)
+    // 임대료도 총액 유도에 든다(지역 슬라이스 2026-07-30) — 표 밖 항목이 셋이 됐다.
+    expect(s.netManwon)
+      .toBe(s.revenueManwon - s.fixedCostManwon - s.nursing.wageManwon - s.rentManwon)
   })
 
   it('간호사가 없으면 주급도 0이다 — 없는 사람에게 돈이 나가지 않는다', () => {

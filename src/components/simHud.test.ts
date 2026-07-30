@@ -7,18 +7,22 @@ import {
   NURSE_GRADE_TEXT, nurseAttritionText, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidText,
   startingRosterMet, STARTING_ROSTER_MIN, statusLineText, TOOL_LABEL,
+  regionRuleText, deptMixText,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
   clampCamera, pannedCamera, safeArea, settledCamera, zoomedCamera, zoomFloor,
   BACKDROP_MARGIN, ZOOM_MAX, ZOOM_MIN, type Camera, type CameraView, type Insets, type Rect, type Size,
 } from './simHud'
 import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
-import { createWorld, GRID_W, GRID_H, type RoomType, type SimWorld } from '../sim/world'
-import { simDept, type SimDeptKey } from '../sim/dept'
+import {
+  createWorld, GRID_W, GRID_H, REGIONS, simRegion,
+  type RoomType, type SimRegionKey, type SimWorld,
+} from '../sim/world'
+import { HIRABLE_DEPTS, simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
 import { HUNGRY_AFTER_MIN } from '../sim/needs'
 import { TRAITS } from '../sim/traits'
 import { DEFAULT_PRIORITY } from '../sim/pawn'
-import { hasCashier } from '../sim/patientFlow'
+import { ARRIVAL_DEPT_MIX, hasCashier } from '../sim/patientFlow'
 import { NURSE_WEEKLY_COST_MANWON } from '../sim/week'
 import { NURSE_RESIGN_SHORT_DAYS, resigningNurses } from '../sim/nurse'
 import type { Pawn, PatientStage, Priority } from '../sim/pawn'
@@ -1702,5 +1706,80 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
       expect(c.x).toBeCloseTo(SAFE_L.x + SAFE_L.w - big.w)
       expect(c.y).toBeCloseTo(SAFE_L.y + SAFE_L.h - big.h)
     }
+  })
+})
+
+// ─── 지역 카드 — 규칙 요약 한 줄 ──────────────────────────────────────────────
+describe('regionRuleText — 카드가 규칙을 말한다', () => {
+  const REGION_KEYS = Object.keys(REGIONS) as SimRegionKey[]
+
+  it('네 지역 모두 빈 줄이 아니고, 서로 다르다 — 카드가 같은 말을 하지 않는다', () => {
+    const texts = REGION_KEYS.map(regionRuleText)
+    for (const t of texts) expect(t.length).toBeGreaterThan(0)
+    expect(new Set(texts).size).toBe(REGION_KEYS.length)
+  })
+
+  it('**카탈로그에서 파생한다** — 값이 바뀌면 문구가 따라 바뀐다', () => {
+    // §13-2의 계약: 수치를 손으로 다시 적으면 값과 표시가 갈린다. 표시에 박힌 상수는
+    // 카탈로그를 튜닝해도 안 움직이므로, 각 지역의 **0이 아닌 수치가 문구에 실제로 뜨는지**를
+    // 잰다(문구 전체를 리터럴로 박으면 이 테스트가 표시 규칙만 복제하게 된다).
+    for (const key of REGION_KEYS) {
+      const r = simRegion(key)
+      const text = regionRuleText(key)
+      if (r.rentManwon > 0) expect(text, key).toContain(r.rentManwon.toLocaleString('ko-KR'))
+      if (r.arrivalMul !== 1) expect(text, key).toContain(String(r.arrivalMul))
+      if (r.lawsuitMul !== 1) expect(text, key).toContain(String(r.lawsuitMul))
+      for (const dept of HIRABLE_DEPTS) {
+        if ((r.hirePoolDelta[dept] ?? 0) < 0) expect(text, `${key}/${dept}`).toContain(simDept(dept).label)
+      }
+    }
+  })
+
+  it('**중립 축은 안 뜬다** — URBAN 카드는 외래·응급을 말하지 않는다(그게 URBAN의 정체다)', () => {
+    // 배율 1인 축까지 "×1"로 적으면 네 카드가 같은 모양이 되어, 무엇이 이 지역의 특징인지가
+    // 문구에서 사라진다. URBAN이 말할 것은 임대료와 소송뿐이다(I-R1 스트림 중립).
+    const urban = regionRuleText('URBAN')
+    expect(urban).not.toContain('외래')
+    expect(urban).not.toContain('응급')
+    expect(urban).toContain('임대료')
+    expect(urban).toContain('소송')
+  })
+
+  it('임대료 0은 금액이 아니라 **없음**으로 뜬다 — "임대료 0만원"은 화면의 말이 아니다', () => {
+    expect(regionRuleText('RURAL')).toContain('임대료 없음')
+  })
+
+  // ── 환자 구성(믹스) 축 ──────────────────────────────────────────────────────
+  // "돈 되는 과가 오는가"는 지역 선택의 핵심 정보인데 여섯 축 중 이것만 카드에서 빠져 있었다.
+  // 설계 §5가 "미용 5%가 이 지역의 정체"라고 못박은 규칙이 화면에 없으면, §13-2의 근거
+  // (규칙이 생겼는데 안 보이면 첫 선택이 도박이다)가 가장 세게 걸리는 축이 침묵한다.
+
+  it('믹스는 **전국 표 대비 편차가 큰 두 과**만 실제 비중으로 말한다', () => {
+    // 네 과를 다 적으면 카드가 길어져 아무도 안 읽는다. 무엇을 말할지 고르는 규칙이 곧
+    // 이 문구의 내용이라, 지역별 결과 문자열을 그대로 못박는다(고르는 규칙이 바뀌면 깨진다).
+    expect(regionRuleText('NEWTOWN')).toContain('환자 미용·피부 35%·순환기내과 7%')
+    expect(regionRuleText('PROVINCIAL')).toContain('환자 미용·피부 5%·내과 55%')
+    // RURAL은 미용 외 세 과가 전부 편차 5%p로 **동률**이다 — 카탈로그 순서(HIRABLE_DEPTS)가
+    // 그 동률을 깬다. 이 줄이 없으면 정렬이 불안정해져도(같은 편차끼리 자리가 바뀌어도) 초록이다.
+    expect(regionRuleText('RURAL')).toContain('환자 미용·피부 5%·내과 50%')
+  })
+
+  it('믹스가 전국 표 그대로인 지역은 **말하지 않는다** — URBAN 카드에 환자 줄이 없다', () => {
+    // 중립 축을 안 적는 규칙(위 「×1은 안 뜬다」)의 믹스판. deptMix가 null이면 이 지역의
+    // 환자 구성은 전국과 같아서, 적어 봐야 네 카드가 같은 말을 하게 된다.
+    expect(regionRuleText('URBAN')).not.toContain('환자')
+  })
+
+  it('**표에서 파생한다** — 믹스를 바꾸면 문구의 과와 숫자가 따라 바뀐다', () => {
+    // 리터럴로 박은 구현(예: PROVINCIAL이면 "미용 5%"를 그대로 반환)은 위 세 줄을 통과하므로,
+    // 카탈로그가 아닌 **임의의 표**를 넣어 문구가 그 표를 읽는지 잰다.
+    // 10/10/10/70 vs 전국 45/20/15/20 → 편차 35/10/5/50 → 미용(50) · 내과(35).
+    expect(deptMixText([
+      ['INTERNAL_MEDICINE', 0.10], ['GENERAL_SURGERY', 0.20],
+      ['CARDIOLOGY', 0.30], ['AESTHETICS', 1.00],
+    ])).toBe('환자 미용·피부 70%·내과 10%')
+    // 전국 표 자신을 넣으면 편차가 전부 0이라 고를 것이 없다 — 빈 문자열이 "이 줄은 없다"다
+    // (URBAN의 null 폴백이 도달하는 것과 같은 상태).
+    expect(deptMixText(ARRIVAL_DEPT_MIX)).toBe('')
   })
 })

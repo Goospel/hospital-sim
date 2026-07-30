@@ -158,6 +158,17 @@ export default function WeekEndOverlay({
               <dt className="font-sans text-xs text-ink-2">고정비 (의사 월급)</dt>
               <dd className="text-stamp-ink">−{formatManwon(summary.fixedCostManwon)}</dd>
             </div>
+            {/* 임대료 — 과별 표 **밖**의 줄이다(임대료는 과가 없다 · week.WeekSummary.rentManwon).
+                **0이어도 줄이 선다**: 농어촌의 0은 빈칸이 아니라 이 지역이 주는 유일한 것이고,
+                다른 지역과 나란히 놓여야 "여기는 건물값이 안 나간다"가 읽힌다(간호 블록의 0과
+                같은 규칙).
+                ⚠️ 지역 **이름**은 라벨에 안 넣는다 — 그러려면 이 오버레이가 세계(또는 새 prop)를
+                받아야 하는데, 이 컴포넌트의 계약은 "summary와 숫자만 받는다"이다. 어느 지역인지는
+                플레이어가 고른 값이고 배경이 내내 말하고 있다. */}
+            <div className="flex items-baseline justify-between">
+              <dt className="font-sans text-xs text-ink-2">임대료 (부지)</dt>
+              <dd className="text-stamp-ink">−{formatManwon(summary.rentManwon)}</dd>
+            </div>
             {/* 간호 인력 — 과별 표 **밖**의 줄이다(간호사는 과가 없다 · week.WeekSummary.nursing).
                 인원 0이어도 뜬다: 위 고정비와 나란히 서 있어야 "사람을 더 두면 이 줄이 는다"가
                 읽히고, 창구가 없어 진료비가 새는 병원에서 0이 그 사실을 말한다.

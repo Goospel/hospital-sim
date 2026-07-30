@@ -22,6 +22,7 @@ import {
   rectModeOf,
   rectTiles,
   regionOverlayOn,
+  regionRuleText,
   resigningNotices,
   setupSteps,
   setupWarningText,
@@ -35,7 +36,7 @@ import {
 } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
-import { BACKDROP_COUNT, createWorld, type RoomType, type SimRegionKey, type SimWorld } from "@/sim/world";
+import { BACKDROP_COUNT, REGIONS, createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions } from "@/sim/regions";
 import { buildWalls, demolish, designateRegion, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
@@ -89,21 +90,14 @@ const PALETTE_SECTIONS: Array<{ key: PaletteSection; label: string }> = [
 ];
 
 /**
- * 지역 선택 카드 4장 — **문구는 연출이다.**
+ * 지역 선택 카드 — **표는 카탈로그가 소유한다**(world.REGIONS).
  *
- * 이번 슬라이스에서 지역이 바꾸는 것은 부지 밖 풍경뿐이라(world.SimRegionKey), 각 줄은 그
- * 지역의 의료 격차를 한 문장으로만 말한다. 수치도 약속도 쓰지 않는 것이 계약이다 — 규칙 차이가
- * 없는데 있는 것처럼 읽히면 그건 화면이 하는 거짓말이다(같은 이유로 카드 아래에 "지금은
- * 풍경만 바뀝니다"를 명시한다).
- *
- * `simHud`가 아니라 여기 있는 이유는 `PALETTE_SECTIONS`와 같다 — 이 표를 읽는 것이 JSX뿐이다.
+ * 제목·서사·규칙 요약 셋 다 파생이라 이 파일에는 문자열 리터럴이 하나도 없다: 지역이 규칙에
+ * 닿은 뒤로 카드의 문장은 **약속**이고 그 약속을 지불하는 수치는 카탈로그에 있다 — 두 곳에
+ * 적히는 순간 수치를 고치며 약속을 안 고치는 drift가 시작되고, 그 어긋남은 화면에만 보인다
+ * (설계 2026-07-30 §4·§13-2). 순서는 카탈로그 기재 순서 = 도심 → 신도시 → 지방 → 농어촌.
  */
-const REGION_CARDS: Array<{ key: SimRegionKey; label: string; line: string }> = [
-  { key: "URBAN", label: "대도시 도심", line: "병상은 남아도는데 옆 건물에도 병원이 있다. 임대료가 먼저 나간다." },
-  { key: "NEWTOWN", label: "신도시·중소도시", line: "젊은 인구가 계속 들어온다. 아이를 볼 곳은 그만큼 늘지 않았다." },
-  { key: "PROVINCIAL", label: "지방 소도시", line: "환자는 늙어 가고, 의사를 구한다는 공고는 해를 넘긴다." },
-  { key: "RURAL", label: "농어촌", line: "가장 가까운 큰 병원까지 한 시간. 그 한 시간이 사람을 가른다." },
-];
+const REGION_CARDS = Object.values(REGIONS);
 
 const SPEEDS: Array<{ value: SimSpeed; label: string; title: string }> = [
   { value: 0, label: "❚❚", title: "일시정지" },
@@ -1066,9 +1060,9 @@ export default function SimGame() {
         ── 지역 선택 — 판이 열리기 전의 **첫 화면**.
 
         림월드가 시작 시 지형을 고르듯, 이 게임은 대한민국의 어느 지역에 병원을 지을지 고른다.
-        지역별 의료 격차가 그 지형의 자리다 — 다만 **이번 슬라이스에서는 풍경만 바뀐다**(설계 §7).
-        그 사실을 카드 아래에 그대로 적는다: 차이를 약속해 놓고 안 주는 것보다, 아직 없다고
-        말하는 편이 낫다(이 저장소의 「화면이 거짓말하지 않는다」 규약).
+        지역별 의료 격차가 그 지형의 자리이고, 그 격차는 **규칙에 닿는다**(world.REGIONS).
+        그래서 카드마다 서사 아래에 규칙 요약 한 줄이 선다(simHud.regionRuleText) — 고를 때
+        무엇을 주고 무엇을 뺏는지 보여야 첫 선택이 도박이 아니라 플레이어의 것이 된다.
 
         배경은 플레이어가 안 고른다 — 지역 후보 3종 중 하나가 **클릭 시점에** 무작위로 정해져
         세계에 저장된다. 시뮬 안이 아니라 여기서 `Math.random`을 부르는 것이 계약이다: 세계가
@@ -1105,14 +1099,16 @@ export default function SimGame() {
                   >
                     <span className="block text-sm text-on-desk">{r.label}</span>
                     <span className="mt-0.5 block text-xs leading-relaxed text-on-desk-muted">{r.line}</span>
+                    {/* 규칙 요약 — **카탈로그에서 파생한다**(simHud.regionRuleText). 규칙이 생겼는데
+                        안 보이면 첫 선택이 도박이 된다(설계 §13-2). 서사보다 한 단계 더 작고 흐리게
+                        놓아, 읽는 순서가 「이 지역은 어떤 곳인가」 → 「그래서 무엇이 달라지나」가 된다. */}
+                    <span className="mt-1 block font-mono text-[11px] leading-relaxed text-on-desk-muted/80 tabular-nums">
+                      {regionRuleText(r.key)}
+                    </span>
                   </button>
                 </li>
               ))}
             </ul>
-            <p className="border-t border-frame pt-2.5 text-[11px] leading-relaxed text-on-desk-muted">
-              지금은 지역이 <span className="text-on-desk">부지 밖 풍경</span>만 바꿉니다 — 환자·수가·채용은
-              아직 어느 지역에서나 같습니다.
-            </p>
           </div>
         </div>
       )}
