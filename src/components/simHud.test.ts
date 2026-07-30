@@ -5,7 +5,7 @@ import {
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle,
   NURSE_GRADE_TEXT, nurseAttritionText, PRIORITY_LABEL,
-  previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidText,
+  previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidCauseText, unpaidText,
   startingRosterMet, STARTING_ROSTER_MIN, statusLineText, TOOL_LABEL,
   regionRuleText, deptMixText,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
@@ -24,7 +24,7 @@ import { TRAITS } from '../sim/traits'
 import { DEFAULT_PRIORITY } from '../sim/pawn'
 import { ARRIVAL_DEPT_MIX, hasCashier } from '../sim/patientFlow'
 import { NURSE_WEEKLY_COST_MANWON } from '../sim/week'
-import { NURSE_RESIGN_SHORT_DAYS, resigningNurses } from '../sim/nurse'
+import { NURSE_RESIGN_SHORT_DAYS, nurseGradeOf, resigningNurses } from '../sim/nurse'
 import type { Pawn, PatientStage, Priority } from '../sim/pawn'
 import { FATIGUE_RED, RESIGN_SATURATED_DAYS } from '../game/doctor'
 
@@ -903,6 +903,71 @@ describe('alertsOf — 경고 스택(배치 문제 + 운영 경고)', () => {
     const a = alertsOf({ ...base, stats: { ...base.stats, unpaidManwon: 84 } })
       .find(x => x.key === 'unpaid')!
     for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) expect(a.text).not.toContain(word)
+  })
+
+  /*
+    ── 미수의 **원인**은 셋이고, 경고는 그중 맞는 것을 말해야 한다 ─────────────────
+
+    옛 문구는 원인을 하나로 고정했다 — 「접수처 카운터에 간호사가 없습니다」. 그 말이 틀린
+    것은 아니다(실측상 압도적으로 흔한 원인이 맞다). 부족했던 것은 **몇 명이 필요한지**다.
+
+    실측(2026-07-30 밸런스 프로브): 의사 4명 병원에 간호사를 1명만 두면 간호등급이 SHORT라
+    그 간호사가 **1주차 끝에 떠나고**, 그 뒤 12주 내내 진료비가 한 푼도 안 걷힌다(수납률
+    24~54% = 사실상 1주차분만). 「간호사를 뽑으세요」로는 부족하다 — 한 명을 다시 뽑으면
+    **또 떠난다**. 그래서 필요 인원(⌈의사÷2⌉)을 같이 말한다.
+  */
+  const leaked = (w: SimWorld) => alertsOf({ ...w, stats: { ...w.stats, unpaidManwon: 84 } })
+    .find(a => a.key === 'unpaid')!
+
+  it('unpaid — 카운터가 아예 없으면 그렇게 말한다', () => {
+    const a = leaked(worldOf([doctor(), nurse()], [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD')]))
+    expect(a.text).toContain('접수처')
+    expect(a.text).not.toContain('간호사')
+  })
+
+  it('unpaid — 간호사가 없으면 **몇 명이 필요한지**까지 말한다', () => {
+    /* 이 테스트가 이 수정의 핵심이다. 「간호사를 뽑으세요」만 말하면 플레이어는 한 명을 뽑고,
+       그 한 명이 또 SHORT로 떠나 같은 화면을 다시 본다. 필요 인원이 붙어야 조치가 유지된다. */
+    const w = worldOf(
+      [doctor({ id: 'doc-1' }), doctor({ id: 'doc-2' }), doctor({ id: 'doc-3' }), doctor({ id: 'doc-4' })],
+      [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD'), room('RECEPTION')],
+    )
+    expect(nurseGradeOf(w).required, '전제: 의사 4명이면 2명이 필요하다').toBe(2)
+    const text = leaked(w).text
+    expect(text).toContain('간호사가 없습니다')
+    expect(text).toContain('2명')
+  })
+
+  it('unpaid — 의사가 없으면 인원 수를 안 붙인다(0명이 필요하다는 말은 안 한다)', () => {
+    // 의사 0명 세계는 setup 경고가 먼저라 ops 경고가 안 뜬다 — 그 경계는 순수 함수로 직접 잰다.
+    const w = worldOf([], [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD'), room('RECEPTION')])
+    expect(nurseGradeOf(w).required).toBe(0)
+    expect(unpaidCauseText(w)).toBe('접수처 카운터에 간호사가 없습니다')
+  })
+
+  it('unpaid — 창구도 간호사도 있으면 **이미 고쳐졌다**고 말한다(다시 짓게 하지 않는다)', () => {
+    // 미수는 하루 집계라, 지금 창구가 서 있으면 그 돈은 그 전에 샌 것이다.
+    const a = leaked(healthy([doctor()]))
+    expect(a.text).not.toContain('없습니다')
+    expect(a.text).toContain('그 전의 것')
+  })
+
+  it('unpaid — 카운터도 간호사도 없으면 **카운터부터** 말한다(먼저 지어야 할 것)', () => {
+    const a = leaked(worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD')]))
+    expect(a.text).toContain('카운터가 없습니다')
+    expect(a.text).not.toContain('간호사')
+  })
+
+  it('unpaid — 세 원인 모두 톤 가드레일을 지킨다', () => {
+    const worlds = [
+      worldOf([doctor(), nurse()], [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD')]),
+      worldOf([doctor()], [room('WAITING'), room('EXAM', 'CARDIOLOGY'), room('WARD'), room('RECEPTION')]),
+      healthy([doctor()]),
+    ]
+    for (const w of worlds) {
+      const text = leaked(w).text
+      for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) expect(text, text).not.toContain(word)
+    }
   })
 
   it('no-bed — 침대 자리가 0이고 의사가 있으면 danger다(오는 응급이 전부 되돌아간다)', () => {

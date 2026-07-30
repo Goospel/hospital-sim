@@ -7,9 +7,13 @@
  *
  * ⚠️ **이 파일이 존재하는 이유가 재현성이다.** 2026-07-30 1차 프로브는 스크립트를 안 남겨
  * 수치가 재현 불가능했고, 리뷰어의 독립 프로브가 **정반대 순서**를 냈다. 원인은 밸런스가
- * 아니라 빌드였다 — 좌석·의사가 얇으면 도착 배율이 용량에 막혀 장부에 도달하지 못하고
- * 지역차가 임대료 하나로 축소된다. **프로브가 재는 것은 「지역」이 아니라 「지역 × 빌드」다.**
- * 그래서 빌드를 주석이 아니라 **코드로** 박고 커밋한다.
+ * 아니라 빌드였다. **프로브가 재는 것은 「지역」이 아니라 「지역 × 빌드」다** — 그래서 빌드를
+ * 주석이 아니라 **코드로** 박고 커밋한다.
+ *
+ * ⚠️ **그 빌드 차이의 정체는 간호사였다**(진단 실측 2026-07-30 · `staffed` 주석). 간호등급이
+ * SHORT면 간호사가 1주차에 떠나고, 그 뒤로 `hasCashier`가 거짓이 되어 병원이 진료비를 한 푼도
+ * 못 걷는다. 미수를 통제하지 않으면 이 프로브는 지역이 아니라 **간호사가 언제 떠나나**를 잰다.
+ * 그래서 표에 「간호사 시작→끝」과 「간호0주」 칸이 있다 — **금고보다 그 칸을 먼저 본다.**
  *
  * 본 테스트 스위트에서는 빠져 있다(vitest.config.ts의 include가 `src/**`). 실행:
  *
@@ -21,6 +25,7 @@ import { describe, it } from 'vitest'
 
 import { DAYS_PER_WEEK, DAY_END_MIN, startNextDay } from '@/sim/day'
 import { hire, placeRoom, withCashier, type RoomSpec } from '@/sim/testHelpers'
+import { nurseGradeOf } from '@/sim/nurse'
 import { hireNurse } from '@/sim/pawn'
 import { tick } from '@/sim/tick'
 import { CAMPAIGN_WEEKS, settleWeek, startNextWeek, weekSummary, type WeekSummary } from '@/sim/week'
@@ -40,24 +45,24 @@ const hireMany = (w: SimWorld, plan: Partial<Record<SimDeptKey, number>>): SimWo
 }
 
 /**
- * 수납 창구 n개 + 간호사 n명.
+ * 접수처 1개 + **간호등급 기준을 채우는 만큼**의 간호사(`extra`로 더 얹는다).
  *
- * ⚠️ **창구 하나는 병목이다**(실측 2026-07-30): 좌석 35짜리 병원에서도 진료비의 **약 70%가
- * 미수로 샜다**(수익 10,403 · 미수 27,120). `autoFurniture`가 RECEPTION 하나당 COUNTER를
- * **딱 하나** 놓기 때문에 방을 키워도 소용없고, 창구를 늘리려면 **방을 더 지어야** 한다.
+ * ⚠️ **미수를 가르는 것은 창구 수가 아니라 간호사 수다**(진단 실측 2026-07-30): 접수처를
+ * 3개로 늘리고 간호사를 1명으로 두면 수납률 **28%**, 접수처 1개에 간호사만 3명이면 **100%**.
+ * `patientFlow.cashierAt`은 설치된 첫 창구를 그대로 쓰고 점유를 보지 않으므로 창구를 늘려도
+ * 아무것도 안 바뀐다. 갈리는 것은 `hasCashier`의 **간호사 ≥ 1** 조건이고, 간호등급이 SHORT면
+ * 그 한 명이 `NURSE_RESIGN_SHORT_DAYS` 만에 떠나 그 뒤로 병원이 한 푼도 못 걷는다.
  *
- * 이걸 모르고 재면 프로브가 「지역 밸런스」가 아니라 「창구 처리량」을 잰다 — 지역 규칙이
- * 만드는 차이보다 미수 누수가 몇 배 크기 때문이다.
+ * 그래서 기준(`nurseGradeOf.required` = ⌈의사÷2⌉)을 **채워서** 뽑는다 — 안 채우면 프로브가
+ * 「지역 밸런스」가 아니라 「간호사가 언제 떠나나」를 잰다.
  *
- * 좌표는 부지 오른쪽 기둥에 세로로 쌓는다(x40~45) — 다른 방들이 x≤38에 있어 겹치지 않는다.
+ * ⚠️ 간호사는 **맨 뒤에** 뽑는다 — `spawnSpotNear`가 정문 근처를 가져가므로 앞에 두면 뒤
+ * 채용자의 첫 좌표가 밀린다(testHelpers.withCashier와 같은 계약).
  */
-const cashiers = (w: SimWorld, n: number): SimWorld => {
-  const spots = [24, 17, 10]
-  if (n > spots.length) throw new Error(`창구 자리는 ${spots.length}개까지다`)
-  for (let i = 0; i < n; i++) w = place(w, { type: 'RECEPTION', x: 40, y: spots[i], w: 6, h: 6 })
-  // 간호사는 **맨 뒤에** — spawnSpotNear가 정문 근처를 가져가므로 앞에 두면 뒤 채용자가 밀린다
-  // (testHelpers.withCashier와 같은 계약).
-  for (let i = 0; i < n; i++) w = hireNurse(w)
+const staffed = (w: SimWorld, extra = 0): SimWorld => {
+  w = place(w, { type: 'RECEPTION', x: 40, y: 24, w: 6, h: 6 })
+  const need = nurseGradeOf(w).required + extra
+  for (let i = 0; i < need; i++) w = hireNurse(w)
   return w
 }
 
@@ -88,13 +93,17 @@ const THIN: Build = {
 }
 
 /**
- * ①ʹ 얇은 빌드 + **창구 3**. ①과 딱 한 가지만 다르다 — 그래서 둘의 차가 곧 **미수 누수의 크기**다.
+ * ①ʹ 얇은 빌드 + **간호사를 기준까지**. ①과 딱 한 가지만 다르고, 그 차가 곧 미수 누수의 크기다.
  *
- * 지역 규칙을 재려면 이쪽을 봐야 한다: ①은 지역차보다 누수가 커서 「지역 × 창구」를 재고 있다.
+ * ⚠️ **유효 성분은 창구가 아니라 간호사다.** 진단 실측(2026-07-30): 접수처를 3개로 늘리고
+ * 간호사를 1명으로 두면 수납률 **28%**(①과 동일), 접수처 1개에 간호사만 3명이면 **100%**.
+ * 창구 수는 관계가 없다 — `patientFlow.cashierAt`은 설치된 첫 창구를 그대로 쓰고 점유를 안 본다.
+ * 갈리는 것은 `hasCashier`의 **간호사 ≥ 1** 조건이고, 간호등급이 SHORT면 그 한 명이
+ * `NURSE_RESIGN_SHORT_DAYS` 만에 떠나 그 뒤로 병원이 한 푼도 못 걷는다.
  */
-const THIN_PAID: Build = {
-  name: 'thin+창구3',
-  note: '①과 동일하되 수납 창구 3 · 간호사 3',
+const THIN_STAFFED: Build = {
+  name: 'thin+간호사2',
+  note: '①과 동일하되 간호사 2(= 의사 4명의 간호등급 기준 ⌈4÷2⌉)',
   make: w => {
     w = place(w, { type: 'WAITING', x: 14, y: 18, w: 16, h: 11 })
     w = place(w, { type: 'EXAM', dept: 'INTERNAL_MEDICINE', x: 2, y: 2, w: 6, h: 5 })
@@ -103,7 +112,7 @@ const THIN_PAID: Build = {
     w = place(w, { type: 'EXAM', dept: 'AESTHETICS', x: 23, y: 2, w: 6, h: 5 })
     w = place(w, { type: 'WARD', x: 31, y: 2, w: 10, h: 6 })
     w = hireMany(w, { INTERNAL_MEDICINE: 1, GENERAL_SURGERY: 1, CARDIOLOGY: 1, AESTHETICS: 1 })
-    return cashiers(w, 3)
+    return staffed(w)
   },
 }
 
@@ -119,7 +128,7 @@ const THIN_PAID: Build = {
  */
 const THICK: Build = {
   name: 'thick',
-  note: '좌석 53 · 진료실 8 · 침대 12 · 의사 8(미용2·내과3·외과2·순환1 = 전 지역 공통 상한) · 간호사 3',
+  note: '좌석 53 · 진료실 8 · 침대 12 · 의사 8(미용2·내과3·외과2·순환1 = 전 지역 공통 상한) · 간호사 4(기준)',
   make: w => {
     w = place(w, { type: 'WAITING', x: 14, y: 17, w: 20, h: 13 })
     w = place(w, { type: 'EXAM', dept: 'INTERNAL_MEDICINE', x: 2, y: 2, w: 6, h: 5 })
@@ -132,7 +141,7 @@ const THICK: Build = {
     w = place(w, { type: 'EXAM', dept: 'AESTHETICS', x: 9, y: 9, w: 6, h: 5 })
     w = place(w, { type: 'WARD', x: 16, y: 9, w: 14, h: 6 })
     w = hireMany(w, { INTERNAL_MEDICINE: 3, GENERAL_SURGERY: 2, CARDIOLOGY: 1, AESTHETICS: 2 })
-    return cashiers(w, 3)
+    return staffed(w)
   },
 }
 
@@ -161,13 +170,21 @@ interface Run {
    *  그 사실을 안 재면 「지역 밸런스」로 읽은 표가 사실은 사직 속도의 표다. */
   doctorsStart: number
   doctorsEnd: number
+  /** 간호사 시작→끝. **0이 되는 순간 병원은 한 푼도 못 걷는다**(`hasCashier`가 간호사 수를 본다). */
+  nursesStart: number
+  nursesEnd: number
+  /** 간호사가 처음 0이 된 주 — 미수가 폭발하는 시점의 단일 설명. */
+  nurseZeroWeek: number | null
 }
 
 const doctorCount = (w: SimWorld) => w.pawns.filter(p => p.kind === 'DOCTOR').length
+const nurseCountOf = (w: SimWorld) => w.pawns.filter(p => p.kind === 'NURSE').length
 
 function runCampaign(build: Build, region: SimRegionKey, seed: number): Run {
   let w = build.make(createWorld(seed, { region }))
   const doctorsStart = doctorCount(w)
+  const nursesStart = nurseCountOf(w)
+  let nurseZeroWeek: number | null = null
   const weeks: WeekSummary[] = []
   // 미수는 주간 요약에 없다(하루의 축이다) — 주가 넘어가며 `days`가 비워지므로 여기서 걷는다.
   let unpaid = 0
@@ -183,7 +200,8 @@ function runCampaign(build: Build, region: SimRegionKey, seed: number): Run {
     weeks.push(weekSummary(w))
     w = settleWeek(w)
     if (w.phase === 'CLOSED') break
-    w = startNextWeek(w)
+    w = startNextWeek(w) // 사직은 여기서 집행된다 — 그래서 판정도 이 뒤다
+    if (nurseZeroWeek === null && nurseCountOf(w) === 0) nurseZeroWeek = weeks.length
   }
 
   const sum = (f: (s: WeekSummary) => number) => weeks.reduce((a, s) => a + f(s), 0)
@@ -195,6 +213,7 @@ function runCampaign(build: Build, region: SimRegionKey, seed: number): Run {
   }
   return {
     region, seed, byDept, unpaid, doctorsStart, doctorsEnd: doctorCount(w),
+    nursesStart, nursesEnd: nurseCountOf(w), nurseZeroWeek,
     ending: w.ending ?? '(미종결)',
     weeksSurvived: weeks.length,
     treasury: w.treasuryManwon,
@@ -213,7 +232,7 @@ const REGION_KEYS = Object.keys(REGIONS) as SimRegionKey[]
 const n = (v: number) => v.toLocaleString('en-US')
 
 describe('지역 밸런스 프로브', () => {
-  for (const build of [THIN, THIN_PAID, THICK]) {
+  for (const build of [THIN, THIN_STAFFED, THICK]) {
     it(`${build.name} — ${build.note}`, () => {
       const runs = REGION_KEYS.flatMap(r => SEEDS.map(s => runCampaign(build, r, s)))
 
@@ -221,7 +240,7 @@ describe('지역 밸런스 프로브', () => {
       lines.push(``)
       lines.push(`━━━ 빌드 「${build.name}」 — ${build.note} · 시드 ${SEEDS.join('·')} ━━━`)
       lines.push(
-        ['지역', '시드', '종료', '주', '의사', '금고', '금고+임대료', '수익', '미수', '수납률', '고정비', '임대료', '진료', '이탈', '응급 수용/반려']
+        ['지역', '시드', '종료', '주', '의사', '간호사', '간호0주', '금고', '금고+임대료', '수익', '미수', '수납률', '고정비', '임대료', '진료', '이탈', '응급 수용/반려']
           .join('\t'),
       )
       for (const r of runs) {
@@ -229,6 +248,8 @@ describe('지역 밸런스 프로브', () => {
         lines.push([
           REGIONS[r.region].label, r.seed, r.ending, r.weeksSurvived,
           `${r.doctorsStart}→${r.doctorsEnd}`,
+          `${r.nursesStart}→${r.nursesEnd}`,
+          r.nurseZeroWeek ?? '—',
           n(r.treasury), n(r.treasury + r.rent), n(r.revenue), n(r.unpaid),
           billed === 0 ? '—' : `${Math.round((r.revenue / billed) * 100)}%`,
           n(r.fixedCost), n(r.rent), n(r.exams), n(r.left), `${r.emgAccepted}/${r.emgTurnedAway}`,

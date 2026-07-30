@@ -14,8 +14,8 @@ import { emergencySpec, wardBeds, type EmergencyTurnAway, type TurnAwayReason } 
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam, starvedSlowFactor } from '../sim/needs'
 import { buildBlockedSet } from '../sim/path'
-import { ARRIVAL_DEPT_MIX, hasCashier, unservedDepts } from '../sim/patientFlow'
-import { resigningNurses } from '../sim/nurse'
+import { ARRIVAL_DEPT_MIX, cashierSpots, hasCashier, unservedDepts } from '../sim/patientFlow'
+import { nurseGradeOf, resigningNurses } from '../sim/nurse'
 import { NURSE_WEEKLY_COST_MANWON, type NurseGrade } from '../sim/week'
 import { computeRegions, type Region } from '../sim/regions'
 import { examSlots } from '../sim/spots'
@@ -110,6 +110,42 @@ export function turnAwayBatchText(pending: readonly EmergencyTurnAway[]): string
  */
 export function unpaidText(manwon: number): string {
   return manwon > 0 ? `못 받은 진료비 ${formatManwon(manwon)}` : ''
+}
+
+/**
+ * 진료비가 새는 **이유** 한 조각 — 셋 중 무엇인지에 따라 플레이어가 할 일이 완전히 다르다.
+ *
+ * 옛 문구는 원인을 하나로 고정했다(「접수처 카운터에 간호사가 없습니다」). 그 말이 **틀린 것은
+ * 아니다** — 실측상 압도적으로 흔한 원인이 맞다. 부족했던 것은 **왜 없어졌는지와 몇 명이
+ * 필요한지**다.
+ *
+ * ⚠️ 실측(2026-07-30 밸런스 프로브 · `docs/research/region-balance-probe-2026-07-30.md`):
+ * 의사 4명 병원에 간호사를 **1명만** 두면 간호등급이 SHORT라 그 간호사가 **1주차 끝에 떠나고**
+ * (`NURSE_RESIGN_SHORT_DAYS`), 그 뒤로 `hasCashier`가 거짓이 되어 **12주 내내 진료비가 한 푼도
+ * 안 걷힌다**(수납률 24~54% = 사실상 1주차분만). 그래서 「간호사를 뽑으세요」로는 부족하다 —
+ * 한 명을 다시 뽑으면 **또 떠난다**. 필요한 인원(`nurseGradeOf.required` = ⌈의사÷2⌉)을 같이
+ * 말해야 그 조치가 유지된다.
+ *
+ * 카운터 자체가 없는 경우를 가르는 이유도 같다: 없는 간호사를 탓하면 이미 간호사를 뽑아 둔
+ * 플레이어가 고칠 수 없는 곳을 보게 된다.
+ *
+ * 톤은 나머지 경고와 같다 — **상태 서술 + 무엇을 하면 되는가**이지 누구 탓이 아니다.
+ */
+export function unpaidCauseText(w: SimWorld): string {
+  // 빈 `blocked`를 넘겨 **설치된** 카운터를 센다(기본값은 벽·가구만 담아 결과가 같지만,
+  // 여기서 묻는 것은 "지금 갈 수 있나"가 아니라 "지었나"라 의도를 인자로 적어 둔다).
+  if (cashierSpots(w, new Set()).length === 0) return '접수처에 수납 카운터가 없습니다'
+
+  const { count, required } = nurseGradeOf(w)
+  if (count === 0) {
+    // 필요 인원까지 말한다 — 한 명만 다시 뽑으면 등급이 또 SHORT라 그 간호사도 떠난다.
+    return required > 0
+      ? `접수처 카운터에 간호사가 없습니다 — 지금 의사 수라면 ${required}명이 필요합니다`
+      : '접수처 카운터에 간호사가 없습니다'
+  }
+  // 창구도 간호사도 있는데 샜다 = 그 돈은 **이 상태가 되기 전**의 것이다(미수는 하루 집계다).
+  // 여기서 또 뭔가를 지으라고 하면 이미 고친 사람을 다시 뛰게 만든다.
+  return '창구는 지금 서 있습니다 — 샌 진료비는 그 전의 것입니다'
 }
 
 /**
@@ -922,11 +958,13 @@ export function alertsOf(w: SimWorld): SimAlert[] {
      배치가 덜 끝난 동안은 어차피 setup 경고가 먼저다 — 그 섀도잉은 그대로 유지된다).
 
      ⚠️ warn이지 danger가 아니고 문구는 **상태 서술만** 한다: 「받지 못했습니다」이지
-     「놓쳤습니다」가 아니다(톤 가드레일 — 「응급 끔」·no-dept와 같은 자리의 같은 규칙). */
+     「놓쳤습니다」가 아니다(톤 가드레일 — 「응급 끔」·no-dept와 같은 자리의 같은 규칙).
+
+     원인은 `unpaidCauseText`가 판정한다 — 셋 중 무엇인지에 따라 플레이어가 할 일이 다르다. */
   if (w.stats.unpaidManwon > 0) {
     alerts.push({
       key: 'unpaid', kind: 'ops', severity: 'warn',
-      text: `진료비 ${formatManwon(w.stats.unpaidManwon)}을 받지 못했습니다 — 접수처 카운터에 간호사가 없습니다`,
+      text: `진료비 ${formatManwon(w.stats.unpaidManwon)}을 받지 못했습니다 — ${unpaidCauseText(w)}`,
     })
   }
 
