@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { GRID_W, GRID_H, type SimRegionKey } from "@/sim/world";
+import { BACKDROP_MARGIN } from "./simHud";
 import { TILE } from "./TileMap";
 
 /**
@@ -18,12 +19,15 @@ import { TILE } from "./TileMap";
  * 시각 결과가 이미 검수된 산출물이라, 바뀐 값은 타일 크기 하나뿐이다(목업 10 → 게임 TILE 16).
  */
 
-/** 배경이 덮는 범위(타일) — 부지 48×32 + 좌우 12·상하 8타일 여백. 시안과 같은 비율이다. */
-export const BACKDROP_W = 72;
-export const BACKDROP_H = 48;
+/** 배경이 덮는 범위(타일) — 부지 48×32 + 좌우·상하 여백. 시안과 같은 비율이다.
+ *  ⚠️ 여백은 **카메라의 경계이기도 하므로**(배경 밖은 페이지 공백이라 화면에 들이지 않는다)
+ *  숫자는 simHud의 `BACKDROP_MARGIN`이 소유하고 여기선 파생만 한다 — 여기에 다시 적으면
+ *  배경을 넓힌 날 카메라가 그대로 남아 공백이 샌다. */
+export const BACKDROP_W = GRID_W + 2 * BACKDROP_MARGIN.x;
+export const BACKDROP_H = GRID_H + 2 * BACKDROP_MARGIN.y;
 /** 배경 좌표계에서 부지가 앉는 자리 — 곧 캔버스를 부지 기준으로 얼마나 밀어 둘지이기도 하다. */
-export const BACKDROP_OFF_X = 12;
-export const BACKDROP_OFF_Y = 8;
+export const BACKDROP_OFF_X = BACKDROP_MARGIN.x;
+export const BACKDROP_OFF_Y = BACKDROP_MARGIN.y;
 
 type Ctx = CanvasRenderingContext2D;
 

@@ -528,13 +528,44 @@ export interface Camera {
 /** 최대 줌 — 타일 하나가 화면을 채우면 부지의 맥락이 사라져 오히려 짓기 어렵다. */
 export const ZOOM_MAX = 3
 
-/** 최소 줌 — **fit(1)보다 아래**여야 한다. 1에서 막으면 게임이 시작되는 배율이 곧 하한이라
- *  [−]와 휠아웃이 **처음부터 죽은 버튼**이다("확대만 되지 축소는 안 된다" — 실제 신고).
+/** 줌 하한의 **하한** — 하한 자체는 창마다 갈리고(zoomFloor) 이 값은 그것이 아무리 낮아도
+ *  여기까지라는 바닥이다. **fit(1)보다 아래**여야 한다: 1에서 막으면 게임이 시작되는 배율이 곧
+ *  하한이라 [−]와 휠아웃이 **처음부터 죽은 버튼**이다("확대만 되지 축소는 안 된다" — 실제 신고).
  *  부지 전체가 이미 보이는 배율이라도 둘레 여백까지 당겨 보는 것이 축소의 모습이다. */
 export const ZOOM_MIN = 0.5
 
-/** 그 배율에서 화면에 그려지는 맵 크기 — 클램프의 경계는 전부 여기서 나온다. */
-const contentOf = (base: Size, scale: number): Size => ({ w: base.w * scale, h: base.h * scale })
+/**
+ * 부지 둘레 **배경이 뻗는 여백**(타일) — 좌우 x, 상하 y.
+ *
+ * 이 값이 그림 크기이면서 동시에 **카메라의 경계**인 것이 이 상수가 여기 있는 이유다: 배경
+ * 사각형 밖은 페이지 공백이라 화면에 들어오면 안 되고(림월드식 축소 하한), 그 판정은 전부
+ * 아래 산술이 한다. Backdrop.tsx가 캔버스 크기·오프셋을 이 값에서 파생한다 — 두 곳에 적으면
+ * 배경을 넓힌 날 카메라가 그대로 남아 공백이 새고, 그 어긋남은 에러가 아니라 "축소하면 가끔
+ * 빈 곳이 보인다"로 나타난다(이 저장소가 여러 번 경고한 이중 기재).
+ */
+export const BACKDROP_MARGIN = { x: 12, y: 8 } as const
+
+/**
+ * 카메라 산술이 보는 **화면의 형상** 한 벌 — 클램프도 줌 하한도 전부 이 다섯에서 나온다.
+ *
+ * 낱개 인자 대신 한 벌인 이유는 `host`·`base`·`margin`이 셋 다 `Size`라서다 — 순서를 바꿔
+ * 넘겨도 타입이 통과하고, 그 결함은 "어떤 창에서만 공백이 보인다"로만 나타난다.
+ */
+export interface CameraView {
+  /** 뷰포트 **전체**(px). 바는 오버레이라 그 밑도 포함이다 — 배경이 덮어야 할 대상이 이것이다. */
+  host: Size
+  /** HUD 바가 안 덮는 사각형(px) — 중앙 정렬·가장자리 클램프의 기준(`safeArea`). */
+  safe: Rect
+  /** 부지 원본 크기(px) — 화면에 그려지는 크기는 이것 × fit × zoom. */
+  base: Size
+  /** 배경 여백(부지 px 기준 · 좌우/상하) — `BACKDROP_MARGIN` × 타일 크기. */
+  margin: Size
+  /** zoom 1의 배율(부지 전체가 안전 영역에 맞는 값). */
+  fit: number
+}
+
+/** 그 배율에서 화면에 그려지는 크기 — 콘텐츠도 배경 여백도 같은 배율을 탄다. */
+const scaled = (size: Size, scale: number): Size => ({ w: size.w * scale, h: size.h * scale })
 
 /** 축 하나의 클램프. **콘텐츠가 안전 영역보다 작으면 중앙값**(팬을 무시한다) — zoom 1에서는 짧은
  *  쪽에 늘 여백이 남는데, 그 축을 밀 수 있으면 부지가 화면 밖으로 흘러가고 절반이 빈 배경이 된다.
@@ -545,12 +576,59 @@ function clampAxis(pan: number, start: number, safe: number, content: number): n
   return Math.max(start + safe - content, Math.min(start, pan))
 }
 
-export function clampCamera(cam: Camera, safe: Rect, content: Size): Camera {
+/**
+ * 배경 커버리지 — 축 하나에서 **배경 사각형이 뷰포트를 물고 있게** 자르는 경성 제약.
+ *
+ * 배경은 부지 rect를 여백(margin)만큼 넓힌 사각형이다. 그 왼쪽 변이 뷰포트 안으로 들어오면
+ * (`pan − margin > 0`) 그만큼 페이지 공백이 드러나므로 `pan ≤ margin`, 오른쪽 변도 같은 이유로
+ * `pan ≥ host − content − margin`이다.
+ *
+ * ⚠️ **위 clampAxis의 결과를 다시 자른다** — 둘이 충돌하면 이쪽이 이긴다. 안전 영역 중앙이
+ * 공백을 드러내는 배율(좌측 패널이 있는 창의 축소 구간)에서 중앙 정렬을 포기하는 것이 계약이다:
+ * 가려진 타일은 팬으로 꺼낼 수 있지만 공백은 플레이어가 할 수 있는 일이 없다.
+ */
+function coverAxis(pan: number, host: number, content: number, margin: number): number {
+  return Math.max(host - content - margin, Math.min(margin, pan))
+}
+
+export function clampCamera(cam: Camera, v: CameraView): Camera {
+  const s = v.fit * cam.zoom
+  const c = scaled(v.base, s)
+  const m = scaled(v.margin, s)
   return {
     zoom: cam.zoom,
-    x: clampAxis(cam.x, safe.x, safe.w, content.w),
-    y: clampAxis(cam.y, safe.y, safe.h, content.h),
+    x: coverAxis(clampAxis(cam.x, v.safe.x, v.safe.w, c.w), v.host.w, c.w, m.w),
+    y: coverAxis(clampAxis(cam.y, v.safe.y, v.safe.h, c.h), v.host.h, c.h, m.h),
   }
+}
+
+/**
+ * 이 창에서 **배경이 뷰포트를 덮을 수 있는 최소 zoom** — 축소는 여기까지다(림월드의 그 바닥).
+ *
+ * 고정 하한(0.5)이 있던 자리다. 상수는 창을 모르므로, 창이 크거나 형상이 극단이면 배경(부지 +
+ * 여백)이 화면보다 작아지는 배율까지 내려갔다 — 그게 신고된 결함이다("축소하면 배경 바깥
+ * 공백이 넓게 드러난다").
+ *
+ * 식은 커버리지 두 부등식이 **동시에 성립할 수 있는가**에서 곧바로 나온다: 축마다
+ * `margin ≥ host − content − margin`, 즉 `s·(base + 2·margin) ≥ host`. 배율에 대해 단조라
+ * 그 등호가 곧 바닥이고, 두 축 중 큰 쪽이 이긴다. 여기서 얻는 건 화면 배율 `s`이므로
+ * fit으로 나눠 zoom으로 돌린다(zoom은 fit 대비 배수라는 Camera의 계약).
+ *
+ * ⚠️ 이 값이 실제로 **가장 낮은** 값이라는 것(하한을 더 올리면 축소가 공연히 죽는다)은
+ * simHud.test.ts의 최소성 테스트가 잠근다 — 5% 아래면 어떤 팬으로도 공백이 남는다.
+ *
+ * ⚠️ ZOOM_MAX에서 자른다: 배경 비율(72×48타일)을 벗어난 극단 창은 최대 줌에서도 다 못 덮는다.
+ * 그때는 공백이 남는 것이 이 창의 천장이고, 올리려면 `BACKDROP_MARGIN`을 키워야 한다.
+ */
+export function zoomFloor(v: CameraView): number {
+  const need = Math.max(v.host.w / (v.base.w + 2 * v.margin.w), v.host.h / (v.base.h + 2 * v.margin.h))
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, need / v.fit))
+}
+
+/** 창이 갈렸을 때(리사이즈·첫 측정) 카메라를 다시 앉힌다 — **줌을 하한으로 받치고** 다시 클램프.
+ *  줌을 안 받치면 창을 키운 순간 옛 배율이 하한 아래로 떨어져 배경 밖 공백이 그대로 드러난다. */
+export function settledCamera(cam: Camera, v: CameraView): Camera {
+  return clampCamera({ ...cam, zoom: Math.max(zoomFloor(v), Math.min(ZOOM_MAX, cam.zoom)) }, v)
 }
 
 /**
@@ -568,23 +646,18 @@ export function zoomedCamera(
   cam: Camera,
   anchor: { x: number; y: number },
   factor: number,
-  safe: Rect,
-  base: Size,
-  fit: number,
+  v: CameraView,
 ): Camera {
-  const zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, cam.zoom * factor))
+  // 하한은 상수가 아니라 **이 창의 값**이다(zoomFloor) — 그 아래로는 배경이 화면을 못 덮는다.
+  const zoom = Math.max(zoomFloor(v), Math.min(ZOOM_MAX, cam.zoom * factor))
   const k = zoom / cam.zoom
-  const eff = clampCamera(cam, safe, contentOf(base, fit * cam.zoom))
-  return clampCamera(
-    { zoom, x: anchor.x - (anchor.x - eff.x) * k, y: anchor.y - (anchor.y - eff.y) * k },
-    safe,
-    contentOf(base, fit * zoom),
-  )
+  const eff = clampCamera(cam, v)
+  return clampCamera({ zoom, x: anchor.x - (anchor.x - eff.x) * k, y: anchor.y - (anchor.y - eff.y) * k }, v)
 }
 
 /** 드래그 델타를 그대로 더하고 가장자리에서 자른다. */
-export function pannedCamera(cam: Camera, dx: number, dy: number, safe: Rect, base: Size, fit: number): Camera {
-  return clampCamera({ ...cam, x: cam.x + dx, y: cam.y + dy }, safe, contentOf(base, fit * cam.zoom))
+export function pannedCamera(cam: Camera, dx: number, dy: number, v: CameraView): Camera {
+  return clampCamera({ ...cam, x: cam.x + dx, y: cam.y + dy }, v)
 }
 
 /** 드래그 사각형이 낳는 타일 — 가구·철거는 **채움**, 벽은 **테두리**다(1줄이면 곧 직선 벽). */
