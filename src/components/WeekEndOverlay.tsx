@@ -5,7 +5,7 @@ import type { DayRecord } from "@/sim/day";
 import { simDept, type SimDeptKey } from "@/sim/dept";
 import type { WeekDeptLine, WeekSummary } from "@/sim/week";
 import type { EndingKind } from "@/sim/world";
-import { formatManwon, NURSE_GRADE_TEXT, type ResigningNotice } from "./simHud";
+import { formatManwon, NURSE_GRADE_TEXT, nurseAttritionText, type ResigningNotice } from "./simHud";
 
 /**
  * 주간 결산 오버레이 — 7일이 끝나고 **비용이 청구되는** 자리.
@@ -55,6 +55,8 @@ export default function WeekEndOverlay({
   onNextWeek: () => void;
 }) {
   const warning = !closed && insolvencyStreak > 0;
+  /** 간호사 이탈 한 줄 — 빈 문자열이면 줄 자체가 없다(simHud.nurseAttritionText). */
+  const attrition = nurseAttritionText(summary.nursing.leaving, summary.nursing.resignedTotal);
   /** 이 판이 **돈 때문에** 끝났는가 — CLOSED 세 종류(돈·사람·시간) 중 폐업만 고른다. */
   const insolvent = ending === "INSOLVENCY";
   const bankNotice = insolvent
@@ -179,6 +181,15 @@ export default function WeekEndOverlay({
                 {formatSignedManwon(summary.nursing.adjustManwon)}
               </dd>
             </div>
+            {/* 간호사 이탈 — **미달 배치가 사람으로 청구되는** 줄이다(설계 2026-07-30 §4).
+                금액 줄이 아니라 사실 한 줄이라 오른쪽 칸이 없다: 이 대가는 장부에 안 찍힌다.
+                문장·0줄 판단·톤은 simHud(nurseAttritionText)가 소유하고 여기선 놓기만 한다 —
+                빈 문자열이 곧 "이 줄은 없다"라, 화면이 인원을 다시 세지 않는다.
+                ⚠️ `<p>`가 아니라 `<div>`인 이유는 이 줄이 `<dl>` 안에 있기 때문이다 — dl의 자식으로
+                허용되는 것은 dt·dd·div뿐이라(위 금액 줄들도 전부 div다) p를 끼우면 무효 마크업이다. */}
+            {attrition && (
+              <div className="font-sans text-xs leading-relaxed text-stamp-ink">{attrition}</div>
+            )}
             {/* 응급 줄 — **문앞 판정** 기준이다. 수용은 "받아들인 시점"에 세므로, 처치까지 못
                 간 채 마감을 맞은 건은 여기 수용에 들어 있으면서 위 과별 표의 수익에는 없다.
                 라벨이 그 사실을 직접 말한다(숫자만 놓으면 표와 어긋나 보인다).

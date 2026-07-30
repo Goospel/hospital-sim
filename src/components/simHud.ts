@@ -15,6 +15,7 @@ import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam, starvedSlowFactor } from '../sim/needs'
 import { buildBlockedSet } from '../sim/path'
 import { hasCashier, unservedDepts } from '../sim/patientFlow'
+import { resigningNurses } from '../sim/nurse'
 import { NURSE_WEEKLY_COST_MANWON, type NurseGrade } from '../sim/week'
 import { computeRegions, type Region } from '../sim/regions'
 import { examSlots } from '../sim/spots'
@@ -122,6 +123,31 @@ export const NURSE_GRADE_TEXT: Record<NurseGrade, string> = {
   BONUS: '간호 인력이 기준을 넘어 수가가 가산되었습니다',
   MET: '간호 인력이 기준을 채웠습니다',
   SHORT: '간호 인력이 기준에 못 미쳐 수가가 감산되었습니다',
+}
+
+/**
+ * 주간 결산 간호 블록의 **사직 줄** — 말할 것이 없으면 빈 문자열.
+ *
+ * 두 사실이 한 줄에 온다: *이번 주말에 몇 명이 떠나는가*와 *이 판에서 지금까지 몇 명을 잃었는가*.
+ * 둘을 더해 하나로 접지 않는 이유는 시점이 다르기 때문이다("떠난다"와 "떠났다" — WeekNursing 주석).
+ *
+ * **면허 문장이 이 줄의 절반**이다: 의사 사직은 "필수의료를 떠났다"이지만 간호사는 **유휴로
+ * 돌아간다**(설계 §3 — 활동률 51~54%의 번역). 그 차이를 안 적으면 두 사직이 화면에서 같은
+ * 사건으로 읽히고, 그러면 "뽑을 사람은 있는데 잔류가 안 된다"는 이 축의 논지가 사라진다.
+ *
+ * 0줄을 안 세우는 규칙은 `unpaidText`·`turnAwayBreakdownText`와 같다 — 「사직 0명」이 떠 있으면
+ * 아무 일도 없던 주가 사고가 있던 주처럼 읽힌다. 빈 문자열이 "띄우지 않는다"의 신호다.
+ *
+ * 톤: **상태 서술만** 한다(§톤 가드레일). 미달 배치는 제도와 배치의 결과지 플레이어의 잘못이
+ * 아니다 — 「당신」·「실패」·「탓」이 붙는 순간 구조의 결과가 개인의 잘못으로 미끄러진다.
+ */
+export function nurseAttritionText(leaving: number, resignedTotal: number): string {
+  const parts: string[] = []
+  if (leaving > 0) {
+    parts.push(`간호사 ${leaving}명이 이번 주말 병원을 떠납니다 — 면허는 그대로입니다. 이 병원에 없을 뿐입니다`)
+  }
+  if (resignedTotal > 0) parts.push(`지금까지 떠난 간호사 ${resignedTotal}명`)
+  return parts.join(' · ')
 }
 
 /** 사유별 회차 집계 — 0도 자리를 지킨다(문구 쪽에서 0줄을 빼는 판단을 한다). */
@@ -956,7 +982,14 @@ export function inspectCard(p: Pawn, w: SimWorld): InspectCard {
   if (p.kind === 'NURSE') {
     return {
       title: p.name ? `${p.name} · 간호사` : '간호사',
-      lines: ['수납 담당', `주급 ${formatManwon(NURSE_WEEKLY_COST_MANWON)}`],
+      lines: [
+        '수납 담당', `주급 ${formatManwon(NURSE_WEEKLY_COST_MANWON)}`,
+        /* 사직 예고 — 의사의 「이번 주말 떠남」 배지(PriorityPanel)와 **같은 말**이다: 두 자리가
+           다른 문구를 쓰면 같은 사건이 두 사건으로 읽힌다. 판정도 코어 명단을 그대로 지난다
+           (임계를 화면이 다시 적으면 안 떠나는 사람에게 예고가 붙는다). 주중에 미리 보이는 것이
+           이 줄의 존재 이유다 — 대응할 시간이 있어야 경고인 것은 의사와 같다. */
+        ...(resigningNurses(w).some(n => n.id === p.id) ? ['이번 주말 떠남'] : []),
+      ],
     }
   }
   if (p.kind === 'DOCTOR') {

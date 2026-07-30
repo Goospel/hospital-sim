@@ -90,6 +90,22 @@ export interface SimWorld {
    *  몇 명을 돌려보냈나"를 읽을 축이 없었다. 단조 증가하고 하루·주 리셋이 없다
    *  (`saturatedDays`와 같은 계약 — *돌려보낸 일은 남는다*). */
   turnedAwayTotal: number
+  /**
+   * **판 전체**에서 병원을 떠난 간호사의 누적 — 「유휴」 장부다(설계 2026-07-30 §3).
+   *
+   * ⚠️ **자원이 아니라 장부다.** 이 숫자는 채용을 막지 않는다(간호사는 전국 풀이 없다 —
+   * `hireNurse`에 거부 사유가 없는 그 이유). 풀이 채용을 막으면 메시지가 "사람이 없다"로
+   * 뒤집히는데, 리서치의 사실은 **"뽑을 사람은 있는데 잔류가 안 된다"**다(활동률 51~54%·유휴
+   * 20.4만의 번역) — 그래서 떠난 사람은 필수의료를 떠난 의사와 달리 **면허를 들고 유휴로**
+   * 돌아가고, 세계는 그 수만 센다.
+   *
+   * 쓰이는 곳이 둘이다: 결산 화면의 누계 줄과 **채용 이름의 서수**(pawn.hireNurse — 재직 인원만
+   * 세면 사직 뒤 같은 이름이 재등장한다).
+   *
+   * `stats`가 아니라 여기 있는 이유: `SimStats`는 아침마다 비워진다(`freshStats`). 판 단위로
+   * 단조 증가하는 축은 이 층에 산다 — `turnedAwayTotal`과 같은 계약이다(*떠난 일은 남는다*).
+   */
+  nursesResignedTotal: number
 }
 
 export interface SimStats {
@@ -139,7 +155,7 @@ export function createWorld(seed: number): SimWorld {
     walls: new Set(), doors: new Set(), designations: [],
     furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
-    hirePool: freshHirePool(), turnedAwayTotal: 0,
+    hirePool: freshHirePool(), turnedAwayTotal: 0, nursesResignedTotal: 0,
   }
 }
 

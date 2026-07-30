@@ -14,11 +14,15 @@ export const PAWN_TILES_PER_MIN = 2
 /**
  * 세계를 걸어다니는 개체의 종류.
  *
- * ⚠️ **`'NURSE'`는 사람 기계(피로·허기·욕구·우선순위·사직)에 들어가지 않는다** — 그 전부가
+ * ⚠️ **`'NURSE'`는 의사의 사람 기계(피로·허기·욕구·우선순위)에 들어가지 않는다** — 그 전부가
  * `kind === 'DOCTOR'`를 보고 갈리며, 그 한 줄들이 유지되는 것이 이 슬라이스의 **계약**이지
- * 우연이 아니다(설계 §1 · payment.test가 잠근다). 간호사가 합류하는 곳은 셋뿐이다:
- * 아침 입장·통행/충돌·렌더. 그리고 그가 하는 일은 하나다 — **접수처 카운터에 있으면
- * 진료비가 걷힌다**(patientFlow.hasCashier).
+ * 우연이 아니다(설계 §1 · payment.test가 잠근다). 그가 하는 일은 하나다 — **접수처 카운터에
+ * 있으면 진료비가 걷힌다**(patientFlow.hasCashier).
+ *
+ * ⚠️ **사직은 예외다 — 다만 다른 기계다**(2026-07-30 N2). 간호사도 떠나지만 드라이버가 개인
+ * 피로가 아니라 **배치 조건**이다: 간호등급이 미달인 날을 세고(`shortDays`) 그 날들이 임계에
+ * 닿으면 떠난다(nurse.resigningNurses). 두 축은 서로를 안 읽는다 — 포화한 간호사도, SHORT를
+ * 잔뜩 쌓은 의사도 상대 명단에 서지 않는다(payment.test·nurseAttrition.test가 함께 잠근다).
  */
 export type PawnKind = 'DOCTOR' | 'PATIENT' | 'NURSE'
 
@@ -173,6 +177,26 @@ export interface Pawn {
    * 옛 주석대로 **완편 병원은 이 카운터가 영원히 0**이다 — 구조적으로 망가진 배치에서만 돈다.
    */
   saturatedDays?: number
+  // NURSE
+  /**
+   * **간호등급이 미달(SHORT)인 채로 마감한 날**의 누적 — 간호사만. 채용 시 0에서 시작하고
+   * 마감 정산이 하루에 최대 1 올린다(day.settleDay). 이 값이 자기 임계에 닿으면 그 사람은
+   * 다음 주에 떠난다(nurse.resigningNurses).
+   *
+   * ⚠️ **오르는 조건이 그 사람이 아니라 배치다** — 그날 병원이 미달이면 재직 중인 **모든**
+   * 간호사가 함께 오른다. 배치 미달은 특정인의 상태가 아니라 모두의 근무 환경이라, 개인별로
+   * 갈라 세면 "누가 더 갈렸나"라는 없는 축이 생긴다.
+   *
+   * ⚠️ **리셋이 없다** — `saturatedDays`와 같은 규율이다: 기준을 채운 날이 끼어도 깎이지 않고
+   * 아침(day.freshMorning)도 주 넘김(week.startNextWeek)도 이 필드를 건드리지 않는다. 리셋을
+   * 두면 "하루만 제대로 배치해 되돌리는" 최적화 표면이 생기고, 그러면 이탈은 구조의 결과가
+   * 아니라 관리의 실수가 된다. 소멸은 사직(사람이 나감)뿐이다.
+   */
+  shortDays?: number
+  /** 채용된 주차 — 간호사만(`hireNurse`가 `w.week`을 싣는다). **신규 판별의 근거**다:
+   *  재직이 `NURSE_NEW_WEEKS` 미만이면 임계가 절반이라 더 빨리 떠난다(nurse.ts).
+   *  없으면 **1주차 채용**으로 읽힌다 — 폴백의 근거는 nurse.resignShortDaysOf 주석이다. */
+  hiredWeek?: number
   /** 오늘 누적 **표준강도분**(소요 분 × 과 강도) — 의사만. 아침에 0으로 리셋된다.
    *  피로 증가가 이 누적치의 함수라(하루 `FATIGUE_FREE_MIN` 초과분만 쌓인다) 하루치를 들고 있어야
    *  한다. 건별로 따로 반올림해 더하면 같은 하루가 쪼개는 방식에 따라 다른 피로를 낳는다. */
@@ -318,19 +342,24 @@ export const nurseCount = (pawns: readonly Pawn[]): number =>
  * 없으므로 전국 풀(`hirePool`)도 없고, 채용 일시금도 없다(의사와 같다 — 대가는 주말의 주급뿐).
  * 거부 사유가 하나도 없는 자리에 결과 타입을 씌우면 화면이 도달 불가능한 분기를 떠안는다.
  *
- * 이름은 **의사 목록을 나눠 쓴다**(`doctorName`) — 인덱스는 이미 뽑은 간호사 수다(간호사는
- * 사직이 없어 단조 증가한다). 의사와 같은 이름이 나올 수 있지만 카드가 늘 역할을 함께 적어
- * 구별되고, 간호사에겐 사직 편지가 없어 동명이인이 사실을 흐릴 자리가 없다.
+ * 이름은 **의사 목록을 나눠 쓴다**(`doctorName`). 인덱스는 **지금까지 뽑은 총수**다 —
+ * 재직 인원(`nurseCount`)만 세면 사직이 인원을 줄이면서 **같은 이름이 재등장한다**(N2 이후
+ * 실재하는 경로다: 옛 주석의 "간호사는 사직이 없어 단조 증가한다"는 전제가 깨졌다). 재직 +
+ * 누계 사직이면 채용마다 정확히 1 늘어 판 안에서 단조 증가하고 값마다 유일하다 —
+ * `hiredEver`(의사 쪽)가 풀의 단조 감소에서 같은 성질을 얻는 것과 같은 형태다.
+ * 의사와 같은 이름이 나올 수 있지만 카드가 늘 역할을 함께 적어 구별된다.
  *
  * ⚠️ 피로·허기·우선순위·특성을 **명시적으로도 싣지 않는다** — 필드가 없는 것이 곧 "이 사람은
  * 그 기계 밖"이라는 표현이다(PawnKind 주석의 계약). 0으로 채우면 그 기계가 나중에 조용히
- * 이 사람을 집는다.
+ * 이 사람을 집는다. 반대로 `shortDays`·`hiredWeek`은 **싣는다**: 간호사가 실제로 들어가 있는
+ * 기계(이탈)의 필드라, 없으면 "아직 안 겪은 사람"과 "기계 밖 폰"이 구별되지 않는다.
  */
 export function hireNurse(w: SimWorld): SimWorld {
   const at = spawnSpotNear(w, ENTRANCE)
   const p: Pawn = {
     id: `nur-${w.nextId}`, kind: 'NURSE', x: at.x, y: at.y, path: [],
-    name: doctorName(nurseCount(w.pawns)),
+    name: doctorName(nurseCount(w.pawns) + w.nursesResignedTotal),
+    shortDays: 0, hiredWeek: w.week,
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
 }

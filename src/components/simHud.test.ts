@@ -4,7 +4,7 @@ import {
   alertsOf, escTarget, inspectCard, regionOverlayOn, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle,
-  NURSE_GRADE_TEXT, PRIORITY_LABEL,
+  NURSE_GRADE_TEXT, nurseAttritionText, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidText,
   startingRosterMet, STARTING_ROSTER_MIN, statusLineText, TOOL_LABEL,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
@@ -19,6 +19,7 @@ import { TRAITS } from '../sim/traits'
 import { DEFAULT_PRIORITY } from '../sim/pawn'
 import { hasCashier } from '../sim/patientFlow'
 import { NURSE_WEEKLY_COST_MANWON } from '../sim/week'
+import { NURSE_RESIGN_SHORT_DAYS, resigningNurses } from '../sim/nurse'
 import type { Pawn, PatientStage, Priority } from '../sim/pawn'
 import { FATIGUE_RED, RESIGN_SATURATED_DAYS } from '../game/doctor'
 
@@ -1191,6 +1192,39 @@ describe('NURSE_GRADE_TEXT — 주간 결산의 간호등급 한 줄', () => {
   })
 })
 
+describe('nurseAttritionText — 주간 결산 간호 블록의 사직 줄', () => {
+  it('떠나는 사람이 있으면 몇 명인지 말한다', () => {
+    expect(nurseAttritionText(2, 0)).toContain('2명')
+  })
+
+  it('면허가 남는다는 사실이 함께 온다 — 의사 사직과 **다른 것이 곧 메시지**다', () => {
+    // 의사는 필수의료를 떠나 풀로 안 돌아가지만(week.startNextWeek) 간호사는 **유휴로 돌아간다**:
+    // 뽑을 사람은 있는데 잔류가 안 된다는 리서치의 사실이 이 한 줄에 실린다(설계 §3).
+    expect(nurseAttritionText(1, 0)).toContain('면허')
+  })
+
+  it('유휴 누계는 0이 아닐 때만 붙는다 — 첫 사직 주에 "지금까지 0명"이 뜨면 안 읽힌다', () => {
+    expect(nurseAttritionText(1, 0)).not.toContain('지금까지')
+    expect(nurseAttritionText(1, 3)).toContain('3명')
+  })
+
+  it('아무도 안 떠나고 누계도 0이면 **빈 문자열**이다 — 멀쩡한 주에 줄이 서지 않는다', () => {
+    // `unpaidText`·`turnAwayBreakdownText`와 같은 규칙: 0줄이 떠 있으면 아무 일도 없던 주가
+    // 사고가 있던 주처럼 읽힌다. 빈 문자열이 "띄우지 않는다"의 신호라 호출부가 다시 세지 않는다.
+    expect(nurseAttritionText(0, 0)).toBe('')
+  })
+
+  it('떠난 사람이 없어도 누계가 있으면 장부는 남는다 — 이 판에서 몇 명을 잃었나', () => {
+    expect(nurseAttritionText(0, 4)).toContain('4명')
+  })
+
+  it('톤 가드레일 — 상태 서술만 한다(구조의 결과를 플레이어의 잘못으로 미끄러뜨리지 않는다)', () => {
+    for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) {
+      expect(nurseAttritionText(2, 3)).not.toContain(word)
+    }
+  })
+})
+
 describe('inspectCard — 폰 클릭 카드', () => {
   /** 카드가 읽는 세계 — 판정에 필요한 것은 폰 목록뿐이다(바쁨은 환자의 doctorId에서 나온다). */
   const world = (pawns: Pawn[] = []): SimWorld => ({ ...createWorld(1), pawns })
@@ -1205,6 +1239,20 @@ describe('inspectCard — 폰 클릭 카드', () => {
     expect(card.lines).toContain('수납 담당')
     // 주급은 **코어 상수**에서 온다 — 화면이 숫자를 다시 적으면 결산에서 빠지는 액수와 갈린다.
     expect(card.lines.some(l => l.includes(formatManwon(NURSE_WEEKLY_COST_MANWON)))).toBe(true)
+  })
+
+  it('떠나는 간호사 카드엔 「이번 주말 떠남」이 붙는다 — 명단은 코어가 단일 출처다', () => {
+    // 의사 배지(PriorityPanel)와 **같은 말**을 쓴다: 두 자리가 다른 문구를 쓰면 같은 사건이
+    // 두 사건으로 읽힌다. 판정도 화면이 임계를 다시 적지 않고 코어 명단을 지난다.
+    const n = nurse({ shortDays: NURSE_RESIGN_SHORT_DAYS })
+    const w = world([n])
+    expect(resigningNurses(w).map(p => p.id)).toEqual([n.id]) // 전제: 코어가 실제로 명단에 올렸다
+    expect(inspectCard(n, w).lines).toContain('이번 주말 떠남')
+  })
+
+  it('안 떠나는 간호사 카드엔 그 줄이 없다 — 멀쩡한 사람에게 예고가 붙지 않는다', () => {
+    const n = nurse({ shortDays: 0 })
+    expect(inspectCard(n, world([n])).lines).not.toContain('이번 주말 떠남')
   })
 
   it('간호사 카드엔 피로·우선순위 줄이 없다 — 그 기계 밖의 사람이다(pawn.PawnKind 계약)', () => {

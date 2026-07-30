@@ -6,10 +6,16 @@
 // 셋 다 이 파일의 `endingOf` 한 곳에서만 판정된다(정산의 단일 출처 계승).
 import type { EndingKind, SimWorld } from './world'
 import { freshMorning } from './day'
-import { doctorDeptOf, nurseCount, type Pawn } from './pawn'
+import { doctorDeptOf, type Pawn } from './pawn'
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from './dept'
+import { nurseGradeOf, resigningNurses, type NurseGrade } from './nurse'
 // 임계는 기존 게임에서 임포트한다 — 복제하면 옛 층과 이 층의 "몇 일이면 떠나는가"가 조용히 갈린다.
 import { RESIGN_SATURATED_DAYS } from '../game/doctor'
+
+/** 간호 판정의 **공개 자리는 여기 그대로다** — 구현만 nurse.ts로 내려갔다(순환 회피 · nurse.ts
+ *  머리말). re-export가 없으면 `week`에서 임포트하던 기존 호출부·테스트가 통째로 깨지는데,
+ *  그건 이 이동이 고치려던 문제와 아무 상관이 없는 비용이다. */
+export { nurseGradeOf, resigningNurses, type NurseGrade }
 
 /** 금고 음수가 이만큼 **연속**되면 폐업(기존 게임 규칙 계승). */
 export const INSOLVENCY_WEEKS_TO_CLOSE = 2
@@ -35,9 +41,6 @@ export const NURSE_WEEKLY_COST_MANWON = 300
  */
 export const NURSE_GRADE_RATE = 0.1
 
-/** 간호등급 3단 — 기준 초과 / 충족 / 미달. */
-export type NurseGrade = 'BONUS' | 'MET' | 'SHORT'
-
 /** 결산의 간호 블록 — 인원·기준·등급과 그 돈(주급은 항상 나가고, 가감산은 등급이 정한다). */
 export interface WeekNursing {
   count: number
@@ -48,25 +51,14 @@ export interface WeekNursing {
   wageManwon: number
   /** 등급 가감산 — SHORT면 음수·BONUS면 양수·MET이면 0. */
   adjustManwon: number
-}
-
-/**
- * 이번 주말의 간호등급 — **주말 시점의 인원만** 본다(주중 변동은 이 슬라이스에 없다).
- *
- * 기준은 `ceil(의사 수 / 2)`다. 정확한 제도 재현이 아니라 **번역**이다 — 실제 등급제는 병상당·
- * 환자수당 7단계지만 이 병원은 외래 중심이라 "진료 규모 대비 간호 인력"의 최소 형태로 옮겼다.
- *
- * ⚠️ **의사가 0명이면 등급이 없다(MET 고정)** — 기준이 0이라 간호사 하나만 있어도 산술로는
- * BONUS가 서는데, 그 주는 **수익이 0이 아닐 수 있다**: 주중에 벌고 주말 전에 의사가 전부 떠난
- * 주가 실재한다(weekDeptTable 주석의 그 경우). 그러면 아무도 진료하지 않는 병원이 간호사만으로
- * 가산을 받는다. 기준이 없는 곳에는 초과도 없다 — 미달도 마찬가지라 감산도 없다.
- */
-export function nurseGradeOf(w: SimWorld): { count: number; required: number; grade: NurseGrade } {
-  const count = nurseCount(w.pawns)
-  const required = Math.ceil(w.pawns.filter(p => p.kind === 'DOCTOR').length / 2)
-  const grade: NurseGrade =
-    required === 0 ? 'MET' : count > required ? 'BONUS' : count === required ? 'MET' : 'SHORT'
-  return { count, required, grade }
+  /** 이번 주말에 **떠나는** 간호사 수 — 명단은 `resigningNurses`가 소유한다(통지=집행 단일 출처).
+   *  숫자만 싣는 이유: 결산 화면이 세는 것은 인원이고, 누가 떠나는지는 주중에도 카드가 말한다
+   *  (의사 쪽은 사직 편지 때문에 사람 단위 통지가 필요해 명단을 따로 파생한다 — 간호사에겐 편지가 없다). */
+  leaving: number
+  /** 이 판에서 **지금까지** 떠난 간호사 누계(유휴 장부 · world.nursesResignedTotal).
+   *  ⚠️ **이번 주말 명단(`leaving`)은 아직 안 들어 있다** — 집행이 `startNextWeek`이라 그렇다.
+   *  둘을 더해 하나로 접지 않는 이유가 그것이다: "떠난다"와 "떠났다"는 다른 시점의 사실이다. */
+  resignedTotal: number
 }
 
 /** 한 판의 길이 — 이 주차의 결산이 끝나면 무조건 에필로그다.
@@ -124,6 +116,10 @@ export function weekSummary(w: SimWorld): WeekSummary {
     grade === 'MET' || magnitude === 0 ? 0 : grade === 'BONUS' ? magnitude : -magnitude
   const nursing: WeekNursing = {
     count, required, grade, wageManwon: count * NURSE_WEEKLY_COST_MANWON, adjustManwon,
+    // 사직 수도 **명단에서 유도한다**(집행이 지우는 그 함수) — 여기서 임계를 다시 세면
+    // 결산이 말하는 인원과 다음 주에 실제로 사라지는 인원이 갈린다.
+    leaving: resigningNurses(w).length,
+    resignedTotal: w.nursesResignedTotal,
   }
   return {
     week: w.week,
@@ -211,6 +207,10 @@ export function settleWeek(w: SimWorld): SimWorld {
  * `resigningSimDoctors`로 읽는다(통지=집행 단일 출처). 선반영하지 않으면 "마지막 의사가 떠난다"는
  * 통지를 읽고 [다음 주]를 눌러야 비로소 판이 끝나, 마지막 통지가 뜬 화면과 결말이 한 박자 어긋난다.
  *
+ * ⚠️ **간호사는 이 판정에 불참한다** — 세는 것도 빼는 것도 의사뿐이다. 간호사는 전국 풀이 없어
+ * 언제든 다시 뽑을 수 있으므로(pawn.hireNurse) "간호사가 0명"은 되돌릴 수 있는 상태다. 여기에
+ * 종결을 걸면 뽑으면 되는 판이 끝나 버린다 — NO_PEOPLE은 *더 뽑을 사람이 없다*는 결말이다.
+ *
  * ⓘ 풀까지 보는 이유: 의사가 0명이어도 전국에 사람이 남았으면 **다시 뽑으면 된다**. 사람이
  *   바닥난 것과 지금 비어 있는 것은 다르다 — 후자는 판이 아직 플레이어의 결정을 기다린다.
  *   그리고 의사가 0명인 세계는 고정비도 0이라 금고가 영영 안 줄어 폐업이 도달 불가능해진다:
@@ -264,10 +264,18 @@ export function startNextWeek(w: SimWorld): SimWorld {
   // 허기이고 `saturatedDays`에는 **리셋이 없다**(pawn.saturatedDays 주석). 순서가 무관하다는
   // 사실을 여기 적어 두는 이유는, 무관하지 않게 되는 날(포화 일수에 회복 규칙이 붙는 날)
   // 이 두 줄의 순서가 조용히 명단을 바꾸기 때문이다.
-  const leaving = new Set(resigningSimDoctors(w).map(p => p.id))
+  // 간호사도 **같은 자리에서** 떠난다(설계 2026-07-30 §3) — 드라이버만 다르다(포화 vs 배치 미달).
+  // 자리를 나누지 않는 것이 계약이다: 집행이 둘이면 한쪽이 고정비 청구 앞으로 새거나 통지 없이
+  // 사람이 사라지는 순서 사고가 두 배로 생긴다. 그리고 순서 무관성도 그대로다 — 아침 리셋은
+  // `shortDays`도 건드리지 않는다(pawn.shortDays).
+  const leavingNurses = resigningNurses(w)
+  const leaving = new Set([...resigningSimDoctors(w), ...leavingNurses].map(p => p.id))
   const morning = freshMorning(w)
   return {
     ...morning,
+    // 떠난 간호사는 **유휴 장부**에만 남는다 — 전국 풀이 아니다(간호사에겐 풀이 없다).
+    // 이 숫자는 채용을 막지 않고 세기만 한다: 면허는 그대로고, 이 병원에 없을 뿐이다.
+    nursesResignedTotal: w.nursesResignedTotal + leavingNurses.length,
     // ⚠️ 떠난 사람은 `hirePool`로 **돌아가지 않는다**(그래서 여기서 풀을 손대지 않는다):
     // 다른 병원으로 옮긴 게 아니라 필수의료를 떠난 것이다(기존 게임 규칙 계승). 되돌리면
     // 사직이 벌이 아니라 "재채용 한 번"이 되어 인력 제로섬이 통째로 사라진다.
