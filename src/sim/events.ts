@@ -24,11 +24,11 @@ import { computeRegions } from './regions'
 import { priorityOf, setDoctorPriority, type Pawn, type Priority } from './pawn'
 // ⚠️ world를 **값으로도** 당긴다(simRegion) — 이 파일이 "거의 leaf"인 상태는 그대로다:
 // world→events는 타입 전용이라(world.ts:5) 런타임 순환이 없고, computeRegions와 같은 예외다.
-import { simRegion, type SimWorld } from './world'
+import { simRegion, tileIndex, type SimWorld } from './world'
 
 /** 이벤트 종류 — **배열이 단일 출처**이고 유니온은 거기서 파생한다(traits.TRAIT_KEYS와 같은 형태).
  *  전수 순회(`eligibleEvents`·테스트)가 이 배열 하나만 보면 되므로 종류가 늘어도 빠뜨릴 자리가 없다. */
-export const EVENT_KINDS = ['MASS_CASUALTY', 'EPIDEMIC', 'NEARBY_CLOSURE', 'LAWSUIT'] as const
+export const EVENT_KINDS = ['MASS_CASUALTY', 'EPIDEMIC', 'NEARBY_CLOSURE', 'LAWSUIT', 'MILD_SURGE'] as const
 
 export type SimEventKind = (typeof EVENT_KINDS)[number]
 
@@ -44,6 +44,7 @@ export const SIM_EVENTS: Record<SimEventKind, SimEventSpec> = {
   EPIDEMIC: { kind: 'EPIDEMIC', label: '전염병 유행' },
   NEARBY_CLOSURE: { kind: 'NEARBY_CLOSURE', label: '인근 병원 폐업' },
   LAWSUIT: { kind: 'LAWSUIT', label: '의료소송' },
+  MILD_SURGE: { kind: 'MILD_SURGE', label: '경증 쏠림' },
 }
 
 /** 의료소송 한 건의 즉시 비용(만원) — **돌려보낸 응급이 소송으로 돌아온다.**
@@ -82,6 +83,22 @@ export const MASS_CASUALTY_EMERGENCY_MUL = 3
 export const EPIDEMIC_ARRIVAL_MUL = 1.6
 /** 인근 병원 폐업 — 외래 도착 확률 배율(전 과 고르게). */
 export const NEARBY_CLOSURE_ARRIVAL_MUL = 1.4
+/** 경증 쏠림 — 외래 도착 확률 배율(전 과 고르게 · EPIDEMIC 1.6과 NEARBY 1.4 사이).
+ *  **믹스는 갈아 끼우지 않는다**(arrivalDeptMixOf가 null을 준다): 전염병은 한 과로 몰리는 사건이라
+ *  확률과 믹스를 함께 흔들지만, 경증은 정의상 과를 가리지 않는다 — 여기서 내과를 올리면
+ *  두 이벤트가 같은 사건의 세기 차이로 읽히고, 이 이벤트가 말하려는 **수요의 형태**가 사라진다. */
+export const MILD_SURGE_ARRIVAL_MUL = 1.5
+
+/**
+ * 경증 쏠림이 서려면 병동에 병상이 **몇 개** 있어야 하는가.
+ *
+ * 2인 이유는 아래 `lockedWardBedCount`의 내림과 짝이다: floor(n/2)를 잠그면 ceil(n/2)가 남으므로
+ * 2병상이면 정확히 1이 남는다. 1병상짜리 병동에 이 이벤트를 붙이면 잠금이 0이라 **병상 효과가
+ * 통째로 없는 날**이 되고(그냥 바쁜 하루다), 반대로 규칙을 올림으로 바꾸면 유일한 병상이 잠겨
+ * 플레이어가 할 수 있는 게 하나도 없다 — MASS_CASUALTY가 「병동 없는 병원」을 막는 것과 같은
+ * 불공정이다. 전제로 그 구간을 통째로 잘라 낸다.
+ */
+export const MILD_SURGE_MIN_BEDS = 2
 
 /** 전염병 날의 희망 과 분포 — 평시(45/20/15/20)를 **내과 중심**(75/10/7/8)으로 갈아 끼운다.
  *  누적 상한이고 배열 순서가 곧 구간 순서다(`patientFlow.ARRIVAL_DEPT_MIX`와 같은 기계라
@@ -95,6 +112,44 @@ export const EPIDEMIC_DEPT_MIX: DeptMix = [
   ['CARDIOLOGY', 0.92],
   ['AESTHETICS', 1.00],
 ]
+
+/**
+ * 오늘 「관찰 점유」로 **잠기는 병상 수** — 경증 쏠림 날이면 절반(내림), 아니면 0.
+ *
+ * 이 함수가 이 이벤트의 정체다. 다른 회차 사유는 전부 **공급측**(그 과 의사가 없다 · 병상을 안
+ * 지었다)이라, 지금까지 「병상 없음」은 언제나 "덜 지었다"로만 읽혔다. 경증 쏠림은 같은 사유를
+ * **수요의 형태**로 만든다: 병상은 그대로인데 가벼운 증상들이 관찰 자리를 채워, 배후과 의사가
+ * 멀쩡히 앉아 있는데도 응급이 돌아간다.
+ *
+ * 병상 수를 **인자로 받는다** — 세는 일은 `emergency.wardBeds`의 몫이고 이 파일은 leaf라 그걸
+ * 임포트할 수 없다(T-093 · eslint leaf 가드). 그래서 효과의 **식**만 여기 두고, 그 식이 다른
+ * 배율 함수들과 한자리에 모인다.
+ *
+ * ⚠️ **내림이 계약이다**: 남는 자리가 ceil(n/2)라 n ≥ 1이면 언제나 1 이상이다. 올림으로 바꾸면
+ * 2병상 병원의 병동이 통째로 잠긴다(위 `MILD_SURGE_MIN_BEDS`).
+ */
+export function lockedWardBedCount(w: SimWorld, totalBeds: number): number {
+  return w.event?.kind === 'MILD_SURGE' ? Math.floor(totalBeds / 2) : 0
+}
+
+/**
+ * 병동에 놓인 침대 수 — 전제(`MILD_SURGE_MIN_BEDS`)가 묻는 값이다.
+ *
+ * ⚠️ `emergency.wardBeds`와 **다른 계산이고, 일부러 그렇다.** 저쪽은 침대까지 **설 수 있는가**
+ * (막힌 앞 타일·중복 자리)까지 보므로 결과가 여기보다 적을 수 있다. 그 차이가 안전한 이유는
+ * 잠금이 **저쪽이 센 수의 절반**이라서다: 전제가 조금 후하게 통과해도 실제 잠금은 실제 병상의
+ * 내림 절반이라 「최소 한 자리는 남는다」가 그대로 성립한다. 갈릴 수 있는 것은 **이벤트가 후보에
+ * 오르는가**뿐이고, 그 방향의 오차는 "잠금 0인 조용한 하루"로 끝난다.
+ *
+ * 정확한 쪽(wardBeds)을 못 부르는 이유는 순환이다 — spots·path는 leaf 금지 목록에 있다.
+ */
+function wardBedCount(w: SimWorld): number {
+  const wards = computeRegions(w).filter(r => r.type === 'WARD')
+  if (wards.length === 0) return 0
+  return w.furniture.filter(
+    f => f.kind === 'BED' && wards.some(r => r.tiles.has(tileIndex(f.x, f.y))),
+  ).length
+}
 
 /**
  * 이 이벤트가 이 세계에 **설 수 있는가** — 가드레일의 단일 출처다.
@@ -115,6 +170,10 @@ export function isEligibleEvent(w: SimWorld, kind: SimEventKind): boolean {
     // 돌려보낸 응급이 하나도 없으면 소송의 원인이 없다 — 판 누적 카운터라 하루·주로 리셋되지 않는다.
     case 'LAWSUIT':
       return w.turnedAwayTotal >= 1
+    // 병상이 하나뿐이면 잠글 것이 없고(내림 0), 없으면 잠글 병동이 없다 — 어느 쪽도 이 이벤트가
+    // 하려는 말을 못 한다. 2 이상이라야 「절반은 잠기고 절반은 남는다」가 성립한다.
+    case 'MILD_SURGE':
+      return wardBedCount(w) >= MILD_SURGE_MIN_BEDS
     case 'EPIDEMIC':
     case 'NEARBY_CLOSURE':
       return true
@@ -193,6 +252,7 @@ export function arrivalProbMulOf(w: SimWorld): number {
   switch (w.event?.kind) {
     case 'EPIDEMIC': return EPIDEMIC_ARRIVAL_MUL
     case 'NEARBY_CLOSURE': return NEARBY_CLOSURE_ARRIVAL_MUL
+    case 'MILD_SURGE': return MILD_SURGE_ARRIVAL_MUL
     default: return 1
   }
 }

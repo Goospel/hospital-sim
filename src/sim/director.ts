@@ -47,6 +47,10 @@ export const EVENT_WEIGHTS: Record<SimEventKind, number> = {
   EPIDEMIC: 30,
   NEARBY_CLOSURE: 25,
   LAWSUIT: 15,
+  // 30 ← EPIDEMIC과 같은 급이다. 과밀은 이 게임이 각색한 사건들 중 **가장 평범한 일**이라
+  // (전염병 유행이나 다중 추돌과 달리 특별한 사고가 필요 없다) 아래로 둘 근거가 없고, 그렇다고
+  // 혼자 높이면 다른 이벤트를 밀어내 한 판에서 못 보는 종류가 생긴다.
+  MILD_SURGE: 30,
 }
 
 /** 이벤트 종류 분포 — 값은 각 구간의 **누적 상한**이고 배열 순서(= `EVENT_KINDS` 순서)가 곧

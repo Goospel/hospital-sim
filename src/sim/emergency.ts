@@ -25,7 +25,7 @@ import { ARRIVAL_WINDOW_MIN, hasCashier, minuteStreamSeed, toExit } from './pati
 import { furnitureSpots, ptKey, samePt } from './spots'
 import { interruptActivity, workDurationMin } from './needs'
 import { applyWorkLoads } from './fatigue'
-import { emergencyProbMulOf } from './events' // leaf — 값으로 당겨도 순환 없음(events.ts 머리말)
+import { emergencyProbMulOf, lockedWardBedCount } from './events' // leaf — 값으로 당겨도 순환 없음(events.ts 머리말)
 
 /** 응급 도착 스트림 전용 salt — `daysim.callSeed` 주석의 **레지스트리에 등재된 값**이다.
  *  (사용 중: 1·2·3·7·11·12·13·15·17·19·23·29·31, 이 파일에서 37·41.) */
@@ -200,7 +200,22 @@ export function freeBed(
   const taken = new Set(
     w.pawns.filter(p => p.emergency && p.dest && OCCUPIES_BED.includes(p.stage!)).map(p => ptKey(p.dest!)),
   )
-  for (const spot of wardBeds(w, blocked, regions)) {
+  const beds = wardBeds(w, blocked, regions)
+  /* 경증 쏠림(events.MILD_SURGE) 날은 **목록 앞 K개**가 관찰 점유로 잠긴다 — 이 한 줄이 이 게임의
+     「병상 없음」에 수요측 원인을 준다(회차 사유는 지금까지 전부 공급측이었다).
+
+     **앞에서부터**인 것이 계약이다: `wardBeds`의 순서는 `furniture` 배열 순서(= 설치 순서)라
+     세계가 안 바뀌면 안 흔들린다(spots.furnitureIn) — 좌표 정렬이나 시드로 고르면 같은 세계가
+     분마다 다른 침대를 잠가 결정론이 깨진다.
+
+     ⚠️ **자리로 빼지 수로 빼지 않는다** — 잠긴 K개에 이미 누운 환자가 섞여 있어도 그 자리를
+     한 번만 덜어낸다. "빈 침대 중에서 K개를 잠근다"로 쓰면 같은 병상이 점유와 잠금 양쪽에서
+     두 번 빠져, 2병상 병원에서 한 명이 누운 순간 남은 자리가 0이 된다(전제가 지키기로 한
+     「최소 한 자리」가 무너진다). 지금 형태는 후보가 정의상 `beds.length - K` 이상이라 음수도
+     과소평가도 구조적으로 불가능하다.
+
+     ponytail: 잠긴 병상은 화면에 표시 없음 — 혼란 신고가 오면 TileMap 틴트로 승격 */
+  for (const spot of beds.slice(lockedWardBedCount(w, beds.length))) {
     if (taken.has(ptKey(spot))) continue
     const path = findPath(w, ENTRANCE, spot)
     if (path) return { spot, path }

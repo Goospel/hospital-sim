@@ -10,8 +10,9 @@ import { HIRABLE_DEPTS, type SimDeptKey } from './dept'
 import {
   CHILL_DEPTS, EPIDEMIC_ARRIVAL_MUL, EPIDEMIC_DEPT_MIX, EVENT_KINDS,
   LAWSUIT_CHILL_STEP, LAWSUIT_COST_MANWON,
-  MASS_CASUALTY_EMERGENCY_MUL, NEARBY_CLOSURE_ARRIVAL_MUL,
-  applyEvent, type SimEventKind,
+  MASS_CASUALTY_EMERGENCY_MUL, MILD_SURGE_ARRIVAL_MUL, MILD_SURGE_MIN_BEDS,
+  NEARBY_CLOSURE_ARRIVAL_MUL,
+  applyEvent, isEligibleEvent, lockedWardBedCount, type SimEventKind,
 } from './events'
 import { priorityOf, setDoctorPriority, type Pawn, type Priority } from './pawn'
 import {
@@ -25,11 +26,15 @@ import {
  *  통째로 떼어내도 테스트는 초록으로 남는다(그 변조가 이 파일의 계측 대상이다). */
 
 const WARD = { type: 'WARD' as const, x: 30, y: 20, w: 4, h: 4 }
+/** 병상 **2개**짜리 병동 — 6×4의 내부는 4×2라 자동 배치가 침대를 둘 놓는다.
+ *  MILD_SURGE의 전제(병상 2 이상)가 생긴 뒤로 "전 종류가 통과하는 세계"에는 이쪽이 필요하다:
+ *  위 4×4는 침대가 하나라 그 이벤트만 후보에서 빠지고, 그러면 전수 단언이 조용히 갈린다. */
+const WARD_2BED = { type: 'WARD' as const, x: 30, y: 20, w: 6, h: 4 }
 /** 대기실 — 좌석이 모자라면 문간에서 발길을 돌린 사람은 폰조차 안 생겨(maybeArrive), 배율
  *  측정이 배율이 아니라 **좌석 수**를 재게 된다.
  *  16×11의 내부는 14×9라 자동 배치가 의자 **35개**를 놓는다.
- *  ⚠️ **여유가 넉넉하지 않다**(실측 2026-07-28): 동시 대기 최대가 평일 25 · NEARBY 31 ·
- *  EPIDEMIC **33**(94%)이다. 아직 안 찼지만 두 석 차이라, 배율이나 인내를 올리는 튜닝이
+ *  ⚠️ **여유가 넉넉하지 않다**(실측 2026-07-28 · MILD_SURGE는 2026-07-31): 동시 대기 최대가
+ *  평일 25 · NEARBY 31 · MILD_SURGE 32 · EPIDEMIC **33**(94%)이다. 아직 안 찼지만 두 석 차이라, 배율이나 인내를 올리는 튜닝이
  *  포화로 넘길 수 있다 — 그래서 `arrivalsOf`가 매 분 동시 인원을 세어 좌석 수 미만임을
  *  단언한다(조용한 압축 대신 큰 실패로 만든다). */
 const BIG_WAITING = { type: 'WAITING' as const, x: 2, y: 2, w: 16, h: 11 }
@@ -40,9 +45,9 @@ function place(w: SimWorld, spec: Parameters<typeof placeRoom>[1]): SimWorld {
   return r.world
 }
 
-/** 전 종류가 전제를 통과하는 세계 — 2주차 · 병동 있음 · 회차 1건. */
+/** 전 종류가 전제를 통과하는 세계 — 2주차 · **병상 2개짜리** 병동 · 회차 1건. */
 function richWorld(seed = 5): SimWorld {
-  return { ...place(createWorld(seed), WARD), week: 2, turnedAwayTotal: 1 }
+  return { ...place(createWorld(seed), WARD_2BED), week: 2, turnedAwayTotal: 1 }
 }
 
 /** 외래만 관측되는 세계 — 병동이 없어 응급은 전부 되돌아가고 폰조차 안 생긴다.
@@ -176,6 +181,7 @@ describe('이벤트 효과 — 배율이 판정식에 실제로 곱해진다', (
     expect(MASS_CASUALTY_EMERGENCY_MUL).toBe(3)
     expect(EPIDEMIC_ARRIVAL_MUL).toBe(1.6)
     expect(NEARBY_CLOSURE_ARRIVAL_MUL).toBe(1.4)
+    expect(MILD_SURGE_ARRIVAL_MUL).toBe(1.5)
     expect(LAWSUIT_COST_MANWON).toBe(800)
     // 전염병 믹스도 계획 표 그대로 — 내과 75%가 이 이벤트의 정체다.
     expect(EPIDEMIC_DEPT_MIX).toEqual([
@@ -234,6 +240,66 @@ describe('이벤트 효과 — 배율이 판정식에 실제로 곱해진다', (
     expect(plain.size).toBeGreaterThan(10)      // 계측기 자기검사
     expect(surge.size).toBeGreaterThan(plain.size)
     expect([...plain].filter(m => !surge.has(m))).toEqual([])
+  })
+})
+
+describe('MILD_SURGE — 회차의 **수요측** 원인', () => {
+  /** ⚠️ 이 스위트는 **잠금의 산술과 전제**만 잰다. "잠금이 실제로 빈 병상을 줄여 NO_BED를
+   *  만드는가"는 판정식이 있는 `emergency.test.ts`가 잰다 — 그쪽이 실제 경로다. */
+
+  it('잠금은 병상의 절반(**내림**)이다 — 0·1·2·5·6 → 0·0·1·2·3', () => {
+    const w = applyEvent(richWorld(), 'MILD_SURGE')
+    for (const [beds, locked] of [[0, 0], [1, 0], [2, 1], [5, 2], [6, 3]] as const) {
+      expect(lockedWardBedCount(w, beds), `${beds}병상`).toBe(locked)
+    }
+  })
+
+  it('그 밖의 날은 잠금이 0이다 — 이벤트 없는 날도, 다른 이벤트 날도', () => {
+    expect(lockedWardBedCount(richWorld(), 6)).toBe(0)
+    for (const kind of EVENT_KINDS) {
+      if (kind === 'MILD_SURGE') continue
+      expect(lockedWardBedCount(applyEvent(richWorld(), kind), 6), kind).toBe(0)
+    }
+  })
+
+  it('병상이 2개 미만이면 **후보가 아니다** — 전부 잠기는 조합을 전제가 막는다', () => {
+    // 병상이 전부 잠기면 플레이어가 할 수 있는 게 없다(MASS_CASUALTY의 「병동 없는 병원」과
+    // 같은 불공정). 후보에서 빼는 것이 그 조합을 없애는 방법이다.
+    expect(eligibleEvents(createWorld(1))).not.toContain('MILD_SURGE')               // 병동 없음
+    expect(eligibleEvents(place(createWorld(1), WARD))).not.toContain('MILD_SURGE')  // 1병상
+    expect(eligibleEvents(place(createWorld(1), WARD_2BED))).toContain('MILD_SURGE')
+    expect(() => applyEvent(place(createWorld(1), WARD), 'MILD_SURGE')).toThrow()
+  })
+
+  it('잠근 뒤에도 **최소 한 자리**는 남는다 — 전제(2병상)와 내림이 함께 세우는 불변식', () => {
+    // ⚠️ 이 단언이 잡는 것은 **잠금이 병상을 다 먹는 변조**다(예: `totalBeds`를 그대로 잠금 —
+    // 실측으로 여기서 죽는다). 내림→올림은 여기서 **안 죽는다**: ceil(n/2)를 잠가도 floor(n/2)가
+    // 남아 n ≥ 2면 여전히 1 이상이다(실측). 올림은 위 「0·1·2·5·6」 리터럴이 잡는다 —
+    // 두 테스트가 겹치는 게 아니라 다른 변조를 나눠 맡는다.
+    const w = applyEvent(richWorld(), 'MILD_SURGE')
+    for (let beds = MILD_SURGE_MIN_BEDS; beds <= 40; beds++) {
+      expect(beds - lockedWardBedCount(w, beds), `${beds}병상`).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  it('전제 switch에 default가 없다 — 새 종류가 **전제 없이** 통과하는 길이 막혀 있다', () => {
+    // `default: true`를 두면 배선만 하고 전제를 잊은 새 이벤트가 조용히 아무 세계에나 선다.
+    // 없으면 미등록 종류는 어느 분기에도 안 걸려 undefined가 나온다 — 그게 이 계약의 지문이다.
+    expect(isEligibleEvent(richWorld(), 'NO_SUCH_EVENT' as SimEventKind)).toBeUndefined()
+    for (const kind of EVENT_KINDS) expect(typeof isEligibleEvent(richWorld(), kind), kind).toBe('boolean')
+  })
+
+  it('외래 도착이 1.5배 가까이 늘되 **믹스는 평시 그대로**다', () => {
+    // EPIDEMIC과 갈리는 자리다: 경증은 한 과로 몰리지 않고 전 과에 고르게 온다.
+    const base = place(clinicWorld(), WARD_2BED)
+    const plain = arrivalsOf(base)
+    const surge = arrivalsOf(applyEvent(base, 'MILD_SURGE'))
+    expect(plain.total).toBeGreaterThan(100) // 계측기 자기검사
+    // 밴드 중심이 상수(1.5)보다 낮은 것은 표본 노이즈다(이 스위트 머리말) — 값 자체는 위
+    // 리터럴 단언이 잠근다. 이 밴드가 잡는 것은 **훅이 물려 있는가**이고, 떼면 1.0으로 주저앉는다.
+    expect(surge.total / plain.total).toBeGreaterThan(1.28) // 실측 1.347
+    expect(surge.total / plain.total).toBeLessThan(1.44)
+    expect(surge.internalShare).toBeLessThan(0.55)          // 실측 0.485 — 평시(0.456)와 같은 자리
   })
 })
 
@@ -536,7 +602,9 @@ describe('LAWSUIT 위축 — 소송이 사람의 손을 끌어내린다', () => 
   })
 
   it('LAWSUIT 말고는 우선순위를 건드리지 않는다 — 위축은 소송의 것이다', () => {
-    const w = { ...place(chillWorld('CARDIOLOGY'), WARD), week: 2 }
+    // 전 종류를 도는 세계라 **병상 2개**가 필요하다(경증 쏠림의 전제) — 1병상 병동이면 그
+    // 종류만 applyEvent에서 던져, 이 단언이 나머지 종류만 훑고 통과한다.
+    const w = { ...place(chillWorld('CARDIOLOGY'), WARD_2BED), week: 2 }
     const [only] = docIds(w)
     for (const kind of EVENT_KINDS) {
       if (kind === 'LAWSUIT') continue

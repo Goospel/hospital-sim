@@ -8,7 +8,7 @@ import { DAY_END_MIN, DAYS_PER_WEEK, settleDay } from './day'
 import { deptRevenueSum, simDept, type SimDeptKey } from './dept'
 import { ARRIVAL_WINDOW_MIN, arrivalSeed, wantsDeptSeed } from './patientFlow'
 import { seededUnit } from '../game/daysim'
-import { CHILL_DEPTS } from './events'
+import { CHILL_DEPTS, applyEvent } from './events'
 import {
   EMERGENCIES, EMERGENCY_KIND_MIX, EMERGENCY_PROB_PER_MIN, EMERGENCY_WINDOW_MIN,
   emergencyArrivalAt, emergencyArrivalSeed, emergencyKindSeed, emergencySpec,
@@ -548,5 +548,73 @@ describe('집계·불변식', () => {
     const snapshot = structuredClone(w)
     tick(w, 300)
     expect(w).toEqual(snapshot)
+  })
+})
+
+describe('MILD_SURGE — 관찰 점유가 빈 병상을 먹는다(회차의 수요측 판본)', () => {
+  /** 병상 **2개**짜리 병동 — 6×4의 내부는 4×2라 자동 배치가 침대를 둘 놓는다.
+   *  2가 이 스위트의 최소이자 최선이다: 경증 쏠림의 전제(병상 2 이상)를 겨우 넘겨 잠금이
+   *  정확히 1이 되므로, "평시엔 둘 다 받고 그날엔 하나만 받는다"가 한 건 차이로 관측된다. */
+  const WARD_2BED = { type: 'WARD' as const, x: 30, y: 20, w: 6, h: 4 }
+
+  /** 순환기 의사 1명 + 병상 2 + 수납 창구. 배후과는 **언제나 있다** — 이 스위트가 재려는 것은
+   *  "의사가 멀쩡히 있는데도 NO_BED가 난다"이고, 의사가 없으면 사유가 NO_SPECIALIST로 갈려
+   *  판정이 병상에 닿지도 못한다. */
+  const surgeBase = (seed = BOTH_KINDS_SEED) =>
+    withCashier(hire(place(createWorld(seed), WARD_2BED), 'CARDIOLOGY'))
+
+  it('배후과 의사가 있어도 관찰 점유로 병상이 모자라면 NO_BED다', () => {
+    const base = surgeBase()
+    expect(wardBeds(base)).toHaveLength(2)                     // 전제: 병상은 둘
+    const m1 = firstEmergencyMin(base, 'STEMI')
+    const m2 = firstEmergencyMin(base, 'STEMI', m1 + 1)
+    const noBed = (w: SimWorld) => w.stats.emergencyTurnedAway.filter(t => t.reason === 'NO_BED')
+
+    // 평시 — 병상이 둘이라 둘 다 받는다(대조군).
+    const plain = run(run(base, m1), m2 - m1)
+    expect(plain.stats.emergencyAccepted).toBe(2)
+    expect(noBed(plain)).toEqual([])
+
+    // 경증 쏠림 — 응급 도착 시각은 **한 톨도 안 갈렸는데**(배율은 외래에만 걸린다) 둘째가 돌아간다.
+    const surge = run(run(applyEvent(base, 'MILD_SURGE'), m1), m2 - m1)
+    expect(surge.stats.emergencyAccepted).toBe(1)
+    expect(noBed(surge)).toEqual([{ kind: 'STEMI', reason: 'NO_BED' }])
+    // 그런데 **빈 침대는 아직 있다** — 판정이 세는 것과 병동에 남은 것이 갈리는 자리가 여기다.
+    expect(wardBeds(surge).length).toBeGreaterThan(surge.pawns.filter(p => p.emergency).length)
+
+    // 먼저 누운 환자는 잠금과 무관하게 그대로 처치를 받는다 — 잠금은 **빈 병상 후보**만 줄인다.
+    const treated = until(surge, w => w.treasuryManwon > surge.treasuryManwon, 400)
+    expect(treated.treasuryManwon).toBe(surge.treasuryManwon + STEMI.revenueManwon)
+  })
+
+  it('잠긴 자리와 이미 쓰는 자리가 겹쳐도 **이중으로 빼지 않는다**', () => {
+    const w0 = applyEvent(surgeBase(), 'MILD_SURGE')
+    const beds = wardBeds(w0)
+    // 잠기는 것은 목록 **앞 1자리**(beds[0])다. 거기 이미 환자가 누워 있어도 후보로 남는 것은
+    // beds[1]이고, 그 자리는 비어 있으므로 수용은 성립한다.
+    // ⚠️ 「빈 병상 중에서 1개를 잠근다」로 구현하면 beds[1]까지 잠겨 null이 나온다 — 같은
+    //    "절반을 잠근다"인데 겹칠 때만 갈리는 변조라, 이 세계 말고는 어디서도 안 잡힌다.
+    const lying: Pawn = {
+      id: 'emg-hand', kind: 'PATIENT', x: beds[0].x, y: beds[0].y, path: [],
+      dest: beds[0], stage: 'IN_BED', emergency: 'STEMI', wantsDept: 'CARDIOLOGY',
+    }
+    const w: SimWorld = { ...w0, pawns: [...w0.pawns, lying] }
+    expect(freeBed(w, buildBlockedSet(w))).toMatchObject({ spot: beds[1] })
+  })
+
+  it('결정론: 경증 쏠림이 붙은 하루도 같은 시드면 완전히 같다', () => {
+    // 잠금은 **목록 앞에서부터**라 순서가 흔들리면(좌표 정렬·시드 추첨) 같은 세계가 분마다 다른
+    // 침대를 잠근다 — 에러는 하나도 안 나고 수용된 환자 수만 조용히 갈린다.
+    const day = applyEvent(surgeBase(), 'MILD_SURGE')
+    expect(run(day, 300)).toEqual(run(day, 300))
+  })
+
+  it('다른 이벤트·이벤트 없는 날은 병상을 하나도 잠그지 않는다', () => {
+    const base = surgeBase()
+    const beds = wardBeds(base)
+    expect(freeBed(base, buildBlockedSet(base))).toMatchObject({ spot: beds[0] })
+    // NEARBY_CLOSURE도 외래를 늘리는 이벤트다 — 병상을 먹는 것은 경증 쏠림뿐이라는 계약.
+    const closure = applyEvent(base, 'NEARBY_CLOSURE')
+    expect(freeBed(closure, buildBlockedSet(closure))).toMatchObject({ spot: beds[0] })
   })
 })
