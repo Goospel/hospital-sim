@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { MAP_COLS, MAP_ROWS, PLACES, landRuns, type MapPlace } from "./koreaMap";
+import { MAP_COLS, MAP_ROWS, PLACES, designationText, landRuns, type MapPlace } from "./koreaMap";
 import { regionRuleText } from "./simHud";
 import { simRegion, type SimRegionKey } from "@/sim/world";
 
@@ -140,6 +140,15 @@ export default function RegionPicker({ onPick }: { onPick: (region: SimRegionKey
               <>
                 <p className="font-mono text-sm text-on-desk">{picked.label}</p>
                 <p className="mt-0.5 font-mono text-xs text-on-desk-muted">{spec.label}</p>
+                {/* 공식 지정 — **해당할 때만 뜬다**(`designationText`가 없으면 빈 문자열).
+                    이 줄만 실재하는 고시에서 온 사실이고 나머지는 게임의 각색이라, 서사·규칙과
+                    같은 크기로 두면 층위가 섞인다. 테두리를 두른 작은 딱지로 분리한다.
+                    ⚠️ 문구를 여기 적지 않는다 — 라벨의 단일 출처는 `DESIGNATIONS` 카탈로그다. */}
+                {designationText(picked) && (
+                  <p className="mt-2 self-start border border-frame px-1.5 py-0.5 font-mono text-[10px] leading-relaxed text-on-desk-muted">
+                    {designationText(picked)}
+                  </p>
+                )}
                 <p className="mt-2.5 text-xs leading-relaxed text-on-desk">{spec.line}</p>
                 {/* 규칙 요약 — **카탈로그에서 파생한다**(simHud.regionRuleText). 규칙이 생겼는데
                     안 보이면 첫 선택이 도박이 된다(설계 §13-2). */}
