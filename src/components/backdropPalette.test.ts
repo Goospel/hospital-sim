@@ -4,10 +4,13 @@ import { OUTSIDE_FLOOR } from './TileMap'
 import type { SimRegionKey } from '@/sim/world'
 
 /**
- * 배경 톤 서열의 회귀 가드.
+ * 배경 톤 서열의 회귀 가드 — **두 방향**을 함께 잠근다.
  *
- * **왜 이 테스트가 있는가**: 배포 화면 실측에서 병원 부지(`OUTSIDE_FLOOR`)가 주변 배경보다
+ * **왜 이 테스트가 있는가**: ① 배포 화면 실측에서 병원 부지(`OUTSIDE_FLOOR`)가 주변 배경보다
  * 어두워 화면에 뚫린 "구멍"처럼 보였다 — 설계 의도(시선이 병원에 먼저 간다)와 정반대다.
+ * ② 그걸 고치자 **반대쪽으로 넘어갔다**: 전부 부지 아래로 눌러 담았더니 배경 내부의 밝기 차까지
+ * 압축돼(지면 9.22 vs 건물 9.5~10.5) 건물 윤곽이 지면에 묻혔다. 상한만 보는 검사는 이 "다 같이
+ * 어두워짐"을 **통과시킨다** — 그래서 하한·평균 서열·최소 간격을 함께 단언한다.
  * 색은 눈으로만 검수하면 다음 사람이 한 칸 밝히는 순간 조용히 되돌아간다. 숫자로 잠근다.
  *
  * 휘도 식은 **프로덕션 코드가 export한 `relativeLuminance`를 그대로 쓴다** — 테스트가 자기 식을
@@ -20,42 +23,46 @@ const FLOOR = relativeLuminance(OUTSIDE_FLOOR)
 type PaletteKey = keyof typeof BACKDROP_PALETTE
 
 /**
- * 카테고리별 휘도 상한 — 이 표가 곧 스펙이다.
+ * 카테고리별 휘도 **구간** — 이 표가 곧 스펙이다.
  *
- * 지역 구분은 밝기가 아니라 색조·패턴이 지므로, 배경은 전부 부지보다 어둡게 깐다.
- * **랜드마크만 예외**(≤20): 나무·숲 수관, 물, 천창 불빛, 벤치는 지역 식별의 핵심이라
- * 부지보다 약간 밝은 것까지 허용한다 — 대신 20을 못 넘는다.
+ * ⚠️ **상한만 있으면 안 된다.** 첫 판(상한 전용)은 "배경 < 부지"는 잠갔지만 **전부 같이 어두워지는 것**을
+ * 못 막았고, 실제로 그 회귀가 났다 — 지면 9.22 · 건물 9.5~10.5로 간격이 0.3~1.3까지 눌려 건물 윤곽이
+ * 지면에 묻혔다(브라우저 실측: 도심 상단 2/3가 균일한 검정, 아파트 동이 사라짐). 그래서 하한을 함께 잠근다.
+ *
+ * 하한이 없는 칸(`min` 생략)은 표가 상한만 정한 자리다 — 그쪽은 아래 **간격 단언**이 대신 잠근다.
  */
-const CATEGORIES: ReadonlyArray<{ name: string; cap: number; keys: readonly PaletteKey[] }> = [
+const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys: readonly PaletteKey[] }> = [
   {
-    name: '일반 지면(풀밭·논·밭·나대지·포장면)', cap: 11,
+    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 5.5, max: 7.5,
     keys: [
-      'ground', 'grassBase', 'grassNoiseLight', 'grassNoiseDark', 'medianStrip',
-      'pavementBase', 'pavementNoiseLight', 'pavementNoiseDark', 'pavementSeam',
-      'parkingLot', 'dirtBase', 'dirtNoiseLight', 'dirtNoiseDark',
-      'fieldFurrowLight', 'fieldFurrowDark',
-      'paddyBase', 'paddyCellLight', 'paddyCellDark',
-      'forestFloor', 'houseYardShadow',
+      'ground', 'grassBase', 'grassNoiseDark', 'medianStrip',
+      'pavementBase', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
+      'dirtBase', 'dirtNoiseDark', 'fieldFurrowDark',
+      'paddyBase', 'paddyCellDark', 'forestFloor', 'houseYardShadow',
     ],
   },
   {
-    name: '건물·시설·차량(옥상·아파트·주택 지붕·옥탑/실외기)', cap: 12,
+    name: '지면 노이즈(밝은 쪽)·논둑', min: 7.5, max: 9.5,
+    keys: ['grassNoiseLight', 'pavementNoiseLight', 'dirtNoiseLight', 'fieldFurrowLight', 'paddyCellLight', 'paddyBank'],
+  },
+  { name: '도로', min: 8, max: 9.5, keys: ['road', 'laneShoulder', 'dirtLane'] },
+  { name: '인도·산책로', min: 10, max: 11.5, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
+  {
+    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 9, max: 11.5,
     keys: [
-      'roofBase', 'roofEdge', 'roofVent', 'roofVentShade', 'roofPenthouse',
-      'aptBody', 'aptEdge', 'aptTower', 'aptTowerLit',
-      'houseRoofWarm', 'houseRoofWarmShade', 'houseRidgeWarm',
-      'houseRoofCool', 'houseRoofCoolShade', 'houseRidgeCool',
+      'roofBase', 'roofEdge', 'aptBody', 'aptEdge',
+      'houseRoofWarm', 'houseRoofWarmShade', 'houseRoofCool', 'houseRoofCoolShade',
       'materialStack', 'materialStackShade', 'breakwater', 'lampPost',
       'vehicleBlue', 'vehicleRed', 'vehicleGreen',
     ],
   },
   {
-    name: '도로·인도·산책로·논둑', cap: 13,
-    keys: ['road', 'sidewalk', 'laneShoulder', 'dirtLane', 'leveePath', 'seawall', 'parkPath', 'paddyBank'],
+    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', max: 13,
+    keys: ['roofVent', 'roofVentShade', 'roofPenthouse', 'aptTower', 'aptTowerLit', 'houseRidgeWarm', 'houseRidgeCool'],
   },
-  { name: '풀포기·관목', cap: 15, keys: ['tuft', 'tuftShade', 'shrub'] },
+  { name: '풀포기·관목', min: 9, max: 12, keys: ['tuft', 'tuftShade', 'shrub'] },
   {
-    name: '랜드마크(수관·물·천창 불빛·벤치)', cap: 20,
+    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 11, max: 13.2,
     keys: [
       'treeCanopy', 'treeCanopyLit', 'treeShade',
       'forestCanopy', 'forestCanopyLit', 'forestCanopyDark',
@@ -65,13 +72,51 @@ const CATEGORIES: ReadonlyArray<{ name: string; cap: number; keys: readonly Pale
   },
 ]
 
-describe('BACKDROP_PALETTE — 배경은 부지보다 어둡다', () => {
-  it.each(CATEGORIES)('$name: 모든 항목이 휘도 $cap 이하', ({ cap, keys }) => {
+const cat = (name: string) => CATEGORIES.find((c) => c.name.startsWith(name))!
+/** 카테고리의 평균 휘도 — 서열·간격 단언의 단위. 개별 값이 아니라 면적감이 서열을 만든다. */
+const meanL = (name: string) => {
+  const { keys } = cat(name)
+  return keys.reduce((s, k) => s + relativeLuminance(BACKDROP_PALETTE[k]), 0) / keys.length
+}
+
+const GROUND = '지면 base', BODY = '건물 본체', DETAIL = '건물 디테일'
+const LANDMARK = '랜드마크', ROAD = '도로', WALK = '인도'
+
+describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에서는 형태가 읽힌다', () => {
+  it.each(CATEGORIES)('$name: 모든 항목이 구간 안에 있다', ({ min, max, keys }) => {
     for (const key of keys) {
       const hex = BACKDROP_PALETTE[key]
       const L = relativeLuminance(hex)
-      expect(L, `${key}(${hex}) = ${L.toFixed(2)}`).toBeLessThanOrEqual(cap)
+      const label = `${key}(${hex}) = ${L.toFixed(2)}`
+      expect(L, label).toBeLessThanOrEqual(max)
+      if (min !== undefined) expect(L, label).toBeGreaterThanOrEqual(min)
     }
+  })
+
+  /**
+   * 서열 — 면적을 지배하는 지면이 가장 어둡고, 그 위에 건물, 그 위에 랜드마크, 맨 위가 부지다.
+   * 이 단언은 표가 아니라 **팔레트 값에서 직접 파생**하므로 상한·하한 표가 통째로 느슨해져도 살아남는다.
+   */
+  it('평균 휘도 서열: 지면 < 건물 본체 < 랜드마크 < 부지 바닥', () => {
+    const g = meanL(GROUND), b = meanL(BODY), l = meanL(LANDMARK)
+    const trace = `지면 ${g.toFixed(2)} / 건물 ${b.toFixed(2)} / 랜드마크 ${l.toFixed(2)} / 부지 ${FLOOR.toFixed(2)}`
+    expect(g, trace).toBeLessThan(b)
+    expect(b, trace).toBeLessThan(l)
+    expect(l, trace).toBeLessThan(FLOOR)
+  })
+
+  /**
+   * 간격 — 서열만으로는 부족하다. 0.3 차이도 "작다"가 아니라 "같다"로 보이기 때문이다.
+   * 이 세 간격이 각각 무엇을 지키는지: 건물이 지면에서 떠오르는가 · 인도가 도로와 갈리는가 ·
+   * 옥상 요철이 지붕 위에서 읽히는가.
+   */
+  it.each([
+    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 2.5 },
+    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 1.0 },
+    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 1.0 },
+  ])('$what 평균 간격이 $gap 이상 — 스프레드가 눌리면 형태가 안 읽힌다', ({ what, a, b, gap }) => {
+    const d = meanL(a) - meanL(b)
+    expect(d, `${what} = ${meanL(a).toFixed(2)} − ${meanL(b).toFixed(2)} = ${d.toFixed(2)}`).toBeGreaterThanOrEqual(gap)
   })
 
   /**
@@ -79,16 +124,9 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡다', () => {
    * 그래서 상한을 부지 바닥에 묶는다. 값 검사와 이 검사가 함께여야 "배경 < 부지"가 실제로 잠긴다.
    * (돌연변이 실측: 이 단언 없이 상한을 13→14로 올리면 아무 테스트도 안 깨졌다.)
    */
-  it('지면·건물·도로의 상한은 부지 바닥보다 낮게 잡혀 있다 — 부지가 "구멍"이 아니라 무대가 되도록', () => {
-    for (const cat of CATEGORIES.filter((c) => c.name !== '풀포기·관목' && c.cap !== 20)) {
-      expect(cat.cap, `${cat.name} 상한 ${cat.cap} vs 부지 ${FLOOR.toFixed(2)}`).toBeLessThan(FLOOR)
-    }
-  })
-
-  it('랜드마크도 20을 못 넘는다 — 부지보다 밝아도 되지만 시선을 뺏으면 안 된다', () => {
-    const landmark = CATEGORIES.find((c) => c.cap === 20)!
-    for (const key of landmark.keys) {
-      expect(relativeLuminance(BACKDROP_PALETTE[key])).toBeLessThanOrEqual(20)
+  it('카테고리 상한이 전부 부지 바닥보다 낮게 잡혀 있다 — 부지가 "구멍"이 아니라 무대가 되도록', () => {
+    for (const c of CATEGORIES) {
+      expect(c.max, `${c.name} 상한 ${c.max} vs 부지 ${FLOOR.toFixed(2)}`).toBeLessThan(FLOOR)
     }
   })
 
