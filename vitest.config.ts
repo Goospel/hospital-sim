@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 /**
@@ -16,6 +17,11 @@ import { defineConfig } from 'vitest/config'
  * 테스트 대상에서 빼기만 한다.
  */
 export default defineConfig({
+  /** `@/*` → `src/*` — tsconfig의 paths와 같은 계약. 이게 없으면 `@/`로 import하는 **소스 파일**을
+   *  테스트가 아예 못 불러온다(테스트가 상대경로만 써도 소용없다 — 대상 모듈이 걸린다). */
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   test: {
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/.claude/**', '**/.next/**'],

@@ -29,6 +29,108 @@ export const BACKDROP_H = GRID_H + 2 * BACKDROP_MARGIN.y;
 export const BACKDROP_OFF_X = BACKDROP_MARGIN.x;
 export const BACKDROP_OFF_Y = BACKDROP_MARGIN.y;
 
+/**
+ * 배경 팔레트 — **이 파일의 모든 색이 여기 한 곳에 산다.** 그리기 함수는 참조만 한다.
+ *
+ * ⚠️ **왜 이렇게 어두운가**: 부지 바닥(`OUTSIDE_FLOOR` #14141a, 상대휘도 20.4)보다 **배경이 어두워야**
+ * 시선이 병원에 먼저 간다. 배경이 더 밝으면 부지가 화면에 뚫린 "구멍"으로 읽힌다(실측된 회귀다).
+ * 지역 구분은 밝기가 아니라 **색조와 패턴**이 진다 — 값을 바꿀 땐 hue를 지키고 밝기만 낮춘다.
+ *
+ * ⚠️ **그렇다고 다 같이 어둡게 깔면 안 된다**(이것도 실측된 회귀다). 부지보다 어둡게만 맞췄더니 지면 9.2 ·
+ * 건물 9.5~10.5로 **배경 내부의 스프레드가 함께 눌려** 건물 윤곽이 지면에 묻혔다 — 도심 상단 2/3가 균일한
+ * 검정이 되고 아파트 동이 사라졌다. 스프레드를 되찾으려면 **천장이 필요했다**: 옛 부지 13.3 아래로는
+ * 5~13밖에 없어 층위가 인지되지 않았고, 그래서 부지를 20.4로 올린 뒤 그 대역에 다시 펼쳤다 —
+ * 지면 7~9.5 → 도로 10.5~12.5 → 인도 13~15 → 건물 본체 13.5~16.5 → 옥상 요철 16.5~18.5 → 랜드마크 16.5~19.
+ *
+ * 카테고리별 휘도 **구간**(상한만이 아니라 하한도) · 평균 서열 · 최소 간격은 `backdropPalette.test.ts`가 잠근다.
+ */
+export const BACKDROP_PALETTE = {
+  /** 배경 전체의 바탕 — 어느 블록도 안 덮은 자리에 남는 색. */
+  ground: "#08080b",
+
+  // ── 지면 — 면적을 지배하므로 가장 어둡다. 이게 스프레드의 바닥이다. ──
+  grassBase: "#070908",
+  grassNoiseLight: "#070d07",
+  grassNoiseDark: "#070807",
+  tuft: "#0b100e",
+  tuftShade: "#0a0f0d",
+  shrub: "#0c0f0d",
+  medianStrip: "#070907",
+  /** 도심 포장면 — 저채도 회색. 도심인데 잔디가 깔려 있으면 도심으로 안 읽힌다. */
+  pavementBase: "#09080a",
+  pavementNoiseLight: "#0b0b0c",
+  pavementNoiseDark: "#07080a",
+  pavementSeam: "#0a070b",
+  parkingLot: "#080810",
+  dirtBase: "#0b0805",
+  dirtNoiseLight: "#0e0b05",
+  dirtNoiseDark: "#0a0804",
+  fieldFurrowLight: "#0d0b05",
+  fieldFurrowDark: "#0a0804",
+  paddyBase: "#060a07",
+  paddyCellLight: "#080c0a",
+  paddyCellDark: "#060907",
+  forestFloor: "#060907",
+  houseYardShadow: "#070806",
+
+  // ── 도로·인도·길 — 인도가 도로보다 밝아야 둘이 갈린다 ──
+  road: "#0a0c0f",
+  sidewalk: "#0e0d17",
+  laneShoulder: "#0a0c0a",
+  dirtLane: "#0d0c07",
+  leveePath: "#100e08",
+  seawall: "#0b0f0a",
+  parkPath: "#120d09",
+  paddyBank: "#0b0c06",
+
+  // ── 건물·시설·차량 — 지면보다 확실히 위(평균 +4.0 이상). 디테일은 본체보다 또 한 단 위. ──
+  roofBase: "#100e19",
+  roofEdge: "#0f0f18",
+  roofVent: "#11111c",
+  roofVentShade: "#121019",
+  roofPenthouse: "#17110a",
+  aptBody: "#100e1b",
+  aptEdge: "#0e0f1b",
+  aptTower: "#121021",
+  aptTowerLit: "#101122",
+  houseRoofWarm: "#130f0c",
+  houseRoofWarmShade: "#110e08",
+  houseRidgeWarm: "#181109",
+  houseRoofCool: "#110e16",
+  houseRoofCoolShade: "#0d0d1d",
+  houseRidgeCool: "#131020",
+  materialStack: "#110f0a",
+  materialStackShade: "#110e09",
+  breakwater: "#0e0f12",
+  lampPost: "#100f0a",
+  vehicleBlue: "#0c0f14",
+  vehicleRed: "#150d0f",
+  vehicleGreen: "#0c100c",
+
+  // ── 랜드마크 — 배경에서 가장 밝지만 부지(20.43) 아래를 지킨다. 지역 식별의 핵심이라 여기가 상단이다. ──
+  treeCanopy: "#0e130f",
+  treeCanopyLit: "#0e140f",
+  treeShade: "#0a140d",
+  forestCanopy: "#0d1310",
+  forestCanopyLit: "#0d140f",
+  forestCanopyDark: "#0f1210",
+  riverBase: "#0c121a",
+  riverFlow: "#0b131d",
+  seaBase: "#0b121c",
+  seaRipple: "#0b131e",
+  roofSkylight: "#16120a",
+  bench: "#141207",
+} as const;
+
+/**
+ * `#rrggbb`의 상대휘도(0..255 스케일) — **톤 서열의 단일 계산식**이다.
+ * 테스트가 자기 식을 따로 들면 구현과 갈리므로, 검사도 이 함수를 import해서 쓴다.
+ */
+export function relativeLuminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  return 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+}
+
 type Ctx = CanvasRenderingContext2D;
 
 /**
@@ -44,7 +146,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   const LX = BACKDROP_OFF_X, LY = BACKDROP_OFF_Y, LW = GRID_W, LH = GRID_H;
   /** 부지 남쪽 변 바로 아래 줄 — 시안의 도로·농로가 전부 이 좌표에서 시작한다. */
   const SY = LY + LH;
-  const GROUND = "#0b0b0e";
+  const P = BACKDROP_PALETTE;
 
   /** 시안의 결정론 난수(mulberry32) — 시드가 같으면 같은 풍경이 나온다. */
   function rng(seed: number) {
@@ -66,20 +168,33 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   };
 
   function grass(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
-    px(c, x, y, w, h, "#0e120f");
+    px(c, x, y, w, h, P.grassBase);
     const r = rng(seed);
     for (let i = 0; i < w * h * 0.7; i++) {
       const gx = x * T + Math.floor(r() * w * T), gy = y * T + Math.floor(r() * h * T);
-      pxf(c, gx, gy, 2, 2, r() < 0.5 ? "#111711" : "#0b0e0c");
+      pxf(c, gx, gy, 2, 2, r() < 0.5 ? P.grassNoiseLight : P.grassNoiseDark);
     }
     for (let i = 0; i < w * h * 0.09; i++) {
       const gx = x * T + Math.floor(r() * w * T), gy = y * T + Math.floor(r() * h * T);
-      pxf(c, gx, gy, 2, 3, "#1c2b20"); pxf(c, gx + 2, gy + 1, 1, 2, "#16221a");
+      pxf(c, gx, gy, 2, 3, P.tuft); pxf(c, gx + 2, gy + 1, 1, 2, P.tuftShade);
     }
+  }
+  /** 도심 바닥 — 아스팔트·콘크리트 포장. 미세 노이즈 + 드문 이음매.
+   *  `grass`와 시그니처가 같아 도심 3종에서 호출만 갈아끼운다(좌표는 그대로). */
+  function pavement(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
+    px(c, x, y, w, h, P.pavementBase);
+    const r = rng(seed);
+    for (let i = 0; i < w * h * 0.7; i++) {
+      const gx = x * T + Math.floor(r() * w * T), gy = y * T + Math.floor(r() * h * T);
+      pxf(c, gx, gy, 2, 2, r() < 0.5 ? P.pavementNoiseLight : P.pavementNoiseDark);
+    }
+    c.fillStyle = P.pavementSeam;
+    for (let gy = y + 4; gy < y + h; gy += 6 + Math.floor(r() * 7)) c.fillRect(x * T, gy * T, w * T, 1);
+    for (let gx = x + 5; gx < x + w; gx += 9 + Math.floor(r() * 10)) c.fillRect(gx * T, y * T, 1, h * T);
   }
   function roadH(c: Ctx, x: number, y: number, w: number, lanes: number) {
     const h = lanes * 2;
-    px(c, x, y, w, h, "#15151b");
+    px(c, x, y, w, h, P.road);
     c.fillStyle = "rgba(216,207,175,0.14)";
     for (let dx = 0; dx < w; dx += 3) c.fillRect((x + dx) * T, (y + h / 2) * T - 1, 2 * T - 4, 2);
     c.fillStyle = "rgba(216,207,175,0.07)";
@@ -87,7 +202,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   }
   function roadV(c: Ctx, x: number, y: number, h: number, lanes: number) {
     const w = lanes * 2;
-    px(c, x, y, w, h, "#15151b");
+    px(c, x, y, w, h, P.road);
     c.fillStyle = "rgba(216,207,175,0.14)";
     for (let dy = 0; dy < h; dy += 3) c.fillRect((x + w / 2) * T - 1, (y + dy) * T, 2, 2 * T - 4);
     c.fillStyle = "rgba(216,207,175,0.07)";
@@ -95,37 +210,42 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   }
   /** 1차선 좁은 길 — 중앙선이 없는 것이 읍내·농로의 표식이다. */
   function laneH(c: Ctx, x: number, y: number, w: number) {
-    px(c, x, y, w, 2, "#15151b");
+    px(c, x, y, w, 2, P.road);
     c.fillStyle = "rgba(216,207,175,0.07)";
     c.fillRect(x * T, y * T, w * T, 2); c.fillRect(x * T, (y + 2) * T - 2, w * T, 2);
   }
   function sidewalkH(c: Ctx, x: number, y: number, w: number) {
-    px(c, x, y, w, 1, "#18181e");
+    px(c, x, y, w, 1, P.sidewalk);
     c.fillStyle = "rgba(216,207,175,0.05)";
     for (let dx = 0; dx < w; dx += 2) c.fillRect((x + dx) * T, y * T, 1, T);
   }
   function sidewalkV(c: Ctx, x: number, y: number, h: number) {
-    px(c, x, y, 1, h, "#18181e");
+    px(c, x, y, 1, h, P.sidewalk);
     c.fillStyle = "rgba(216,207,175,0.05)";
     for (let dy = 0; dy < h; dy += 2) c.fillRect(x * T, (y + dy) * T, T, 1);
   }
   function crosswalk(c: Ctx, x: number, y: number, w: number, h: number) {
-    c.fillStyle = "rgba(216,207,175,0.20)";
+    c.fillStyle = "rgba(216,207,175,0.13)";
     if (w >= h) { for (let dy = 0; dy < h * T; dy += 6) c.fillRect(x * T, y * T + dy, w * T, 3); }
     else { for (let dx = 0; dx < w * T; dx += 6) c.fillRect(x * T + dx, y * T, 3, h * T); }
   }
   function tree(c: Ctx, x: number, y: number, seed: number) {
     const r = rng(seed);
-    pxf(c, x * T + 2, y * T + 2, T * 2 - 4, T * 2 - 4, "#1a2e21");
-    pxf(c, x * T + 4, y * T + 4, T * 2 - 8, T * 2 - 8, "#24402e");
+    pxf(c, x * T + 2, y * T + 2, T * 2 - 4, T * 2 - 4, P.treeCanopy);
+    pxf(c, x * T + 4, y * T + 4, T * 2 - 8, T * 2 - 8, P.treeCanopyLit);
     for (let i = 0; i < 7; i++) {
-      pxf(c, x * T + 3 + Math.floor(r() * (T * 2 - 7)), y * T + 3 + Math.floor(r() * (T * 2 - 7)), 2, 2, "#142319");
+      pxf(c, x * T + 3 + Math.floor(r() * (T * 2 - 7)), y * T + 3 + Math.floor(r() * (T * 2 - 7)), 2, 2, P.treeShade);
     }
   }
+  /** 가로등 — 불빛은 **방사형 그라디언트**여야 한다. 단색 원반은 회색 얼룩으로 읽힌다(실측). */
   function lamp(c: Ctx, x: number, y: number) {
-    pxf(c, x * T - 1, y * T - 1, 3, 3, "#3b3626");
-    c.fillStyle = "rgba(216,207,175,0.06)";
-    c.beginPath(); c.arc(x * T, y * T, T * 1.6, 0, 7); c.fill();
+    pxf(c, x * T - 1, y * T - 1, 3, 3, P.lampPost);
+    const rad = T * 1.6;
+    const g = c.createRadialGradient(x * T, y * T, 0, x * T, y * T, rad);
+    g.addColorStop(0, "rgba(216,207,175,0.10)");
+    g.addColorStop(1, "rgba(216,207,175,0)");
+    c.fillStyle = g;
+    c.beginPath(); c.arc(x * T, y * T, rad, 0, 7); c.fill();
   }
   function car(c: Ctx, x: number, y: number, col: string, vert: boolean) {
     if (vert) pxf(c, x * T + 2, y * T + 1, T - 4, T * 2 - 3, col);
@@ -137,60 +257,60 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   /** 건물 옥상 덩어리 — 실외기·옥탑이 흩어진다. */
   function roof(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
     const r = rng(seed);
-    px(c, x, y, w, h, "#131318");
-    c.strokeStyle = "#1d1d25"; c.lineWidth = 2; c.strokeRect(x * T + 1, y * T + 1, w * T - 2, h * T - 2);
+    px(c, x, y, w, h, P.roofBase);
+    c.strokeStyle = P.roofEdge; c.lineWidth = 2; c.strokeRect(x * T + 1, y * T + 1, w * T - 2, h * T - 2);
     for (let i = 0; i < (w * h) / 14; i++) {
       const gx = x + 1 + Math.floor(r() * (w - 3)), gy = y + 1 + Math.floor(r() * (h - 3));
-      pxf(c, gx * T, gy * T, T + 2, T - 2, "#1b1b23"); pxf(c, gx * T + 2, gy * T + 2, T - 4, 2, "#101016");
+      pxf(c, gx * T, gy * T, T + 2, T - 2, P.roofVent); pxf(c, gx * T + 2, gy * T + 2, T - 4, 2, P.roofVentShade);
     }
     if (r() < 0.8) {
       const gx = x + 1 + Math.floor(r() * (w - 4)), gy = y + 1 + Math.floor(r() * (h - 3));
-      pxf(c, gx * T, gy * T, T * 2, T, "#2a2617"); pxf(c, gx * T + 2, gy * T + 2, T * 2 - 4, T - 4, "#3a3320");
+      pxf(c, gx * T, gy * T, T * 2, T, P.roofPenthouse); pxf(c, gx * T + 2, gy * T + 2, T * 2 - 4, T - 4, P.roofSkylight);
     }
   }
   /** 판상형 아파트 동(옥상) — 승강기탑이 일정 간격. */
   function apt(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
     const r = rng(seed);
-    px(c, x, y, w, h, "#15151c");
-    c.strokeStyle = "#21212b"; c.lineWidth = 2; c.strokeRect(x * T + 1, y * T + 1, w * T - 2, h * T - 2);
+    px(c, x, y, w, h, P.aptBody);
+    c.strokeStyle = P.aptEdge; c.lineWidth = 2; c.strokeRect(x * T + 1, y * T + 1, w * T - 2, h * T - 2);
     for (let gx = x + 2; gx < x + w - 2; gx += 5) {
-      pxf(c, gx * T, (y + Math.floor(h / 2)) * T - 4, T + 4, T - 2, "#22222e");
-      pxf(c, gx * T + 2, (y + Math.floor(h / 2)) * T - 2, T, 2, "#2c2c3a");
+      pxf(c, gx * T, (y + Math.floor(h / 2)) * T - 4, T + 4, T - 2, P.aptTower);
+      pxf(c, gx * T + 2, (y + Math.floor(h / 2)) * T - 2, T, 2, P.aptTowerLit);
     }
-    if (r() < 0.9) pxf(c, (x + w - 3) * T, (y + 1) * T, T, T - 4, "#2a2617");
+    if (r() < 0.9) pxf(c, (x + w - 3) * T, (y + 1) * T, T, T - 4, P.roofPenthouse);
   }
   /** 저층 주택(3×2) — 박공지붕 탑뷰. */
   function house(c: Ctx, x: number, y: number, seed: number) {
     const r = rng(seed);
     const warm = r() < 0.4;
-    pxf(c, x * T, y * T, 3 * T, T, warm ? "#1e1712" : "#191720");            // 지붕 윗면
-    pxf(c, x * T, (y + 1) * T, 3 * T, T, warm ? "#140f0a" : "#100f15");      // 지붕 아랫면(그늘)
-    pxf(c, x * T, (y + 1) * T - 1, 3 * T, 2, warm ? "#2d2114" : "#242233");  // 용마루
-    pxf(c, (x + 3) * T, y * T, 2, 2 * T, "#0c0e0b");                         // 마당 경계 그림자
+    pxf(c, x * T, y * T, 3 * T, T, warm ? P.houseRoofWarm : P.houseRoofCool);                  // 지붕 윗면
+    pxf(c, x * T, (y + 1) * T, 3 * T, T, warm ? P.houseRoofWarmShade : P.houseRoofCoolShade);  // 지붕 아랫면(그늘)
+    pxf(c, x * T, (y + 1) * T - 1, 3 * T, 2, warm ? P.houseRidgeWarm : P.houseRidgeCool);      // 용마루
+    pxf(c, (x + 3) * T, y * T, 2, 2 * T, P.houseYardShadow);                                   // 마당 경계 그림자
   }
   /** 나대지·공사장 — 점선 가설 울타리와 자재 더미. */
   function dirtLot(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
     const r = rng(seed);
-    px(c, x, y, w, h, "#15120c");
+    px(c, x, y, w, h, P.dirtBase);
     for (let i = 0; i < w * h * 0.6; i++) {
       const gx = x * T + Math.floor(r() * w * T), gy = y * T + Math.floor(r() * h * T);
-      pxf(c, gx, gy, 2, 2, r() < 0.5 ? "#181509" : "#110e08");
+      pxf(c, gx, gy, 2, 2, r() < 0.5 ? P.dirtNoiseLight : P.dirtNoiseDark);
     }
     c.strokeStyle = "rgba(216,207,175,0.12)"; c.lineWidth = 2;
     c.setLineDash([6, 6]); c.strokeRect(x * T + 2, y * T + 2, w * T - 4, h * T - 4); c.setLineDash([]);
-    pxf(c, (x + 2) * T, (y + 2) * T, T * 3, T, "#23201a");
-    pxf(c, (x + 2) * T, (y + 3) * T + 2, T * 3, T - 4, "#1c1a15");
+    pxf(c, (x + 2) * T, (y + 2) * T, T * 3, T, P.materialStack);
+    pxf(c, (x + 2) * T, (y + 3) * T + 2, T * 3, T - 4, P.materialStackShade);
   }
   /** 밭 — 이랑 줄무늬. */
   function fieldDry(c: Ctx, x: number, y: number, w: number, h: number) {
-    for (let dy = 0; dy < h; dy++) px(c, x, y + dy, w, 1, dy % 2 ? "#12100a" : "#0d0c07");
+    for (let dy = 0; dy < h; dy++) px(c, x, y + dy, w, 1, dy % 2 ? P.fieldFurrowLight : P.fieldFurrowDark);
     c.fillStyle = "rgba(216,207,175,0.03)";
     for (let dy = 0; dy < h; dy += 2) c.fillRect(x * T, (y + dy) * T, w * T, 1);
   }
   /** 논배미 — 불규칙 격자 + 물빛. */
   function paddy(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
     const r = rng(seed);
-    px(c, x, y, w, h, "#0d1513");
+    px(c, x, y, w, h, P.paddyBase);
     let gy = y;
     while (gy < y + h) {
       const rh = 4 + Math.floor(r() * 4);
@@ -198,8 +318,8 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
       while (gx < x + w) {
         const rw = 7 + Math.floor(r() * 7);
         const cw = Math.min(rw, x + w - gx), ch = Math.min(rh, y + h - gy);
-        px(c, gx, gy, cw, ch, r() < 0.4 ? "#0e1714" : "#0c1310");
-        c.fillStyle = "#1a1e12";
+        px(c, gx, gy, cw, ch, r() < 0.4 ? P.paddyCellLight : P.paddyCellDark);
+        c.fillStyle = P.paddyBank;
         c.fillRect(gx * T, gy * T, cw * T, 2); c.fillRect(gx * T, gy * T, 2, ch * T); // 논둑
         if (r() < 0.5) {
           c.fillStyle = "rgba(216,207,175,0.05)";
@@ -213,17 +333,17 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   /** 숲 덩어리 — 촘촘한 수관. */
   function forest(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
     const r = rng(seed);
-    px(c, x, y, w, h, "#0f1a13");
+    px(c, x, y, w, h, P.forestFloor);
     for (let i = 0; i < w * h * 0.35; i++) {
       const gx = x * T + Math.floor(r() * (w * T - 8)), gy = y * T + Math.floor(r() * (h * T - 8));
-      pxf(c, gx, gy, 8, 8, "#16281c"); pxf(c, gx + 2, gy + 2, 4, 4, r() < 0.5 ? "#1e3626" : "#12211a");
+      pxf(c, gx, gy, 8, 8, P.forestCanopy); pxf(c, gx + 2, gy + 2, 4, 4, r() < 0.5 ? P.forestCanopyLit : P.forestCanopyDark);
     }
   }
   /** 하천(세로) — 물 + 흐름 대시. */
   function river(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
     const r = rng(seed);
-    px(c, x, y, w, h, "#0d141c");
-    c.fillStyle = "#13202b";
+    px(c, x, y, w, h, P.riverBase);
+    c.fillStyle = P.riverFlow;
     for (let i = 0; i < w * h * 0.5; i++) {
       const gx = x * T + Math.floor(r() * (w * T - 2)), gy = y * T + Math.floor(r() * (h * T - 6));
       c.fillRect(gx, gy, 2, 5);
@@ -234,8 +354,8 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   /** 바다 — 남색 + 잔물결. */
   function sea(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
     const r = rng(seed);
-    px(c, x, y, w, h, "#0b131a");
-    c.fillStyle = "#122230";
+    px(c, x, y, w, h, P.seaBase);
+    c.fillStyle = P.seaRipple;
     for (let i = 0; i < w * h * 0.7; i++) {
       const gx = x * T + Math.floor(r() * (w * T - 6)), gy = y * T + Math.floor(r() * h * T);
       c.fillRect(gx, gy, 5, 1);
@@ -247,46 +367,46 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     }
   }
   /** 정문 앞 접근로 — 부지 남쪽 변 바로 아래 두 칸. 문이 어디로 이어지는지를 말한다. */
-  const approach = (c: Ctx) => px(c, LX + 23, SY, 2, 1, "#18181e");
+  const approach = (c: Ctx) => px(c, LX + 23, SY, 2, 1, P.sidewalk);
 
   // ── ① 대도시 도심 ──────────────────────────────────────────────────────
   const urban0 = () => { // 고층 블록 밀집 — 사방이 이웃 건물 옥상
-    grass(c, 0, 0, EW, EH, 101);
+    pavement(c, 0, 0, EW, EH, 101);
     roof(c, 0, 0, LX - 2, 22, 102); roof(c, 0, 24, LX - 2, 16, 103);
     roof(c, LX + LW + 2, 0, EW - LX - LW - 2, 14, 104); roof(c, LX + LW + 2, 16, EW - LX - LW - 2, 22, 105);
     roof(c, LX + 1, 0, 22, LY - 2, 106); roof(c, LX + 25, 0, 20, LY - 2, 107);
     sidewalkH(c, 0, SY + 1, EW); roadH(c, 0, SY + 2, EW, 2); sidewalkH(c, 0, SY + 6, EW);
     roof(c, 0, SY + 7, 30, EH - SY - 7, 108); roof(c, 34, SY + 7, EW - 34, EH - SY - 7, 109);
-    crosswalk(c, LX + 23, SY + 2, 2, 4); car(c, 20, SY + 2, "#232b33", false); car(c, 52, SY + 4, "#2f2626", false);
+    crosswalk(c, LX + 23, SY + 2, 2, 4); car(c, 20, SY + 2, P.vehicleBlue, false); car(c, 52, SY + 4, P.vehicleRed, false);
     approach(c);
   };
   const urban1 = () => { // 대로변 — 왕복 6차선 + 중앙분리대
-    grass(c, 0, 0, EW, EH, 111);
+    pavement(c, 0, 0, EW, EH, 111);
     sidewalkH(c, 0, SY + 1, EW);
     roadH(c, 0, SY + 2, EW, 1);                    // 상행 차로
-    px(c, 0, SY + 4, EW, 1, "#10140f");            // 중앙분리대
-    for (let x = 2; x < EW; x += 6) pxf(c, x * T + 2, (SY + 4) * T + 2, 6, 6, "#1e3626"); // 분리대 관목
+    px(c, 0, SY + 4, EW, 1, P.medianStrip);            // 중앙분리대
+    for (let x = 2; x < EW; x += 6) pxf(c, x * T + 2, (SY + 4) * T + 2, 6, 6, P.shrub); // 분리대 관목
     roadH(c, 0, SY + 5, EW, 1);                    // 하행 차로
     sidewalkH(c, 0, SY + 7, EW);                   // 딱 화면 끝
     roof(c, 0, 0, 8, SY - 14, 115); roof(c, LX + LW + 4, 0, EW - LX - LW - 4, 20, 116);
     crosswalk(c, LX + 23, SY + 2, 2, 5);
-    car(c, 10, SY + 2, "#232b33", false); car(c, 40, SY + 2, "#2f2626", false);
-    car(c, 26, SY + 5, "#262e26", false); car(c, 58, SY + 5, "#232b33", false);
+    car(c, 10, SY + 2, P.vehicleBlue, false); car(c, 40, SY + 2, P.vehicleRed, false);
+    car(c, 26, SY + 5, P.vehicleGreen, false); car(c, 58, SY + 5, P.vehicleBlue, false);
     approach(c);
   };
   const urban2 = () => { // 사거리 코너 — 남·동 도로가 만나는 필지
-    grass(c, 0, 0, EW, EH, 121);
+    pavement(c, 0, 0, EW, EH, 121);
     const RX = LX + LW + 2;
     sidewalkH(c, 0, SY + 1, RX); roadH(c, 0, SY + 2, EW, 2); sidewalkH(c, 0, SY + 6, RX);
     sidewalkV(c, RX, 0, SY + 1); roadV(c, RX + 1, 0, SY + 6, 2); sidewalkV(c, RX + 5, 0, SY + 1);
-    px(c, RX + 1, SY + 2, 4, 4, "#15151b");
+    px(c, RX + 1, SY + 2, 4, 4, P.road);
     roof(c, RX + 7, 0, EW - RX - 7, 18, 122); roof(c, RX + 7, 20, EW - RX - 7, 16, 123);
     roof(c, 0, 0, 9, 16, 124); roof(c, 0, 18, 9, 18, 125);
     sidewalkH(c, RX + 6, SY + 6, EW - RX - 6); roof(c, RX + 6, SY + 7, EW - RX - 6, EH - SY - 7, 126);
     roof(c, 0, SY + 7, 26, EH - SY - 7, 127);
     crosswalk(c, LX + 23, SY + 2, 2, 4); crosswalk(c, RX + 1, LY + 16, 4, 2); crosswalk(c, RX - 2, SY + 2, 2, 4);
     lamp(c, LX + 8, SY + 1); lamp(c, LX + 34, SY + 1); lamp(c, RX, LY + 6); lamp(c, RX, LY + 26);
-    car(c, 14, SY + 2, "#232b33", false); car(c, 44, SY + 4, "#2f2626", false); car(c, RX + 1, 10, "#262e26", true);
+    car(c, 14, SY + 2, P.vehicleBlue, false); car(c, 44, SY + 4, P.vehicleRed, false); car(c, RX + 1, 10, P.vehicleGreen, true);
     approach(c);
   };
 
@@ -294,10 +414,10 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   const newtown0 = () => { // 아파트 단지 옆
     grass(c, 0, 0, EW, EH, 201);
     apt(c, 1, 2, 9, 3, 202); apt(c, 1, 9, 9, 3, 203); apt(c, 1, 16, 9, 3, 204); apt(c, 1, 23, 9, 3, 205);
-    px(c, 1, 6, 9, 2, "#141419"); px(c, 1, 13, 9, 2, "#141419"); px(c, 1, 20, 9, 2, "#141419"); // 동 사이 주차열
+    px(c, 1, 6, 9, 2, P.parkingLot); px(c, 1, 13, 9, 2, P.parkingLot); px(c, 1, 20, 9, 2, P.parkingLot); // 동 사이 주차열
     c.fillStyle = "rgba(216,207,175,0.10)";
     for (let i = 0; i < 4; i++) { c.fillRect((2 + i * 2) * T, 6 * T, 2, 2 * T); c.fillRect((2 + i * 2) * T, 13 * T, 2, 2 * T); }
-    car(c, 2, 6, "#232b33", true); car(c, 6, 13, "#2f2626", true);
+    car(c, 2, 6, P.vehicleBlue, true); car(c, 6, 13, P.vehicleRed, true);
     apt(c, LX + 2, 1, 14, 3, 206); apt(c, LX + 20, 1, 14, 3, 207);
     apt(c, LX + LW + 3, 4, 8, 3, 208); apt(c, LX + LW + 3, 11, 8, 3, 209); apt(c, LX + LW + 3, 18, 8, 3, 210);
     tree(c, LX + LW + 4, 25, 211); tree(c, LX + LW + 7, 29, 212);
@@ -310,10 +430,10 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     grass(c, 0, 0, EW, EH, 221);
     roof(c, LX + 1, 0, 20, LY - 2, 222); roof(c, LX + 25, 0, 19, LY - 2, 223); roof(c, 0, 0, LX - 2, 14, 224);
     const PX2 = LX + LW + 2;
-    px(c, PX2, 6, 1, SY - 6, "#1c1a12"); px(c, PX2, 20, EW - PX2 - 2, 1, "#1c1a12"); // 산책로
+    px(c, PX2, 6, 1, SY - 6, P.parkPath); px(c, PX2, 20, EW - PX2 - 2, 1, P.parkPath); // 산책로
     ([[PX2 + 3, 8], [PX2 + 6, 13], [PX2 + 2, 17], [PX2 + 6, 24], [PX2 + 3, 29], [PX2 + 7, 4]] as const)
       .forEach((p, i) => tree(c, p[0], p[1], 225 + i));
-    pxf(c, (PX2 + 4) * T, 22 * T, T + 4, 4, "#4a3f2c"); pxf(c, (PX2 + 7) * T, 27 * T, T + 4, 4, "#4a3f2c"); // 벤치
+    pxf(c, (PX2 + 4) * T, 22 * T, T + 4, 4, P.bench); pxf(c, (PX2 + 7) * T, 27 * T, T + 4, 4, P.bench); // 벤치
     grass(c, 0, 16, LX - 2, EH - 16, 231);
     tree(c, 3, 20, 232); tree(c, 6, 28, 233);
     sidewalkH(c, 0, SY + 1, EW); roadH(c, 0, SY + 2, EW, 2); sidewalkH(c, 0, SY + 6, EW);
@@ -326,7 +446,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     const RX2 = LX + LW + 2;
     sidewalkH(c, 0, SY + 1, EW); roadH(c, 0, SY + 2, EW, 2); sidewalkH(c, 0, SY + 6, EW);
     sidewalkV(c, RX2, 0, SY + 1); roadV(c, RX2 + 1, 0, SY + 2, 2); sidewalkV(c, RX2 + 5, 0, SY + 1);
-    px(c, RX2 + 1, SY + 2, 4, 4, "#15151b");
+    px(c, RX2 + 1, SY + 2, 4, 4, P.road);
     dirtLot(c, LX + 6, 1, 18, 6, 242);              // 북쪽 나대지
     dirtLot(c, 0, SY + 7, 24, EH - SY - 7, 243);    // 길 건너 공사장(잘린 채 보임)
     grass(c, 26, SY + 7, EW - 26, EH - SY - 7, 244);
@@ -347,7 +467,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
       [LX + LW + 3, 16], [LX + LW + 8, 16], [LX + LW + 3, 21], [LX + LW + 8, 21],
     ] as const;
     HS.forEach((p, i) => house(c, p[0], p[1], 302 + i));
-    px(c, 0, SY + 1, EW, 1, "#141414");
+    px(c, 0, SY + 1, EW, 1, P.laneShoulder);
     laneH(c, 0, SY + 2, EW);
     grass(c, 0, SY + 4, EW, EH - SY - 4, 340);
     ([[4, SY + 6], [10, SY + 6], [18, SY + 6], [26, SY + 6], [34, SY + 6], [42, SY + 6], [52, SY + 6], [60, SY + 6]] as const)
@@ -362,7 +482,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     paddy(c, LX + LW + 3, 22, EW - LX - LW - 4, EH - 22, 372);
     fieldDry(c, 1, 2, 9, 12);
     grass(c, 0, 16, LX - 2, SY - 16, 373); tree(c, 3, 20, 374); tree(c, 6, 26, 375);
-    px(c, 0, SY + 1, EW, 1, "#141414"); laneH(c, 0, SY + 2, EW);
+    px(c, 0, SY + 1, EW, 1, P.laneShoulder); laneH(c, 0, SY + 2, EW);
     grass(c, 0, SY + 4, EW, EH - SY - 4, 376);
     ([[8, SY + 6], [14, SY + 6], [20, SY + 6], [28, SY + 6], [36, SY + 6], [44, SY + 6]] as const)
       .forEach((p, i) => house(c, p[0], p[1], 377 + i));
@@ -374,13 +494,13 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     grass(c, 0, 0, EW, EH, 391);
     const RV = LX + LW + 6;
     grass(c, RV - 4, 0, 4, EH, 392);              // 둔치
-    px(c, RV - 1, 0, 1, EH, "#1b1912");           // 제방길
+    px(c, RV - 1, 0, 1, EH, P.leveePath);           // 제방길
     river(c, RV, 0, EW - RV, EH, 393);
     tree(c, RV - 4, 4, 394); tree(c, RV - 3, 14, 395); tree(c, RV - 4, 26, 396);
     fieldDry(c, 1, 2, 9, 16);
     grass(c, 0, 20, LX - 2, SY - 20, 397);
     sidewalkH(c, 0, SY + 1, RV - 1); roadH(c, 0, SY + 2, RV - 1, 2); sidewalkH(c, 0, SY + 6, RV - 1);
-    px(c, RV - 1, SY + 2, 1, 4, "#1b1912");       // 제방길이 도로와 만남
+    px(c, RV - 1, SY + 2, 1, 4, P.leveePath);       // 제방길이 도로와 만남
     grass(c, 0, SY + 7, RV - 1, EH - SY - 7, 398);
     crosswalk(c, LX + 23, SY + 2, 2, 4);
     approach(c);
@@ -389,10 +509,10 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   // ── ④ 농어촌 ───────────────────────────────────────────────────────────
   const rural0 = () => { // 논 한가운데
     paddy(c, 0, 0, EW, EH, 401);
-    px(c, 0, SY + 1, EW, 1, "#171410");           // 농로(흙)
+    px(c, 0, SY + 1, EW, 1, P.dirtLane);           // 농로(흙)
     laneH(c, 0, SY + 2, EW);
     paddy(c, 0, SY + 4, EW, EH - SY - 4, 402);
-    px(c, LX + LW + 4, 0, 1, SY + 2, "#171410");  // 세로 농로
+    px(c, LX + LW + 4, 0, 1, SY + 2, P.dirtLane);  // 세로 농로
     grass(c, 0, 0, 6, 6, 403); tree(c, 1, 1, 404);
     house(c, 2, SY + 6, 405); house(c, 7, SY + 6, 406); // 농가 두 채
     crosswalk(c, LX + 23, SY + 2, 2, 2);
@@ -405,7 +525,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     fieldDry(c, LX + LW + 4, 2, EW - LX - LW - 5, 14);
     grass(c, LX + LW + 3, 18, EW - LX - LW - 3, SY - 18, 414);
     tree(c, LX + LW + 5, 20, 415); tree(c, LX + LW + 9, 26, 416);
-    px(c, 0, SY + 1, EW, 1, "#141414"); laneH(c, 0, SY + 2, EW);
+    px(c, 0, SY + 1, EW, 1, P.laneShoulder); laneH(c, 0, SY + 2, EW);
     grass(c, 0, SY + 4, EW, EH - SY - 4, 417);
     forest(c, 0, SY + 6, 20, EH - SY - 6, 418);
     house(c, 30, SY + 7, 419); house(c, 40, SY + 7, 420);
@@ -416,17 +536,17 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     grass(c, 0, 0, EW, EH, 431);
     const SX = LX + LW + 4;
     sea(c, SX, 0, EW - SX, EH, 432);
-    px(c, SX, 0, 1, EH, "#191d17");                          // 해안선 둑
-    px(c, SX, 10, 6, 1, "#1c1c22"); px(c, SX + 5, 10, 1, 10, "#1c1c22"); // 방파제 L자
+    px(c, SX, 0, 1, EH, P.seawall);                          // 해안선 둑
+    px(c, SX, 10, 6, 1, P.breakwater); px(c, SX + 5, 10, 1, 10, P.breakwater); // 방파제 L자
     c.fillStyle = "rgba(216,207,175,0.10)"; c.fillRect((SX + 5) * T, 19 * T, T, 3); // 등대 불
-    pxf(c, (SX + 2) * T, 12 * T, T * 2 - 4, T - 2, "#232b33");
-    pxf(c, (SX + 3) * T, 14 * T, T * 2 - 4, T - 2, "#2f2626"); // 배 두 척
+    pxf(c, (SX + 2) * T, 12 * T, T * 2 - 4, T - 2, P.vehicleBlue);
+    pxf(c, (SX + 3) * T, 14 * T, T * 2 - 4, T - 2, P.vehicleRed); // 배 두 척
     fieldDry(c, 1, 2, 9, 10);
     grass(c, 0, 14, LX - 2, SY - 14, 433);
     ([[2, 16], [6, 16], [2, 21], [6, 21], [2, 26], [6, 26]] as const)
       .forEach((p, i) => house(c, p[0], p[1], 434 + i));
-    px(c, 0, SY + 1, SX, 1, "#141414"); laneH(c, 0, SY + 2, SX);
-    px(c, SX, SY + 2, 1, 2, "#191d17");
+    px(c, 0, SY + 1, SX, 1, P.laneShoulder); laneH(c, 0, SY + 2, SX);
+    px(c, SX, SY + 2, 1, 2, P.seawall);
     grass(c, 0, SY + 4, SX, EH - SY - 4, 441);
     ([[8, SY + 6], [16, SY + 6], [26, SY + 6], [36, SY + 6]] as const)
       .forEach((p, i) => house(c, p[0], p[1], 442 + i));
@@ -444,7 +564,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
 
   // 다시 그릴 때(지역이 갈릴 때) 이전 그림이 비쳐서는 안 된다 — 바탕부터 통째로 덮는다.
   c.clearRect(0, 0, EW * T, EH * T);
-  pxf(c, 0, 0, EW * T, EH * T, GROUND);
+  pxf(c, 0, 0, EW * T, EH * T, P.ground);
   (BLOCKS[region][variant] ?? BLOCKS[region][0])();
   // 부지 구멍 — 위 주석의 계약. 이 한 줄이 없으면 부지 바닥·격자가 풍경에 덮인다.
   c.clearRect(LX * T, LY * T, LW * T, LH * T);
