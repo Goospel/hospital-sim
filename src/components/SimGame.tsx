@@ -35,7 +35,7 @@ import {
 } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
-import { createWorld, type RoomType, type SimWorld } from "@/sim/world";
+import { BACKDROP_COUNT, createWorld, type RoomType, type SimRegionKey, type SimWorld } from "@/sim/world";
 import { computeRegions } from "@/sim/regions";
 import { buildWalls, demolish, designateRegion, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
@@ -86,6 +86,23 @@ type PaletteSection = "PEOPLE" | "BUILD";
 const PALETTE_SECTIONS: Array<{ key: PaletteSection; label: string }> = [
   { key: "PEOPLE", label: "사람" },
   { key: "BUILD", label: "건설" },
+];
+
+/**
+ * 지역 선택 카드 4장 — **문구는 연출이다.**
+ *
+ * 이번 슬라이스에서 지역이 바꾸는 것은 부지 밖 풍경뿐이라(world.SimRegionKey), 각 줄은 그
+ * 지역의 의료 격차를 한 문장으로만 말한다. 수치도 약속도 쓰지 않는 것이 계약이다 — 규칙 차이가
+ * 없는데 있는 것처럼 읽히면 그건 화면이 하는 거짓말이다(같은 이유로 카드 아래에 "지금은
+ * 풍경만 바뀝니다"를 명시한다).
+ *
+ * `simHud`가 아니라 여기 있는 이유는 `PALETTE_SECTIONS`와 같다 — 이 표를 읽는 것이 JSX뿐이다.
+ */
+const REGION_CARDS: Array<{ key: SimRegionKey; label: string; line: string }> = [
+  { key: "URBAN", label: "대도시 도심", line: "병상은 남아도는데 옆 건물에도 병원이 있다. 임대료가 먼저 나간다." },
+  { key: "NEWTOWN", label: "신도시·중소도시", line: "젊은 인구가 계속 들어온다. 아이를 볼 곳은 그만큼 늘지 않았다." },
+  { key: "PROVINCIAL", label: "지방 소도시", line: "환자는 늙어 가고, 의사를 구한다는 공고는 해를 넘긴다." },
+  { key: "RURAL", label: "농어촌", line: "가장 가까운 큰 병원까지 한 시간. 그 한 시간이 사람을 가른다." },
 ];
 
 const SPEEDS: Array<{ value: SimSpeed; label: string; title: string }> = [
@@ -154,6 +171,15 @@ export default function SimGame() {
    *  ⚠️ 한 번 닫으면 다시 안 뜬다 — 전원 사직으로 의사가 0이 되어도 그때는 게이트가 아니라
    *  경고 스택과 체크리스트가 말한다(이미 판을 아는 사람에게 시작 화면을 다시 띄우지 않는다). */
   const [rosterOpen, setRosterOpen] = useState(true);
+  /** **지역을 골랐는가** — 스타팅 로스터보다 한 겹 앞선 게이트다(사용자 컨셉 2026-07-30).
+   *
+   *  순서가 뒤집히면 안 된다: 카드를 누르면 `createWorld`로 세계를 **통째로 갈아 끼우므로**,
+   *  먼저 뽑은 의사가 있으면 그 채용이 조용히 사라진다. 그래서 이게 열려 있는 동안은
+   *  채용 패널을 아예 렌더하지 않는다(아래 게이트 조건).
+   *
+   *  ⚠️ 한 번 닫으면 다시 안 뜬다 — 로스터 게이트와 같은 계약이다. 저장·불러오기가 없는 지금
+   *  "새 판 = 새로고침"이라 재선택 UI를 만들 자리가 없다(설계 §7 범위 밖). */
+  const [regionPicked, setRegionPicked] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   /* 이미 읽은 이벤트 카드 — **닫힘을 상태로 두지 않고 "읽은 것"을 기억한다.** 카드가 뜨는
      조건(`world.event`)은 세계가 정하므로, 열림 플래그를 따로 두면 아침 전이가 그것을 켜 줘야
@@ -276,7 +302,8 @@ export default function SimGame() {
       /* 스타팅 게이트가 떠 있는 동안 키보드는 **통째로 잠긴다.** 스페이스는 게이트 뒤의 시계를
          켜려 들고(아직 의사가 없는 판이 돌기 시작한다), ESC는 이 모달을 못 닫으면서 그 아래
          도구를 놓아 "ESC가 먹통"으로 읽힌다. 블로킹 모달의 계약은 *뒤가 조작되지 않는다*이다. */
-      if (rosterOpen) return;
+      // 지역 선택도 같은 이유로 통째로 잠근다 — 뒤의 세계는 어차피 곧 갈아 끼워질 임시 판이다.
+      if (!regionPicked || rosterOpen) return;
       if (e.code === "Space") {
         e.preventDefault();
         setSpeed((cur) => toggledSpeed(cur, lastRunSpeed.current));
@@ -308,7 +335,7 @@ export default function SimGame() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hireOpen, rosterOpen, priorityOpen, eventOpen, eventKey, tool, inspectId]);
+  }, [hireOpen, rosterOpen, regionPicked, priorityOpen, eventOpen, eventKey, tool, inspectId]);
 
   /*
     되돌아간 응급 알림 — 폰이 만들어지지 않는 사건이라(문전 판정) 화면에 아무 흔적이 없다.
@@ -1035,7 +1062,64 @@ export default function SimGame() {
       */}
       {/* 채용 패널 — 결산 오버레이와 **같은 층**에 뜨지만 국면과 무관하다(운영 중에도 뽑는다).
           시계는 phase가 아니라 hireOpen이 세운다(위 paused 파생). */}
-      {(hireOpen || rosterOpen) && (
+      {/*
+        ── 지역 선택 — 판이 열리기 전의 **첫 화면**.
+
+        림월드가 시작 시 지형을 고르듯, 이 게임은 대한민국의 어느 지역에 병원을 지을지 고른다.
+        지역별 의료 격차가 그 지형의 자리다 — 다만 **이번 슬라이스에서는 풍경만 바뀐다**(설계 §7).
+        그 사실을 카드 아래에 그대로 적는다: 차이를 약속해 놓고 안 주는 것보다, 아직 없다고
+        말하는 편이 낫다(이 저장소의 「화면이 거짓말하지 않는다」 규약).
+
+        배경은 플레이어가 안 고른다 — 지역 후보 3종 중 하나가 **클릭 시점에** 무작위로 정해져
+        세계에 저장된다. 시뮬 안이 아니라 여기서 `Math.random`을 부르는 것이 계약이다: 세계가
+        만들어진 뒤로는 지금까지와 똑같이 완전 결정론이다(world.SimWorld.backdrop 주석).
+      */}
+      {!regionPicked && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="지역 선택"
+          className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-desk/85 p-4"
+        >
+          {/* 세로 가운데는 아이의 `my-auto`로 잡는다 — 채용 패널과 같은 이유(T-088). */}
+          <div className="my-auto flex w-full max-w-lg flex-col gap-3 border border-frame bg-desk-2 px-5 py-5">
+            <div>
+              <h2 className="font-mono text-sm text-on-desk">어디에 병원을 지을까요</h2>
+              <p className="mt-1 text-xs leading-relaxed text-on-desk-muted">
+                지역마다 아픈 데가 다릅니다. 고르고 나면 바꿀 수 없습니다.
+              </p>
+            </div>
+            <ul className="flex flex-col gap-2">
+              {REGION_CARDS.map((r) => (
+                <li key={r.key}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      /* 세계를 **갈아 끼운다** — 판은 일시정지로 시작하고 아직 아무도 없으므로
+                         버릴 것이 없다(기본 세계는 이 화면 뒤를 채우기 위한 임시판이다).
+                         world를 nullable로 만들지 않는 이유: 조기 return이 훅 순서와 충돌한다. */
+                      setWorld(createWorld(1, { region: r.key, backdrop: Math.floor(Math.random() * BACKDROP_COUNT) }));
+                      setRegionPicked(true);
+                    }}
+                    className="w-full border border-frame px-3 py-2.5 text-left transition-colors hover:border-on-desk-muted hover:bg-frame/40"
+                  >
+                    <span className="block text-sm text-on-desk">{r.label}</span>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-on-desk-muted">{r.line}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="border-t border-frame pt-2.5 text-[11px] leading-relaxed text-on-desk-muted">
+              지금은 지역이 <span className="text-on-desk">부지 밖 풍경</span>만 바꿉니다 — 환자·수가·채용은
+              아직 어느 지역에서나 같습니다.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ⚠️ `regionPicked` 조건이 **순서**를 강제한다 — 지역 카드가 세계를 갈아 끼우므로
+          그 전에 뽑은 의사는 사라진다. 한 겹 앞선 게이트를 먼저 통과해야 이 패널이 존재한다. */}
+      {regionPicked && (hireOpen || rosterOpen) && (
         <HirePanel
           pawns={world.pawns}
           hirePool={world.hirePool}
