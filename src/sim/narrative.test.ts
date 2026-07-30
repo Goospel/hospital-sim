@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { EVENT_KINDS, type SimEventKind } from './events'
 import { TRAITS, type TraitKey } from './traits'
 import type { EndingKind } from './world'
-import { EVENT_NARRATIONS, epilogueText, eventNarration, resignationLetter } from './narrative'
+import { EVENT_NARRATIONS, chillNotice, epilogueText, eventNarration, resignationLetter } from './narrative'
 
 /** ⚠️ 이 파일은 **문장 카탈로그의 계약**을 잰다: 전 종류에 폴백이 있는가 · 같은 (주,일)이면
  *  같은 문장인가 · 보간값 뒤에 조사가 없는가(T-094) · 엔딩 셋이 실제로 다른 말을 하는가.
@@ -138,6 +138,31 @@ describe('resignationLetter — 사직 편지(이름·과·특성·포화 일수
   it('톤 가드레일 — 편지에도 비난 카피가 없다(구조의 결과이지 관리의 실수가 아니다)', () => {
     const text = whole(fields)
     for (const word of BANNED) expect(text).not.toContain(word)
+  })
+})
+
+describe('chillNotice — 위축 고지(소송이 사람의 손을 끌어내린다)', () => {
+  it('이름이 들어가고 문장이 선다', () => {
+    const text = chillNotice('김서준')
+    expect(text).toContain('김서준')
+    expect(text.length).toBeGreaterThan('김서준'.length)
+    expect(text).not.toContain('undefined')
+  })
+
+  it('⚠️ T-094 — 보간값 **바로 뒤**에 받침 의존 조사가 없다(기계 검사)', () => {
+    for (const name of ['김서준', '박지우']) {
+      expect(particleAfter(chillNotice(name), name), chillNotice(name)).toBeNull()
+    }
+  })
+
+  it('⚠️ T-094 — 받침이 있는 이름으로 바꿔도 **문장 뼈대가 그대로**다(바이트 동일)', () => {
+    expect(chillNotice('김서준').replace('김서준', 'N')).toBe(chillNotice('박지우').replace('박지우', 'N'))
+  })
+
+  it('톤 가드레일 — 사실만 말한다(비난도 평가도 없다)', () => {
+    const text = chillNotice('김서준')
+    // 공용 목록 + 위축 전용 어휘: 물러선 것이 **구조의 결과**이지 그 사람의 성격이 아니다.
+    for (const word of [...BANNED, '겁', '회피', '몸을 사']) expect(text, text).not.toContain(word)
   })
 })
 

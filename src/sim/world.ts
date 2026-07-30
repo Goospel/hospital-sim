@@ -260,8 +260,14 @@ export interface SimWorld {
   /** 오늘 붙은 이벤트 — **하루짜리다.** 아침 전이 직후에 세팅되고(`events.applyEvent`)
    *  다음 아침이 지운다(`day.freshMorning`). 효과는 여기에 저장되지 않는다: 판정식이 그때그때
    *  배율 함수로 읽어 간다(events.arrivalProbMulOf 등) — "오늘의 보정치"를 따로 들면 이 필드와
-   *  갈릴 수 있다. 객체로 감싼 이유는 연출문·LLM 텍스트가 나중에 같은 자리에 붙기 때문이다. */
-  event?: { kind: SimEventKind }
+   *  갈릴 수 있다. 객체로 감싼 이유는 연출문·LLM 텍스트가 나중에 같은 자리에 붙기 때문이다.
+   *
+   *  ⚠️ `chilledName`은 그 확장의 첫 입주자다 — LAWSUIT이 **응급 우선순위를 한 단계 내린
+   *  의사의 이름**이고(events.applyEvent), 화면이 그걸로 고지문을 세운다(narrative.chillNotice).
+   *  효과가 아니라 **이미 일어난 일의 이름표**라 위 "보정치를 저장하지 않는다"에 어긋나지 않는다:
+   *  우선순위는 그 폰에 이미 적혔고 여기 남는 건 누가 그랬는지뿐이다. LAWSUIT이 아니거나 대상이
+   *  없으면 **필드 자체가 없다**(다음 아침이 event를 통째로 지우므로 별도 정리 경로도 없다). */
+  event?: { kind: SimEventKind; chilledName?: string }
   /** **판 전체**에서 되돌아간 응급의 누적 건수 — 의료소송(LAWSUIT) 전제의 유일한 근거다.
    *  기존 `stats.emergencyTurnedAway`는 아침마다 비워지고 `days`는 주마다 비워져 "이 판에서
    *  몇 명을 돌려보냈나"를 읽을 축이 없었다. 단조 증가하고 하루·주 리셋이 없다

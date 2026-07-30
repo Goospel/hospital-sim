@@ -15,8 +15,13 @@
 // 이제 파생값이라 타입만으로는 못 묻는다. 안전한 이유는 regions.ts 자신이 leaf여서다
 // (world의 격자 상수 + dept 타입뿐 — 이 파일로 되돌아오는 경로가 없다). 상위 층을 당기는 것과
 // 아래 leaf를 당기는 것은 다른 일이고, 갈리는 지점이 여기다.
-import type { DeptMix } from './dept'
+import type { DeptMix, SimDeptKey } from './dept'
 import { computeRegions } from './regions'
+// ⚠️ 예외 둘 — `pawn`도 **값으로** 당긴다(priorityOf·setDoctorPriority). 위축이 우선순위를
+// 건드리는데 그 읽기·쓰기 규칙을 여기 복제하면 폴백(?? 2)과 범위 검사가 두 벌이 된다.
+// 안전한 이유는 regions와 같다: pawn은 world·dept·traits·path만 보고 이 파일로 되돌아오지
+// 않는다(world→events는 타입 전용이라 그 경유로도 런타임 순환이 없다).
+import { priorityOf, setDoctorPriority, type Pawn, type Priority } from './pawn'
 // ⚠️ world를 **값으로도** 당긴다(simRegion) — 이 파일이 "거의 leaf"인 상태는 그대로다:
 // world→events는 타입 전용이라(world.ts:5) 런타임 순환이 없고, computeRegions와 같은 예외다.
 import { simRegion, type SimWorld } from './world'
@@ -45,6 +50,28 @@ export const SIM_EVENTS: Record<SimEventKind, SimEventSpec> = {
  *  다른 이벤트가 배율(확률)로 아픈 것과 달리 이 하나만 금고를 직접 깎는다: 회차는 그 순간
  *  아무 대가가 없어서, 청구서가 며칠 뒤에 오는 형태가 아니면 "돌려보내도 그만"이 된다. */
 export const LAWSUIT_COST_MANWON = 800
+
+/**
+ * 소송 한 건이 **응급 우선순위를 내리는 폭** — 방어진료의 위축이다.
+ *
+ * 1인 이유: 채용 초기값이 2(보통)라 **한 번은 경고, 두 번은 구조**가 된다. 첫 소송은 "높음
+ * 대기 → 낮음"으로 아직 응급을 받고(플레이어가 되돌릴 여지가 있다), 두 번째가 0 = 하드락에
+ * 닿아 그 과 응급이 통째로 되돌아간다(emergency.ts 머리말 — *응급을 끈 의사는 없는 의사다*).
+ * 2였다면 첫 소송 한 건이 곧바로 하드락이라 경고 구간이 없고, 소송은 위축이 아니라 그냥
+ * 두 번째 벌금이 된다.
+ */
+export const LAWSUIT_CHILL_STEP = 1
+
+/**
+ * 위축이 닿는 과 — **응급을 받을 수 있는 과**다. 다른 과 의사는 응급 호출을 받은 적이
+ * 없으므로 소송으로 물러설 것도 없다.
+ *
+ * ⚠️ **단일 출처는 `emergency.EMERGENCIES`의 배후과인데 여기 한 벌 더 적혀 있다** — 이 파일이
+ * emergency를 임포트하면 T-093 순환이다(emergency가 이 파일의 `emergencyProbMulOf`를 값으로
+ * 읽는다 · 머리말). 두 벌이 갈리는 것은 `emergency.test.ts`가 집합 동일성으로 잰다: 테스트
+ * 파일은 양쪽을 자유롭게 임포트할 수 있어 순환이 없다. **사람이 아니라 기계가 어긋남을 잡는다.**
+ */
+export const CHILL_DEPTS: readonly SimDeptKey[] = ['CARDIOLOGY', 'GENERAL_SURGERY']
 
 /** MASS_CASUALTY가 열리는 최소 주차 — 1주차는 유예다(병원이 아직 방 하나짜리일 수 있다). */
 export const MASS_CASUALTY_FROM_WEEK = 2
@@ -104,18 +131,60 @@ export function isEligibleEvent(w: SimWorld, kind: SimEventKind): boolean {
  * LAWSUIT만 **즉시 금고를 깎는다**. 나머지는 필드를 세우기만 하고, 효과는 그날 판정식이
  * 배율 함수로 읽어 간다 — 즉 세계 어딘가에 "오늘의 보정치"가 따로 저장되지 않는다(저장하면
  * 이벤트 필드와 보정치가 갈릴 수 있다).
+ *
+ * ⚠️ LAWSUIT은 **금고 밖에도 자국을 남긴다** — 위축(`chillTarget`)이 사람 하나의 응급
+ * 우선순위를 내린다. 이벤트 중 유일하게 폰을 건드리는 자리이고, 그 근거는 이 게임의 논지다:
+ * 소송의 대가는 합의금만이 아니라 **다음번에 손이 덜 올라가는 것**이다.
  */
 export function applyEvent(w: SimWorld, kind: SimEventKind): SimWorld {
   if (!isEligibleEvent(w, kind)) {
     throw new Error(`applyEvent: 전제를 어긴 이벤트(${kind}) — eligibleEvents로 먼저 걸러야 한다`)
   }
   const next: SimWorld = { ...w, event: { kind } }
+  if (kind !== 'LAWSUIT') return next
   // 소송 비용에는 **지역 배율**이 곱해진다(world.REGIONS): URBAN 0.5 = 400(옆 건물에도 병원이
   // 있으니 돌려보내도 책임이 절반만 돌아온다) · RURAL 2.0 = 1,600(한 시간 거리에 갈 곳이
   // 없었다). 만원 단위 정수가 유지되는지는 카탈로그 불변식 I-R6이 잠근다.
-  return kind === 'LAWSUIT'
-    ? { ...next, treasuryManwon: next.treasuryManwon - LAWSUIT_COST_MANWON * simRegion(w.region).lawsuitMul }
-    : next
+  const billed: SimWorld = {
+    ...next,
+    treasuryManwon: next.treasuryManwon - LAWSUIT_COST_MANWON * simRegion(w.region).lawsuitMul,
+  }
+  // 위축될 사람이 없어도(그 과 의사가 없거나 전부 이미 0) **금고는 그대로 깎인다** — 청구서는
+  // 병원에 오지 사람에게 오지 않는다.
+  const chilled = chillTarget(w)
+  if (!chilled) return billed
+  // 하한 0 — 위 필터가 `> 0`이라 지금은 음수가 불가능하지만, 폭이 2로 튜닝되는 날 조용히
+  // 음수가 되는 대신 여기서 멈춘다(넘겨도 setDoctorPriority가 던진다 — 겹벨트).
+  const lowered = Math.max(0, priorityOf(chilled, 'emergency') - LAWSUIT_CHILL_STEP) as Priority
+  return {
+    // 우선순위 쓰기는 **`setDoctorPriority` 한 곳**을 지난다(pawn.ts) — 여기서 폰 배열을 직접
+    // 갈아 끼우면 미지정 폰의 나머지 축 채우기·범위 검사가 이 경로만 비켜 간다.
+    ...setDoctorPriority(billed, chilled.id, 'emergency', lowered),
+    // 이름을 이벤트에 실어 화면이 읽는다(narrative.chillNotice). 손세계 폰처럼 이름이 없으면
+    // 필드도 없다 — 「undefined 의사가」라는 문장이 서느니 그 줄이 없는 편이 낫다.
+    event: { kind, ...(chilled.name ? { chilledName: chilled.name } : {}) },
+  }
+}
+
+/**
+ * 이번 소송으로 위축될 사람 — **가장 노출된 의사 하나**. 시드를 소비하지 않는 결정론이다.
+ *
+ * 고르는 규칙은 둘이다: ① 응급 우선순위가 가장 높은 사람(가장 많이 불려 나간 사람이 가장 먼저
+ * 물러선다) ② 동률이면 **폰 배열에서 먼저 나오는 사람**. ②를 id 문자열로 하면 `'doc-10' <
+ * 'doc-2'`가 참이라 채용 순서와 어긋난다(에러 0 — 누가 위축됐는지만 조용히 갈린다).
+ *
+ * 이미 0인 의사는 후보가 아니다 — 응급을 끈 사람에게 더 뺄 것이 없고, 그 사람을 다시 세면
+ * "대상이 있는데 아무것도 안 일어난 소송"이 생겨 화면이 이름을 못 싣는다.
+ */
+function chillTarget(w: SimWorld): Pawn | null {
+  let best: Pawn | null = null
+  for (const p of w.pawns) {
+    if (p.kind !== 'DOCTOR' || !p.dept || !CHILL_DEPTS.includes(p.dept)) continue
+    const pr = priorityOf(p, 'emergency')
+    // `>`(≥ 아님)가 곧 ② 배열 순서 타이브레이크다 — 동률이면 먼저 만난 사람이 남는다.
+    if (pr > 0 && (!best || pr > priorityOf(best, 'emergency'))) best = p
+  }
+  return best
 }
 
 /** 오늘의 **외래 도착 확률** 배율 — `patientFlow.maybeArrive`가 곱한다. 이벤트가 없으면 1이라

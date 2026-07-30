@@ -18,6 +18,7 @@ import { SIM_EVENTS, type SimEventKind } from "@/sim/events";
 export default function EventCard({
   kind,
   narration,
+  notice,
   week,
   day,
   onClose,
@@ -25,6 +26,10 @@ export default function EventCard({
   kind: SimEventKind;
   /** 오늘의 연출문 — 폴백 문장이거나 LLM이 쓴 문장이다. **판정과 무관**하다(계획 §0-2). */
   narration: string;
+  /** 결정론 효과의 **고지** — 연출문과 갈리는 자리다. 위(연출문)는 LLM이 갈아 끼울 수 있지만
+   *  이 줄은 코어가 실제로 한 일이라(예: 소송의 위축 — narrative.chillNotice) AI 서사든
+   *  폴백이든 함께 서야 한다. 그런 효과가 없는 이벤트에는 없다. */
+  notice?: string;
   week: number;
   day: number;
   onClose: () => void;
@@ -52,6 +57,14 @@ export default function EventCard({
           {/* 연출문 — 해석 카피는 붙이지 않는다(§show don't tell). 무슨 일이 있었는지만 말하고
               "그래서 응급이 3배입니다" 같은 수치 해설은 안 쓴다: 그날의 결과는 HUD와 마감이 보여 준다. */}
           <p className="text-center text-sm leading-relaxed text-ink">{narration}</p>
+
+          {/* 고지 — 연출문 아래 **다른 줄·다른 무게**로 선다(사직 통지와 편지가 갈리는 그 관례).
+              한 문단으로 합치면 LLM 서사에 섞여 "일어난 일"과 "쓰인 말"이 구별되지 않는다. */}
+          {notice && (
+            <p className="border-t border-rule pt-3 text-center text-xs leading-relaxed text-ink-2">
+              {notice}
+            </p>
+          )}
         </section>
 
         {/* 조작 UI는 종이에 얹지 않는다(§6) — 결산 오버레이의 [다음 주]와 같은 자리·같은 모양. */}

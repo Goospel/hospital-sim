@@ -64,6 +64,21 @@ export function eventNarration(kind: SimEventKind, week: number, day: number): s
   return lines[(week + day) % lines.length]
 }
 
+/**
+ * 방어진료 위축 고지 — 의료소송이 **금고 밖에** 남긴 자국을 한 줄로 말한다.
+ *
+ * 연출문(`EVENT_NARRATIONS.LAWSUIT`)과 **별개의 줄**인 것이 계약이다: 저쪽은 LLM이 갈아 끼울 수
+ * 있는 서사이고 이쪽은 **결정론 효과의 고지**라, AI가 붙든 안 붙든 반드시 화면에 서야 한다
+ * (우선순위가 조용히 내려가면 플레이어는 그 과 응급이 왜 되돌아가는지 영영 모른다).
+ *
+ * 톤 가드레일(§톤 · resignationLetter와 같은 규칙): **사실만** 쓴다. "겁먹었다"·"회피" 같은
+ * 평가어가 붙는 순간 구조가 사람을 물러서게 한 일이 그 사람의 성격 문제로 미끄러진다.
+ * 보간값 뒤는 고정 단어다(T-094): `{이름} 의사가`.
+ */
+export function chillNotice(name: string): string {
+  return `${name} 의사가 당분간 응급 호출을 줄이겠다고 했습니다.`
+}
+
 /** 사직 편지의 재료 — **폰이 아니라 값**을 받는다. 이 파일이 pawn·dept를 몰라야 문장을 고치는
  *  일이 시뮬 위상을 건드리지 않는다(과 이름 파생은 화면 층 simHud.resigningNotices 소관). */
 export interface ResignationFields {

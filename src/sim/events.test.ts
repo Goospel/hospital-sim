@@ -8,10 +8,12 @@ import { EMERGENCY_WINDOW_MIN, emergencyArrivalAt, emergencyArrivalSeed } from '
 import { ARRIVAL_WINDOW_MIN, arrivalSeed, waitingSeats, wantsDeptSeed } from './patientFlow'
 import { HIRABLE_DEPTS, type SimDeptKey } from './dept'
 import {
-  EPIDEMIC_ARRIVAL_MUL, EPIDEMIC_DEPT_MIX, EVENT_KINDS, LAWSUIT_COST_MANWON,
+  CHILL_DEPTS, EPIDEMIC_ARRIVAL_MUL, EPIDEMIC_DEPT_MIX, EVENT_KINDS,
+  LAWSUIT_CHILL_STEP, LAWSUIT_COST_MANWON,
   MASS_CASUALTY_EMERGENCY_MUL, NEARBY_CLOSURE_ARRIVAL_MUL,
   applyEvent, type SimEventKind,
 } from './events'
+import { priorityOf, setDoctorPriority, type Pawn, type Priority } from './pawn'
 import {
   EVENT_MIX, EVENT_PROB_PER_DAY, applyMorningEvent,
   eligibleEvents, eventKindSeed, eventRollSeed, fallbackDirectorChoice, pickEventKind,
@@ -131,6 +133,9 @@ describe('applyEvent — 전제와 효과', () => {
     // 기본 세계는 URBAN이라 배율 0.5가 물린다 — 액수 자체의 계약은 아래 「소송 비용」이 잰다.
     expect(after.treasuryManwon)
       .toBe(w1.treasuryManwon - LAWSUIT_COST_MANWON * simRegion('URBAN').lawsuitMul)
+    // ⚠️ **의사가 없는 세계라서** event가 `{ kind }` 하나뿐이다 — 위축(아래 스위트)이 붙은 뒤로
+    // `chilledName`이 같이 실릴 수 있는 자리가 됐다. 이 픽스처는 폰이 하나도 없어 대상이 없고,
+    // "대상이 없으면 금고만 깎인다"가 그 자체로 계약이라 이 단언은 여전히 정확하다.
     expect(after.event).toEqual({ kind: 'LAWSUIT' })
   })
 
@@ -424,5 +429,112 @@ describe('applyMorningEvent — 아침 전이와 이벤트를 잇는 **하나뿐
   it('전제를 어긴 선택은 **던진다** — 배선 버그를 조용히 삼키지 않는다(applyEvent의 가드 계승)', () => {
     const noWard: SimWorld = { ...createWorld(5), week: 2 }
     expect(() => applyMorningEvent(noWard, () => 'MASS_CASUALTY')).toThrow()
+  })
+})
+
+describe('LAWSUIT 위축 — 소송이 사람의 손을 끌어내린다', () => {
+  /** 소송이 설 수 있는 세계(회차 1건) + 그 과 의사들. 병동은 필요 없다 — 위축은 응급 **판정**이
+   *  아니라 소송 적용의 부수효과라 침대와 무관하다. */
+  function chillWorld(...depts: SimDeptKey[]): SimWorld {
+    let w: SimWorld = { ...createWorld(1), turnedAwayTotal: 1 }
+    for (const d of depts) w = hire(w, d)
+    return w
+  }
+
+  const emerOf = (w: SimWorld, id: string) => priorityOf(w.pawns.find(p => p.id === id)!, 'emergency')
+  const docIds = (w: SimWorld) => w.pawns.filter(p => p.kind === 'DOCTOR').map(p => p.id)
+
+  /** 손세계 의사 — **id가 배열 순서와 어긋나게** 세울 수 있는 것이 이 헬퍼의 존재 이유다. */
+  const handDoc = (id: string, dept: SimDeptKey, emergency: Priority, name: string): Pawn => ({
+    id, kind: 'DOCTOR', x: 0, y: 0, path: [], dept, name,
+    priorities: { exam: 2, emergency, rest: 2 },
+  })
+
+  it('상수는 1단계다 — 두 번째 소송에서 하드락(0)에 닿는 눈금', () => {
+    expect(LAWSUIT_CHILL_STEP).toBe(1)
+  })
+
+  it('정확히 **한 명**이 정확히 **1단계** 내려간다 — 그리고 이름이 이벤트에 실린다', () => {
+    const w = chillWorld('CARDIOLOGY', 'CARDIOLOGY')
+    const [first, second] = docIds(w)
+    expect(emerOf(w, first)).toBe(2) // 전제 — 채용 초기값은 세 축 모두 보통
+    const after = applyEvent(w, 'LAWSUIT')
+    expect(emerOf(after, first)).toBe(1)
+    expect(emerOf(after, second)).toBe(2) // 나머지는 스치지도 않는다
+    expect(after.event?.chilledName).toBe(w.pawns.find(p => p.id === first)!.name)
+  })
+
+  it('**가장 노출된 사람**이 먼저 위축된다 — emergency가 가장 높은 의사가 대상이다', () => {
+    const w0 = chillWorld('CARDIOLOGY', 'CARDIOLOGY')
+    const [first, second] = docIds(w0)
+    // 두 번째 의사만 3으로 올린다 — 배열 순서(첫 번째)와 우선순위(두 번째)가 갈리는 세계다.
+    const w = setDoctorPriority(w0, second, 'emergency', 3)
+    const after = applyEvent(w, 'LAWSUIT')
+    expect(emerOf(after, second)).toBe(2)
+    expect(emerOf(after, first)).toBe(2) // 안 건드린다
+  })
+
+  it('동률이면 **폰 배열 순서**다 — id 문자열 비교면 doc-10이 doc-2 뒤로 밀린다', () => {
+    // 'doc-10' < 'doc-2'가 사전순으로 참이라, id로 정렬하는 구현도 이 세계에서만 갈린다.
+    const w: SimWorld = {
+      ...createWorld(1), turnedAwayTotal: 1,
+      pawns: [handDoc('doc-10', 'CARDIOLOGY', 2, '김서준'), handDoc('doc-2', 'CARDIOLOGY', 2, '박지우')],
+    }
+    const after = applyEvent(w, 'LAWSUIT')
+    expect(after.event?.chilledName).toBe('김서준')
+    expect(emerOf(after, 'doc-10')).toBe(1)
+    expect(emerOf(after, 'doc-2')).toBe(2)
+  })
+
+  it('하한은 0이다 — 두 번째 소송이 하드락을 만들고 세 번째는 대상이 없다', () => {
+    const w0 = chillWorld('CARDIOLOGY')
+    const [only] = docIds(w0)
+    const once = applyEvent(w0, 'LAWSUIT')
+    expect(emerOf(once, only)).toBe(1)
+    const twice = applyEvent(once, 'LAWSUIT')
+    expect(emerOf(twice, only)).toBe(0) // 응급을 끈 의사는 없는 의사다(emergency.ts 머리말)
+    // 세 번째 — 이미 0이라 대상이 아니다. 음수로 내려가면 setDoctorPriority가 던진다.
+    const thrice = applyEvent(twice, 'LAWSUIT')
+    expect(emerOf(thrice, only)).toBe(0)
+    expect(thrice.event?.chilledName).toBeUndefined()
+    expect(thrice.treasuryManwon).toBeLessThan(twice.treasuryManwon) // 금고는 그래도 깎인다
+  })
+
+  it('응급 **비대상 과** 의사는 절대 위축되지 않는다 — 내과·미용은 응급을 받지 않는다', () => {
+    const w = chillWorld('INTERNAL_MEDICINE', 'AESTHETICS')
+    const after = applyEvent(w, 'LAWSUIT')
+    for (const id of docIds(w)) expect(emerOf(after, id), id).toBe(2)
+    expect(after.event?.chilledName).toBeUndefined()
+    expect(after.event?.kind).toBe('LAWSUIT')
+  })
+
+  it('CHILL_DEPTS는 순환기·외과 둘이다 — 응급 카탈로그와의 정합은 emergency.test가 잰다', () => {
+    expect(CHILL_DEPTS.slice().sort()).toEqual(['CARDIOLOGY', 'GENERAL_SURGERY'])
+  })
+
+  it('순수 함수다 — 입력 세계의 우선순위는 스치지도 않는다', () => {
+    const w = chillWorld('GENERAL_SURGERY')
+    const [only] = docIds(w)
+    applyEvent(w, 'LAWSUIT')
+    expect(emerOf(w, only)).toBe(2)
+  })
+
+  it('LAWSUIT 말고는 우선순위를 건드리지 않는다 — 위축은 소송의 것이다', () => {
+    const w = { ...place(chillWorld('CARDIOLOGY'), WARD), week: 2 }
+    const [only] = docIds(w)
+    for (const kind of EVENT_KINDS) {
+      if (kind === 'LAWSUIT') continue
+      const after = applyEvent(w, kind)
+      expect(emerOf(after, only), kind).toBe(2)
+      expect(after.event?.chilledName, kind).toBeUndefined()
+    }
+  })
+
+  it('같은 세계면 같은 사람이 위축된다 — 시드를 소비하지 않는 결정론', () => {
+    const w = chillWorld('CARDIOLOGY', 'GENERAL_SURGERY', 'CARDIOLOGY')
+    const a = applyEvent(w, 'LAWSUIT')
+    const b = applyEvent(w, 'LAWSUIT')
+    expect(a.event?.chilledName).toBe(b.event?.chilledName)
+    expect(a.pawns.map(p => priorityOf(p, 'emergency'))).toEqual(b.pawns.map(p => priorityOf(p, 'emergency')))
   })
 })

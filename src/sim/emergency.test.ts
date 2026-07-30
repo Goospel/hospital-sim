@@ -8,6 +8,7 @@ import { DAY_END_MIN, DAYS_PER_WEEK, settleDay } from './day'
 import { deptRevenueSum, simDept, type SimDeptKey } from './dept'
 import { ARRIVAL_WINDOW_MIN, arrivalSeed, wantsDeptSeed } from './patientFlow'
 import { seededUnit } from '../game/daysim'
+import { CHILL_DEPTS } from './events'
 import {
   EMERGENCIES, EMERGENCY_KIND_MIX, EMERGENCY_PROB_PER_MIN, EMERGENCY_WINDOW_MIN,
   emergencyArrivalAt, emergencyArrivalSeed, emergencyKindSeed, emergencySpec,
@@ -94,6 +95,13 @@ describe('응급 카탈로그', () => {
     // 응급 수가는 외래 수가와 **다른 축**이다 — 외래 수가로 회귀하면 여기서 걸린다.
     expect(STEMI.revenueManwon).not.toBe(simDept('CARDIOLOGY').examRevenueManwon)
     expect(ACUTE.revenueManwon).not.toBe(simDept('GENERAL_SURGERY').examRevenueManwon)
+  })
+
+  it('⚠️ events.CHILL_DEPTS는 이 카탈로그의 배후과 집합과 **같다** — 두 벌을 기계가 잰다', () => {
+    // events.ts는 이 파일을 임포트할 수 없다(T-093 순환 — emergency가 events를 값으로 당긴다).
+    // 그래서 응급 대상 과가 저쪽에 손으로 한 벌 더 적혀 있고, 어긋남은 여기서만 잡힌다:
+    // 새 응급 종류가 다른 과로 들어오면 그 과 의사는 소송에 위축되지 않는데 에러는 안 난다.
+    expect(new Set(CHILL_DEPTS)).toEqual(new Set(Object.values(EMERGENCIES).map(s => s.dept)))
   })
 
   it('카탈로그에 없는 종류는 undefined가 아니라 예외다(NaN 수익 방지)', () => {
