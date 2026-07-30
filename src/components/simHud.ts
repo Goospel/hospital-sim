@@ -22,7 +22,10 @@ import { examSlots } from '../sim/spots'
 import { TRAITS, type TraitKey } from '../sim/traits'
 import { priorityOf, type Pawn, type Priority } from '../sim/pawn'
 import type { Pt } from '../sim/path'
-import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld } from '../sim/world'
+import {
+  GRID_W, GRID_H, simRegion, tileIndex,
+  type FurnitureKind, type RoomType, type SimRegionKey, type SimWorld,
+} from '../sim/world'
 // 타입 전용 — 컴파일에 지워지므로 이 파일은 여전히 React를 모른다(vitest가 그대로 돈다).
 import type { SimSpeed } from './useSimClock'
 
@@ -147,6 +150,38 @@ export function nurseAttritionText(leaving: number, resignedTotal: number): stri
     parts.push(`간호사 ${leaving}명이 이번 주말 병원을 떠납니다 — 면허는 그대로입니다. 이 병원에 없을 뿐입니다`)
   }
   if (resignedTotal > 0) parts.push(`지금까지 떠난 간호사 ${resignedTotal}명`)
+  return parts.join(' · ')
+}
+
+/**
+ * 지역 카드의 **규칙 요약 한 줄** — 서사 아래 작은 글씨로 붙는다(설계 2026-07-30 §13-2).
+ *
+ * **전부 카탈로그 파생이다**(world.REGIONS). 수치를 화면에 손으로 다시 적으면 튜닝하는 날
+ * 값과 표시가 갈리고, 갈려도 화면엔 표시 쪽만 보인다 — 이 저장소가 세 번 경고한 이중 기재다.
+ *
+ * **중립 축(배율 1)은 안 적는다.** 「×1」까지 나열하면 네 카드가 같은 모양이 되어 *무엇이 이
+ * 지역의 특징인가*가 문구에서 사라진다 — URBAN이 말할 것은 임대료와 소송뿐이고(스트림 중립),
+ * 그 침묵 자체가 URBAN의 정체다.
+ *
+ * 임대료 0을 「0만원」으로 적지 않는 이유도 같다: 그건 금액이 아니라 **없다는 사실**이다.
+ *
+ * 왜 카드에 규칙을 노출하나 — 규칙이 생겼는데 안 보이면 첫 선택이 도박이 된다(림월드가 지형
+ * 효과를 보여 주는 것과 같은 이유). 고를 때 알 수 있어야 그 선택이 플레이어의 것이 된다.
+ */
+export function regionRuleText(key: SimRegionKey): string {
+  const r = simRegion(key)
+  const parts: string[] = [
+    r.rentManwon === 0 ? '임대료 없음' : `임대료 주 ${formatManwon(r.rentManwon)}`,
+  ]
+  if (r.arrivalMul !== 1) parts.push(`외래 ×${r.arrivalMul}`)
+  if (r.emergencyMul !== 1) parts.push(`응급 ×${r.emergencyMul}`)
+  if (r.lawsuitMul !== 1) parts.push(`소송 ×${r.lawsuitMul}`)
+  // 풀 델타는 **과 이름으로** 말한다 — "채용 −2"는 어느 과가 없는지를 안 알려 주는데,
+  // 이 지역에서 못 뽑는 과가 무엇인지가 곧 그 지역에서 할 수 있는 진료의 범위다.
+  const short = HIRABLE_DEPTS
+    .filter(d => (r.hirePoolDelta[d] ?? 0) < 0)
+    .map(d => `${simDept(d).label} ${r.hirePoolDelta[d]}`)
+  if (short.length > 0) parts.push(`시작 인력 ${short.join('·')}`)
   return parts.join(' · ')
 }
 

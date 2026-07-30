@@ -7,13 +7,17 @@ import {
   NURSE_GRADE_TEXT, nurseAttritionText, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidText,
   startingRosterMet, STARTING_ROSTER_MIN, statusLineText, TOOL_LABEL,
+  regionRuleText,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
   clampCamera, pannedCamera, safeArea, settledCamera, zoomedCamera, zoomFloor,
   BACKDROP_MARGIN, ZOOM_MAX, ZOOM_MIN, type Camera, type CameraView, type Insets, type Rect, type Size,
 } from './simHud'
 import { BUILD_COST, type BuildReason, type PlaceResult } from '../sim/build'
-import { createWorld, GRID_W, GRID_H, type RoomType, type SimWorld } from '../sim/world'
-import { simDept, type SimDeptKey } from '../sim/dept'
+import {
+  createWorld, GRID_W, GRID_H, REGIONS, simRegion,
+  type RoomType, type SimRegionKey, type SimWorld,
+} from '../sim/world'
+import { HIRABLE_DEPTS, simDept, type SimDeptKey } from '../sim/dept'
 import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
 import { HUNGRY_AFTER_MIN } from '../sim/needs'
 import { TRAITS } from '../sim/traits'
@@ -1702,5 +1706,46 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
       expect(c.x).toBeCloseTo(SAFE_L.x + SAFE_L.w - big.w)
       expect(c.y).toBeCloseTo(SAFE_L.y + SAFE_L.h - big.h)
     }
+  })
+})
+
+// ─── 지역 카드 — 규칙 요약 한 줄 ──────────────────────────────────────────────
+describe('regionRuleText — 카드가 규칙을 말한다', () => {
+  const REGION_KEYS = Object.keys(REGIONS) as SimRegionKey[]
+
+  it('네 지역 모두 빈 줄이 아니고, 서로 다르다 — 카드가 같은 말을 하지 않는다', () => {
+    const texts = REGION_KEYS.map(regionRuleText)
+    for (const t of texts) expect(t.length).toBeGreaterThan(0)
+    expect(new Set(texts).size).toBe(REGION_KEYS.length)
+  })
+
+  it('**카탈로그에서 파생한다** — 값이 바뀌면 문구가 따라 바뀐다', () => {
+    // §13-2의 계약: 수치를 손으로 다시 적으면 값과 표시가 갈린다. 표시에 박힌 상수는
+    // 카탈로그를 튜닝해도 안 움직이므로, 각 지역의 **0이 아닌 수치가 문구에 실제로 뜨는지**를
+    // 잰다(문구 전체를 리터럴로 박으면 이 테스트가 표시 규칙만 복제하게 된다).
+    for (const key of REGION_KEYS) {
+      const r = simRegion(key)
+      const text = regionRuleText(key)
+      if (r.rentManwon > 0) expect(text, key).toContain(r.rentManwon.toLocaleString('ko-KR'))
+      if (r.arrivalMul !== 1) expect(text, key).toContain(String(r.arrivalMul))
+      if (r.lawsuitMul !== 1) expect(text, key).toContain(String(r.lawsuitMul))
+      for (const dept of HIRABLE_DEPTS) {
+        if ((r.hirePoolDelta[dept] ?? 0) < 0) expect(text, `${key}/${dept}`).toContain(simDept(dept).label)
+      }
+    }
+  })
+
+  it('**중립 축은 안 뜬다** — URBAN 카드는 외래·응급을 말하지 않는다(그게 URBAN의 정체다)', () => {
+    // 배율 1인 축까지 "×1"로 적으면 네 카드가 같은 모양이 되어, 무엇이 이 지역의 특징인지가
+    // 문구에서 사라진다. URBAN이 말할 것은 임대료와 소송뿐이다(I-R1 스트림 중립).
+    const urban = regionRuleText('URBAN')
+    expect(urban).not.toContain('외래')
+    expect(urban).not.toContain('응급')
+    expect(urban).toContain('임대료')
+    expect(urban).toContain('소송')
+  })
+
+  it('임대료 0은 금액이 아니라 **없음**으로 뜬다 — "임대료 0만원"은 화면의 말이 아니다', () => {
+    expect(regionRuleText('RURAL')).toContain('임대료 없음')
   })
 })
