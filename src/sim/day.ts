@@ -12,6 +12,7 @@ import {
 import { emergencyLoadMin, emergencySpec, emergencyKindOf } from './emergency'
 import { applyWorkLoads, fatigueOf, restOvernight } from './fatigue'
 import { clearActivity } from './needs'
+import { nurseGradeOf, type NurseGrade } from './nurse'
 import { FATIGUE_MAX } from '../game/doctor'
 
 export const DAY_END_MIN = 600 // 09:00 개장 + 10시간 = 19:00 마감(기존 daysim.DAY_LENGTH_MIN과 같은 각색)
@@ -34,6 +35,27 @@ function stepSaturation(pawns: Pawn[]): Pawn[] {
     p.kind === 'DOCTOR' && fatigueOf(p) >= FATIGUE_MAX
       ? { ...p, saturatedDays: (p.saturatedDays ?? 0) + 1 }
       : p
+  ))
+}
+
+/**
+ * 간호등급이 **미달(SHORT)인 채로 마감한** 날을 간호사들에게 하나씩 얹는다(입력 불변).
+ *
+ * 오르는 조건이 개인이 아니라 **배치**인 것이 `stepSaturation`과 갈리는 지점이다: 그날 병원이
+ * 미달이면 재직 중인 간호사 **전원**이 함께 오른다(pawn.shortDays 주석). 그래서 판정 인자가
+ * 폰이 아니라 그날의 등급 하나다.
+ *
+ * ⚠️ 등급 판정을 여기서 다시 쓰지 않고 `nurseGradeOf`를 부르는 것이 계약이다 — 식을 복제하면
+ * 같은 주에 **감산은 붙는데 일수는 안 오르는**(또는 그 반대) 병원이 조용히 생긴다. 그 함수가
+ * week.ts가 아니라 nurse.ts에 사는 이유가 정확히 이 호출이다(nurse.ts 머리말 — 순환 회피).
+ *
+ * MET·BONUS인 날에 **깎지 않는다**: 회복 규칙이 없다(pawn.shortDays). 그래서 `grade`가 SHORT가
+ * 아니면 배열을 그대로 돌려준다 — 새 객체를 만들지 않는 것이 곧 "아무 일도 없었다"다.
+ */
+function stepShortDays(pawns: Pawn[], grade: NurseGrade): Pawn[] {
+  if (grade !== 'SHORT') return pawns
+  return pawns.map(p => (
+    p.kind === 'NURSE' ? { ...p, shortDays: (p.shortDays ?? 0) + 1 } : p
   ))
 }
 
@@ -140,7 +162,12 @@ export function settleDay(world: SimWorld): SimWorld {
   // 빼는 자리인데, 여기서 의사만 골라 남기면 **간호사가 환자와 함께 쓸려 나간다**(에러 0 —
   // 이튿날 아침에 창구만 조용히 사라진다). 사람이 늘 때마다 이 줄을 고쳐야 하는 형태를
   // 피하는 것이 요점이다: 빠지는 쪽을 적으면 새 종류는 자동으로 남는다.
-  const staff = stepSaturation(applyWorkLoads(world.pawns.filter(p => p.kind !== 'PATIENT'), loadByDoctor))
+  // 간호사 쪽 누적도 같은 자리다 — 그날의 등급 하나로 전원이 갈린다(stepShortDays 주석).
+  // 등급은 **환자를 빼기 전의 세계**로 읽어도 같다: 판정이 세는 것은 의사와 간호사뿐이다.
+  const staff = stepShortDays(
+    stepSaturation(applyWorkLoads(world.pawns.filter(p => p.kind !== 'PATIENT'), loadByDoctor)),
+    nurseGradeOf(world).grade,
+  )
   const record: DayRecord = {
     day: world.day,
     examsDone: exams,

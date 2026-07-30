@@ -17,6 +17,7 @@ import { simDept, deptRevenueSum } from './dept'
 import { ARRIVAL_WINDOW_MIN, EXAM_DURATION_MIN, cashierSpots, hasCashier } from './patientFlow'
 import { emergencySpec } from './emergency'
 import { NURSE_WEEKLY_COST_MANWON, resigningSimDoctors, weekSummary } from './week'
+import { resigningNurses } from './nurse'
 
 /** 내과 외래 한 건의 수가 — 손으로 12를 적지 않는다(카탈로그가 단일 출처다). */
 const EXAM_FEE = simDept('INTERNAL_MEDICINE').examRevenueManwon
@@ -217,7 +218,13 @@ describe('19시 정산 — 시계 모서리가 돈을 삼키지 않는다', () =
   })
 })
 
-describe('간호사는 피로·사직 기계 밖이다 — 우연이 아니라 계약', () => {
+/* ⚠️ **이 절의 제목이 2026-07-30에 좁아졌다**(N2 · 간호사 이탈 슬라이스). 옛 제목은 「피로·사직
+   기계 밖」이었지만 간호사는 이제 **자기 사직 기계**를 갖는다 — 드라이버가 개인 피로가 아니라
+   **배치 조건**(간호등급 SHORT로 마감한 날 · Pawn.shortDays)이라는 것이 그 슬라이스의 요지다
+   (계약과 경계는 nurseAttrition.test.ts가 잠근다). 여기 남는 것은 **비합류 계약**이고, 그것이
+   좁아진 만큼 아래 두 단언이 정확히 그 경계를 잰다: 피로·부하·허기는 여전히 없고, **포화
+   일수는 간호사를 데려가지 못한다**(두 축이 서로를 안 읽는다). */
+describe('간호사는 피로·허기 기계 밖이다 — 우연이 아니라 계약', () => {
   it('300분을 돌아도 간호사에겐 피로도 부하도 허기도 없다', () => {
     const nurse = run(fullHospital(), 300).pawns.find(p => p.kind === 'NURSE')!
     expect(nurse.fatigue).toBeUndefined()
@@ -225,13 +232,14 @@ describe('간호사는 피로·사직 기계 밖이다 — 우연이 아니라 �
     expect(nurse.hungerMin).toBeUndefined()
   })
 
-  it('포화 일수를 손으로 박아도 사직 명단에 서지 않는다 — 명단은 의사만 센다', () => {
+  it('포화 일수를 손으로 박아도 **어느 쪽** 사직 명단에도 서지 않는다 — 두 축은 서로를 안 읽는다', () => {
     const w = fullHospital()
     const forced = {
       ...w,
       pawns: w.pawns.map(p => (p.kind === 'NURSE' ? { ...p, saturatedDays: 99 } : p)),
     }
-    expect(resigningSimDoctors(forced)).toHaveLength(0)
+    expect(resigningSimDoctors(forced)).toHaveLength(0) // 의사 명단은 kind로 갈린다
+    expect(resigningNurses(forced)).toHaveLength(0)     // 간호사 명단은 shortDays만 읽는다
   })
 })
 
