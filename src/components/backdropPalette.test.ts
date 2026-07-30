@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { BACKDROP_PALETTE, drawBackdrop, relativeLuminance } from './Backdrop'
-import { OUTSIDE_FLOOR } from './TileMap'
+import { OUTSIDE_FLOOR, NEUTRAL_STYLE, ROOM_STYLE } from './TileMap'
 import type { SimRegionKey } from '@/sim/world'
 
 /**
@@ -11,13 +11,16 @@ import type { SimRegionKey } from '@/sim/world'
  * ② 그걸 고치자 **반대쪽으로 넘어갔다**: 전부 부지 아래로 눌러 담았더니 배경 내부의 밝기 차까지
  * 압축돼(지면 9.22 vs 건물 9.5~10.5) 건물 윤곽이 지면에 묻혔다. 상한만 보는 검사는 이 "다 같이
  * 어두워짐"을 **통과시킨다** — 그래서 하한·평균 서열·최소 간격을 함께 단언한다.
+ * ③ 그래도 부족했다: 부지 천장이 13.29라 배경이 쓸 대역이 5~13뿐이었고, 그 좁은 구간에서는 지면·건물·
+ * 물의 층위가 인지되지 않았다(해안·대로변 상단이 거의 균일한 검정). **천장 자체를 20.4로 올려** 대역을
+ * 넓힌 것이 지금 표다 — 서열은 그대로 두고 전 항목을 위로 펼쳤다.
  * 색은 눈으로만 검수하면 다음 사람이 한 칸 밝히는 순간 조용히 되돌아간다. 숫자로 잠근다.
  *
  * 휘도 식은 **프로덕션 코드가 export한 `relativeLuminance`를 그대로 쓴다** — 테스트가 자기 식을
  * 따로 들면 구현과 갈려 초록불이 아무 말도 안 하게 된다.
  */
 
-/** 부지 바닥 휘도 — 이 값이 서열의 기준선이다. 13.3을 여기에 리터럴로 박지 않는다(단일 출처는 TileMap). */
+/** 부지 바닥 휘도 — 이 값이 서열의 기준선이다. 숫자를 여기에 리터럴로 박지 않는다(단일 출처는 TileMap). */
 const FLOOR = relativeLuminance(OUTSIDE_FLOOR)
 
 type PaletteKey = keyof typeof BACKDROP_PALETTE
@@ -33,7 +36,7 @@ type PaletteKey = keyof typeof BACKDROP_PALETTE
  */
 const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys: readonly PaletteKey[] }> = [
   {
-    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 5.5, max: 7.5,
+    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 7, max: 9.5,
     keys: [
       'ground', 'grassBase', 'grassNoiseDark', 'medianStrip',
       'pavementBase', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
@@ -42,13 +45,13 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '지면 노이즈(밝은 쪽)·논둑', min: 7.5, max: 9.5,
+    name: '지면 노이즈(밝은 쪽)·논둑', min: 10, max: 12,
     keys: ['grassNoiseLight', 'pavementNoiseLight', 'dirtNoiseLight', 'fieldFurrowLight', 'paddyCellLight', 'paddyBank'],
   },
-  { name: '도로', min: 8, max: 9.5, keys: ['road', 'laneShoulder', 'dirtLane'] },
-  { name: '인도·산책로', min: 10, max: 11.5, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
+  { name: '도로', min: 10.5, max: 12.5, keys: ['road', 'laneShoulder', 'dirtLane'] },
+  { name: '인도·산책로', min: 13, max: 15, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
   {
-    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 9, max: 11.5,
+    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 13.5, max: 16.5,
     keys: [
       'roofBase', 'roofEdge', 'aptBody', 'aptEdge',
       'houseRoofWarm', 'houseRoofWarmShade', 'houseRoofCool', 'houseRoofCoolShade',
@@ -57,12 +60,12 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', max: 13,
+    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 16.5, max: 18.5,
     keys: ['roofVent', 'roofVentShade', 'roofPenthouse', 'aptTower', 'aptTowerLit', 'houseRidgeWarm', 'houseRidgeCool'],
   },
-  { name: '풀포기·관목', min: 9, max: 12, keys: ['tuft', 'tuftShade', 'shrub'] },
+  { name: '풀포기·관목', min: 13, max: 16, keys: ['tuft', 'tuftShade', 'shrub'] },
   {
-    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 11, max: 13.2,
+    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 16.5, max: 19,
     keys: [
       'treeCanopy', 'treeCanopyLit', 'treeShade',
       'forestCanopy', 'forestCanopyLit', 'forestCanopyDark',
@@ -111,9 +114,9 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
    * 옥상 요철이 지붕 위에서 읽히는가.
    */
   it.each([
-    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 2.5 },
-    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 1.0 },
-    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 1.0 },
+    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 4.0 },
+    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 1.5 },
+    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 1.5 },
   ])('$what 평균 간격이 $gap 이상 — 스프레드가 눌리면 형태가 안 읽힌다', ({ what, a, b, gap }) => {
     const d = meanL(a) - meanL(b)
     expect(d, `${what} = ${meanL(a).toFixed(2)} − ${meanL(b).toFixed(2)} = ${d.toFixed(2)}`).toBeGreaterThanOrEqual(gap)
@@ -136,10 +139,33 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
     expect([...covered].sort()).toEqual(Object.keys(BACKDROP_PALETTE).sort())
   })
 
-  it('relativeLuminance는 부지 바닥 #0d0d11을 13.3으로 읽는다 — 실측치와 같은 식임을 못박는다', () => {
-    expect(relativeLuminance('#0d0d11')).toBeCloseTo(13.29, 2)
+  it('relativeLuminance는 #14141a를 20.4로 읽는다 — 실측치와 같은 식임을 못박는다', () => {
+    expect(relativeLuminance('#14141a')).toBeCloseTo(20.43, 2)
     expect(relativeLuminance('#000000')).toBe(0)
     expect(relativeLuminance('#ffffff')).toBeCloseTo(255, 4)
+  })
+})
+
+/**
+ * 부지를 밝히면 **실내가 마당보다 어두워지는 반대편 회귀**가 열린다 — 배경 대역을 넓히려고 천장을
+ * 올린 대가로 `NEUTRAL_STYLE`(용도 미지정 영역)이 부지 아래로 내려가면, 벽을 세운 자리가 마당보다
+ * 어두워 "여기는 실내다"가 뒤집힌다. 배경 팔레트를 잠그는 이 파일이 **반대쪽 경계도 함께** 잠근다:
+ * 한쪽만 있으면 다음 사람이 부지만 올리고 실내를 두고 갈 수 있다.
+ */
+describe('실내 바닥은 부지(마당)보다 밝다 — 벽 안이 벽 밖보다 어두우면 실내로 안 읽힌다', () => {
+  it('용도 미지정 영역(NEUTRAL_STYLE)의 바닥이 부지보다 밝다', () => {
+    const n = relativeLuminance(NEUTRAL_STYLE.floor)
+    expect(n, `NEUTRAL floor ${NEUTRAL_STYLE.floor} = ${n.toFixed(2)} vs 부지 ${FLOOR.toFixed(2)}`).toBeGreaterThan(FLOOR)
+  })
+
+  it.each(Object.entries(ROOM_STYLE))('%s 방 바닥이 부지보다 밝다', (type, style) => {
+    const f = relativeLuminance(style.floor)
+    expect(f, `${type} floor ${style.floor} = ${f.toFixed(2)} vs 부지 ${FLOOR.toFixed(2)}`).toBeGreaterThan(FLOOR)
+  })
+
+  /** 벽은 그 방 바닥보다 위 — 용도 미지정이라고 이 관계까지 무너지면 벽이 안 보인다. */
+  it('NEUTRAL_STYLE의 벽이 자기 바닥보다 밝다', () => {
+    expect(relativeLuminance(NEUTRAL_STYLE.wall)).toBeGreaterThan(relativeLuminance(NEUTRAL_STYLE.floor))
   })
 })
 
