@@ -748,7 +748,9 @@ export default function SimGame() {
           {alerts.map((a) => (
             <span
               key={a.key}
-              className={`border px-2 py-1 font-mono text-[11px] leading-snug backdrop-blur-sm bg-desk-2/80 ${
+              // max-w는 미수 경고가 「필요 인원」까지 말하게 되면서 붙었다 — 폭 제한이 없으면
+              // 긴 한 줄이 부지를 가로질러 지도를 덮는다(칩이 `items-end`라 왼쪽으로 자란다).
+              className={`max-w-[22rem] border px-2 py-1 font-mono text-[11px] leading-snug backdrop-blur-sm bg-desk-2/80 ${
                 // 색 단독 신호 금지(관통 규칙) — 등급이 갈리는 자리지만 문구가 이미 사실을
                 // 통째로 말한다. 색은 읽는 순서를 돕는 보조일 뿐이다.
                 a.severity === "danger" ? "border-alarm text-alarm" : "border-frame text-on-desk-muted"
