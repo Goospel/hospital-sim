@@ -39,87 +39,93 @@ export const BACKDROP_OFF_Y = BACKDROP_MARGIN.y;
  * ⚠️ **그렇다고 다 같이 어둡게 깔면 안 된다**(이것도 실측된 회귀다). 부지보다 어둡게만 맞췄더니 지면 9.2 ·
  * 건물 9.5~10.5로 **배경 내부의 스프레드가 함께 눌려** 건물 윤곽이 지면에 묻혔다 — 도심 상단 2/3가 균일한
  * 검정이 되고 아파트 동이 사라졌다. 스프레드를 되찾으려면 **천장이 필요했다**: 옛 부지 13.3 아래로는
- * 5~13밖에 없어 층위가 인지되지 않았고, 그래서 부지를 20.4로 올린 뒤 그 대역에 다시 펼쳤다 —
- * 지면 7~9.5 → 도로 10.5~12.5 → 인도 13~15 → 건물 본체 13.5~16.5 → 옥상 요철 16.5~18.5 → 랜드마크 16.5~19.
+ * 5~13밖에 없어 층위가 인지되지 않았고, 그래서 부지를 20.4로 올린 뒤 그 대역에 다시 펼쳤다.
+ *
+ * ⚠️ **20.4 천장으로도 부족했다**(2026-07-30 · 브라우저 실측). 배경 전체가 7~19에 갇혀 있어 서열이 맞아도
+ * **화면에서는 그냥 검정**이었다 — 12종을 다 그려 놓고 부지 좌우가 빈 검정으로 보였다. 그래서 부지 천장을
+ * 71.3으로 올리고 전 항목을 **서열·간격 그대로 3~3.5배** 옮겼다: 지면 22~31 → 도로 32~39 → 인도 41~47 →
+ * 건물 본체 43~53 → 옥상 요철 54~61 → 랜드마크 55~64.
+ * 옮길 때 **채도는 거의 안 올렸다** — 파랑의 휘도 가중치가 0.0722뿐이라 채도를 밀면 목표 휘도를 맞추려고
+ * B가 폭주해 인도가 보라색이 된다(실측). 색은 표면이 아니라 아래 **발광 패스**가 낸다.
  *
  * 카테고리별 휘도 **구간**(상한만이 아니라 하한도) · 평균 서열 · 최소 간격은 `backdropPalette.test.ts`가 잠근다.
  */
 export const BACKDROP_PALETTE = {
   /** 배경 전체의 바탕 — 어느 블록도 안 덮은 자리에 남는 색. */
-  ground: "#08080b",
+  ground: "#1a1a26",
 
   // ── 지면 — 면적을 지배하므로 가장 어둡다. 이게 스프레드의 바닥이다. ──
-  grassBase: "#070908",
-  grassNoiseLight: "#070d07",
-  grassNoiseDark: "#070807",
-  tuft: "#0b100e",
-  tuftShade: "#0a0f0d",
-  shrub: "#0c0f0d",
-  medianStrip: "#070907",
+  grassBase: "#161d19",
+  grassNoiseLight: "#182718",
+  grassNoiseDark: "#161a16",
+  tuft: "#21342c",
+  tuftShade: "#1d3029",
+  shrub: "#253028",
+  medianStrip: "#161d16",
   /** 도심 포장면 — 저채도 회색. 도심인데 잔디가 깔려 있으면 도심으로 안 읽힌다. */
-  pavementBase: "#09080a",
-  pavementNoiseLight: "#0b0b0c",
-  pavementNoiseDark: "#07080a",
-  pavementSeam: "#0a070b",
-  parkingLot: "#080810",
-  dirtBase: "#0b0805",
-  dirtNoiseLight: "#0e0b05",
-  dirtNoiseDark: "#0a0804",
-  fieldFurrowLight: "#0d0b05",
-  fieldFurrowDark: "#0a0804",
-  paddyBase: "#060a07",
-  paddyCellLight: "#080c0a",
-  paddyCellDark: "#060907",
-  forestFloor: "#060907",
-  houseYardShadow: "#070806",
+  pavementBase: "#1d1921",
+  pavementNoiseLight: "#222226",
+  pavementNoiseDark: "#161a22",
+  pavementSeam: "#211625",
+  parkingLot: "#1b1b2a",
+  dirtBase: "#211a14",
+  dirtNoiseLight: "#282217",
+  dirtNoiseDark: "#1e1a12",
+  fieldFurrowLight: "#262216",
+  fieldFurrowDark: "#1e1a12",
+  paddyBase: "#142017",
+  paddyCellLight: "#17261e",
+  paddyCellDark: "#121d16",
+  forestFloor: "#121d16",
+  houseYardShadow: "#161a12",
 
   // ── 도로·인도·길 — 인도가 도로보다 밝아야 둘이 갈린다 ──
-  road: "#0a0c0f",
-  sidewalk: "#0e0d17",
-  laneShoulder: "#0a0c0a",
-  dirtLane: "#0d0c07",
-  leveePath: "#100e08",
-  seawall: "#0b0f0a",
-  parkPath: "#120d09",
-  paddyBank: "#0b0c06",
+  road: "#1e2531",
+  sidewalk: "#2c2943",
+  laneShoulder: "#1e251e",
+  dirtLane: "#282517",
+  leveePath: "#312c1d",
+  seawall: "#21301d",
+  parkPath: "#352a20",
+  paddyBank: "#222515",
 
-  // ── 건물·시설·차량 — 지면보다 확실히 위(평균 +4.0 이상). 디테일은 본체보다 또 한 단 위. ──
-  roofBase: "#100e19",
-  roofEdge: "#0f0f18",
-  roofVent: "#11111c",
-  roofVentShade: "#121019",
-  roofPenthouse: "#17110a",
-  aptBody: "#100e1b",
-  aptEdge: "#0e0f1b",
-  aptTower: "#121021",
-  aptTowerLit: "#101122",
-  houseRoofWarm: "#130f0c",
-  houseRoofWarmShade: "#110e08",
-  houseRidgeWarm: "#181109",
-  houseRoofCool: "#110e16",
-  houseRoofCoolShade: "#0d0d1d",
-  houseRidgeCool: "#131020",
-  materialStack: "#110f0a",
-  materialStackShade: "#110e09",
-  breakwater: "#0e0f12",
-  lampPost: "#100f0a",
-  vehicleBlue: "#0c0f14",
-  vehicleRed: "#150d0f",
-  vehicleGreen: "#0c100c",
+  // ── 건물·시설·차량 — 지면보다 확실히 위(평균 +14 이상). 디테일은 본체보다 또 한 단 위. ──
+  roofBase: "#332e4a",
+  roofEdge: "#30304d",
+  roofVent: "#38385a",
+  roofVentShade: "#3b3455",
+  roofPenthouse: "#46392a",
+  aptBody: "#332e4b",
+  aptEdge: "#2f314b",
+  aptTower: "#3b3758",
+  aptTowerLit: "#383959",
+  houseRoofWarm: "#3e3025",
+  houseRoofWarmShade: "#342d1f",
+  houseRidgeWarm: "#46392a",
+  houseRoofCool: "#372c49",
+  houseRoofCoolShade: "#2b2b45",
+  houseRidgeCool: "#3d3759",
+  materialStack: "#363020",
+  materialStackShade: "#352d1f",
+  breakwater: "#2c303c",
+  lampPost: "#34301e",
+  vehicleBlue: "#273040",
+  vehicleRed: "#442930",
+  vehicleGreen: "#253425",
 
-  // ── 랜드마크 — 배경에서 가장 밝지만 부지(20.43) 아래를 지킨다. 지역 식별의 핵심이라 여기가 상단이다. ──
-  treeCanopy: "#0e130f",
-  treeCanopyLit: "#0e140f",
-  treeShade: "#0a140d",
-  forestCanopy: "#0d1310",
-  forestCanopyLit: "#0d140f",
-  forestCanopyDark: "#0f1210",
-  riverBase: "#0c121a",
-  riverFlow: "#0b131d",
-  seaBase: "#0b121c",
-  seaRipple: "#0b131e",
-  roofSkylight: "#16120a",
-  bench: "#141207",
+  // ── 랜드마크 — 배경에서 가장 밝지만 부지(71.3) 아래를 지킨다. 지역 식별의 핵심이라 여기가 상단이다. ──
+  treeCanopy: "#2d4131",
+  treeCanopyLit: "#2c4430",
+  treeShade: "#28412f",
+  forestCanopy: "#294135",
+  forestCanopyLit: "#2a4431",
+  forestCanopyDark: "#313d35",
+  riverBase: "#2e3b4d",
+  riverFlow: "#303e50",
+  seaBase: "#2e3b4d",
+  seaRipple: "#313e51",
+  roofSkylight: "#463d2a",
+  bench: "#403c25",
 } as const;
 
 /**
@@ -166,6 +172,24 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   const pxf = (c: Ctx, x: number, y: number, w: number, h: number, col: string) => {
     c.fillStyle = col; c.fillRect(x, y, w, h);
   };
+
+  /**
+   * 발광 큐 — **밝기를 올리는 것만으로는 "켜져 있다"가 안 생긴다**(밝은 회색 판이 된다).
+   * 창문·간판·전조등·가로등을 additive 한 겹으로 얹어야 밤 풍경이 된다.
+   *
+   * ⚠️ **바로 그리지 않고 모아 두는 것이 계약이다.** 12종 변형은 각자 순서로 블록을 쌓으므로
+   * (도로를 나중에 깔는 변형도 있다) 그리는 자리에서 발광을 찍으면 뒤에 오는 불투명 fill이 덮는다.
+   * 큐에 넣고 **블록이 다 그려진 뒤 한 번에** 부으면 어느 변형에서든 맨 위에 온다.
+   *
+   * 좌표는 타일 단위(px 변환은 flush가 한다) — 헬퍼들이 이미 타일로 생각하고 있다.
+   */
+  const glows: Array<{ x: number; y: number; rad: number; col: string; a: number }> = [];
+  const glow = (x: number, y: number, rad: number, col: string, a: number) => {
+    glows.push({ x, y, rad, col, a });
+  };
+  /** 창문 불빛 — 건물 헬퍼 셋이 공유한다. 옥상 탑뷰라 빛은 **건물 둘레로 새어** 지면에 떨어진다. */
+  const WINDOW_WARM = "255,222,150";
+  const WINDOW_COOL = "196,222,255";
 
   function grass(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
     px(c, x, y, w, h, P.grassBase);
@@ -237,7 +261,8 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
       pxf(c, x * T + 3 + Math.floor(r() * (T * 2 - 7)), y * T + 3 + Math.floor(r() * (T * 2 - 7)), 2, 2, P.treeShade);
     }
   }
-  /** 가로등 — 불빛은 **방사형 그라디언트**여야 한다. 단색 원반은 회색 얼룩으로 읽힌다(실측). */
+  /** 가로등 — 불빛은 **방사형 그라디언트**여야 한다. 단색 원반은 회색 얼룩으로 읽힌다(실측).
+   *  등 자체의 원반은 여기서 그리고(지면에 닿는 빛), 공중의 헤일로는 발광 큐가 맨 위에 얹는다. */
   function lamp(c: Ctx, x: number, y: number) {
     pxf(c, x * T - 1, y * T - 1, 3, 3, P.lampPost);
     const rad = T * 1.6;
@@ -246,6 +271,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     g.addColorStop(1, "rgba(216,207,175,0)");
     c.fillStyle = g;
     c.beginPath(); c.arc(x * T, y * T, rad, 0, 7); c.fill();
+    glow(x, y, 1.9, "255,214,150", 0.2);
   }
   function car(c: Ctx, x: number, y: number, col: string, vert: boolean) {
     if (vert) pxf(c, x * T + 2, y * T + 1, T - 4, T * 2 - 3, col);
@@ -253,6 +279,9 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     c.fillStyle = "rgba(216,207,175,0.10)";
     if (vert) c.fillRect(x * T + 3, y * T + 3, T - 6, 3);
     else c.fillRect(x * T + 3, y * T + 3, 3, T - 6);
+    // 전조등 — 진행 방향 끝. 차 한 대에 점 하나뿐이라 도로가 붐비지 않는다.
+    if (vert) glow(x + 0.5, y + 2, 1.1, "255,240,200", 0.3);
+    else glow(x + 2, y + 0.5, 1.1, "255,240,200", 0.3);
   }
   /** 건물 옥상 덩어리 — 실외기·옥탑이 흩어진다. */
   function roof(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
@@ -266,6 +295,11 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     if (r() < 0.8) {
       const gx = x + 1 + Math.floor(r() * (w - 4)), gy = y + 1 + Math.floor(r() * (h - 3));
       pxf(c, gx * T, gy * T, T * 2, T, P.roofPenthouse); pxf(c, gx * T + 2, gy * T + 2, T * 2 - 4, T - 4, P.roofSkylight);
+      glow(gx + 1, gy + 0.5, 1.5, WINDOW_WARM, 0.3);   // 천창 — 옥탑에서 새는 빛
+    }
+    // 사무동 창문 — 건물 둘레를 따라 몇 점. 위치가 시드 파생이라 같은 판에서 같은 자리다.
+    for (let i = 0; i < Math.max(1, Math.round(w * 0.45)); i++) {
+      glow(x + 0.4 + r() * (w - 0.8), y + h, 0.85, WINDOW_COOL, 0.16);
     }
   }
   /** 판상형 아파트 동(옥상) — 승강기탑이 일정 간격. */
@@ -276,6 +310,11 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     for (let gx = x + 2; gx < x + w - 2; gx += 5) {
       pxf(c, gx * T, (y + Math.floor(h / 2)) * T - 4, T + 4, T - 2, P.aptTower);
       pxf(c, gx * T + 2, (y + Math.floor(h / 2)) * T - 2, T, 2, P.aptTowerLit);
+      glow(gx + 0.5, y + Math.floor(h / 2), 1.2, WINDOW_COOL, 0.18);   // 계단실 — 밤에도 켜져 있는 자리
+    }
+    // 세대 창문 — 아파트는 **아래 변에 여러 점**이다(판상형이라 한 면에 세대가 늘어선다).
+    for (let i = 0; i < Math.max(2, Math.round(w * 0.7)); i++) {
+      glow(x + 0.5 + r() * (w - 1), y + h, 0.9, WINDOW_WARM, 0.2);
     }
     if (r() < 0.9) pxf(c, (x + w - 3) * T, (y + 1) * T, T, T - 4, P.roofPenthouse);
   }
@@ -287,6 +326,8 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     pxf(c, x * T, (y + 1) * T, 3 * T, T, warm ? P.houseRoofWarmShade : P.houseRoofCoolShade);  // 지붕 아랫면(그늘)
     pxf(c, x * T, (y + 1) * T - 1, 3 * T, 2, warm ? P.houseRidgeWarm : P.houseRidgeCool);      // 용마루
     pxf(c, (x + 3) * T, y * T, 2, 2 * T, P.houseYardShadow);                                   // 마당 경계 그림자
+    // 창문 — 집마다 하나. 불이 꺼진 집도 있어야 마을이 산다(시드 파생이라 판마다 고정).
+    if (r() < 0.75) glow(x + 0.6 + r() * 1.8, y + 2, 1.0, warm ? WINDOW_WARM : WINDOW_COOL, 0.22);
   }
   /** 나대지·공사장 — 점선 가설 울타리와 자재 더미. */
   function dirtLot(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
@@ -578,6 +619,35 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   c.clearRect(0, 0, EW * T, EH * T);
   pxf(c, 0, 0, EW * T, EH * T, P.ground);
   (BLOCKS[region][variant] ?? BLOCKS[region][0])();
+
+  /* 발광 — 블록이 다 그려진 뒤 한 번에. `lighter`는 채널을 **더하므로** 어두운 배경에서만
+     빛으로 보이고(밝은 면에 얹으면 그냥 하얗게 탄다), 그래서 이 패스는 팔레트를 낮게 유지하는
+     쪽과 짝이다. 반경 안쪽에서 0.45 지점까지만 세게 주고 바깥은 급히 죽인다 — 넉넉히 퍼뜨리면
+     화면이 안개처럼 흐려진다(시안에서 실측했다). */
+  c.globalCompositeOperation = "lighter";
+  for (const { x, y, rad, col, a } of glows) {
+    const px0 = x * T, py0 = y * T, r0 = rad * T;
+    const g = c.createRadialGradient(px0, py0, 0, px0, py0, r0);
+    g.addColorStop(0, `rgba(${col},${a})`);
+    g.addColorStop(0.45, `rgba(${col},${a * 0.34})`);
+    g.addColorStop(1, `rgba(${col},0)`);
+    c.fillStyle = g;
+    c.beginPath(); c.arc(px0, py0, r0, 0, 7); c.fill();
+  }
+  /* ⚠️ **반드시 되돌린다.** 남겨 두면 다음 렌더(지역 교체)의 첫 fill이 additive로 그려져 배경이
+     하얗게 탄다 — 캔버스 상태는 렌더 사이에 살아 있다(테스트가 마지막 합성 모드를 단언한다). */
+  c.globalCompositeOperation = "source-over";
+
+  /* 비네트 — 네 귀퉁이를 떨어뜨려 시선을 가운데(부지)로 모은다. 배경을 밝힌 대가로 화면 주변이
+     시끄러워졌는데, 이 한 겹이 그걸 되돌리면서 「부지가 무대다」를 밝기로 다시 말한다. */
+  const vx = (EW * T) / 2, vy = (EH * T) / 2;
+  const vr = Math.max(EW, EH) * T * 0.62;
+  const vig = c.createRadialGradient(vx, vy, Math.min(EW, EH) * T * 0.34, vx, vy, vr);
+  vig.addColorStop(0, "rgba(6,6,14,0)");
+  vig.addColorStop(1, "rgba(6,6,14,0.5)");
+  c.fillStyle = vig;
+  c.fillRect(0, 0, EW * T, EH * T);
+
   // 부지 구멍 — 위 주석의 계약. 이 한 줄이 없으면 부지 바닥·격자가 풍경에 덮인다.
   c.clearRect(LX * T, LY * T, LW * T, LH * T);
 }

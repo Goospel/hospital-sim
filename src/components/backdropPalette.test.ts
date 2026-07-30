@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { BACKDROP_PALETTE, drawBackdrop, relativeLuminance } from './Backdrop'
-import { OUTSIDE_FLOOR, NEUTRAL_STYLE, ROOM_STYLE } from './TileMap'
+import { OUTSIDE_FLOOR, NEUTRAL_STYLE, ROOM_STYLE, SHADE, shade } from './TileMap'
 import type { SimRegionKey } from '@/sim/world'
 
 /**
@@ -14,6 +14,11 @@ import type { SimRegionKey } from '@/sim/world'
  * ③ 그래도 부족했다: 부지 천장이 13.29라 배경이 쓸 대역이 5~13뿐이었고, 그 좁은 구간에서는 지면·건물·
  * 물의 층위가 인지되지 않았다(해안·대로변 상단이 거의 균일한 검정). **천장 자체를 20.4로 올려** 대역을
  * 넓힌 것이 지금 표다 — 서열은 그대로 두고 전 항목을 위로 펼쳤다.
+ * ④ **그것도 부족했다(2026-07-30)**: 20.4 천장에서도 배경 전체가 7~19에 갇혀 브라우저 실측상 부지 좌우가
+ * 그냥 검정이었다 — 지역별 배경 12종이 화면에서 사라졌다. 세 번째 확장에서 **서열과 간격은 그대로 두고
+ * 절대값만 3~3.5배로** 옮겼다(부지 천장 20.4 → 71.3). 아래 표가 그 결과다.
+ * ⚠️ 이 표는 이제 **알베도**(음영이 곱해지기 전 값)를 잠근다 — 실내는 `TileMap.shade`가 타일마다 조명·AO
+ * 계수를 곱하므로, 최종 픽셀의 서열은 맨 아래 「알베도 서열이 음영을 거쳐도 살아남는다」가 따로 잠근다.
  * 색은 눈으로만 검수하면 다음 사람이 한 칸 밝히는 순간 조용히 되돌아간다. 숫자로 잠근다.
  *
  * 휘도 식은 **프로덕션 코드가 export한 `relativeLuminance`를 그대로 쓴다** — 테스트가 자기 식을
@@ -36,7 +41,7 @@ type PaletteKey = keyof typeof BACKDROP_PALETTE
  */
 const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys: readonly PaletteKey[] }> = [
   {
-    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 7, max: 9.5,
+    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 22, max: 31,
     keys: [
       'ground', 'grassBase', 'grassNoiseDark', 'medianStrip',
       'pavementBase', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
@@ -45,13 +50,13 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '지면 노이즈(밝은 쪽)·논둑', min: 10, max: 12,
+    name: '지면 노이즈(밝은 쪽)·논둑', min: 31, max: 37,
     keys: ['grassNoiseLight', 'pavementNoiseLight', 'dirtNoiseLight', 'fieldFurrowLight', 'paddyCellLight', 'paddyBank'],
   },
-  { name: '도로', min: 10.5, max: 12.5, keys: ['road', 'laneShoulder', 'dirtLane'] },
-  { name: '인도·산책로', min: 13, max: 15, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
+  { name: '도로', min: 32, max: 39, keys: ['road', 'laneShoulder', 'dirtLane'] },
+  { name: '인도·산책로', min: 41, max: 47, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
   {
-    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 13.5, max: 16.5,
+    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 43, max: 53,
     keys: [
       'roofBase', 'roofEdge', 'aptBody', 'aptEdge',
       'houseRoofWarm', 'houseRoofWarmShade', 'houseRoofCool', 'houseRoofCoolShade',
@@ -60,12 +65,12 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 16.5, max: 18.5,
+    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 54, max: 61,
     keys: ['roofVent', 'roofVentShade', 'roofPenthouse', 'aptTower', 'aptTowerLit', 'houseRidgeWarm', 'houseRidgeCool'],
   },
-  { name: '풀포기·관목', min: 13, max: 16, keys: ['tuft', 'tuftShade', 'shrub'] },
+  { name: '풀포기·관목', min: 41, max: 51, keys: ['tuft', 'tuftShade', 'shrub'] },
   {
-    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 16.5, max: 19,
+    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 55, max: 64,
     keys: [
       'treeCanopy', 'treeCanopyLit', 'treeShade',
       'forestCanopy', 'forestCanopyLit', 'forestCanopyDark',
@@ -113,10 +118,13 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
    * 이 세 간격이 각각 무엇을 지키는지: 건물이 지면에서 떠오르는가 · 인도가 도로와 갈리는가 ·
    * 옥상 요철이 지붕 위에서 읽히는가.
    */
+  /* ⚠️ 대역을 3.5배로 넓혔으면 **요구 간격도 함께 올려야 한다** — 옛 값(4.0/1.5/1.5)을 그대로 두면
+     새 대역에서는 통과 기준이 4분의 1로 느슨해져, 다음 사람이 전 항목을 다시 눌러 담아도 초록불이
+     뜬다(이 파일이 세 번 경고한 "상한이 느슨해지면 통과하면서 목적이 증발" 그 자리다). */
   it.each([
-    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 4.0 },
-    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 1.5 },
-    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 1.5 },
+    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 14.0 },
+    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 5.0 },
+    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 6.0 },
   ])('$what 평균 간격이 $gap 이상 — 스프레드가 눌리면 형태가 안 읽힌다', ({ what, a, b, gap }) => {
     const d = meanL(a) - meanL(b)
     expect(d, `${what} = ${meanL(a).toFixed(2)} − ${meanL(b).toFixed(2)} = ${d.toFixed(2)}`).toBeGreaterThanOrEqual(gap)
@@ -139,10 +147,18 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
     expect([...covered].sort()).toEqual(Object.keys(BACKDROP_PALETTE).sort())
   })
 
-  it('relativeLuminance는 #14141a를 20.4로 읽는다 — 실측치와 같은 식임을 못박는다', () => {
+  /** 식 자체의 고정점 — **부지 값이 아니라 계산식**을 못박는다(#14141a는 옛 부지색이고, 지금 부지는
+   *  아래 `OUTSIDE_FLOOR`가 든다). 이 셋이 흔들리면 위 모든 숫자의 의미가 함께 흔들린다. */
+  it('relativeLuminance의 고정점 — 식이 바뀌면 위 표 전체의 뜻이 바뀐다', () => {
     expect(relativeLuminance('#14141a')).toBeCloseTo(20.43, 2)
     expect(relativeLuminance('#000000')).toBe(0)
     expect(relativeLuminance('#ffffff')).toBeCloseTo(255, 4)
+  })
+
+  /** 배경 대역을 넓힌 만큼 **부지 천장도 같이 올라가 있어야** 한다 — 한쪽만 옮기면 ①의 "구멍" 회귀다. */
+  it('부지 바닥이 배경 최상단 카테고리보다 충분히 위에 있다 — 여유 5 이상', () => {
+    const top = Math.max(...CATEGORIES.map((c) => c.max))
+    expect(FLOOR - top, `부지 ${FLOOR.toFixed(2)} − 배경 상한 ${top}`).toBeGreaterThanOrEqual(5)
   })
 })
 
@@ -167,6 +183,60 @@ describe('실내 바닥은 부지(마당)보다 밝다 — 벽 안이 벽 밖보
   it('NEUTRAL_STYLE의 벽이 자기 바닥보다 밝다', () => {
     expect(relativeLuminance(NEUTRAL_STYLE.wall)).toBeGreaterThan(relativeLuminance(NEUTRAL_STYLE.floor))
   })
+
+  it.each(Object.entries(ROOM_STYLE))('%s 벽이 자기 바닥보다 밝다', (_type, style) => {
+    expect(relativeLuminance(style.wall)).toBeGreaterThan(relativeLuminance(style.floor))
+  })
+})
+
+/**
+ * 알베도 서열이 **음영을 거쳐도** 살아남는가 — 위 두 describe는 팔레트 리터럴만 본다.
+ *
+ * 조명·AO가 붙은 뒤로 화면에 실제로 나가는 값은 `shade(albedo, factor)`이고, 계수는 타일마다 다르다.
+ * 그래서 리터럴 서열이 맞아도 **가장 어두운 계수를 맞은 방 바닥이 부지 아래로 내려갈 수 있다** —
+ * 그러면 「실내가 마당보다 밝다」가 최종 픽셀에서 뒤집힌다(리터럴 검사는 그걸 통과시킨다).
+ * 부지는 계수를 안 받으므로(`SHADE` 주석) 비교 대상은 부지의 리터럴 그대로다.
+ */
+describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', () => {
+  it('계수 1은 색을 안 바꾼다 — 조명이 없는 자리가 알베도와 달라지면 팔레트 검사가 헛말이 된다', () => {
+    for (const hex of [OUTSIDE_FLOOR, NEUTRAL_STYLE.floor, ...Object.values(ROOM_STYLE).map((s) => s.floor)]) {
+      expect(shade(hex, 1)).toBe(hex)
+    }
+  })
+
+  it('계수가 커지면 휘도도 커진다 — 단조성이 깨지면 광원이 그늘로 보인다', () => {
+    for (const hex of Object.values(ROOM_STYLE).map((s) => s.floor)) {
+      const ls = [SHADE.min, SHADE.base, 1, SHADE.max].map((f) => relativeLuminance(shade(hex, f)))
+      for (let i = 1; i < ls.length; i++) {
+        expect(ls[i], `${hex} 계수 단조성 ${ls.join(' < ')}`).toBeGreaterThan(ls[i - 1])
+      }
+    }
+  })
+
+  it('가장 어두운 계수를 맞은 방 바닥도 부지보다 밝다 — 최종 픽셀에서의 「실내 > 마당」', () => {
+    for (const [type, style] of Object.entries(ROOM_STYLE)) {
+      const darkest = relativeLuminance(shade(style.floor, SHADE.min))
+      expect(darkest, `${type} 최암부 ${darkest.toFixed(2)} vs 부지 ${FLOOR.toFixed(2)}`).toBeGreaterThan(FLOOR)
+    }
+    const n = relativeLuminance(shade(NEUTRAL_STYLE.floor, SHADE.min))
+    expect(n, `NEUTRAL 최암부 ${n.toFixed(2)} vs 부지 ${FLOOR.toFixed(2)}`).toBeGreaterThan(FLOOR)
+  })
+
+  it('가장 밝은 계수에서도 채널이 포화되지 않는다 — 흰색으로 뭉개지면 방 색이 사라진다', () => {
+    for (const style of [...Object.values(ROOM_STYLE), NEUTRAL_STYLE]) {
+      for (const hex of [style.floor, style.wall]) {
+        const lit = shade(hex, SHADE.max)
+        expect(relativeLuminance(lit), `${hex} → ${lit}`).toBeLessThan(235)
+        expect(lit, `${hex} → ${lit} 포화`).not.toBe('#ffffff')
+      }
+    }
+  })
+
+  it('계수 구간이 실제로 조명·AO를 담을 만큼 벌어져 있다', () => {
+    expect(SHADE.min).toBeLessThan(SHADE.base)
+    expect(SHADE.base).toBeLessThan(SHADE.max)
+    expect(SHADE.max - SHADE.min, '조명 대비가 0.2 미만이면 광원이 안 보인다').toBeGreaterThanOrEqual(0.2)
+  })
 })
 
 /**
@@ -177,12 +247,14 @@ describe('실내 바닥은 부지(마당)보다 밝다 — 벽 안이 벽 밖보
 describe('drawBackdrop — 12종이 예외 없이 끝까지 그려진다', () => {
   /** 캔버스 없는 노드 환경용 최소 스텁 — 호출을 세기만 한다. */
   const stubCtx = () => {
-    const calls = { fillRect: 0, gradient: 0, fills: new Set<string>() }
+    const calls = { fillRect: 0, gradient: 0, fills: new Set<string>(), composites: [] as string[] }
     return {
       calls,
       ctx: {
         set fillStyle(v: unknown) { if (typeof v === 'string') calls.fills.add(v) },
         set strokeStyle(_v: unknown) {}, set lineWidth(_v: number) {},
+        // 발광 패스는 합성 모드로만 구별된다 — 값을 기록해 "additive로 그렸는가"를 단언한다.
+        set globalCompositeOperation(v: string) { calls.composites.push(v) },
         fillRect: () => { calls.fillRect++ },
         strokeRect: () => {}, clearRect: () => {}, beginPath: () => {}, fill: () => {},
         arc: () => {}, setLineDash: () => {},
@@ -216,9 +288,25 @@ describe('drawBackdrop — 12종이 예외 없이 끝까지 그려진다', () =>
   })
 
   it('가로등이 있는 변형은 단색 원반이 아니라 방사형 그라디언트를 만든다', () => {
-    // urban2는 lamp를 4개 세운다 — 얼룩처럼 보이던 단색 arc로 되돌아가면 여기서 걸린다.
+    /* urban2는 lamp를 4개 세운다 — 얼룩처럼 보이던 단색 arc로 되돌아가면 여기서 걸린다.
+       ⚠️ 정확한 개수(옛 `toBe(4)`)를 못 쓴다: 발광 패스가 창문·전조등 그라디언트를 변형마다 다른
+       수로 더한다. 대신 하한을 지키고, **발광 패스 자체의 존재**는 바로 아래 두 건이 잠근다. */
     const { ctx, calls } = stubCtx()
     drawBackdrop(ctx, 'URBAN', 2)
-    expect(calls.gradient).toBe(4)
+    expect(calls.gradient).toBeGreaterThanOrEqual(4)
+  })
+
+  /**
+   * 발광 — 밝기만 올리고 발광을 빼면 화면이 "밝은 회색 판"이 된다(켜져 있다는 신호가 없다).
+   * 12종 전부에 걸려 있어야 하고, **끝난 뒤 반드시 source-over로 되돌려야** 한다:
+   * 남겨 두면 다음 렌더(지역 교체)의 첫 fill이 additive로 그려져 배경이 하얗게 탄다.
+   */
+  it.each(REGIONS)('%s의 변형 0·1·2가 발광 패스를 돌고 합성 모드를 되돌린다', (region) => {
+    for (const variant of [0, 1, 2]) {
+      const { ctx, calls } = stubCtx()
+      drawBackdrop(ctx, region, variant)
+      expect(calls.composites, `${region}/${variant}`).toContain('lighter')
+      expect(calls.composites.at(-1), `${region}/${variant} 마지막 합성 모드`).toBe('source-over')
+    }
   })
 })
