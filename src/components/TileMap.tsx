@@ -13,7 +13,16 @@ import { FATIGUE_MAX } from "@/game/doctor";
 import { GRID_W, GRID_H, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions, type Region } from "@/sim/regions";
 import Backdrop from "./Backdrop";
-import { BedSprite, ChairSprite, DeskSprite, DoctorSprite, DEPT_COLOR, NurseSprite, PatientSprite } from "./PixelSprite";
+import {
+  BedSprite,
+  ChairSprite,
+  CounterSprite,
+  DeskSprite,
+  DoctorSprite,
+  DEPT_COLOR,
+  NurseSprite,
+  PatientSprite,
+} from "./PixelSprite";
 import {
   BACKDROP_MARGIN,
   busyDoctorIds,
@@ -127,48 +136,68 @@ function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetLe
  * 리터럴 hex를 쓰는 건 PixelSprite·HospitalMap과 같은 **회화 레이어**의 관례다.
  */
 export const ROOM_STYLE: Record<RoomType, { floor: string; wall: string }> = {
-  EXAM: { floor: "#16232a", wall: "#2d4650" },
-  WARD: { floor: "#1e1a2a", wall: "#3b3352" },
-  WAITING: { floor: "#241f18", wall: "#4a4130" },
-  LOUNGE: { floor: "#16241c", wall: "#2c4a39" },
-  RECEPTION: { floor: "#261a1a", wall: "#4f3232" },
+  EXAM: { floor: "#57676f", wall: "#78909a" },
+  WARD: { floor: "#645e77", wall: "#8d84a7" },
+  WAITING: { floor: "#716759", wall: "#9c907a" },
+  LOUNGE: { floor: "#546b5e", wall: "#759583" },
+  RECEPTION: { floor: "#765e5e", wall: "#a68484" },
   // 식당 — 휴게실(녹)의 이웃 색조(황록). 두 방은 같은 "쉬는 곳"이라 계열을 붙이되, 한 화면에
   // 나란히 서도 구별되게 색상만 옮긴다. `Record<RoomType, …>`이라 이 줄이 없으면 tsc가 막는다.
-  CAFETERIA: { floor: "#24220f", wall: "#4a4620" },
+  CAFETERIA: { floor: "#6a6853", wall: "#949073" },
 };
+
+/**
+ * 타일에 곱하는 **조명·AO 계수**의 상수 한 벌 — 알베도(위 팔레트)와 최종 픽셀 사이의 유일한 통로다.
+ *
+ * `base`에서 출발해 방 중심 쪽으로 `pool`만큼 밝아지고, 벽에 닿은 변마다 `ao`만큼 어두워진 뒤
+ * `[min, max]`로 잠긴다. **부지(마당)는 계수를 안 받는다** — 실외 조명은 배경 캔버스가 자기 안에서
+ * 지고 있고(Backdrop의 발광 패스), 여기서 또 곱하면 「배경 < 부지」 서열의 기준선이 흔들린다.
+ *
+ * ⚠️ `min`이 이 표의 위험한 값이다: 이걸 낮추면 방 구석이 마당보다 어두워져 "실내가 실외보다 어둡다"가
+ * 최종 픽셀에서 뒤집힌다(팔레트 리터럴 검사는 그걸 통과시킨다 — backdropPalette.test.ts의 shade describe가 잠근다).
+ */
+export const SHADE = { min: 0.84, base: 0.94, max: 1.2, pool: 0.26, ao: 0.04, checker: 0.018 } as const;
+
+/** 벽 한 칸에서 **윗면(캡)이 차지하는 px** — 16px 타일의 5px(≈31%). 두께가 읽히는 최소치이고,
+ *  더 키우면 통행 가능한 칸처럼 넓어 보인다(벽은 한 칸을 통째로 막는다는 규칙이 흐려진다). */
+const CAP_PX = 5;
+
+/**
+ * 알베도 hex에 계수를 곱한다 — 채널 선형 스케일이라 **색조가 보존된다**(휘도만 움직인다).
+ *
+ * 계수 1에서 입력을 그대로 돌려주는 것이 계약이다: 조명이 없는 자리가 알베도와 달라지면
+ * 팔레트를 잠근 테스트가 화면과 무관한 말을 하게 된다.
+ */
+export function shade(hex: string, factor: number): string {
+  if (factor === 1) return hex;
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (shift: number) => Math.max(0, Math.min(255, Math.round(((n >> shift) & 255) * factor)));
+  return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0")}`;
+}
 
 /** 부지 바닥(방 밖) — 복도이자 마당. **화면 전체의 배경이기도 하다**(SimGame): 맵 둘레의 여백이
  *  같은 색이라야 부지가 화면 밖으로 이어지는 것으로 보이고, HUD가 그 위에 뜬 패널로 읽힌다.
  *
  *  ⚠️ **이 값은 배경(`Backdrop`)의 천장이다.** 옛 #0d0d11(휘도 13.29)에서는 배경이 쓸 대역이
  *  5~13뿐이라 지면·건물·물의 층위가 인지되지 않았다(실측: 해안·대로변 상단이 균일한 검정).
- *  20.4로 올려 대역을 넓혔다 — 바꿀 땐 `backdropPalette.test.ts`가 양쪽(배경 < 부지 < 실내)을 잠근다. */
-export const OUTSIDE_FLOOR = "#14141a";
-/** 격자 — 타일 경계를 겨우 읽을 만큼만. 알파는 **부지 휘도에 딸려 간다**: 부지를 13.3→20.4로 올리면
- *  같은 0.045로는 합성 대비(ΔL/L)가 65%→41%로 떨어져 격자가 묻힌다. 0.065면 59%로 되돌아온다. */
-const GRID_LINE = "rgba(216,207,175,0.065)";
+ *  20.4로 올려 대역을 넓혔고, **그것도 부족해 71.3으로 다시 올렸다**(2026-07-30): 20.4 천장에서는
+ *  배경 전체가 7~19에 갇혀 브라우저에서 부지 좌우가 그냥 검정이었다 — 12종을 다 그려 놓고 화면에서
+ *  잃고 있었다. 바꿀 땐 `backdropPalette.test.ts`가 양쪽(배경 < 부지 < 실내)을 잠근다. */
+export const OUTSIDE_FLOOR = "#464658";
+/** 격자 — 타일 경계를 겨우 읽을 만큼만. **밝은 선에서 어두운 이음매로 뒤집혔다**: 부지가 20.4일 때는
+ *  밝은 선(216,207,175)만이 대비를 낼 수 있었지만, 71.3에서는 같은 선이 바닥을 하얗게 들어 올린다.
+ *  콘크리트 슬래브의 줄눈처럼 어두운 쪽이 자연스럽고, 합성 대비도 ΔL/L ≈ 16%로 남는다. */
+const GRID_LINE = "rgba(10,8,18,0.16)";
 
 /** 용도 없는 영역·용도 영역에 안 닿은 벽의 색. 벽을 세웠지만 아직 무슨 방인지 안 정한 상태가
  *  화면에 **보여야** 한다 — 안 그리면 플레이어는 벽이 안 세워진 줄 안다(설계 PR 2의 도구 흐름).
- *  옛 #131318(19.4)은 새 부지(20.4)보다 어두워 "실내가 마당보다 어둡다"로 뒤집혔다 — 25.5로 올린다. */
-export const NEUTRAL_STYLE = { floor: "#191920", wall: "#3a3a45" };
+ *  부지를 71.3으로 올렸으니 이쪽도 같이 올라간다(92/126) — 한쪽만 옮기면 "실내가 마당보다 어둡다"로 뒤집힌다. */
+export const NEUTRAL_STYLE = { floor: "#5a5a72", wall: "#7c7c99" };
 
 /** 진료실 바닥에 얹는 과 색의 알파 — 8자리 hex의 끝 두 자리(0x24 ≈ 14%).
  *  옛 렌더가 별도 오버레이 div에 `opacity: 0.14`로 주던 값과 같은 농도이고, 타일당 div를
  *  하나로 유지한다(영역은 임의 모양이라 사각형 오버레이를 덮을 수 없다). */
 const DEPT_TINT_ALPHA = "24";
-
-/** 접수 카운터 — PixelSprite에 없는 유일한 가구라 여기서만 쓰는 8×8 격자로 둔다. */
-function CounterSprite() {
-  return (
-    <svg viewBox="0 0 8 8" shapeRendering="crispEdges" className="h-full w-full" aria-hidden>
-      <rect x="0" y="2" width="8" height="4" fill="#4a3f33" />
-      <rect x="0" y="2" width="8" height="1" fill="#6b5a45" />
-      <rect x="1" y="4" width="2" height="1" fill="#d8d3c0" />
-      <rect x="5" y="4" width="2" height="1" fill="#d8d3c0" />
-    </svg>
-  );
-}
 
 /** 의사 아바타 위 피로 막대(타일 폭). 0이어도 트랙을 남긴다 — 눈금이 있어야 "아직 0"이 읽힌다. */
 function FatigueBar({ fatigue }: { fatigue: number }) {
@@ -341,17 +370,61 @@ export default function TileMap({
       [0, -1], [1, 0], [0, 1], [-1, 0],
       [-1, -1], [1, -1], [1, 1], [-1, 1],
     ] as const;
-    const neighborStyle = (t: number) => {
+    /** 4방만 — AO는 **맞닿은 벽**만 센다(대각 벽은 그늘을 안 만든다). 위 배열의 앞 4칸이 곧 그것이라
+     *  따로 적지 않는다: 두 곳에 적으면 한쪽 순서를 고치는 날 조용히 갈린다. */
+    const SIDES = AROUND.slice(0, 4);
+    /**
+     * 타일마다의 조명·AO 계수 — **한 숫자가 조명과 앰비언트 오클루전을 함께 나른다.**
+     *
+     * 방 중심에 광원 하나를 놓고(천장등) 거리에 따라 떨어뜨린 뒤, 벽에 닿은 변마다 한 단 어둡게 한다.
+     * 별도 오버레이 레이어(`mix-blend-mode`)를 쓰지 않는 것이 계약이다: 오버레이는 폰 위의 판독용
+     * 표시(선택 링·피로 막대·글리프)까지 같이 눌러 어둡게 만들고, z 순서 싸움이 붙는다. 계수를
+     * 색에 미리 곱해 두면 DOM이 한 겹도 안 늘고 HUD는 손댈 필요가 없다.
+     *
+     * 폰은 계수를 안 받는다 — 사람이 시선을 먼저 받아야 한다는 이 파일의 기존 규칙(ROOM_STYLE 주석)이
+     * 그대로 이유다: 어두운 구석의 환자가 배경에 묻히면 "몇 명이 밀려 있나"를 못 읽는다.
+     */
+    const factorOf = new Map<number, number>();
+    for (const r of regions) {
+      // 중심 — 타일 좌표 평균. 오목한 방이면 중심이 벽 위에 앉을 수 있지만 쓰는 것은 거리뿐이라 무해하다.
+      let sx = 0, sy = 0;
+      for (const t of r.tiles) { sx += t % GRID_W; sy += Math.floor(t / GRID_W); }
+      const n = r.tiles.size;
+      const cx = sx / n, cy = sy / n;
+      // 반경 — 면적에서 파생. 큰 방은 천장등이 여러 개인 셈이라 광원 하나를 넓게 퍼뜨린다.
+      const rad = Math.max(2.2, Math.sqrt(n) * 0.75);
+      for (const t of r.tiles) {
+        const x = t % GRID_W, y = Math.floor(t / GRID_W);
+        const pool = Math.max(0, 1 - Math.hypot(x - cx, y - cy) / rad);
+        let sides = 0;
+        for (const [dx, dy] of SIDES) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) continue;
+          if (walls.has(ny * GRID_W + nx)) sides++;
+        }
+        // 체커 — 장판 이음매의 홀짝. 재질감을 만드는 가장 싼 수단이고 계수 안에 얹혀 DOM이 안 는다.
+        const checker = (x + y) & 1 ? SHADE.checker : -SHADE.checker;
+        const f = SHADE.base + SHADE.pool * pool - SHADE.ao * sides + checker;
+        factorOf.set(t, Math.max(SHADE.min, Math.min(SHADE.max, f)));
+      }
+    }
+
+    /** 이 타일이 빌려 쓸 이웃의 **색과 계수** — 계수를 함께 넘겨야 벽이 자기 방의 밝기를 따라간다
+     *  (벽마다 같은 값을 주면 먼 구석의 벽이 광원 아래 벽과 똑같이 밝아 깊이가 사라진다). */
+    const neighborOf = (t: number): { style: { floor: string; wall: string }; factor: number } => {
       const x = t % GRID_W;
       const y = (t - x) / GRID_W;
+      let fallback: number | null = null;
       for (const [dx, dy] of AROUND) {
         const nx = x + dx;
         const ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) continue;
-        const r = regionAt.get(ny * GRID_W + nx);
-        if (r?.type) return ROOM_STYLE[r.type];
+        const nt = ny * GRID_W + nx;
+        const r = regionAt.get(nt);
+        if (r?.type) return { style: ROOM_STYLE[r.type], factor: factorOf.get(nt) ?? SHADE.base };
+        if (r && fallback === null) fallback = factorOf.get(nt) ?? SHADE.base;
       }
-      return NEUTRAL_STYLE;
+      return { style: NEUTRAL_STYLE, factor: fallback ?? SHADE.base };
     };
     const at = (t: number) => ({ left: (t % GRID_W) * TILE, top: Math.floor(t / GRID_W) * TILE });
 
@@ -367,6 +440,7 @@ export default function TileMap({
       const tint =
         regionOverlay && r.type === "EXAM" && r.dept ? `${DEPT_COLOR[r.dept]}${DEPT_TINT_ALPHA}` : null;
       for (const t of r.tiles) {
+        const f = factorOf.get(t) ?? SHADE.base;
         nodes.push(
           <div
             key={`f${t}`}
@@ -375,9 +449,11 @@ export default function TileMap({
               ...at(t),
               width: TILE,
               height: TILE,
-              backgroundColor: style.floor,
+              backgroundColor: shade(style.floor, f),
               // 과 색은 배경 **위에** 한 겹 더 — 단색 그라디언트라 오버레이 div가 필요 없다.
               backgroundImage: tint ? `linear-gradient(${tint}, ${tint})` : undefined,
+              // 줄눈 — 오른·아래 한 픽셀. 격자선이 부지에만 깔려 있어 방 안은 이음매가 없었다.
+              boxShadow: "inset -1px -1px 0 rgba(10,8,18,0.13)",
             }}
             aria-hidden
           />,
@@ -386,19 +462,35 @@ export default function TileMap({
     }
     // ② 벽 — 타일 한 칸을 통째로 채운다(옛 렌더의 inset 그림자와 같은 두께). 얇은 선으로 그리면
     //    안쪽이 실제보다 넓어 보여, 왜 여기 못 서는지 설명이 안 된다.
+    //
+    //    **한 칸 안에서 위→아래로 캡·몸통·밑동 세 단**을 준다. 탑다운에서 두께를 만드는 값싼 수단이고
+    //    (캡 = 벽의 윗면, 몸통 = 벽면, 밑동 = 바닥과 만나는 그늘), 남쪽이 트인 벽은 아래 칸으로
+    //    낙영까지 떨군다. 낙영을 **남쪽이 벽이 아닐 때만** 그리는 것이 계약이다: 벽줄 안쪽에 그리면
+    //    다음 벽이 덮을지 말지가 Set의 순회 순서(건설 순서)에 달려 화면이 판마다 달라진다.
     for (const t of walls) {
+      const { style, factor } = neighborOf(t);
+      const cap = shade(style.wall, Math.min(SHADE.max, factor + 0.16));
+      const body = shade(style.wall, factor);
+      const foot = shade(style.wall, factor * 0.78);
+      const southOpen = !walls.has(t + GRID_W);
       nodes.push(
         <div
           key={`w${t}`}
           className="pointer-events-none absolute"
-          style={{ ...at(t), width: TILE, height: TILE, backgroundColor: neighborStyle(t).wall }}
+          style={{
+            ...at(t),
+            width: TILE,
+            height: TILE,
+            backgroundImage: `linear-gradient(180deg, ${cap} 0 ${CAP_PX}px, ${body} ${CAP_PX}px ${TILE - 3}px, ${foot} ${TILE - 3}px)`,
+            boxShadow: southOpen ? "0 3px 5px -1px rgba(8,6,16,0.55)" : undefined,
+          }}
           aria-hidden
         />,
       );
     }
     // ③ 문 — 벽줄을 끊는 바닥 칸. 통행이 전부 여기를 지나므로 벽과 확실히 달라 보여야 한다.
     for (const t of doors) {
-      const style = neighborStyle(t);
+      const { style, factor } = neighborOf(t);
       nodes.push(
         <div
           key={`d${t}`}
@@ -407,8 +499,9 @@ export default function TileMap({
             ...at(t),
             width: TILE,
             height: TILE,
-            backgroundColor: style.floor,
-            boxShadow: `inset 0 -2px 0 ${style.wall}`,
+            backgroundColor: shade(style.floor, factor),
+            // 문틀 — 아래에 벽색 두 줄. 위쪽 그늘은 문이 벽줄에 파인 자리임을 말한다.
+            boxShadow: `inset 0 -2px 0 ${shade(style.wall, factor)}, inset 0 3px 4px -2px rgba(8,6,16,0.6)`,
           }}
           aria-hidden
         />,
@@ -605,6 +698,23 @@ export default function TileMap({
               zIndex: 2,
             }}
           >
+            {/* 접지 그림자 — **스프라이트보다 먼저** 그려야 사람 밑에 깔린다. 이 한 겹이 없으면
+                아바타가 바닥에 붙지 않고 위에 얹힌 스티커로 보인다(방향은 집기 낙영과 같은 남동쪽).
+                앉은 폰은 SEAT_LIFT만큼 들려 있으므로 그림자도 같이 올라가는 게 맞다 — 의자 위에
+                앉은 사람의 그림자는 의자에 진다.
+                ⚠️ **누운 폰은 그림자가 없다** — 바닥에 서 있지 않으므로 접지가 없고(침대가 자기
+                그림자를 이미 진다), 남겨 두면 침대 발치에 원인 없는 얼룩으로 남는다. */}
+            <div
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2"
+              hidden={lying}
+              style={{
+                bottom: 0,
+                width: TILE * 0.62,
+                height: TILE * 0.26,
+                background: "radial-gradient(closest-side, rgba(8,6,16,0.5), rgba(8,6,16,0))",
+              }}
+              aria-hidden
+            />
             {/* 선택 링 — 지금 카드가 보고 있는 폰. **네모**인 것이 계약이다: 응급의 둥근 링과
                 겹쳐 서도 둘이 구별돼야 한다(응급 표시는 손대지 않는다 — 겹치면 두 링이 다 보인다). */}
             {p.id === selectedId && (
