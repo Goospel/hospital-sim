@@ -92,6 +92,12 @@ ls -d ~/.claude/plugins/cache/*/*/*/skills/*/ | sed 's|.*/skills/||; s|/$||' | s
 - **과거 항목**은 이미 붙은 `(PR #NN)`을 그대로 둔다(역사적 기록·정확함, stale 아님). 이 규칙 도입(2026-07-18) 이후 항목만 생략 — 새 항목에 번호가 없다고 '미머지'로 오독하지 않도록 **이 절이 그 출처**다.
 - **승격 후보**: 이 stale은 squash 머지 + 브랜치 PR 흐름을 쓰는 **모든 프로젝트에 일반적**이라 글로벌 `~/.claude/CLAUDE.md`(「작업 추적 3종」의 changeLog 줄) 승격 대상이다. 글로벌은 별도 git 레포(main 브랜치·block-main-edit 훅으로 보호)라 그 레포에서 별도 브랜치·머지가 필요해, 이 프로젝트 override를 **1단계**로 둔다(프로젝트 → 글로벌 → 훅 파이프라인).
 
+## 📋 구조적 문제 분류표 갱신 — 작업 완료 세트에 포함 (2026-07-30 사용자 지정)
+
+**규칙**: 작업 완료(= PR) 시 changeLog와 함께 [docs/concept/structural-problems-checklist.md](docs/concept/structural-problems-checklist.md)를 확인한다 — 이번 작업이 어느 항목(A1~D3)의 반영 상태(◎○△✕)를 바꿨으면 **해당 행과 집계 절을 함께 고친다.** 바꾼 항목이 없으면 그냥 넘어간다. 갱신 규약 상세는 그 문서 하단이 단일 출처다(여기 다시 적지 않는다).
+
+- **보강 훅(warn)**: `.claude/hookify/warn-checklist-on-changelog.md` — changeLog.md를 편집할 때마다 비차단 경고로 이 확인을 상기시킨다. 소프트 규칙이 조용히 죽는 전례(「AI 활용 추적」의 교훈)에 대한 이중 벨트.
+
 ## 🧹 SDD·서브에이전트 작업 종료 시 trap 스윕 (승격 후보)
 
 **규칙**: subagent-driven-development(또는 서브에이전트·리뷰어가 디버깅을 대신한 모든 작업)를 `finishing-a-development-branch`로 마무리하기 **직전**, 다음 스윕을 한 번 **명시적으로** 돈다 — *"이번 브랜치에서 1분+ 근인 디버깅이 있었나 — 내가 아니라 서브에이전트/리뷰어가 잡은 것 포함 — 있으면 `troubleshooting/T-###` 신설."* changeLog·plan 갱신 세트에 이 한 줄을 붙인다.
