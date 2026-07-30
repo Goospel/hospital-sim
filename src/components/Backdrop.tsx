@@ -388,7 +388,19 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     for (let x = 2; x < EW; x += 6) pxf(c, x * T + 2, (SY + 4) * T + 2, 6, 6, P.shrub); // 분리대 관목
     roadH(c, 0, SY + 5, EW, 1);                    // 하행 차로
     sidewalkH(c, 0, SY + 7, EW);                   // 딱 화면 끝
-    roof(c, 0, 0, 8, SY - 14, 115); roof(c, LX + LW + 4, 0, EW - LX - LW - 4, 20, 116);
+    /* 북쪽 — **대로 뒤 이면 블록**. 이 띠가 없으면 부지 위 8줄(y 0~7)이 통째로 빈 포장면이라
+       대로변이 "허허벌판에 도로 하나"로 읽힌다(실측으로 잡은 결함). 대로와 평행한 뒷길을 하나
+       깔고 그 너머에 상가 줄을 세우면, 대로가 블록의 *가장자리*라는 것이 화면에 드러난다. */
+    roof(c, 0, 0, 17, 3, 117); roof(c, 19, 0, 15, 3, 118);
+    roof(c, 36, 0, 19, 3, 119); roof(c, 57, 0, EW - 57, 3, 120);
+    sidewalkH(c, 0, 3, EW);
+    laneH(c, 0, 4, EW);                            // 이면도로 — 중앙선이 없어 대로와 구별된다
+    sidewalkH(c, 0, 6, EW);
+    car(c, 14, 4, P.vehicleGreen, false); car(c, 48, 4, P.vehicleBlue, false);
+    // 좌우 — 대로변 필지. 위 띠와 겹치지 않게 부지 높이(y=LY)에서 시작한다.
+    roof(c, 0, LY, 9, 15, 115); roof(c, 0, LY + 17, 9, 14, 131);
+    roof(c, LX + LW + 3, LY, EW - LX - LW - 3, 13, 116);
+    roof(c, LX + LW + 3, LY + 15, EW - LX - LW - 3, 16, 132);
     crosswalk(c, LX + 23, SY + 2, 2, 5);
     car(c, 10, SY + 2, P.vehicleBlue, false); car(c, 40, SY + 2, P.vehicleRed, false);
     car(c, 26, SY + 5, P.vehicleGreen, false); car(c, 58, SY + 5, P.vehicleBlue, false);
