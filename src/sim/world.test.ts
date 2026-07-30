@@ -80,15 +80,18 @@ describe('isWalkable', () => {
     expect(isWalkable(w, 6, 6)).toBe(false)
     expect(isWalkable(w, 6, 7)).toBe(true)
   })
-  it('**의자만은 통행 가능하다** — 그 칸에 올라서는 것이 곧 "앉는다"다', () => {
+  it('**의자·침대는 통행 가능하다** — 그 칸에 올라서는 것이 곧 "앉는다·눕는다"다', () => {
     // 의자를 막으면 폰은 영영 의자 **옆**에 설 수밖에 없고, 화면에서는 의자가 늘 비어 보인다
     // (사용자 보고: *"의자를 추가해도 캐릭터들이 의자를 사용 안 해"*). 앉음을 표현할 유일한
     // 자리가 타일이므로, 막힘을 푸는 것이 곧 기능이다.
-    const w = { ...createWorld(1), furniture: [{ kind: 'CHAIR' as const, x: 6, y: 6 }] }
-    expect(isWalkable(w, 6, 6)).toBe(true)
+    // 침대가 같은 줄에 들어온 것도 **같은 보고**다: *"응급 환자가 침대에 눕지 않고 옆에 서 있다"*.
+    for (const kind of ['CHAIR', 'BED'] as const) {
+      const w = { ...createWorld(1), furniture: [{ kind, x: 6, y: 6 }] }
+      expect(isWalkable(w, 6, 6)).toBe(true)
+    }
   })
-  it('의자 외 가구는 그대로 막는다 — 침대·카운터는 옆에 선다', () => {
-    for (const kind of ['DESK', 'BED', 'COUNTER'] as const) {
+  it('그 밖의 가구는 그대로 막는다 — 책상·카운터는 옆에 선다', () => {
+    for (const kind of ['DESK', 'COUNTER'] as const) {
       const w = { ...createWorld(1), furniture: [{ kind, x: 6, y: 6 }] }
       expect(isWalkable(w, 6, 6)).toBe(false)
     }

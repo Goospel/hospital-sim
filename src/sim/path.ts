@@ -22,6 +22,11 @@ export const isBlockedTile = (blocked: Set<number>, p: Pt): boolean =>
 const walkableAt = (blocked: Set<number>, x: number, y: number): boolean =>
   x >= 0 && y >= 0 && x < GRID_W && y < GRID_H && !blocked.has(y * GRID_W + x)
 
+/** 격자 **안**이면서 막히지 않은 칸 — 경계 검사까지 붙은 `isBlockedTile`이다.
+ *  호출부가 경계 검사를 손으로 붙이면 부지 가장자리에서만 틀리는 판정이 조용히 생긴다
+ *  (그 자리는 테스트 픽스처가 잘 안 가는 구석이다). */
+export const isFreeTile = (blocked: Set<number>, p: Pt): boolean => walkableAt(blocked, p.x, p.y)
+
 const DIRS: Pt[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
 const key = (p: Pt) => `${p.x},${p.y}`
 

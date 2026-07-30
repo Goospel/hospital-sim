@@ -14,7 +14,7 @@ import { emergencySpec, wardBeds, type EmergencyTurnAway, type TurnAwayReason } 
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam, starvedSlowFactor } from '../sim/needs'
 import { buildBlockedSet } from '../sim/path'
-import { ARRIVAL_DEPT_MIX, cashierSpots, hasCashier, unservedDepts } from '../sim/patientFlow'
+import { ARRIVAL_DEPT_MIX, cashierSlots, hasCashier, unservedDepts } from '../sim/patientFlow'
 import { nurseGradeOf, resigningNurses } from '../sim/nurse'
 import { NURSE_WEEKLY_COST_MANWON, type NurseGrade } from '../sim/week'
 import { computeRegions, type Region } from '../sim/regions'
@@ -134,7 +134,7 @@ export function unpaidText(manwon: number): string {
 export function unpaidCauseText(w: SimWorld): string {
   // 빈 `blocked`를 넘겨 **설치된** 카운터를 센다(기본값은 벽·가구만 담아 결과가 같지만,
   // 여기서 묻는 것은 "지금 갈 수 있나"가 아니라 "지었나"라 의도를 인자로 적어 둔다).
-  if (cashierSpots(w, new Set()).length === 0) return '접수처에 수납 카운터가 없습니다'
+  if (cashierSlots(w, new Set()).length === 0) return '접수처에 수납 카운터가 없습니다'
 
   const { count, required } = nurseGradeOf(w)
   if (count === 0) {
