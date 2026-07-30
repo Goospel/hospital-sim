@@ -701,9 +701,12 @@ export default function TileMap({
             {/* 접지 그림자 — **스프라이트보다 먼저** 그려야 사람 밑에 깔린다. 이 한 겹이 없으면
                 아바타가 바닥에 붙지 않고 위에 얹힌 스티커로 보인다(방향은 집기 낙영과 같은 남동쪽).
                 앉은 폰은 SEAT_LIFT만큼 들려 있으므로 그림자도 같이 올라가는 게 맞다 — 의자 위에
-                앉은 사람의 그림자는 의자에 진다. */}
+                앉은 사람의 그림자는 의자에 진다.
+                ⚠️ **누운 폰은 그림자가 없다** — 바닥에 서 있지 않으므로 접지가 없고(침대가 자기
+                그림자를 이미 진다), 남겨 두면 침대 발치에 원인 없는 얼룩으로 남는다. */}
             <div
               className="pointer-events-none absolute left-1/2 -translate-x-1/2"
+              hidden={lying}
               style={{
                 bottom: 0,
                 width: TILE * 0.62,
