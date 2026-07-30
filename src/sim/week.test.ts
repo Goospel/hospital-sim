@@ -397,23 +397,27 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
   }
 
   /**
-   * ⚠️ **부호를 재는 자리가 과별 줄로 내려왔다**(지역 슬라이스 2026-07-30).
+   * ⚠️ **미용 쪽 부호는 임대료만 되더해 잰다**(지역 슬라이스 2026-07-30).
    *
-   * 옛 단언은 병원 **총** 순익이 양수인지를 물었다. 그건 임대료가 없던 동안에만 "미용은
-   * 흑자 후보다"와 같은 말이었다 — 지금은 총 순익에 **지역세**(임대료)가 섞여, URBAN 표준
-   * 병원은 미용 단독이어도 총액이 음수다(설계 §5의 URBAN ≈ −1,100이 그 예측이다).
+   * 옛 단언은 병원 **총** 순익이 양수인지를 물었다. 지금은 총 순익에 **지역세**(임대료)가
+   * 섞여 URBAN 표준 병원은 미용 단독이어도 총액이 음수다(설계 §5의 URBAN ≈ −1,100).
+   * I-B1이 잠그려는 것은 **카탈로그의 경제**이지 입지의 비용이 아니라, 임대료 한 항목만
+   * 되더해 옛 질문을 그대로 복원한다.
    *
-   * I-B1이 잠그려는 것은 **카탈로그의 과별 경제**이지 입지의 비용이 아니다. 그래서 부호는
-   * `byDept` 줄에서 재고(임대료는 과가 없어 그 줄에 없다), 총액에서는 **대소만** 잰다 —
-   * 임대료는 두 병원에 똑같이 붙으므로 그 비교는 여전히 과의 비교다.
-   * (지역이 총 장부를 어디까지 밀어내는지는 §10 밸런스 프로브의 관심사다.)
+   * ⚠️ **`byDept` 줄로 내려가지 않는다.** 그러면 "미용 수익 > 미용 의사 주급"으로 약해져
+   * 간호 주급·등급 가감산이 부호 계약에서 통째로 빠지고, **"미용만 굴리는 병원은 흑자다"**
+   * 라는 병원 층위의 주장이 스위트 어디에도 안 남는다(실측 여유는 넉넉하다 — 시드 3·5·9에서
+   * 임대료를 되더한 순익이 +850 / +860 / +1,090).
+   *
+   * 순환기 쪽은 반대로 `byDept`가 **더 센** 단언이다: 그 줄이 음수면 임대료·간호비를 더한
+   * 총액은 반드시 음수다. 그래서 거기는 과별 줄에서 잰다.
    */
   it('ⓐ 미용 1명 병원의 주 순익 > 순환기 1명 병원의 주 순익', () => {
     const aesthetics = runWeek('AESTHETICS')
     const cardiology = runWeek('CARDIOLOGY')
     expect(aesthetics.netManwon).toBeGreaterThan(cardiology.netManwon)
     // 부호까지 못박는다 — 대소만 재면 둘 다 흑자여도(혹은 둘 다 적자여도) 통과한다.
-    expect(aesthetics.byDept.AESTHETICS!.netManwon).toBeGreaterThan(0)
+    expect(aesthetics.netManwon + aesthetics.rentManwon).toBeGreaterThan(0)
     expect(cardiology.byDept.CARDIOLOGY!.netManwon).toBeLessThan(0)
     expect(aesthetics.examsDone).toBeGreaterThan(0) // 계측기가 빈 병원으로 헛돌지 않았다
   })
@@ -434,8 +438,8 @@ describe('I-B1 부호 불변식 — 필수과는 장부를 이기지 못한다',
       const a = runWeek('AESTHETICS', seed)
       const c = runWeek('CARDIOLOGY', seed)
       expect(a.netManwon, `시드 ${seed}`).toBeGreaterThan(c.netManwon)
-      // 부호는 과별 줄에서 잰다(ⓐ 주석 — 총액에는 지역세인 임대료가 섞인다).
-      expect(a.byDept.AESTHETICS!.netManwon, `시드 ${seed}`).toBeGreaterThan(0)
+      // 부호는 ⓐ와 **같은 자리**에서 잰다 — 미용은 임대료를 되더한 총액, 순환기는 과별 줄.
+      expect(a.netManwon + a.rentManwon, `시드 ${seed}`).toBeGreaterThan(0)
       expect(c.byDept.CARDIOLOGY!.netManwon, `시드 ${seed}`).toBeLessThanOrEqual(0)
     }
   })
