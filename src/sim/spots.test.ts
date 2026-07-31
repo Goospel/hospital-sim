@@ -8,21 +8,20 @@ import { createWorld, tileIndex, type Furniture, type SimWorld, type ZonePaint }
 import { computeRegions } from './regions'
 import { examSlots, furnitureSpots, standSpot, occupySpot } from './spots'
 import { buildBlockedSet } from './path'
+import { rectPts } from './testHelpers'
 
-/** 사각 테두리 벽 — regions.test.ts와 같은 도구(공식을 테스트마다 다시 쓰지 않는다) */
+/** 사각 테두리 벽 — 열거는 testHelpers.rectPts 하나에서 온다(공식을 다시 쓰지 않는다) */
 function rectWalls(x: number, y: number, w: number, h: number): number[] {
-  const out: number[] = []
-  for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) {
-    if (tx === x || tx === x + w - 1 || ty === y || ty === y + h - 1) out.push(tileIndex(tx, ty))
-  }
-  return out
+  return rectPts(x, y, w, h)
+    .filter(t => t.x === x || t.x === x + w - 1 || t.y === y || t.y === y + h - 1)
+    .map(t => tileIndex(t.x, t.y))
 }
 
 /** 사각형 안쪽을 그 용도로 칠한다 — 영역은 이제 칠에서 파생한다(설계 2026-07-31). */
 function paintRect(
   zones: Map<number, ZonePaint>, x: number, y: number, w: number, h: number, p: ZonePaint,
 ): Map<number, ZonePaint> {
-  for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) zones.set(tileIndex(tx, ty), p)
+  for (const t of rectPts(x, y, w, h)) zones.set(tileIndex(t.x, t.y), p)
   return zones
 }
 

@@ -74,7 +74,17 @@ export function wallTiles(r: Rect): Array<{ x: number; y: number }> {
   return borderTiles(r).filter(t => !(t.x === door.x && t.y === door.y))
 }
 
-/** 테두리 타일 전부(문 자리 포함) — 벽 도구에 그대로 넘기는 입력이다. */
+/** 사각형 안의 모든 좌표(행 우선) — 드래그가 도구에 넘기는 입력의 모양이다.
+ *  테스트 파일마다 다시 쓰던 네 벌을 여기로 접었다(공식이 갈리면 좌표가 조용히 어긋난다). */
+export function rectPts(x: number, y: number, w: number, h: number): Array<{ x: number; y: number }> {
+  const out: Array<{ x: number; y: number }> = []
+  for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) out.push({ x: tx, y: ty })
+  return out
+}
+
+/** 테두리 타일 전부(문 자리 포함) — 벽 도구에 그대로 넘기는 입력이다.
+ *  ⚠️ `rectPts`로 파생하지 않는다: 이쪽은 **열 우선** 순회이고 그 순서가 `buildWalls`에 넘어가
+ *  결과의 `tiles` 순서가 된다. 열거 공식은 같아도 순서가 계약이라 접으면 관측이 달라진다. */
 function borderTiles(r: Rect): Array<{ x: number; y: number }> {
   const out: Array<{ x: number; y: number }> = []
   for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y; y < r.y + r.h; y++) {
@@ -116,7 +126,8 @@ function autoFurniture(room: RoomSpec): Furniture[] {
 }
 
 /**
- * 사각 방 하나 = 벽 테두리 + 문 1 + 용도 앵커 + 자동 가구. 도구 네 개를 순서대로 부른다.
+ * 사각 방 하나 = 벽 테두리 + 문 1 + **사각형 전체 칠** + 자동 가구. 도구 네 개를 순서대로 부른다.
+ * (칠은 사각형 전부를 넘기고 벽·문 타일은 paintZone이 건너뛴다 — 남는 것이 곧 내부다.)
  *
  * 옛 검증(최소 크기·겹침·부지 경계)은 **없다** — 그 규칙들은 프로덕션에서 사라졌고(자유 건설),
  * 픽스처는 유효한 좌표를 준다. 남은 실패는 도구가 내는 것뿐이다(자금 부족 등).
@@ -133,10 +144,7 @@ export function placeRoom(world: SimWorld, spec: RoomSpec): PlaceResult {
   if (!opened.ok) return opened
   // 사각형 **전체**를 칠한다 — 벽·문 타일은 paintZone이 알아서 건너뛰므로(계약) 내부만 남는다.
   // 옛 앵커(문 위 한 칸)와 결과가 같아야 한다: 밀폐 방의 내부 성분 = 사각형에서 벽·문을 뺀 것.
-  const all: Array<{ x: number; y: number }> = []
-  for (let yy = spec.y; yy < spec.y + spec.h; yy++)
-    for (let xx = spec.x; xx < spec.x + spec.w; xx++) all.push({ x: xx, y: yy })
-  const named = paintZone(opened.world, all, spec.type, dept)
+  const named = paintZone(opened.world, rectPts(spec.x, spec.y, spec.w, spec.h), spec.type, dept)
   if (!named.ok) return named
 
   let w = named.world

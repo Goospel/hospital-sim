@@ -4,12 +4,13 @@
 // 것이고 영역의 것이 아니다 — 접수처에 문을 달 필요가 없어진 이유가 이 파일에 있다.
 import { describe, expect, it } from 'vitest'
 import { computeRegions, computeRegionsUncached } from './regions'
-import { createWorld, tileIndex, type SimWorld, type ZonePaint } from './world'
+import { createWorld, tileIndex, GRID_W, type SimWorld, type ZonePaint } from './world'
+import { rectPts } from './testHelpers'
 
 /** 사각형을 칠한 세계 — 테스트 전용 최소 픽스처(불변 교체 계약 준수). */
 function paint(w: SimWorld, x: number, y: number, wd: number, ht: number, p: ZonePaint): SimWorld {
   const zones = new Map(w.zones)
-  for (let yy = y; yy < y + ht; yy++) for (let xx = x; xx < x + wd; xx++) zones.set(tileIndex(xx, yy), p)
+  for (const t of rectPts(x, y, wd, ht)) zones.set(tileIndex(t.x, t.y), p)
   return { ...w, zones }
 }
 
@@ -68,6 +69,17 @@ describe('computeRegions — 칠한 타일의 (type·dept) 성분', () => {
     const rs = computeRegions(w)
     expect(rs).toHaveLength(2)
     expect(rs.map(r => r.type).sort()).toEqual(['RECEPTION', 'WAITING'])
+  })
+
+  it('행 끝과 다음 행 머리는 이어지지 않는다 — 인덱스 인접 ≠ 격자 인접', () => {
+    // 부지 오른쪽 끝과 왼쪽 끝은 타일 **인덱스**로는 1 차이라, x 범위 가드를 빼면 flood fill이
+    // 행을 넘어 붙는다. 옛 정의에서는 가장자리 성분을 통째로 버려 이 버그가 가려졌지만,
+    // 새 정의에서는 가장자리 칠이 정식 타일이라 실패 모드가 새로 열렸다.
+    const zones = new Map([
+      [tileIndex(GRID_W - 1, 5), { type: 'WARD' as const }],
+      [tileIndex(0, 6), { type: 'WARD' as const }],
+    ])
+    expect(computeRegions({ ...fresh(), zones })).toHaveLength(2)
   })
 
   it('대각선만 닿은 조각은 이어지지 않는다 (4방 연결)', () => {

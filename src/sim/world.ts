@@ -229,12 +229,19 @@ export interface SimWorld {
   /** 벽 타일(tileIndex) — **통행 판정의 단일 출처**다. 방 사각형에서 유도하지 않는다:
    *  자유 건설에서는 벽이 방에 속하지 않고 홀로 선다(건설 도구는 build.ts). */
   walls: ReadonlySet<number>
-  /** 문 타일 — **통행 가능하되 영역 경계다**(벽 집합에는 없다). 이 이중성이 문의 정의다:
-   *  막으면 못 드나들고, 경계가 아니면 두 방이 하나로 붙는다. */
+  /** 문 타일 — **통행 가능하되 벽 집합에는 없다**. 이 이중성이 문의 정의다.
+   *  문이 영역을 가르는 것은 이제 **간접적**이다: 영역은 칠(zones)에서 파생하는데 `paintZone`이
+   *  문 타일을 칠하지 않으므로, 문 자리에 칠의 구멍이 남아 성분이 그 자리에서 끊긴다.
+   *  즉 문은 "경계로 선언된 것"이 아니라 "칠할 수 없는 칸"이다 — 벽을 헐어도 영역은 안 바뀐다. */
   doors: ReadonlySet<number>
   /** 칠한 타일 → 용도. **불변 취급** — 편집은 새 Map으로 교체한다(walls와 같은 계약).
-   *  computeRegions memo와 TileMap 지형 memo가 이 참조를 키로 쓴다. */
-  zones: ReadonlyMap<number, ZonePaint>
+   *  computeRegions memo와 TileMap 지형 memo가 이 참조를 키로 쓴다.
+   *
+   *  ⚠️ 값에 `Readonly`가 붙은 것이 계약의 일부다. `ReadonlyMap`은 `set`만 막고 **꺼낸 값의
+   *  필드 쓰기는 막지 않는데**, `paintZone`이 한 호출의 모든 타일에 paint 객체 **하나**를
+   *  공유하므로 `w.zones.get(i)!.type = ...` 한 줄이 그 칠 전체를 갈아 치우면서 Map 참조는
+   *  그대로 둔다 — memo가 영영 적중해 조용히 낡는다. 이 한 겹이 그 경로를 tsc로 막는다. */
+  zones: ReadonlyMap<number, Readonly<ZonePaint>>
   furniture: Furniture[]
   pawns: Pawn[]
   nextId: number

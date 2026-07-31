@@ -3,7 +3,7 @@
 // 잊는 자리가 생긴다. 파생이면 이어 칠한 조각은 저절로 하나가 되고 가운데를 지우면 저절로
 // 둘이 된다. 벽·문은 여기 등장하지 않는다 — 밀폐는 더 이상 영역의 조건이 아니다(설계
 // 2026-07-31-free-zone-designation). 문에 기대던 판정(체크리스트의 밀실 경고)은 도달성으로
-// 대체됐다(simHud.setupSteps).
+// 대체된다(simHud.setupSteps — Task 3 예정. 지금 simHud는 아직 옛 코드다).
 import { GRID_W, GRID_H, tileIndex, type RoomType, type SimWorld } from './world'
 import type { SimDeptKey } from './dept'
 
@@ -19,10 +19,20 @@ export interface Region {
 
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const
 
-/** 마지막 한 번의 결과 — 키는 `zones` **참조 하나**다. zones는 SimWorld 계약상 편집 때
- *  새 Map으로 교체되므로, 값이 달라지는 유일한 경로가 곧 키가 달라지는 경로다(옛 memo와
- *  같은 논리: 캐시 없이 매 틱 계산하면 주 종주 4,200틱에서 1초가 새는 것이 실측이었다 —
- *  근거 서사는 git history의 옛 regions.ts 주석에 있다). */
+/**
+ * 마지막 한 번의 결과 — 키는 `zones` **참조 하나**다. zones는 SimWorld 계약상 편집 때 새 Map으로
+ * 교체되므로, 값이 달라지는 유일한 경로가 곧 키가 달라지는 경로다.
+ *
+ * 캐시가 낭비를 지운다는 근거는 **이 파생의 실측**이다(옛 알고리즘 수치는 빌려 쓰지 않는다):
+ * 방 5개(칠 110타일)에서 한 번이 0.043ms라 주 종주 4,200틱이면 179ms이고, 부지를 전면으로 칠한
+ * 최악(1,536타일)은 한 번 0.57ms · 4,200틱에서 **2.39초**다. memo를 끄면 sim 스위트가
+ * 28.9s → 38.8s(**+34%**)가 된다. 건설에서만 바뀌는 값을 틱마다 다시 세는 것이 그 비용이다.
+ *
+ * ⚠️ 제자리 수정을 하면 이 캐시는 조용히 낡는다 — 키가 **내용이 아니라 참조**이기 때문이다.
+ * 이제 그 경로는 **둘 다 타입으로 막혀 있다**: `ReadonlyMap`이 `set`·`delete`를 막고,
+ * 값의 `Readonly<ZonePaint>`가 꺼낸 칠의 필드 쓰기를 막는다(후자가 없으면 paint 객체를 공유하는
+ * paintZone 탓에 필드 하나 쓰기가 그 칠 전체를 바꾼다 — world.ts의 zones 주석 참조).
+ */
 let memo: { zones: SimWorld['zones']; out: Region[] } | null = null
 
 export function computeRegions(world: Pick<SimWorld, 'zones'>): Region[] {

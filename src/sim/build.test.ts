@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createWorld, isWalkable, tileIndex, GRID_W, type FurnitureKind, type RoomType, type SimWorld } from './world'
 import { BUILD_COST, refundOf, buildWalls, placeDoor, placeFurniture, paintZone, eraseZone, demolish } from './build'
 import { computeRegions } from './regions'
-import { placeRoom, doorTile, FURNITURE_OF } from './testHelpers'
+import { placeRoom, doorTile, rectPts, FURNITURE_OF } from './testHelpers'
 
 const KINDS: FurnitureKind[] = ['DESK', 'CHAIR', 'BED', 'COUNTER']
 
@@ -189,13 +189,42 @@ describe('placeFurniture — 가구 4종', () => {
   })
 })
 
+describe('selectTargets — 세 도구가 공유하는 대상 선정 규칙', () => {
+  // 중복 제거를 skipped로 세면 화면의 "N칸 건너뜀"이 실제와 무관해진다: 드래그 사각형은
+  // 모서리를 겹쳐 넘기므로 아무것도 안 막힌 드래그에서도 숫자가 붙는다. 골격을 한 곳으로
+  // 접기 전에는 이 규칙을 잠그는 테스트가 없어, 세 도구 어디서든 조용히 갈릴 수 있었다.
+  it('같은 타일을 두 번 넘겨도 건너뜀으로 세지 않는다 — 설치·칠하기·해제 모두', () => {
+    const dup = pts([4, 4], [4, 4], [4, 4])
+    const wall = buildWalls(createWorld(1), dup)
+    expect(wall.ok).toBe(true)
+    if (!wall.ok) return
+    expect(wall.tiles).toEqual([idx(4, 4)])
+    expect(wall.skipped).toBe(0)
+    expect(wall.deltaManwon).toBe(-BUILD_COST.WALL) // 한 칸 값만 치른다
+
+    const painted = paintZone(createWorld(1), dup, 'WAITING')
+    expect(painted.ok).toBe(true)
+    if (!painted.ok) return
+    expect(painted.tiles).toEqual([idx(4, 4)])
+    expect(painted.skipped).toBe(0)
+
+    const erased = eraseZone(painted.world, dup)
+    expect(erased.ok).toBe(true)
+    if (!erased.ok) return
+    expect(erased.tiles).toEqual([idx(4, 4)])
+    expect(erased.skipped).toBe(0)
+  })
+
+  it('부지 밖은 건너뜀으로 센다 — 중복과 달리 실제로 막힌 칸이다', () => {
+    const r = paintZone(createWorld(1), [{ x: -1, y: 5 }, { x: 4, y: 4 }], 'WAITING')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.tiles).toEqual([idx(4, 4)])
+    expect(r.skipped).toBe(1)
+  })
+})
+
 describe('paintZone · eraseZone — 용도 칠하기', () => {
-  /** 사각형 안의 모든 좌표 — 드래그가 넘기는 입력 그대로. */
-  const rectPts = (x: number, y: number, w: number, h: number) => {
-    const out: Array<{ x: number; y: number }> = []
-    for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) out.push({ x: tx, y: ty })
-    return out
-  }
   const ROOM = { x: 4, y: 4, w: 6, h: 5 } // 테두리 18타일(문 1 포함) · 내부 12타일
 
   /** 벽으로 두르고 문 하나를 낸 6×5 빈 껍데기(가구·칠 없음) */

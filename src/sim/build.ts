@@ -50,6 +50,33 @@ function occupied(w: SimWorld): Set<number> {
 }
 
 /**
+ * 드래그가 넘긴 좌표에서 **실제로 건드릴 타일**을 추린다 — 모든 도구가 같은 골격을 쓴다.
+ *
+ * 도구별로 다른 것은 `skip` 술어 하나뿐이다(설치는 점유, 칠하기는 벽·문·같은 칠, 해제는 빈 칸).
+ * 셋에 복제돼 있던 이 아홉 줄을 한 곳으로 접은 것이라, 세는 규칙이 도구마다 갈릴 자리가 없다.
+ *
+ * 부지 밖과 `skip`은 **건너뜀으로 센다**. 반면 **같은 타일을 두 번 요청한 것은 건너뜀이 아니다** —
+ * 드래그 사각형은 모서리를 겹쳐 넘기므로, 그걸 세면 화면의 "N칸 건너뜀"이 실제와 무관해진다.
+ */
+function selectTargets(
+  tiles: readonly Pt[],
+  skip: (i: number) => boolean,
+): { targets: number[]; skipped: number } {
+  const seen = new Set<number>()
+  const targets: number[] = []
+  let skipped = 0
+  for (const t of tiles) {
+    if (!inBounds(t)) { skipped += 1; continue }
+    const i = tileIndex(t.x, t.y)
+    if (seen.has(i)) continue
+    seen.add(i)
+    if (skip(i)) { skipped += 1; continue }
+    targets.push(i)
+  }
+  return { targets, skipped }
+}
+
+/**
  * 설치 도구의 공통 뼈대 — 벽·가구가 **같은 규칙**을 쓴다는 것이 여기 한 곳에 적혀 있다.
  *
  * 순서가 계약이다: ① 점유 타일을 건너뛰어 대상만 추리고 ② 대상이 0이면 NOTHING ③ **설치 전에**
@@ -62,17 +89,7 @@ function install(
   apply: (world: SimWorld, targets: readonly number[]) => SimWorld,
 ): PlaceResult {
   const taken = occupied(w)
-  const seen = new Set<number>()
-  const targets: number[] = []
-  let skipped = 0
-  for (const t of tiles) {
-    if (!inBounds(t)) { skipped += 1; continue }
-    const i = tileIndex(t.x, t.y)
-    if (seen.has(i)) continue // 같은 타일을 두 번 요청한 것은 건너뜀이 아니다(드래그 모서리)
-    seen.add(i)
-    if (taken.has(i)) { skipped += 1; continue }
-    targets.push(i)
-  }
+  const { targets, skipped } = selectTargets(tiles, i => taken.has(i))
   if (targets.length === 0) return { ok: false, reason: 'NOTHING', tiles: [], skipped, deltaManwon: 0 }
   const price = BUILD_COST[cost] * targets.length
   if (price > w.treasuryManwon) return { ok: false, reason: 'NO_MONEY', tiles: targets, skipped, deltaManwon: -price }
@@ -101,8 +118,11 @@ export function placeFurniture(w: SimWorld, kind: FurnitureKind, tiles: readonly
 }
 
 /**
- * 문 — **벽 타일만** 전환한다. 벽에서 빼고 문에 넣으므로 통행이 열리고 영역 경계는 남는다.
+ * 문 — **벽 타일만** 전환한다. 벽에서 빼고 문에 넣으므로 통행이 열린다.
  * 벽값을 환불하지 않는 것이 계약이다(설계 §2): 문은 벽을 허무는 게 아니라 벽 위에 다는 것이다.
+ *
+ * 문이 영역을 가르는 것은 `paintZone`이 문 타일을 **칠하지 않기** 때문이지(칠에 구멍이 남는다),
+ * 영역 파생이 문을 경계로 읽기 때문이 아니다 — regions.ts에 문은 등장조차 하지 않는다.
  */
 export function placeDoor(w: SimWorld, at: Pt): PlaceResult {
   const i = tileIndex(at.x, at.y)
@@ -134,19 +154,11 @@ export function paintZone(w: SimWorld, tiles: readonly Pt[], type: RoomType, dep
   if (type === 'EXAM' && dept === undefined) throw new Error('진료실 용도에는 과가 필요하다')
   // EXAM이 아니면 과를 떨군다 — 대기실에 실려 온 과는 읽는 쪽에서 뜻을 만들어낸다(옛 규약).
   const paint: ZonePaint = type === 'EXAM' && dept !== undefined ? { type, dept } : { type }
-  const seen = new Set<number>()
-  const targets: number[] = []
-  let skipped = 0
-  for (const t of tiles) {
-    if (!inBounds(t)) { skipped += 1; continue }
-    const i = tileIndex(t.x, t.y)
-    if (seen.has(i)) continue
-    seen.add(i)
-    if (w.walls.has(i) || w.doors.has(i)) { skipped += 1; continue }
+  const { targets, skipped } = selectTargets(tiles, i => {
+    if (w.walls.has(i) || w.doors.has(i)) return true
     const cur = w.zones.get(i)
-    if (cur !== undefined && cur.type === paint.type && cur.dept === paint.dept) { skipped += 1; continue }
-    targets.push(i)
-  }
+    return cur !== undefined && cur.type === paint.type && cur.dept === paint.dept
+  })
   if (targets.length === 0) return { ok: false, reason: 'NOTHING', tiles: [], skipped, deltaManwon: 0 }
   const zones = new Map(w.zones)
   for (const i of targets) zones.set(i, paint)
@@ -155,17 +167,7 @@ export function paintZone(w: SimWorld, tiles: readonly Pt[], type: RoomType, dep
 
 /** 지정 해제 — 드래그한 타일의 칠만 지운다. 벽·가구는 그대로(철거 도구와 분리 — 설계 §1). */
 export function eraseZone(w: SimWorld, tiles: readonly Pt[]): PlaceResult {
-  const seen = new Set<number>()
-  const targets: number[] = []
-  let skipped = 0
-  for (const t of tiles) {
-    if (!inBounds(t)) { skipped += 1; continue }
-    const i = tileIndex(t.x, t.y)
-    if (seen.has(i)) continue
-    seen.add(i)
-    if (!w.zones.has(i)) { skipped += 1; continue }
-    targets.push(i)
-  }
+  const { targets, skipped } = selectTargets(tiles, i => !w.zones.has(i))
   if (targets.length === 0) return { ok: false, reason: 'NOTHING', tiles: [], skipped, deltaManwon: 0 }
   const zones = new Map(w.zones)
   for (const i of targets) zones.delete(i)
