@@ -34,7 +34,7 @@ describe('spriteVariant — 초상 변주는 id의 순수 함수다', () => {
     expect(seen.size, `40개 키에서 조합 ${seen.size}종`).toBeGreaterThanOrEqual(4)
   })
 
-  it('과 색은 8과 전부에 있고 서로 다르다 — 어깨 색이 과를 나르는 유일한 신호다', () => {
+  it('과 색은 8과 전부에 있고 서로 다르다 — 가슴 수술복과 소매 커프스가 과를 나르는 신호다', () => {
     const depts = Object.keys(DEPT_COLOR) as DeptKey[]
     expect(depts).toHaveLength(8)
     for (const d of depts) expect(DEPT_COLOR[d], d).toMatch(/^#[0-9a-f]{6}$/)

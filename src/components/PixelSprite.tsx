@@ -82,7 +82,9 @@ const DEFAULT_LOOK = { hair: "#3f3f46", skin: "#f0d3b4" };
  *
  * ⚠️ **과 색은 두 곳에 나온다 — 가슴(수술복)과 소매 끝(커프스).** 가슴 V만 색이면 뇌가 무늬로 읽고,
  * 같은 색이 소매 끝에 **다시** 나와야 레이어로 읽힌다 — "가운 안에 다른 옷을 입었다"가 성립하는
- * 지점이 거기다. 그래서 `sleeveCuff`는 가운을 입는 의사만 넘긴다(간호사·환자는 안 넘겨 안 그려진다).
+ * 지점이 거기다. 그래서 커프스는 색을 받지 않고 `accent`를 그대로 쓴다 — "같은 색"이 계약이라
+ * 다른 색을 넣을 자리가 애초에 없어야 한다. `sleeveCuff`가 나르는 정보는 **가운을 입는가** 하나뿐이라
+ * `boolean`이고, 가운을 입는 의사만 넘긴다(간호사·환자는 안 넘겨 안 그려진다).
  *
  * 그리는 순서가 곧 겹침 순서다: 소매 → 커프스 → 수술복 몸통 → 가운 앞섶 좌/우 → 옷깃 좌/우 → 머리 →
  * 머리카락. 셰이딩은 좌우 2단이다 — 왼쪽이 `coat`(밝은 면), 오른쪽이 `coatShade`(그늘진 면).
@@ -100,7 +102,7 @@ function Figure({
   accent: string;
   hair: string;
   skin: string;
-  sleeveCuff?: string;
+  sleeveCuff?: boolean;
 }) {
   return (
     <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden>
@@ -110,8 +112,8 @@ function Figure({
       {/* 커프스 — 과 색의 두 번째 출현. 이게 없으면 가슴 색이 무늬로 읽힌다(위 계약) */}
       {sleeveCuff && (
         <>
-          <path d="M2.5 12.6 l1.7 .4 l-.3 1.4 l-1.7 -.4 Z" fill={sleeveCuff} stroke={INK} strokeWidth={EDGE} />
-          <path d="M13.5 12.6 l-1.7 .4 l.3 1.4 l1.7 -.4 Z" fill={sleeveCuff} stroke={INK} strokeWidth={EDGE} />
+          <path d="M2.5 12.6 l1.7 .4 l-.3 1.4 l-1.7 -.4 Z" fill={accent} stroke={INK} strokeWidth={EDGE} />
+          <path d="M13.5 12.6 l-1.7 .4 l.3 1.4 l1.7 -.4 Z" fill={accent} stroke={INK} strokeWidth={EDGE} />
         </>
       )}
       {/* 수술복 몸통 — 가운 앞섶 사이로 보이는 안쪽 옷. 과 색(의사)·계열색(간호사)·회색(환자) */}
@@ -124,8 +126,10 @@ function Figure({
       <path d="M9.8 6.4 q-.7 1.9 -1.8 2.3 q.5 .8 1.8 .8 q.8 -1.6 0 -3.1 Z" fill={coatShade} stroke={INK} strokeWidth={EDGE * 0.7} />
       {/* 머리 — 3/4라 정원이 아니라 세로로 살짝 긴 타원이다 */}
       <ellipse cx="8" cy="4" rx="2.9" ry="3.1" fill={skin} stroke={INK} strokeWidth={EDGE} />
-      {/* 머리카락 — 위쪽을 덮는 호(sweep 1이 y-down에서 위로 지난다) + 이마 선 */}
-      <path d="M5.2 3 A2.9 3.1 0 0 1 10.8 3 q-.9 -.7 -2.8 -.7 q-1.9 0 -2.8 .7 Z" fill={hair} />
+      {/* 머리카락 — 위쪽을 덮는 호(sweep 1이 y-down에서 위로 지난다) + 이마 선.
+          끝점 x는 머리 타원 위의 점이어야 한다: y=3에서 8 ± 2.9·√(1−(1/3.1)²) = 5.255 / 10.745.
+          어림값(5.2/10.8)을 쓰면 호 중심이 밀려 머리카락이 머리 외곽선을 덮어 정수리 잉크가 깎인다. */}
+      <path d="M5.255 3 A2.9 3.1 0 0 1 10.745 3 q-.9 -.7 -2.745 -.7 q-1.845 0 -2.745 .7 Z" fill={hair} />
       {/*
         ⚠️ **머리에 점을 찍지 않는다.** 구면감을 내려고 왼위에 하이라이트 원을 뒀더니 어두운 머리카락
         위의 흰 점이 **눈 하나**로 읽혔다(160px로 띄워 실측). 표정·얼굴 특징은 금지 규칙이라
@@ -143,15 +147,24 @@ function Figure({
  *
  * **`sleeveCuff`를 넘기는 유일한 호출부다** — 커프스는 "가운 **안에** 다른 옷을 입었다"를 말하는
  * 장치라, 가운을 안 입는 간호사·환자에게 붙이면 없는 층을 주장한다(Figure 주석의 계약).
+ *
+ * ⚠️ **idle 가운은 바닥과 busy 사이에 끼워야 한다** — 위로 붙으면 진료 중이 안 보이고, 아래로
+ * 붙으면 이 브랜치가 고친 "바닥에 묻히는 의사"로 되돌아간다. simHud의 `doctorStatusText`가
+ * '진료 중'을 **다시 판정하지 않는 근거**가 이 색이라, 대비가 무너지면 카드는 말하는데 화면은
+ * 안 말하는 상태가 된다(그 주석의 계약). 실측(raw L = .2126R+.7152G+.0722B):
+ * EXAM 바닥 `#d1dee0` 219.4 < idle 234.6 < busy 255 — 바닥과 15.2, busy와 20.4.
+ * 두 문턱(바닥+15 · busy−20)이 남기는 창이 [234.4, 235.0]으로 0.6뿐이라 여지가 거의 없다.
+ * idle 그늘(224.2)은 바닥보다 4.8 위다 — 그늘진 쪽도 안 묻히게 하느라 idle의 명암 2단 폭(10.4)이
+ * busy(22.7)보다 좁은데, 그 좁힘이 이 창의 대가다.
  */
 export function DoctorSprite({ dept, busy, variantKey }: { dept: DeptKey; busy: boolean; variantKey?: string }) {
   const v = variantKey ? spriteVariant(variantKey) : DEFAULT_LOOK;
   return (
     <Figure
-      coat={busy ? "#ffffff" : "#f1f4f7"}
-      coatShade={busy ? "#e4e9ee" : "#d8dee5"}
+      coat={busy ? "#ffffff" : "#e7ebf1"}
+      coatShade={busy ? "#e4e9ee" : "#dbe1e7"}
       accent={DEPT_COLOR[dept]}
-      sleeveCuff={DEPT_COLOR[dept]}
+      sleeveCuff
       hair={v.hair}
       skin={v.skin}
     />
