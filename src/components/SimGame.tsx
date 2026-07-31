@@ -623,6 +623,11 @@ export default function SimGame() {
       style={
         {
           backgroundColor: OUTSIDE_FLOOR,
+          /* 전역 html{color-scheme:dark}가 남아 있어, 밝게 뒤집힌 이 서브트리에서도 UA가 그리는
+             스크롤바·선택 하이라이트만 어둡게 칠해진다. color-scheme은 상속 속성이라 여기 한 줄로
+             자손 스크롤 컨테이너까지 따라온다. globals.css를 안 고치는 이유는 /classic이 그 어두운
+             값을 그대로 쓰기 때문 — 전역을 밝히면 클래식이 깨진다. */
+          colorScheme: "light",
           "--desk": LANDING.backdrop,
           "--desk-2": LANDING.card,
           "--frame": LANDING.edge,
