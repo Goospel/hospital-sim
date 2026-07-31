@@ -119,7 +119,10 @@ export default function RegionPicker({ onPick }: { onPick: (region: SimRegionKey
                     onClick={() => setPicked(p)}
                     aria-pressed={on}
                     title={p.label}
-                    className="group absolute flex items-center justify-center focus:outline-none"
+                    /* 포커스 표식은 잉크 아웃라인이다 — 청록 점은 밝은 육지 위에서 잉크 점보다
+                       *덜* 띄어(2.178 < 5.616) 색만으로는 Tab 위치가 오히려 흐려진다. 잉크는
+                       육지·카드 어디서든 보이고, 이미 선택된 점에 포커스가 가도 표시가 생긴다. */
+                    className="group absolute flex items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--lp-ink)]"
                     style={{
                       left: pct(p.col + 0.5 - HIT_SPAN / 2, MAP_COLS),
                       top: pct(p.row + 0.5 - HIT_SPAN / 2, MAP_ROWS),
@@ -139,7 +142,8 @@ export default function RegionPicker({ onPick }: { onPick: (region: SimRegionKey
                     {on && (
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute inset-0 border border-[var(--lp-accent)]"
+                        className="pointer-events-none absolute inset-0 border"
+                        style={{ borderColor: LANDING.accent }}
                       />
                     )}
                   </button>
@@ -181,11 +185,14 @@ export default function RegionPicker({ onPick }: { onPick: (region: SimRegionKey
                 >
                   {spec.rentManwon === 0 ? "임대료 없음" : `임대료 주 ${formatManwon(spec.rentManwon)}`}
                 </p>
-                {/* 확정 — 화면의 유일한 유채색 면. hover는 두 번째 hex를 만들지 않으려고 필터로 밝힌다. */}
+                {/* 확정 — 화면의 유일한 유채색 버튼(점의 선택·hover도 같은 청록을 쓴다).
+                    hover는 두 번째 hex를 만들지 않으려고 필터로 **어둡게** 한다 — 밝히면
+                    흰 글자 대비가 5.094 → 4.349로 내려가 팔레트 테스트가 잠근 4.5:1이
+                    런타임에 깨진다(어두운 쪽은 단조 상승 · brightness-95에서 5.522). */}
                 <button
                   type="button"
                   onClick={() => onPick(picked.region)}
-                  className="mt-auto w-full px-3 py-2 text-sm transition-[filter] hover:brightness-110"
+                  className="mt-auto w-full px-3 py-2 text-sm transition-[filter] hover:brightness-95"
                   style={{ background: LANDING.accent, color: LANDING.onAccent }}
                 >
                   여기에 짓는다
