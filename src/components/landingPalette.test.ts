@@ -34,6 +34,9 @@ describe('랜딩 팔레트 — 종이 위 잉크 지도', () => {
     expect(L('ink')).toBeLessThan(L('land'))
     expect(L('land')).toBeLessThan(L('backdrop'))
     expect(L('backdrop')).toBeLessThan(L('card'))
+    // 테두리도 서열 안에 있다 — 육지보다 밝고(지도와 경쟁하지 않는다) 배경보다 어둡다.
+    expect(L('land')).toBeLessThan(L('edge'))
+    expect(L('edge')).toBeLessThan(L('backdrop'))
   })
 
   it('최소 간격: 층이 뭉개지지 않는다', () => {
@@ -47,6 +50,14 @@ describe('랜딩 팔레트 — 종이 위 잉크 지도', () => {
   it('텍스트 대비: 카드 위 잉크·보조 텍스트가 WCAG 4.5:1 이상', () => {
     expect(wcagContrast(LANDING.ink, LANDING.card)).toBeGreaterThanOrEqual(4.5)
     expect(wcagContrast(LANDING.inkMuted, LANDING.card)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('wcagContrast의 고정점 — 식이 바뀌면 위 대비 단언 전체의 뜻이 바뀐다', () => {
+    expect(wcagContrast('#000000', '#ffffff')).toBeCloseTo(21, 4)
+    expect(wcagContrast('#767676', '#ffffff')).toBeCloseTo(4.5422, 3)
+    // #050505는 s ≤ 0.04045 선형 분기를 깨우는 유일한 표본이다 — 팔레트의 가장 어두운
+    // 채널이 43(0.169)이라 실제 색만으로는 그 분기가 한 번도 안 돈다.
+    expect(wcagContrast('#050505', '#ffffff')).toBeCloseTo(20.3814, 3)
   })
 
   it('청록 대비: 버튼 글자는 WCAG 4.5:1, 육지 위 청록 점은 휘도 차 40 이상', () => {
