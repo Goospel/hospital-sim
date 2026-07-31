@@ -263,6 +263,11 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
    * 그래서 단위를 화면 쪽으로 옮긴다. 이건 기준 완화가 아니라 **같은 계약을 옳은 단위로 다시 쓴 것**이고,
    * 알베도가 어느 대역에 있든 뜻이 유지된다(= 이 파일이 세 번 경고한 "대역을 옮기면 기준도 옮겨야 한다"를
    * 아예 대역 독립으로 만든 것). 이 단위 착오는 `SHADE` 자체가 밝은 톤에서 무너진 것과 **같은 근인**이다.
+   *
+   * **임계값 30점의 출처**(없으면 다음 사람이 임의로 조정한다): 위 실측의 **하한 32.6점**(옛 모델
+   * NEUTRAL, 알베도 91.7 × 폭 0.36)에서 약간의 여유를 뺀 값이다. 즉 "옛 화면이 내던 최소 대비를
+   * 밑돌지 않는다"가 이 숫자의 뜻이다 — 새로 만든 기준이 아니라 **이미 눈으로 승인된 대비를
+   * 바닥으로 고정한 것**이다. 올릴 근거가 생기면 올리되, 근거 없이 내리지 마라.
    */
   it('조명·AO가 실제로 화면에서 읽히는 대비를 낸다 — 계수 폭이 아니라 휘도 점수로', () => {
     expect(SHADE.min).toBeLessThan(SHADE.base)
@@ -271,6 +276,30 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
       const span =
         relativeLuminance(shade(style.floor, SHADE.max)) - relativeLuminance(shade(style.floor, SHADE.min))
       expect(span, `${style.floor} 최명부−최암부 = ${span.toFixed(1)}점`).toBeGreaterThanOrEqual(30)
+    }
+  })
+
+  /**
+   * AO 계조 — 벽에 닿은 면이 늘수록 **단계적으로** 어두워져야 구석이 가장자리보다 깊어 보인다.
+   *
+   * 위 「대비」 단언은 최명부−최암부의 **전체 폭**만 본다 — 그 폭이 어떻게 **나뉘는지**는 안 본다.
+   * 2026-07-31 밝은 톤 전환에서 정확히 그 틈으로 회귀가 샜다: `base`−`min` 여유가 0.10 → 0.04로
+   * 줄면서 `ao`(0.04)가 **벽 한 면 만에 `min`을 찍어**, 1·2·3·4면이 전부 같은 밝기가 됐다.
+   * 계조가 4단(94/90/86/84)에서 2단(193/184/184/184)으로 무너졌는데 **49건이 전부 초록이었다** —
+   * `ao`·`checker`의 *크기*를 재는 단언이 하나도 없었기 때문이다. 이 단언이 그 구멍이다.
+   *
+   * 양쪽으로 판별력이 있다: `ao`가 너무 크면(즉시 클램프) 두 번째 단이 0점이 되고,
+   * 너무 작으면 단이 눈에 안 보여 둘 다 걸린다.
+   */
+  it('벽에 닿는 면이 늘수록 단계적으로 어두워진다 — 한 면에서 곧장 클램프되면 구석이 평평해진다', () => {
+    /** 렌더와 같은 산술: `f = base − ao × 벽에 닿은 변 수`를 `[min, max]`로 잠근다(TileMap의 factorOf). */
+    const lum = (hex: string, sides: number) =>
+      relativeLuminance(shade(hex, Math.max(SHADE.min, Math.min(SHADE.max, SHADE.base - SHADE.ao * sides))))
+    for (const style of [...Object.values(ROOM_STYLE), NEUTRAL_STYLE]) {
+      for (const sides of [1, 2]) {
+        const step = lum(style.floor, sides - 1) - lum(style.floor, sides)
+        expect(step, `${style.floor} 벽 ${sides - 1}면 → ${sides}면 = ${step.toFixed(1)}점`).toBeGreaterThanOrEqual(2)
+      }
     }
   })
 })
