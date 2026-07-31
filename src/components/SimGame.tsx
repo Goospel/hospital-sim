@@ -408,7 +408,7 @@ export default function SimGame() {
   const commit = (t: BuildTool, tiles: Array<{ x: number; y: number }>) => {
     const res = runTool(t, tiles);
     if (res.ok) setWorld(res.world);
-    const said = buildResultText(t, res);
+    const said = buildResultText(t, res, roomType);
     if (said) showToast(said);
   };
 
@@ -903,7 +903,8 @@ export default function SimGame() {
           </div>
         )}
 
-        {/* ── 건설 — 도구 8종. 벽을 두르고 → 문을 내고 → 가구를 놓고 → 용도를 정하고 → 철거한다.
+        {/* ── 건설 — 도구 8종. 용도로 바닥을 칠하고 → 가구를 놓는다. 벽·문은 나누고 싶을 때만 세운다
+            (칠한 자리가 곧 영역이라 방을 만드는 데 벽이 필요 없다 — 설계 2026-07-31 §2).
             용도·철거까지 여기 드는 것은 셋 다 **부지를 바꾸는 행위**라서다(PALETTE_SECTIONS 주석). ── */}
         {section === "BUILD" && (
           <div className="flex flex-col gap-1.5 border-t border-frame pt-2">

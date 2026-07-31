@@ -14,7 +14,7 @@ import {
 } from './simHud'
 import { BUILD_COST, buildWalls, demolish, paintZone, placeDoor, type BuildReason, type PlaceResult } from '../sim/build'
 import {
-  createWorld, GRID_W, GRID_H, REGIONS, simRegion,
+  createWorld, ENTRANCE, GRID_W, GRID_H, REGIONS, simRegion,
   type RoomType, type SimRegionKey, type SimWorld,
 } from '../sim/world'
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from '../sim/dept'
@@ -622,6 +622,33 @@ describe('buildResultText — 거부 사유와 건너뛴 칸을 말한다', () =
     expect(buildResultText('DEMOLISH', fail('NOTHING'))).not.toBe(buildResultText('WALL', fail('NOTHING')))
   })
 
+  /*
+    NOTHING은 도구마다 **정반대의 사실**을 가리킨다. 설치는 "차 있어서" 실패하지만 지정 해제는
+    "비어서" 실패한다 — 한 문구로 접으면 빈 바닥을 지우려던 사람이 「이미 차 있습니다」를 읽는다
+    (리뷰 실측). 칠하기도 마찬가지다: 자리가 없는 게 아니라 이미 그 용도인 것이라, 「차 있다」는
+    말을 들은 플레이어는 있지도 않은 가구를 찾아 헤맨다.
+  */
+  it('지정 해제가 지울 것을 못 찾으면 **비었다고** 말한다 — "이미 차 있다"는 정확히 반대다', () => {
+    const text = buildResultText('DESIGNATE', fail('NOTHING'), 'ERASE')!
+    expect(text).toContain('지울')
+    expect(text).not.toContain('차 있')
+  })
+
+  it('같은 용도를 다시 칠하면 **이미 그 용도라고** 말한다 — 없는 가구를 찾게 만들지 않는다', () => {
+    const text = buildResultText('DESIGNATE', fail('NOTHING'), 'WAITING')!
+    expect(text).toContain('용도')
+    expect(text).not.toContain('차 있')
+    // 칠하기와 지우기가 같은 문장이면 어느 쪽이 거부됐는지 알 수 없다.
+    expect(text).not.toBe(buildResultText('DESIGNATE', fail('NOTHING'), 'ERASE'))
+  })
+
+  it('지정 해제에서 건너뛴 칸은 **지정이 없던 칸**이다 — 설치의 "이미 차 있다"와 다른 사실이다', () => {
+    const partial = { ok: true as const, world: createWorld(1), tiles: [1], skipped: 3, deltaManwon: 0 }
+    const text = buildResultText('DESIGNATE', partial, 'ERASE')!
+    expect(text).toContain('3')
+    expect(text).not.toContain('차 있')
+  })
+
   it('성공했는데 건너뛴 칸이 있으면 **그 사실만** 말한다 — 부분 설치는 화면에 흔적이 없다', () => {
     const partial = { ok: true as const, world: createWorld(1), tiles: [1], skipped: 3, deltaManwon: -30 }
     expect(buildResultText('WALL', partial)).toContain('3')
@@ -774,6 +801,22 @@ describe('setupSteps — 개원 준비 단계', () => {
 
     it('영역이 하나도 없는 빈 판은 완료가 아니다 — 「문제 없음」과 「갖췄음」은 다르다', () => {
       expect(reachStep(createWorld(1)).done).toBe(false)
+    })
+
+    /* 입구 자체를 벽으로 덮은 판 — 건설 도구에 정문 특례가 없어(build.install은 점유 타일만
+       건너뛴다) 플레이어가 실제로 만들 수 있는 배치다. 출발점이 막히면 **아무 데도 못 닿으므로**
+       모든 영역이 걸려야 한다: 여기서 판정이 조용히 "전부 도달 가능"으로 뒤집히면, 병원 전체가
+       고립됐는데 체크리스트만 초록인 화면이 된다. */
+    it('입구가 벽으로 막히면 멀쩡히 열려 있던 영역까지 전부 걸린다 — 출발점이 없으면 길도 없다', () => {
+      const painted = paintZone(createWorld(1), rectPts(20, 20, 3, 3), 'RECEPTION')
+      if (!painted.ok) throw new Error('전제 실패 — 칠 거부')
+      expect(reachStep(painted.world).done).toBe(true) // 막기 전에는 닿는다(대조군)
+
+      const sealedGate = buildWalls(painted.world, [ENTRANCE])
+      if (!sealedGate.ok) throw new Error('전제 실패 — 입구에 벽을 못 세운다(특례가 생겼다면 이 테스트를 다시 읽어라)')
+      const step = reachStep(sealedGate.world)
+      expect(step.done).toBe(false)
+      expect(step.alert).toContain('1')
     })
   })
 

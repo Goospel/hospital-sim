@@ -814,22 +814,42 @@ export function previewLabel(tool: BuildTool, res: PlaceResult, roomType?: RoomT
  * 성공까지 떠들지 않는 것이 계약이다(잘된 일마다 토스트가 뜨면 진짜 사유가 묻힌다). 다만
  * **부분 설치**는 예외다: 건너뛴 칸은 화면에 아무 흔적이 없어서, 5칸을 끌었는데 2칸만 선 이유를
  * 말해 줄 자리가 여기밖에 없다.
+ *
+ * ⚠️ `roomType`을 받는 이유: **같은 코어 사유가 도구에 따라 정반대의 사실을 가리킨다.** 설치는
+ * 자리가 **차서** 건너뛰지만 지정 해제는 **비어서** 건너뛴다 — 도구만 보고 문구를 고르면 빈 바닥을
+ * 지우려던 사람이 「이미 차 있습니다」를 읽는다(리뷰 실측). 코어에 사유를 더하지 않고 여기서 가르는
+ * 것이 이 설계의 경계다: `'ERASE'`는 화면에만 있는 값이라 `BuildReason`이 그것을 알면 안 된다.
  */
-export function buildResultText(tool: BuildTool, res: PlaceResult): string | null {
+export function buildResultText(
+  tool: BuildTool, res: PlaceResult, roomType?: RoomType | 'ERASE' | null,
+): string | null {
   if (res.ok) {
     if (res.skipped === 0) return null
-    return tool === 'DEMOLISH'
-      ? `${res.skipped}칸은 부술 것이 없어 지나갔습니다`
-      : `${res.skipped}칸은 이미 차 있어 건너뛰었습니다`
+    if (tool === 'DEMOLISH') return `${res.skipped}칸은 부술 것이 없어 지나갔습니다`
+    if (tool === 'DESIGNATE') {
+      return roomType === 'ERASE'
+        ? `${res.skipped}칸은 지정이 없어 지나갔습니다`
+        : `${res.skipped}칸은 벽·문이거나 이미 같은 용도라 건너뛰었습니다`
+    }
+    return `${res.skipped}칸은 이미 차 있어 건너뛰었습니다`
   }
-  return REASON_TEXT[res.reason](tool)
+  return REASON_TEXT[res.reason](tool, roomType)
 }
 
 /** 코어 사유 → 화면 문구. 사유는 코어가, 말은 화면이 갖는다(옛 REASON_TEXT 관례 계승).
- *  NOTHING만 도구를 본다 — 철거의 "부술 게 없다"와 설치의 "놓을 자리가 없다"는 다른 상황이고,
- *  한 문구로 접으면 무엇을 고쳐야 하는지가 사라진다. */
-const REASON_TEXT: Record<BuildReason, (tool: BuildTool) => string> = {
-  NOTHING: tool => (tool === 'DEMOLISH' ? '부술 것이 없습니다' : '놓을 자리가 없습니다 — 이미 차 있습니다'),
+ *  NOTHING만 도구를 본다 — 넷이 서로 다른 상황이고, 한 문구로 접으면 무엇을 고쳐야 하는지가
+ *  사라진다: 철거는 부술 게 없고, 지정 해제는 **지울 지정**이 없고, 칠하기는 자리가 없는 게
+ *  아니라 **이미 그 용도**이며, 설치만이 자리가 차 있다. */
+const REASON_TEXT: Record<BuildReason, (tool: BuildTool, roomType?: RoomType | 'ERASE' | null) => string> = {
+  NOTHING: (tool, roomType) => {
+    if (tool === 'DEMOLISH') return '부술 것이 없습니다'
+    if (tool === 'DESIGNATE') {
+      return roomType === 'ERASE'
+        ? '지울 지정이 없습니다 — 칠한 자리를 드래그하세요'
+        : '이미 같은 용도입니다 — 벽·문 타일에는 칠이 얹히지 않습니다'
+    }
+    return '놓을 자리가 없습니다 — 이미 차 있습니다'
+  },
   NO_MONEY: () => '자금이 부족합니다',
   NOT_WALL: () => '문은 벽 위에만 낼 수 있습니다',
 }
