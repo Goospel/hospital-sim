@@ -492,44 +492,100 @@ describe('BACKDROP_PALETTE 색조 — 도시는 무채색이고 지역은 색으
    * `sidewalk`(248°) · `roofEdge`·`roofVent`·`aptTowerLit`(240°)가 전부 대역 **밖으로 빠진다** —
    * 팔레트 주석이 「인도가 보라색이 된다」라고 스스로 지목한 바로 그 키가 검사를 통과해 버린다.
    * 이 팔레트의 물색은 195~215°에 있으므로 230부터 막아도 진짜 파랑은 안 걸린다.
+   *
+   * ⚠️ **건너뛰기 문턱(3%)이 무채색 문턱(8%)과 다른 것은 의도다** — 두 숫자는 다른 질문이다:
+   * 「회색으로 보이는가」(8% · 위 단언)와 「색상각이 뜻을 갖는가」(3% · 여기). 둘을 8%로 묶었던 판은
+   * **그 사이를 통째로 비웠다**: `sidewalk = #797788`(색상각 247° · 채도 6.67%)이 56건 전건
+   * 초록이었다 — 무채색 단언은 `URBAN_SURFACE` 15키만 보고, 보라 단언은 8% 미만이라 건너뛰었다.
+   * 팔레트의 실제 최저 채도가 3.8%(`sidewalk`)라 3%면 사실상 **전 키를 색상각으로 검사**한다.
    */
   it('팔레트 어디에도 보라가 없다 — 색상각 230~320°는 이 게임의 색이 아니다', () => {
     for (const [k, hex] of Object.entries(BACKDROP_PALETTE)) {
       const [h, s] = hueSat(hex)
-      if (s < 0.08) continue // 무채색은 색상각이 무의미하다
-      expect(h < 230 || h > 320, `${k}(${hex}) 색상각 ${h.toFixed(0)}°`).toBe(true)
+      if (s < 0.03) continue // 순회색은 색상각 자체가 수치 잡음이다
+      expect(h < 230 || h > 320, `${k}(${hex}) 색상각 ${h.toFixed(0)}° 채도 ${(s * 100).toFixed(1)}%`).toBe(true)
     }
   })
 
-  it('자연 키는 유채색을 유지한다 — 무채색화가 초목·물까지 삼키면 지역이 안 갈린다', () => {
-    for (const k of ['grassBase', 'paddyBase', 'forestCanopy', 'treeCanopy', 'seaBase', 'dirtBase'] as const) {
-      const [, s] = hueSat(BACKDROP_PALETTE[k])
-      expect(s, `${k} 채도 ${(s * 100).toFixed(1)}%`).toBeGreaterThan(0.15)
-    }
+  /**
+   * 자연 키 — **채도만으로는 부족하다.** 채도만 보던 판은 `grassBase = #a84c2a`(주황 16°)를
+   * 전건 통과시켰다: 잔디가 주황이어도 "유채색이니 통과"였다. 계열까지 함께 잠근다.
+   */
+  it.each([
+    { k: 'grassBase', lo: 70, hi: 160, 계열: '초목' },
+    { k: 'paddyBase', lo: 70, hi: 160, 계열: '초목' },
+    { k: 'forestCanopy', lo: 70, hi: 160, 계열: '초목' },
+    { k: 'treeCanopy', lo: 70, hi: 160, 계열: '초목' },
+    { k: 'seaBase', lo: 180, hi: 230, 계열: '물' },
+    { k: 'dirtBase', lo: 20, hi: 55, 계열: '흙' },
+  ] as const)('$k는 $계열 색을 유지한다 — 채도 15% 초과 + 색상각 $lo~$hi°', ({ k, lo, hi }) => {
+    const hex = BACKDROP_PALETTE[k]
+    const [h, s] = hueSat(hex)
+    const label = `${k}(${hex}) 채도 ${(s * 100).toFixed(1)}% 색상각 ${h.toFixed(0)}°`
+    expect(s, label).toBeGreaterThan(0.15)
+    expect(h, label).toBeGreaterThanOrEqual(lo)
+    expect(h, label).toBeLessThanOrEqual(hi)
   })
 
-  /** 지역별 분리 — 그려진 색을 지역마다 모아 「무채색 비율」과 「초록 비율」의 서열을 잠근다.
-   *  평균 색상각은 원형이라 평균이 뜻을 잃는다(0°와 350°의 평균이 175°). 비율로 잰다.
-   *  ⚠️ 스텁의 `fills`가 Set이라 이건 **면적이 아니라 그 장면이 쓴 서로 다른 색의 비율**이다 —
-   *  "도심이 무채색 팔레트로 그려지는가"를 재기엔 충분하고, 면적은 스텁이 볼 수 없다. */
-  const share = (region: 'URBAN' | 'NEWTOWN' | 'PROVINCIAL' | 'RURAL') => {
-    const { ctx, calls } = stubCtx()
-    drawBackdrop(ctx, region, 1)
-    const hexes = [...calls.fills].filter((f) => /^#[0-9a-fA-F]{6}$/.test(f))
-    const hs = hexes.map(hueSat)
+  /**
+   * 지역별 분리 — 그려진 색을 지역마다 모아 색 계열의 비율을 잰다.
+   * 평균 색상각은 원형이라 평균이 뜻을 잃는다(0°와 350°의 평균이 175°). 비율로 잰다.
+   *
+   * ⚠️ 이건 **면적이 아니라 그 장면이 쓴 서로 다른 색의 비율**이다 — 스텁이 `fillRect` 인자를
+   * 기록하지 않아 면적은 원리적으로 못 잰다. 그래서 "화면의 84%가 보라" 같은 면적 주장은 이 계측기가
+   * 재현하지 못한다. 아래 격차 문턱은 그 한계를 알고 고른 값이다.
+   *
+   * ⚠️ **변형 0·1·2를 모두 합산한다.** 변형 하나(1)만 보던 판은 12장면 중 4개만 봤다 — 나머지
+   * 8장면을 통째로 다시 칠해도 초록이었다.
+   */
+  const share = (region: SimRegionKey) => {
+    const set = new Set<string>()
+    for (const variant of [0, 1, 2]) {
+      const { ctx, calls } = stubCtx()
+      drawBackdrop(ctx, region, variant)
+      for (const f of calls.fills) set.add(f)
+    }
+    const hs = [...set].filter((f) => /^#[0-9a-fA-F]{6}$/.test(f)).map(hueSat)
     const n = hs.length || 1
+    const frac = (p: (x: [number, number]) => boolean) => hs.filter(p).length / n
     return {
-      neutral: hs.filter(([, s]) => s < 0.08).length / n,
-      green: hs.filter(([h, s]) => s >= 0.08 && h >= 70 && h <= 160).length / n,
+      neutral: frac(([, s]) => s < 0.08),
+      green: frac(([h, s]) => s >= 0.08 && h >= 70 && h <= 160),
+      /** 황토·따뜻한 지붕 계열. */
+      warm: frac(([h, s]) => s >= 0.08 && h >= 20 && h <= 50),
     }
   }
 
-  it('도심이 가장 무채색이고, 농어촌이 가장 초록이다', () => {
-    const u = share('URBAN'), p = share('PROVINCIAL'), r = share('RURAL')
-    const trace = `무채색 도심 ${u.neutral.toFixed(2)} / 지방 ${p.neutral.toFixed(2)} / 농어촌 ${r.neutral.toFixed(2)}`
-    expect(u.neutral, trace).toBeGreaterThan(p.neutral)
-    expect(u.neutral, trace).toBeGreaterThan(r.neutral)
-    const gtrace = `초록 도심 ${u.green.toFixed(2)} / 농어촌 ${r.green.toFixed(2)}`
-    expect(r.green, gtrace).toBeGreaterThan(u.green)
+  const SHARE = {
+    URBAN: share('URBAN'), NEWTOWN: share('NEWTOWN'),
+    PROVINCIAL: share('PROVINCIAL'), RURAL: share('RURAL'),
+  }
+
+  /**
+   * ⚠️ **서열(`>`)이 아니라 최소 격차다 — 서열만 보던 판은 옛 보라 팔레트에서도 전건 통과했다.**
+   * 실측(`407a7b2^` 팔레트를 역매핑해 같은 `share()`를 돌림): 무채색 비율이 도심 0.056 · 지방 0.030 ·
+   * 농어촌 0.028로, `도심 > 지방`도 `도심 > 농어촌`도 **참**이었다. 도심이 "가장 무채색"인 이유가
+   * 무채색이라서가 아니라 **무채색 키가 지역마다 한둘인데 도심의 분모(쓰는 색 가짓수)가 가장 작아서**다 —
+   * 순전한 분모 사고. 그 판이었다면 다음 사람이 도심을 다시 보라로 되돌려도 초록불이다.
+   * 격차로 바꾸면 옛 팔레트의 0.026 · 0.028이 문턱 0.25 아래로 확실히 죽는다.
+   *
+   * ⚠️ **문턱은 실측에서 고른다.** 지금 격차와 문턱 사이 여유를 함께 적어 둔다 — 여유가 0에 붙으면
+   * 그건 대역이 아니라 현재 값의 지문이다(이 파일의 「대역 여유」가 같은 이유로 무너졌던 자리).
+   * `NEWTOWN` 축의 문턱이 0.05로 낮은 것은 실측 격차가 0.104(지방)·0.147(농어촌)이라 0.10을 걸면
+   * 여유가 0.004밖에 안 남기 때문이다 — 낮춘 게 아니라 **지문을 안 만든 것**이고, 0.05로도 옛
+   * 팔레트(0.006·0.008)는 죽는다.
+   */
+  it.each([
+    { what: '무채색: 도심 − 신도시', axis: 'neutral', hi: 'URBAN', lo: 'NEWTOWN', min: 0.15 },
+    { what: '무채색: 도심 − 지방', axis: 'neutral', hi: 'URBAN', lo: 'PROVINCIAL', min: 0.25 },
+    { what: '무채색: 도심 − 농어촌', axis: 'neutral', hi: 'URBAN', lo: 'RURAL', min: 0.25 },
+    { what: '무채색: 신도시 − 지방', axis: 'neutral', hi: 'NEWTOWN', lo: 'PROVINCIAL', min: 0.05 },
+    { what: '무채색: 신도시 − 농어촌', axis: 'neutral', hi: 'NEWTOWN', lo: 'RURAL', min: 0.05 },
+    { what: '초록: 농어촌 − 도심', axis: 'green', hi: 'RURAL', lo: 'URBAN', min: 0.25 },
+    { what: '따뜻한 색: 지방 − 도심', axis: 'warm', hi: 'PROVINCIAL', lo: 'URBAN', min: 0.05 },
+  ] as const)('$what 격차가 $min 이상 — 서열만으로는 분모 사고를 못 거른다', ({ what, axis, hi, lo, min }) => {
+    const d = SHARE[hi][axis] - SHARE[lo][axis]
+    expect(d, `${what} = ${SHARE[hi][axis].toFixed(3)} − ${SHARE[lo][axis].toFixed(3)} = ${d.toFixed(3)}`)
+      .toBeGreaterThanOrEqual(min)
   })
 })
