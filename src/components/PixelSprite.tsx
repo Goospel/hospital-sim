@@ -201,6 +201,26 @@ export function PatientSprite() {
   return <Figure coat="#a8b0b8" coatShade="#8d959d" accent="#98a0a8" hair="#4a4a55" skin="#dcc4a8" />;
 }
 
+/**
+ * 누운 환자 — **탑다운 예외**다. 서 있는 3/4 인물을 `rotate(90deg)`로 눕히면 "누운 사람"이 아니라
+ * **"옆으로 넘어진 사람"**이 된다(3/4는 몸통 앞면이 카메라를 향하는 포즈라, 돌리면 그 앞면이 옆을 본다).
+ * 이불 덮은 사람은 위에서 보는 것이 자연스러우므로 이 자세만 탑다운으로 되돌린다.
+ *
+ * 자세마다 3/4 포즈를 새로 그리지 않는 것이 계약이다 — 그러면 그림이 인물 종류 × 자세로 불어난다.
+ * 색은 `PatientSprite`와 같은 회색조를 쓴다(익명 유지 — 누웠다고 다른 사람이 되지 않는다).
+ */
+export function LyingPatientSprite() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden>
+      {/* 몸 전체(겉옷) → 이불 → 머리 → 머리카락 순. 세로로 긴 캡슐이 곧 누운 실루엣이다. */}
+      <rect x="4.6" y="1.2" width="6.8" height="13.6" rx="3" fill="#c9cfd6" stroke={INK} strokeWidth={EDGE} />
+      <rect x="4.6" y="6" width="6.8" height="8.8" rx="2.4" fill="#98a0a8" />
+      <ellipse cx="8" cy="3.4" rx="2.4" ry="2.2" fill="#dcc4a8" stroke={INK} strokeWidth={EDGE} />
+      <path d="M5.6 2.6 A2.4 2.2 0 0 1 10.4 2.6 Z" fill="#4a4a55" />
+    </svg>
+  );
+}
+
 /*
   집기 — 사람이 아니라 **가구**다. §1 "실루엣은 하나"는 인물 규칙이라 가구엔 적용되지 않는다.
   방을 "빈 상자"가 아니라 진료실로 읽히게 하는 배경이고, 상호작용·게임 상태가 없다.

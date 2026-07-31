@@ -20,6 +20,7 @@ import {
   DeskSprite,
   DoctorSprite,
   DEPT_COLOR,
+  LyingPatientSprite,
   NurseSprite,
   PatientSprite,
 } from "./PixelSprite";
@@ -747,6 +748,10 @@ export default function TileMap({
           const seated = seatTiles.has(`${p.x},${p.y}`);
           // 누움도 **좌표가 단일 출처**다(앉음과 같은 계약 — 폰에 자세 필드를 두지 않는다).
           const lying = bedTiles.has(`${p.x},${p.y}`);
+          // 누운 자세 전용 그림은 **환자에게만** 있다(LyingPatientSprite). 다른 종류가 침대 칸에
+          // 서면 종전대로 회전으로 눕힌다 — 판정을 여기 한 번만 두어 회전과 그림 선택이 갈리지
+          // 않게 한다(둘을 따로 쓰면 과 없는 의사가 누운 그림을 받고 **거기에 회전까지** 걸린다).
+          const lyingPatient = lying && p.kind === "PATIENT";
           return (
           <div
             key={p.id}
@@ -798,17 +803,21 @@ export default function TileMap({
             {/* 간호사가 **먼저**다 — 과가 없어서(pawn.hireNurse) 아래 의사 분기의 `p.dept`
                 조건에 걸리지 않으면 그대로 환자로 그려진다(익명 회색). 종류를 명시로 갈라
                 그 폴백에 안 얹는 것이 계약이다. */}
-            {/* 누운 자세 — **가로로 눕히고 조금 줄인다**. 회전만으로는 8×8 실루엣이 서 있는 것과
-                거의 같아 보이고(머리가 위인 건 매한가지다), 줄이지 않으면 폰이 타일을 꽉 채워
-                침대가 통째로 가려 "무엇 위에 누웠는지"가 사라진다 — 의자에 SEAT_LIFT가 필요했던
-                것과 정확히 같은 문제이고, 침대는 눕는 가구라 들어 올리는 대신 눕혀 줄인다.
+            {/* 누운 자세 — **환자는 전용 그림**(LyingPatientSprite), 나머지는 가로로 눕히고 조금 줄인다.
+                회전을 환자에서 걷어낸 이유: 인물이 3/4 시점이 된 뒤로(2026-07-31) 90° 돌리면 몸통
+                앞면이 옆을 봐 "누운 사람"이 아니라 **"옆으로 넘어진 사람"**이 된다. 회전이 남는
+                쪽(간호사·과 없는 의사)에는 그 그림이 없어 종전 처리를 유지한다 — 회전만으로는 실루엣이
+                서 있는 것과 거의 같아 보이고, 줄이지 않으면 폰이 타일을 꽉 채워 침대가 통째로 가려
+                "무엇 위에 누웠는지"가 사라진다(의자에 SEAT_LIFT가 필요했던 것과 같은 문제다).
                 래퍼는 자세와 무관하게 **늘 있다** — 조건부로 감싸면 React 트리가 갈려 이동
                 transition이 remount로 끊긴다(이 파일 머리말의 폰 규칙). */}
-            <div className="absolute inset-0" style={{ transform: lying ? "rotate(90deg) scale(0.8)" : undefined }}>
+            <div className="absolute inset-0" style={{ transform: lying && !lyingPatient ? "rotate(90deg) scale(0.8)" : undefined }}>
               {p.kind === "NURSE" ? (
                 <NurseSprite variantKey={p.id} />
               ) : p.kind === "DOCTOR" && p.dept ? (
                 <DoctorSprite dept={p.dept} busy={busyDoctors.has(p.id)} variantKey={p.id} />
+              ) : lyingPatient ? (
+                <LyingPatientSprite />
               ) : (
                 <PatientSprite />
               )}
