@@ -45,7 +45,7 @@ type PaletteKey = keyof typeof BACKDROP_PALETTE
  */
 const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys: readonly PaletteKey[] }> = [
   {
-    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 53, max: 74,
+    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 82, max: 100,
     keys: [
       'ground', 'grassBase', 'grassNoiseDark', 'medianStrip',
       'pavementBase', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
@@ -54,13 +54,13 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '지면 노이즈(밝은 쪽)·논둑', min: 74, max: 89,
+    name: '지면 노이즈(밝은 쪽)·논둑', min: 98, max: 114,
     keys: ['grassNoiseLight', 'pavementNoiseLight', 'dirtNoiseLight', 'fieldFurrowLight', 'paddyCellLight', 'paddyBank'],
   },
-  { name: '도로', min: 77, max: 94, keys: ['road', 'laneShoulder', 'dirtLane'] },
-  { name: '인도·산책로', min: 98, max: 113, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
+  { name: '도로', min: 92, max: 108, keys: ['road', 'laneShoulder', 'dirtLane'] },
+  { name: '인도·산책로', min: 116, max: 132, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
   {
-    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 103, max: 128,
+    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 122, max: 142,
     keys: [
       'roofBase', 'roofEdge', 'aptBody', 'aptEdge',
       'houseRoofWarm', 'houseRoofWarmShade', 'houseRoofCool', 'houseRoofCoolShade',
@@ -69,12 +69,12 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 129, max: 147,
+    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 143, max: 156,
     keys: ['roofVent', 'roofVentShade', 'roofPenthouse', 'aptTower', 'aptTowerLit', 'houseRidgeWarm', 'houseRidgeCool'],
   },
-  { name: '풀포기·관목', min: 98, max: 123, keys: ['tuft', 'tuftShade', 'shrub'] },
+  { name: '풀포기·관목', min: 104, max: 128, keys: ['tuft', 'tuftShade', 'shrub'] },
   {
-    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 132, max: 154,
+    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 134, max: 152,
     keys: [
       'treeCanopy', 'treeCanopyLit', 'treeShade',
       'forestCanopy', 'forestCanopyLit', 'forestCanopyDark',
@@ -127,11 +127,15 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
      뜬다(이 파일이 세 번 경고한 "상한이 느슨해지면 통과하면서 목적이 증발" 그 자리다).
      ⑤(2026-07-31)에서 실제로 그 자리를 밟을 뻔했다 — 대역만 ×2.4 하고 요구 간격을 두면 요구/실측 비율이
      65% → 27%(정확히 1/2.4)로 내려앉는다. 그래서 14.0/5.0/6.0 → **33.6/12.0/14.4**로 같은 배수를 먹였다.
-     교훈: 이 세 숫자는 대역과 **같은 커밋에서** 움직여야 한다 — 쪼개면 불변식이 깨진 커밋이 히스토리에 남는다. */
+     교훈: 이 세 숫자는 대역과 **같은 커밋에서** 움직여야 한다 — 쪼개면 불변식이 깨진 커밋이 히스토리에 남는다.
+     ⚠️ **⑥(2026-08-01)은 방향이 반대다** — 야경에서 낮으로 가며 지면(면적 지배)을 63.5 → 90.1로
+     끌어올려 스프레드를 79 → 52로 **좁혔다**. 대역을 좁히면서 옛 간격(33.6/12.0/14.4)을 두면
+     이번엔 느슨해지는 게 아니라 **통과가 불가능**해진다. 방향이 어느 쪽이든 규칙은 같다:
+     이 세 숫자는 대역과 같은 커밋에서 움직인다. */
   it.each([
-    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 33.6 },
-    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 12.0 },
-    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 14.4 },
+    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 27.8 },
+    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 13.0 },
+    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 12.5 },
   ])('$what 평균 간격이 $gap 이상 — 스프레드가 눌리면 형태가 안 읽힌다', ({ what, a, b, gap }) => {
     const d = meanL(a) - meanL(b)
     expect(d, `${what} = ${meanL(a).toFixed(2)} − ${meanL(b).toFixed(2)} = ${d.toFixed(2)}`).toBeGreaterThanOrEqual(gap)
