@@ -65,4 +65,9 @@ describe('랜딩 팔레트 — 종이 위 잉크 지도', () => {
     // 점은 텍스트가 아니라 면이라 WCAG 비율 대신 톤 휘도 차로 잰다.
     expect(L('land') - L('accent')).toBeGreaterThanOrEqual(40)
   })
+
+  it('경고 빨강: 카드·배경 위 모두 WCAG 4.5:1 이상 (본편 HUD의 --alarm 재정의 값)', () => {
+    expect(wcagContrast(LANDING.alarmDeep, LANDING.card)).toBeGreaterThanOrEqual(4.5)
+    expect(wcagContrast(LANDING.alarmDeep, LANDING.backdrop)).toBeGreaterThanOrEqual(4.5)
+  })
 })

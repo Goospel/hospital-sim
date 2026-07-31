@@ -30,4 +30,7 @@ export const LANDING = {
   accent: "#327974",
   /** 청록 위 글자. */
   onAccent: "#ffffff",
+  /** 경고 빨강(본편 HUD의 --alarm 재정의 값) — #e5484d는 밝은 카드 위 3.19로 미달이라
+   *  색상은 유지하고 어두운 쪽으로 내렸다. 카드·배경 위 4.5:1은 테스트가 잠근다. */
+  alarmDeep: "#b02a30",
 } as const;
