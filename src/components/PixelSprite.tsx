@@ -20,16 +20,25 @@ import type { DeptKey } from "@/game/types";
  * 단일 출처이고, 왜 그 값만 허용되는지(익명 환자·해석 카피 금지·의도적 보류 목록)는 거기에 있다.
  */
 
-/** 과별 가운 강조색. 필수과는 채도 있는 색, 수익과는 옅은 색 — 해석 카피 없이 대조만 만든다. */
+/**
+ * 과별 가운 강조색 — 채도 낮은 **수술복 톤** 8종. 해석 카피 없이 대조만 만든다.
+ *
+ * ⚠️ **무채색을 쓰지 않는다 — 계약이다**(테스트가 채널 폭 25로 잠근다). 예전엔 수익과 둘이
+ * 회색(`#a1a1aa`·`#71717a`)이라 서로도, 환자 회색과도 안 갈렸다. 유채색 6과는 **색상**으로
+ * 구분되니 휘도가 겹쳐도 무해하지만, 무채색은 색상 단서가 없어 **휘도로만** 싸워야 하는데
+ * 그 축은 이미 6과가 점유했다 — 그래서 비어 있던 색상(금·녹)을 채웠다.
+ *
+ * 대조 기준은 바닥이 아니라 **흰 가운**이다(과 색은 가운 안에 보이는 수술복이라 인접면이 가운).
+ */
 export const DEPT_COLOR: Record<DeptKey, string> = {
-  CARDIOLOGY: "#ef4444",
-  THORACIC_SURGERY: "#f97316",
-  OBSTETRICS: "#ec4899",
-  NEUROSURGERY: "#a855f7",
-  GENERAL_SURGERY: "#3b82f6",
-  INTERNAL_MEDICINE: "#14b8a6",
-  AESTHETICS: "#a1a1aa",
-  CHECKUP: "#71717a",
+  CARDIOLOGY: "#b23a3a",
+  THORACIC_SURGERY: "#b56a2c",
+  OBSTETRICS: "#b0487a",
+  NEUROSURGERY: "#7a52a8",
+  GENERAL_SURGERY: "#3a68a8",
+  INTERNAL_MEDICINE: "#2f8f86",
+  AESTHETICS: "#c8a34a",
+  CHECKUP: "#4a7f5a",
 };
 
 /** 외곽선 — 순검정이 아니라 어두운 남보라다. 검정은 밝아진 바닥 위에서 스티커처럼 떠 보인다. */

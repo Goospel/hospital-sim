@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { spriteVariant, DEPT_COLOR } from './PixelSprite'
+import { relativeLuminance } from './Backdrop'
 import type { DeptKey } from '@/game/types'
 
 /**
@@ -37,7 +38,29 @@ describe('spriteVariant — 초상 변주는 id의 순수 함수다', () => {
     const depts = Object.keys(DEPT_COLOR) as DeptKey[]
     expect(depts).toHaveLength(8)
     for (const d of depts) expect(DEPT_COLOR[d], d).toMatch(/^#[0-9a-f]{6}$/)
-    // 수익과(미용·검진)는 무채색이라 서로 가깝지만, 같은 색이면 화면에서 과가 구별되지 않는다.
+    // 8과가 각자 다른 색상을 쓴다(무채색 폐지 이후). 같은 색이면 화면에서 과가 구별되지 않는다.
     expect(new Set(Object.values(DEPT_COLOR)).size).toBe(8)
+  })
+
+  /**
+   * ⚠️ **대조 대상이 바닥이 아니라 흰 가운(255)인 이유**: 과 색은 가운 안에 보이는 수술복이라
+   * 인접한 면이 가운이다. 바닥은 과 색과 맞닿지 않으므로 바닥 기준으로 재면 화면에서 실제로
+   * 겪는 대비를 재는 게 아니다(설계 단계에서 바닥 기준으로 쟀다가 미용·피부가 걸렸는데,
+   * 그건 미용 색의 결함이 아니라 잣대의 결함이었다 — 가운 기준으로는 54.3 vs 90.6).
+   */
+  it('과 색은 흰 가운과 충분히 갈린다 — 가운 안에 보이는 색이라 대조 대상은 바닥이 아니라 가운이다', () => {
+    const COAT = 255
+    for (const [dept, hex] of Object.entries(DEPT_COLOR)) {
+      const L = relativeLuminance(hex)
+      expect(COAT - L, `${dept}(${hex}) = ${L.toFixed(1)}`).toBeGreaterThanOrEqual(70)
+    }
+  })
+
+  it('무채색 과가 없다 — 색상이 없으면 휘도로만 싸워야 하는데 그 축은 이미 6과가 쓴다', () => {
+    for (const [dept, hex] of Object.entries(DEPT_COLOR)) {
+      const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16)
+      const spread = Math.max(r, g, b) - Math.min(r, g, b)
+      expect(spread, `${dept}(${hex}) 채널 폭 ${spread}`).toBeGreaterThanOrEqual(25)
+    }
   })
 })
