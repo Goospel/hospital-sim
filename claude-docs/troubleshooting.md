@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-141](troubleshooting/T-141.md) · 파생 정의를 바꾸면 옛 정의가 통째로 버리던 입력이 결과에 들어오면서 실패 모드가 새로 열린다 — 그 자리의 기존 가드는 옛 정의에 가려 한 번도 계측된 적이 없다. 회귀 전건 통과는 "안 깨졌다"만 말하고 "새로 열린 자리가 막혔다"는 말하지 않는다
 - [T-140](troubleshooting/T-140.md) · 곱셈 조명 모델에서 계수(base·pool·ao·cap)의 화면상 효과는 albedo에 비례한다 — 어두운 팔레트에서 조율한 상수를 밝은 팔레트로 옮기면 해집합이 공집합이 되거나 계조가 무너지거나 상수로 클램프된다. 가드는 계수가 아니라 휘도 포인트로 재야 대역과 무관해진다
 - [T-139](troubleshooting/T-139.md) · 텍스트 재작성 스크립트(perl -0pi·python)로 돌연변이를 심으면 CRLF 파일에서 `\n` 패턴이 안 맞아 치환이 0건인데 에러가 없다 — 테스트는 그대로 초록이고 그것이 "테스트가 못 잡는다"로 정반대로 읽힌다. 돌연변이는 Edit 부분 편집으로 심고 심은 뒤 치환 여부를 반드시 확인한다
 - [T-138](troubleshooting/T-138.md) · Git Bash의 GNU tar는 `C:\...`의 드라이브 콜론을 원격 아카이브 `host:path`로 해석해 DNS 조회에 실패한다 — 네이티브 바이너리를 내려받는 npm 전역 설치가 postinstall에서 죽는다. 에러가 "Cannot connect / resolve failed"라 네트워크 문제로 읽히는 게 함정. Windows System32의 bsdtar는 정상이니 PowerShell에서 설치한다

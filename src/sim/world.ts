@@ -200,9 +200,10 @@ export function regionHirePool(key: SimRegionKey): Record<SimDeptKey, number> {
 
 export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION' | 'CAFETERIA'
 
-/** 용도 앵커 — "이 좌표가 속한 방은 이 용도다". 방이 아니라 **타일**을 가리키는 것이 핵심이다:
- *  벽을 허물어 영역이 병합·분리돼도 앵커는 좌표라 저절로 승계된다(영역 id는 파생값이라 못 쓴다). */
-export interface Designation { at: Pt; type: RoomType; dept?: SimDeptKey }
+/** 칠한 한 타일의 용도 — `dept`는 `EXAM`에만 실린다(옛 Designation과 같은 규약).
+ *  영역은 이 칠에서 **파생**한다(regions.computeRegions — 같은 (type·dept) 성분).
+ *  벽·문 타일에는 칠이 없다는 것이 build.paintZone의 계약이다. */
+export interface ZonePaint { type: RoomType; dept?: SimDeptKey }
 
 export type FurnitureKind = 'DESK' | 'CHAIR' | 'BED' | 'COUNTER'
 /** 집기 한 점 — **소속 필드가 없다**(설계 §1-1). 이 가구가 어느 방의 것인지는 좌표가 말한다:
@@ -228,11 +229,19 @@ export interface SimWorld {
   /** 벽 타일(tileIndex) — **통행 판정의 단일 출처**다. 방 사각형에서 유도하지 않는다:
    *  자유 건설에서는 벽이 방에 속하지 않고 홀로 선다(건설 도구는 build.ts). */
   walls: ReadonlySet<number>
-  /** 문 타일 — **통행 가능하되 영역 경계다**(벽 집합에는 없다). 이 이중성이 문의 정의다:
-   *  막으면 못 드나들고, 경계가 아니면 두 방이 하나로 붙는다. */
+  /** 문 타일 — **통행 가능하되 벽 집합에는 없다**. 이 이중성이 문의 정의다.
+   *  문이 영역을 가르는 것은 이제 **간접적**이다: 영역은 칠(zones)에서 파생하는데 `paintZone`이
+   *  문 타일을 칠하지 않으므로, 문 자리에 칠의 구멍이 남아 성분이 그 자리에서 끊긴다.
+   *  즉 문은 "경계로 선언된 것"이 아니라 "칠할 수 없는 칸"이다 — 벽을 헐어도 영역은 안 바뀐다. */
   doors: ReadonlySet<number>
-  /** 용도 앵커 — 배열 순서 = 지정 순서 = 충돌 시 우선순위(먼저가 이긴다). */
-  designations: ReadonlyArray<Designation>
+  /** 칠한 타일 → 용도. **불변 취급** — 편집은 새 Map으로 교체한다(walls와 같은 계약).
+   *  computeRegions memo와 TileMap 지형 memo가 이 참조를 키로 쓴다.
+   *
+   *  ⚠️ 값에 `Readonly`가 붙은 것이 계약의 일부다. `ReadonlyMap`은 `set`만 막고 **꺼낸 값의
+   *  필드 쓰기는 막지 않는데**, `paintZone`이 한 호출의 모든 타일에 paint 객체 **하나**를
+   *  공유하므로 `w.zones.get(i)!.type = ...` 한 줄이 그 칠 전체를 갈아 치우면서 Map 참조는
+   *  그대로 둔다 — memo가 영영 적중해 조용히 낡는다. 이 한 겹이 그 경로를 tsc로 막는다. */
+  zones: ReadonlyMap<number, Readonly<ZonePaint>>
   furniture: Furniture[]
   pawns: Pawn[]
   nextId: number
@@ -358,7 +367,7 @@ export function createWorld(
   const region = start?.region ?? 'URBAN'
   return {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
-    walls: new Set(), doors: new Set(), designations: [],
+    walls: new Set(), doors: new Set(), zones: new Map(),
     furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
     // 시작 풀은 **지역이 정한다** — URBAN은 델타 0이라 전국 풀 그대로다(기존 회귀 무변).

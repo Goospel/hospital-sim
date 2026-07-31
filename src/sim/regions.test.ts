@@ -1,203 +1,120 @@
-// 영역(Region) 인식 — 벽·문에서 파생하는 순수 계산의 계약.
-// 여기서 재는 것은 "무엇이 방인가"의 정의다: 둘러싸였으면 방, 새면 마당.
-import { describe, it, expect } from 'vitest'
-import { createWorld, tileIndex, type SimWorld } from './world'
+// 영역(Region) 정의 계약 — "무엇이 영역인가"가 바뀌었다:
+// 옛 정의(벽·문으로 둘러싸인 성분)가 아니라, **플레이어가 칠한 같은 (type·dept) 타일의
+// 4방 연결 성분**이 영역이다(설계 2026-07-31-free-zone-designation §2). 벽은 통행·시각의
+// 것이고 영역의 것이 아니다 — 접수처에 문을 달 필요가 없어진 이유가 이 파일에 있다.
+import { describe, expect, it } from 'vitest'
 import { computeRegions, computeRegionsUncached } from './regions'
+import { createWorld, tileIndex, GRID_W, type SimWorld, type ZonePaint } from './world'
+import { rectPts } from './testHelpers'
 
-const idx = (x: number, y: number) => tileIndex(x, y)
-
-/** 사각 테두리 타일 — 손세계의 벽을 세우는 유일한 도구(공식을 테스트마다 다시 쓰지 않는다) */
-function rectWalls(x: number, y: number, w: number, h: number): number[] {
-  const out: number[] = []
-  for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) {
-    if (tx === x || tx === x + w - 1 || ty === y || ty === y + h - 1) out.push(idx(tx, ty))
-  }
-  return out
+/** 사각형을 칠한 세계 — 테스트 전용 최소 픽스처(불변 교체 계약 준수). */
+function paint(w: SimWorld, x: number, y: number, wd: number, ht: number, p: ZonePaint): SimWorld {
+  const zones = new Map(w.zones)
+  for (const t of rectPts(x, y, wd, ht)) zones.set(tileIndex(t.x, t.y), p)
+  return { ...w, zones }
 }
 
-const worldWith = (over: Partial<SimWorld>): SimWorld => ({ ...createWorld(1), ...over })
+const fresh = (): SimWorld => createWorld(1)
 
-/** 6×5 밀실 (10,10) — 내부는 x 11..14, y 11..13 의 12타일 */
-const ROOM = { x: 10, y: 10, w: 6, h: 5 }
-const ROOM_INSIDE: number[] = []
-for (let y = 11; y <= 13; y++) for (let x = 11; x <= 14; x++) ROOM_INSIDE.push(idx(x, y))
-
-describe('computeRegions', () => {
-  it('빈 부지에는 영역이 없다 — 전부 격자 가장자리에 닿는 마당이다', () => {
-    expect(computeRegions(createWorld(1))).toEqual([])
+describe('computeRegions — 칠한 타일의 (type·dept) 성분', () => {
+  it('빈 부지에는 영역이 없다 — 칠이 없으면 성분도 없다', () => {
+    expect(computeRegions(fresh())).toEqual([])
   })
 
-  it('사방이 벽인 밀실은 영역 하나 — 내부 타일만 담고 벽은 담지 않는다', () => {
-    const w = worldWith({ walls: new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h)) })
+  it('칠한 사각형 하나가 영역 하나다 — 벽 없이도, 가장자리에 닿아도', () => {
+    // 옛 정의라면 가장자리(y=0)에 닿는 순간 마당이었다 — 그 판정 자체가 사라졌음을 잰다.
+    const w = paint(fresh(), 0, 0, 4, 3, { type: 'WAITING' })
     const rs = computeRegions(w)
     expect(rs).toHaveLength(1)
-    expect([...rs[0].tiles].sort((a, b) => a - b)).toEqual(ROOM_INSIDE)
-    expect(rs[0].doors.size).toBe(0)
-    expect(rs[0].type).toBeUndefined()
+    expect(rs[0].type).toBe('WAITING')
+    expect(rs[0].tiles.size).toBe(12)
+    expect(rs[0].id).toBe(tileIndex(0, 0)) // id = 성분 최소 타일 인덱스
   })
 
-  it('벽이 한 칸 뚫려 있으면 영역이 아니다 — 바깥과 이어져 마당이 된다', () => {
-    // 문이 아니라 **벽의 구멍**이다: 문은 경계로 막지만 빈 타일은 안팎을 잇는다.
-    const walls = rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h).filter(t => t !== idx(13, 14))
-    expect(computeRegions(worldWith({ walls: new Set(walls) }))).toEqual([])
+  it('떨어진 같은 용도 조각은 서로 다른 영역이다', () => {
+    let w = paint(fresh(), 2, 2, 3, 3, { type: 'WARD' })
+    w = paint(w, 10, 2, 3, 3, { type: 'WARD' })
+    const rs = computeRegions(w)
+    expect(rs).toHaveLength(2)
+    expect(rs.map(r => r.id)).toEqual([tileIndex(2, 2), tileIndex(10, 2)]) // id 오름차순
   })
 
-  it('문은 경계다 — 어느 영역에도 속하지 않고, 인접 영역의 doors에 실린다', () => {
-    const door = idx(13, 14)
-    const w = worldWith({
-      walls: new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h).filter(t => t !== door)),
-      doors: new Set([door]),
-    })
+  it('이어 칠하면 하나로 합쳐진다 (병합이 공짜)', () => {
+    let w = paint(fresh(), 2, 2, 3, 3, { type: 'WARD' })
+    w = paint(w, 5, 2, 5, 3, { type: 'WARD' }) // 오른쪽에 붙여 칠함
     const rs = computeRegions(w)
     expect(rs).toHaveLength(1)
-    expect([...rs[0].tiles].sort((a, b) => a - b)).toEqual(ROOM_INSIDE) // 문은 내부에 없다
-    expect([...rs[0].doors]).toEqual([door])
+    expect(rs[0].tiles.size).toBe(24)
   })
 
-  it('가운데 벽이 있으면 두 영역, 그 벽을 허물면 하나로 병합된다', () => {
-    // 9×5 방(10,10)을 x=14 세로벽으로 가른다 — 내부는 11..13 / 15..17, y 11..13
-    const outer = rectWalls(10, 10, 9, 5)
-    const divider = [idx(14, 11), idx(14, 12), idx(14, 13)]
-    const split = computeRegions(worldWith({ walls: new Set([...outer, ...divider, idx(14, 10), idx(14, 14)]) }))
-    expect(split).toHaveLength(2)
-    expect(split.map(r => r.tiles.size)).toEqual([9, 9])
-
-    const merged = computeRegions(worldWith({ walls: new Set([...outer, idx(14, 10), idx(14, 14)]) }))
-    expect(merged).toHaveLength(1)
-    expect(merged[0].tiles.size).toBe(7 * 3) // 가운데 열까지 이어진다
+  it('가운데를 지우면 둘로 갈라진다 (분할이 공짜)', () => {
+    let w = paint(fresh(), 2, 2, 7, 1, { type: 'WAITING' })
+    const zones = new Map(w.zones)
+    zones.delete(tileIndex(5, 2))
+    w = { ...w, zones }
+    expect(computeRegions(w)).toHaveLength(2)
   })
 
-  it('영역 id는 성분 내 최소 타일 인덱스다 — 좌표만으로 정해져 순회 순서에 흔들리지 않는다', () => {
-    const outer = rectWalls(10, 10, 9, 5)
-    const walls = [...outer, idx(14, 10), idx(14, 11), idx(14, 12), idx(14, 13), idx(14, 14)]
-    const rs = computeRegions(worldWith({ walls: new Set(walls) }))
-    expect(rs.map(r => r.id)).toEqual([idx(11, 11), idx(15, 11)])
-    // 벽 삽입 순서를 뒤집어도 같은 결과 — Set 순회 순서에 의존하지 않는다
-    const reversed = computeRegions(worldWith({ walls: new Set([...walls].reverse()) }))
-    expect(reversed.map(r => r.id)).toEqual(rs.map(r => r.id))
-    expect(reversed.map(r => [...r.tiles].sort((a, b) => a - b))).toEqual(
-      rs.map(r => [...r.tiles].sort((a, b) => a - b)),
-    )
-  })
-
-  it('용도 앵커가 그 영역에 type·dept를 부여한다', () => {
-    const w = worldWith({
-      walls: new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h)),
-      designations: [{ at: { x: 12, y: 12 }, type: 'EXAM', dept: 'CARDIOLOGY' }],
-    })
+  it('과가 다른 진료실은 벽 없이 붙여 칠해도 다른 영역이다', () => {
+    let w = paint(fresh(), 2, 2, 3, 3, { type: 'EXAM', dept: 'INTERNAL_MEDICINE' })
+    w = paint(w, 5, 2, 3, 3, { type: 'EXAM', dept: 'GENERAL_SURGERY' })
     const rs = computeRegions(w)
-    expect(rs[0].type).toBe('EXAM')
-    expect(rs[0].dept).toBe('CARDIOLOGY')
+    expect(rs).toHaveLength(2)
+    expect(rs.map(r => r.dept).sort()).toEqual(['GENERAL_SURGERY', 'INTERNAL_MEDICINE'])
   })
 
-  it('한 영역에 앵커가 둘이면 먼저 지정한 쪽이 이긴다', () => {
-    const w = worldWith({
-      walls: new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h)),
-      designations: [
-        { at: { x: 12, y: 12 }, type: 'WAITING' },
-        { at: { x: 13, y: 13 }, type: 'WARD' },
-      ],
-    })
-    expect(computeRegions(w)[0].type).toBe('WAITING')
-  })
-
-  it('벽·문·마당 위의 앵커는 무효다 — 어느 영역도 용도를 얻지 않는다', () => {
-    const door = idx(13, 14)
-    const base = {
-      walls: new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h).filter(t => t !== door)),
-      doors: new Set([door]),
-    }
-    for (const at of [{ x: 10, y: 10 }, { x: 13, y: 14 }, { x: 2, y: 2 }]) {
-      const rs = computeRegions(worldWith({ ...base, designations: [{ at, type: 'WARD' }] }))
-      expect(rs).toHaveLength(1)
-      expect(rs[0].type).toBeUndefined()
-    }
-  })
-
-  it('무효 앵커가 있어도 뒤의 유효 앵커는 살아 있다 — 하나가 새 나가도 나머지를 잃지 않는다', () => {
-    const w = worldWith({
-      walls: new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h)),
-      designations: [
-        { at: { x: 2, y: 2 }, type: 'WARD' },       // 마당 — 무효
-        { at: { x: 12, y: 12 }, type: 'LOUNGE' },
-      ],
-    })
-    expect(computeRegions(w)[0].type).toBe('LOUNGE')
-  })
-
-  /*
-    캐시(한 칸 memo) — 답을 **바꾸지 않는가**만 잰다. 속도는 여기서 못 재고(측정이 흔들린다),
-    캐시가 틀리는 방식은 하나뿐이다: 입력 셋 중 하나가 갈렸는데 옛 답을 그대로 돌려주는 것.
-    그래서 세 필드를 각각 혼자 바꿔 보고, 매번 **캐시를 안 거친 계산**과 나란히 놓는다.
-  */
-  describe('캐시는 답을 바꾸지 않는다', () => {
-    /*
-      캐시(한 칸 memo)는 **입력 세 필드의 identity**로 맞춘다. 그래서 한 축을 재려면 나머지 둘의
-      **참조를 고정**해야 한다 — 안 그러면 어느 쪽이 키에서 빠져도 다른 축이 대신 캐시를 빗나가게
-      해서 mutation이 살아남는다. 실제로 첫 판이 그랬다: `createWorld()`가 `doors`·`designations`를
-      **매번 새 객체**로 주는 탓에 `worldWith(...)` 두 개는 늘 서로 다른 키였고, 키에서
-      designations를 통째로 지워도 세 테스트가 전부 통과했다(돌연변이 생존 실측).
-      아래 픽스처가 참조를 상수로 붙들어 그 구멍을 막는다.
-    */
-    const WALLS = new Set(rectWalls(ROOM.x, ROOM.y, ROOM.w, ROOM.h))
-    const WALLS_WIDE = new Set(rectWalls(10, 10, 9, 5))
-    const DOOR = idx(13, 14)
-    const WALLS_HOLED = new Set([...WALLS].filter(t => t !== DOOR))
-    const NO_DOORS: ReadonlySet<number> = new Set()
-    const ONE_DOOR: ReadonlySet<number> = new Set([DOOR])
-    const NO_DESIG: SimWorld['designations'] = []
-    const AS_WARD: SimWorld['designations'] = [{ at: { x: 12, y: 12 }, type: 'WARD' }]
-    const AS_LOUNGE: SimWorld['designations'] = [{ at: { x: 12, y: 12 }, type: 'LOUNGE' }]
-
-    /** 세 필드를 **명시한 참조 그대로** 실은 세계 — 나머지는 캐시가 안 보는 값이다. */
-    const keyed = (
-      walls: ReadonlySet<number>,
-      doors: ReadonlySet<number>,
-      designations: SimWorld['designations'],
-    ): SimWorld => ({ ...createWorld(1), walls, doors, designations })
-
-    const shape = (rs: ReturnType<typeof computeRegions>) =>
-      rs.map(r => ({ id: r.id, type: r.type, tiles: [...r.tiles].sort((a, b) => a - b) }))
-
-    it('walls만 갈려도 새로 계산한다 — doors·designations는 같은 참조다', () => {
-      const small = keyed(WALLS, NO_DOORS, NO_DESIG)
-      expect(shape(computeRegions(small))).toEqual(shape(computeRegionsUncached(small)))
-      const wide = keyed(WALLS_WIDE, NO_DOORS, NO_DESIG)
-      expect(shape(computeRegions(wide))).toEqual(shape(computeRegionsUncached(wide)))
-      // 내부 타일 수가 다르다(4×3 vs 7×3) — 캐시가 walls를 키에서 빠뜨리면 여기서 운다.
-      expect(computeRegions(wide)[0].tiles.size).toBe(21)
-      expect(computeRegions(small)[0].tiles.size).toBe(12)
-    })
-
-    it('doors만 갈려도 새로 계산한다 — 문 하나가 방을 마당으로 가른다', () => {
-      const sealed = keyed(WALLS_HOLED, ONE_DOOR, NO_DESIG)
-      expect(shape(computeRegions(sealed))).toEqual(shape(computeRegionsUncached(sealed)))
-      expect(computeRegions(sealed)).toHaveLength(1)
-      // walls·designations는 같은 참조이고 doors만 비웠다 — 벽의 구멍이 안팎을 이어 영역이 없어진다.
-      expect(computeRegions(keyed(WALLS_HOLED, NO_DOORS, NO_DESIG))).toEqual([])
-    })
-
-    it('designations만 갈려도 새로 계산한다 — 용도가 캐시에 굳지 않는다', () => {
-      // walls·doors를 같은 참조로 고정한 채 용도만 갈아 끼운다.
-      expect(computeRegions(keyed(WALLS, NO_DOORS, AS_WARD))[0].type).toBe('WARD')
-      expect(computeRegions(keyed(WALLS, NO_DOORS, AS_LOUNGE))[0].type).toBe('LOUNGE')
-      expect(computeRegions(keyed(WALLS, NO_DOORS, AS_WARD))[0].type).toBe('WARD') // 되돌려도 옛 답이 안 남는다
-      expect(computeRegions(keyed(WALLS, NO_DOORS, NO_DESIG))[0].type).toBeUndefined()
-    })
-  })
-
-  it('벽을 허물어 두 방이 합쳐지면 먼저 지정한 앵커의 용도로 이어진다', () => {
-    // 앵커는 좌표라 벽 편집에도 살아남는다 — 병합 후 둘 다 같은 영역을 가리키게 된다.
-    const outer = rectWalls(10, 10, 9, 5)
-    const w = worldWith({
-      walls: new Set([...outer, idx(14, 10), idx(14, 14)]),
-      designations: [
-        { at: { x: 16, y: 12 }, type: 'WARD' },     // 배열 순서가 우선순위다 — 오른쪽이 먼저
-        { at: { x: 12, y: 12 }, type: 'WAITING' },
-      ],
-    })
+  it('용도가 다르면 붙어 있어도 다른 영역이다 (접수처가 대기실에 열려 있는 그림)', () => {
+    let w = paint(fresh(), 2, 2, 4, 4, { type: 'WAITING' })
+    w = paint(w, 6, 2, 2, 4, { type: 'RECEPTION' }) // 문도 벽도 없이 맞닿음
     const rs = computeRegions(w)
-    expect(rs).toHaveLength(1)
-    expect(rs[0].type).toBe('WARD')
+    expect(rs).toHaveLength(2)
+    expect(rs.map(r => r.type).sort()).toEqual(['RECEPTION', 'WAITING'])
+  })
+
+  it('행 끝과 다음 행 머리는 이어지지 않는다 — 인덱스 인접 ≠ 격자 인접', () => {
+    // 부지 오른쪽 끝과 왼쪽 끝은 타일 **인덱스**로는 1 차이라, x 범위 가드를 빼면 flood fill이
+    // 행을 넘어 붙는다. 옛 정의에서는 가장자리 성분을 통째로 버려 이 버그가 가려졌지만,
+    // 새 정의에서는 가장자리 칠이 정식 타일이라 실패 모드가 새로 열렸다.
+    const zones = new Map([
+      [tileIndex(GRID_W - 1, 5), { type: 'WARD' as const }],
+      [tileIndex(0, 6), { type: 'WARD' as const }],
+    ])
+    expect(computeRegions({ ...fresh(), zones })).toHaveLength(2)
+  })
+
+  it('대각선만 닿은 조각은 이어지지 않는다 (4방 연결)', () => {
+    let w = paint(fresh(), 2, 2, 2, 2, { type: 'WARD' })
+    w = paint(w, 4, 4, 2, 2, { type: 'WARD' }) // 꼭짓점만 닿음
+    expect(computeRegions(w)).toHaveLength(2)
+  })
+
+  it('id는 칠한 순서에 흔들리지 않는다 — 좌표만으로 정해진다', () => {
+    // 같은 두 조각을 반대 순서로 칠한다. Map 삽입 순서를 그대로 순회하면 id·배열 순서가 뒤집힌다.
+    let a = paint(fresh(), 2, 2, 2, 2, { type: 'WARD' })
+    a = paint(a, 10, 8, 2, 2, { type: 'WARD' })
+    let b = paint(fresh(), 10, 8, 2, 2, { type: 'WARD' })
+    b = paint(b, 2, 2, 2, 2, { type: 'WARD' })
+    expect(computeRegions(a).map(r => r.id)).toEqual([tileIndex(2, 2), tileIndex(10, 8)])
+    expect(computeRegions(b).map(r => r.id)).toEqual(computeRegions(a).map(r => r.id))
+  })
+
+  it('EXAM이 아닌 칠에는 dept가 실리지 않는다', () => {
+    const w = paint(fresh(), 2, 2, 2, 2, { type: 'WAITING' })
+    expect(computeRegions(w)[0].dept).toBeUndefined()
+  })
+
+  it('캐시가 답을 바꾸지 않는다 — 같은 참조면 같은 배열, 새 Map이면 재계산', () => {
+    const w = paint(fresh(), 2, 2, 3, 3, { type: 'WARD' })
+    expect(computeRegions(w)).toBe(computeRegions(w)) // 참조 동일 = 캐시 적중
+    const again = { ...w, zones: new Map(w.zones) }
+    expect(computeRegions(again)).toEqual(computeRegionsUncached(again)) // 값은 언제나 같다
+  })
+
+  it('칠이 갈리면 캐시가 옛 답을 내지 않는다 — 용도가 캐시에 굳지 않는다', () => {
+    const asWard = paint(fresh(), 2, 2, 3, 3, { type: 'WARD' })
+    const asLounge = paint(fresh(), 2, 2, 3, 3, { type: 'LOUNGE' })
+    expect(computeRegions(asWard)[0].type).toBe('WARD')
+    expect(computeRegions(asLounge)[0].type).toBe('LOUNGE')
+    expect(computeRegions(asWard)[0].type).toBe('WARD') // 되돌려도 옛 답이 안 남는다
   })
 })

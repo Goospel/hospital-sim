@@ -255,8 +255,8 @@ export const OUTSIDE_FLOOR = "#abb1b5";
  *  부지를 71.3 → 176.0으로 올리면서 0.16 → 0.10으로 낮췄다(합성 대비 ΔL/L ≈ 9%). */
 const GRID_LINE = "rgba(10,8,18,0.10)";
 
-/** 용도 없는 영역·용도 영역에 안 닿은 벽의 색. 벽을 세웠지만 아직 무슨 방인지 안 정한 상태가
- *  화면에 **보여야** 한다 — 안 그리면 플레이어는 벽이 안 세워진 줄 안다(설계 PR 2의 도구 흐름).
+/** 어느 영역에도 안 닿은 벽의 색. 벽을 세웠지만 아직 무슨 방인지 안 정한 상태가 화면에
+ *  **보여야** 한다 — 안 그리면 플레이어는 벽이 안 세워진 줄 안다(설계 PR 2의 도구 흐름).
  *  부지를 176.0으로 올렸으니 이쪽도 같이 올라간다(220/228) — 한쪽만 옮기면 "실내가 마당보다 어둡다"로 뒤집힌다. */
 export const NEUTRAL_STYLE = { floor: "#d7dde4", wall: "#e0e5ea" };
 
@@ -423,18 +423,20 @@ export default function TileMap({
     바뀐 이유는 규칙이 이미 영역을 보기 때문이다: 화면이 사각형을 계속 그리면 벽이 뚫린 방을
     멀쩡한 방으로 보여 주고("왜 환자가 안 오지"), 자유 벽(설계 PR 2)은 아예 안 보인다.
 
-    memo 키가 walls·doors·designations **셋뿐**인 것이 성능 계약이다 — 이 셋은 건설에서만
-    새 객체로 갈리므로, 폰이 매 프레임 움직여도 수백 개의 타일 div가 다시 만들어지지 않는다.
-    (그래서 computeRegions가 SimWorld 전체가 아니라 이 세 필드를 받는다 — regions.ts 주석.)
+    memo 키가 walls·doors·zones **셋뿐**인 것이 성능 계약이다 — 이 셋은 건설에서만 새 객체로
+    갈리므로, 폰이 매 프레임 움직여도 수백 개의 타일 div가 다시 만들어지지 않는다.
+    벽·문이 키에 남는 이유는 **지형(벽·문 렌더)** 때문이지 영역 때문이 아니다: 영역 파생의
+    키는 이제 `zones` 하나다(computeRegions가 그 필드만 받는다 — regions.ts 주석).
   */
-  const { walls, doors, designations } = world;
+  const { walls, doors, zones } = world;
   const { terrain, roomCount } = useMemo(() => {
-    const regions = computeRegions({ walls, doors, designations });
+    const regions = computeRegions({ zones });
     // 타일 → 그 타일을 담은 영역. 벽·문의 색을 이웃 영역에서 빌려 올 때 쓴다.
     const regionAt = new Map<number, Region>();
     for (const r of regions) for (const t of r.tiles) regionAt.set(t, r);
-    /** 이 타일에 닿은 첫 **용도 있는** 영역 — 벽 하나가 두 방 사이에 서면 먼저 만난 쪽을
-     *  따른다(둘 다 그릴 수는 없다). 용도 없는 이웃뿐이면 중립색이다.
+    /** 이 타일에 닿은 첫 영역 — 벽 하나가 두 방 사이에 서면 먼저 만난 쪽을 따른다(둘 다 그릴
+     *  수는 없다). 어느 영역에도 안 닿았으면 중립색이다 — **용도 없는 영역은 이제 없다**
+     *  (칠한 타일에서만 성분이 나온다 — regions.ts).
      *
      *  ⚠️ **대각까지 보는 이유는 방의 네 모서리다**: 모서리 벽은 4방 이웃이 전부 벽·바깥이라
      *  (안쪽 칸이 대각선에만 있다) 4방만 보면 방마다 회색 모서리 네 개가 남는다 — 실측으로
@@ -490,17 +492,15 @@ export default function TileMap({
     const neighborOf = (t: number): { style: { floor: string; wall: string }; factor: number } => {
       const x = t % GRID_W;
       const y = (t - x) / GRID_W;
-      let fallback: number | null = null;
       for (const [dx, dy] of AROUND) {
         const nx = x + dx;
         const ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) continue;
         const nt = ny * GRID_W + nx;
         const r = regionAt.get(nt);
-        if (r?.type) return { style: ROOM_STYLE[r.type], factor: factorOf.get(nt) ?? SHADE.base };
-        if (r && fallback === null) fallback = factorOf.get(nt) ?? SHADE.base;
+        if (r) return { style: ROOM_STYLE[r.type], factor: factorOf.get(nt) ?? SHADE.base };
       }
-      return { style: NEUTRAL_STYLE, factor: fallback ?? SHADE.base };
+      return { style: NEUTRAL_STYLE, factor: SHADE.base };
     };
     const at = (t: number) => ({ left: (t % GRID_W) * TILE, top: Math.floor(t / GRID_W) * TILE });
 
@@ -512,7 +512,7 @@ export default function TileMap({
     //    구별되는 농도라 "여기는 실내다"만 나르고, 그건 주석이 아니라 건물의 일부다. 오버레이가
     //    감추는 것은 그 위에 얹힌 **판독용 표시**(과 색·이름표)뿐이다.
     for (const r of regions) {
-      const style = r.type ? ROOM_STYLE[r.type] : NEUTRAL_STYLE;
+      const style = ROOM_STYLE[r.type];
       const tint =
         regionOverlay && r.type === "EXAM" && r.dept ? `${DEPT_COLOR[r.dept]}${DEPT_TINT_ALPHA}` : null;
       for (const t of r.tiles) {
@@ -589,7 +589,6 @@ export default function TileMap({
     //    적어도 맨 위 하나는 읽힌다(겹침 자체는 방 폭이 정하는 값이라 여기서 못 없앤다).
     if (regionOverlay) {
       for (const r of regions) {
-        if (!r.type) continue;
         const p = at(r.id);
         nodes.push(
           <span
@@ -602,10 +601,10 @@ export default function TileMap({
         );
       }
     }
-    return { terrain: nodes, roomCount: regions.filter((r) => r.type).length };
+    return { terrain: nodes, roomCount: regions.length };
     // ⚠️ `regionOverlay`가 deps에 있어 토글마다 타일 div가 통째로 다시 만들어진다 — 사람 손이
     //    누를 때만 일어나는 일이라 프레임 예산과 무관하다(memo의 성능 계약은 폰 이동이 기준이다).
-  }, [walls, doors, designations, regionOverlay]);
+  }, [walls, doors, zones, regionOverlay]);
 
   return (
     /* 부모가 준 자리를 꽉 채우고 그 안에서 맵을 **카메라로 밀고 당긴다** — 림월드처럼 부지가 화면이 된다.

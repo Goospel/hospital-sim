@@ -10,6 +10,7 @@ import RegionPicker from "@/components/RegionPicker";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
 import {
   BUILD_TOOLS,
+  ERASE_LABEL,
   ROOM_LABEL,
   TOOL_LABEL,
   alertsOf,
@@ -33,12 +34,13 @@ import {
   turnAwayBatchText,
   type BuildTool,
   type PauseCause,
+  type ZonePick,
 } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
 import { BACKDROP_COUNT, createWorld, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions } from "@/sim/regions";
-import { buildWalls, demolish, designateRegion, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
+import { buildWalls, demolish, eraseZone, paintZone, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import { hireDoctor, hireNurse, setDoctorPriority, type HireResult, type Priority, type PriorityKind } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
@@ -133,8 +135,10 @@ export default function SimGame() {
   /** 손에 든 건설 도구 — 벽·문·가구 4종·용도·철거. 없으면 맵은 구경거리다(클릭이 조용히 지나간다). */
   const [tool, setTool] = useState<BuildTool | null>(null);
   /** 용도 도구가 지정할 방 종류. 도구를 바꾸면 함께 비운다 — 남겨 두면 다음에 용도를 고르는
-   *  순간 고르지도 않은 방으로 클릭이 열린다(옛 examDept와 같은 함정). */
-  const [roomType, setRoomType] = useState<RoomType | null>(null);
+   *  순간 고르지도 않은 방으로 클릭이 열린다(옛 examDept와 같은 함정).
+   *  `"ERASE"`(「지정 해제」)는 **화면에만 있는 값**이다 — 코어의 `paintZone`은 이 값을 모르고,
+   *  `runTool`이 그것을 `eraseZone`으로 갈라 준다(simHud.buildBlockReason 주석의 계약). */
+  const [roomType, setRoomType] = useState<ZonePick | null>(null);
   /** 지정할 진료실의 과 — 진료실을 고른 뒤 **한 번 더** 고르게 한다(과 없는 진료실은 코어가 던진다). */
   const [examDept, setExamDept] = useState<SimDeptKey | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -383,8 +387,11 @@ export default function SimGame() {
     if (t === "DEMOLISH") return demolish(world, tiles);
     if (t === "DOOR") return placeDoor(world, tiles[0]);
     if (t === "DESIGNATE") {
+      // 드래그 **전체**를 넘긴다 — 칠한 타일이 곧 영역이라(설계 2026-07-31 §2) 한 칸만 넘기면
+      // 사각형을 끌어도 한 칸짜리 방이 선다.
+      if (roomType === "ERASE") return eraseZone(world, tiles);
       // roomType은 `ready`가 보장한다 — 진료실이면 과까지(코어는 과 없는 EXAM에 던진다).
-      return designateRegion(world, tiles[0], roomType!, examDept ?? undefined);
+      return paintZone(world, tiles, roomType!, examDept ?? undefined);
     }
     return placeFurniture(world, t, tiles);
   };
@@ -395,7 +402,7 @@ export default function SimGame() {
   const preview: BuildPreview | null = useMemo(() => {
     if (!drag || !tool || !ready) return null;
     const res = runTool(tool, dragTiles(drag, tool));
-    return { tiles: res.tiles, ok: res.ok, label: previewLabel(tool, res) };
+    return { tiles: res.tiles, ok: res.ok, label: previewLabel(tool, res, roomType) };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runTool은 아래 값들의 파생이다
   }, [drag, tool, ready, roomType, examDept, world]);
 
@@ -403,7 +410,7 @@ export default function SimGame() {
   const commit = (t: BuildTool, tiles: Array<{ x: number; y: number }>) => {
     const res = runTool(t, tiles);
     if (res.ok) setWorld(res.world);
-    const said = buildResultText(t, res);
+    const said = buildResultText(t, res, roomType);
     if (said) showToast(said);
   };
 
@@ -699,7 +706,8 @@ export default function SimGame() {
             if (reason) showToast(reason);
             return;
           }
-          // 문·용도는 한 칸을 겨누는 클릭이다 — 드래그를 열면 사각형이 뜻 없이 따라다닌다.
+          // 문만 한 칸을 겨누는 클릭이다 — 드래그를 열면 사각형이 뜻 없이 따라다닌다.
+          // (용도는 드래그로 칠한다 — 칠한 사각형이 곧 영역이다.)
           if (isDragTool(tool)) setDrag({ start: t, cur: t });
           else commit(tool, [t]);
         }}
@@ -897,7 +905,8 @@ export default function SimGame() {
           </div>
         )}
 
-        {/* ── 건설 — 도구 8종. 벽을 두르고 → 문을 내고 → 가구를 놓고 → 용도를 정하고 → 철거한다.
+        {/* ── 건설 — 도구 8종. 용도로 바닥을 칠하고 → 가구를 놓는다. 벽·문은 나누고 싶을 때만 세운다
+            (칠한 자리가 곧 영역이라 방을 만드는 데 벽이 필요 없다 — 설계 2026-07-31 §2).
             용도·철거까지 여기 드는 것은 셋 다 **부지를 바꾸는 행위**라서다(PALETTE_SECTIONS 주석). ── */}
         {section === "BUILD" && (
           <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
@@ -930,8 +939,9 @@ export default function SimGame() {
           </div>
         )}
 
-        {/* 용도 6종 — [용도]를 고르면 열린다. 벽이 방을 만드는 게 아니라 **용도가** 만든다는 것을
-            이 목록이 말한다(둘러싸인 실내 + 용도 = 규칙이 보는 방). */}
+        {/* 용도 6종 + 지정 해제 — [용도]를 고르면 열린다. 용도가 **곧** 영역이라는 것을 이 목록이
+            말한다: 벽으로 두르지 않아도 칠한 자리가 그대로 방이 된다(설계 2026-07-31 §2).
+            벽은 통행을 막고 그림을 만드는 것이지 방의 조건이 아니다. */}
         {tool === "DESIGNATE" && (
           <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
             <span className="text-xs text-on-desk-muted">용도</span>
@@ -953,6 +963,23 @@ export default function SimGame() {
                 {ROOM_LABEL[t]}
               </button>
             ))}
+            {/* 지정 해제 — 용도의 반대말이라 같은 줄의 마지막에 선다(철거 도구와 분리한 것이 계약:
+                벽·가구까지 같이 부수는 오조작을 막는다 — 설계 §1). */}
+            <button
+              type="button"
+              aria-pressed={roomType === "ERASE"}
+              onClick={() => {
+                setRoomType((cur) => (cur === "ERASE" ? null : "ERASE"));
+                setExamDept(null);
+              }}
+              className={`border px-2.5 py-1 text-xs transition-colors ${
+                roomType === "ERASE"
+                  ? "border-on-desk-muted bg-frame text-on-desk"
+                  : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+              }`}
+            >
+              {ERASE_LABEL}
+            </button>
           </div>
         )}
 

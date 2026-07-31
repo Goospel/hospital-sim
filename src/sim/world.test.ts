@@ -25,7 +25,7 @@ describe('createWorld', () => {
     const w = createWorld(7)
     expect(w.walls.size).toBe(0)
     expect(w.doors.size).toBe(0)
-    expect(w.designations).toEqual([])
+    expect(w.zones.size).toBe(0)
     expect(w.furniture).toEqual([])
     expect(w.pawns).toEqual([])
     expect(w.treasuryManwon).toBe(50_000)
