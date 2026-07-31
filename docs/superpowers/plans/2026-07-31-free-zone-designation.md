@@ -48,7 +48,7 @@ tags:
 - Modify: `src/sim/build.test.ts` (지정 절)
 - Modify: `src/sim/testHelpers.ts` (`placeRoom`)
 
-- [ ] **Step 1: regions.test.ts를 새 정의로 재작성한다 (RED)**
+- [x] **Step 1: regions.test.ts를 새 정의로 재작성한다 (RED)**
 
 기존 파일을 통째로 교체한다. 재는 것: 성분 파생 · 병합 · 분할 · dept 분리 · id 결정론 · 캐시 무해성.
 
@@ -134,12 +134,12 @@ describe('computeRegions — 칠한 타일의 (type·dept) 성분', () => {
 })
 ```
 
-- [ ] **Step 2: 실행해 RED(컴파일 실패)를 확인한다**
+- [x] **Step 2: 실행해 RED(컴파일 실패)를 확인한다**
 
 Run: `npx vitest run src/sim/regions.test.ts`
 Expected: FAIL — `ZonePaint`·`zones`가 없어 컴파일 에러. 이것이 이 태스크의 RED다.
 
-- [ ] **Step 3: world.ts의 타입·필드를 교체한다**
+- [x] **Step 3: world.ts의 타입·필드를 교체한다**
 
 `Designation` 인터페이스(205행 근처)를 지우고 그 자리에:
 
@@ -160,7 +160,7 @@ export interface ZonePaint { type: RoomType; dept?: SimDeptKey }
 
 초기 세계(361행 근처)의 `designations: [],`를 `zones: new Map(),`으로.
 
-- [ ] **Step 4: regions.ts를 새 파생으로 재작성한다**
+- [x] **Step 4: regions.ts를 새 파생으로 재작성한다**
 
 파일 전체를 교체한다. 머리말 주석의 요지: 영역은 이제 **칠에서 파생**하고, 벽·문·밀폐는 영역과 무관하다.
 
@@ -237,7 +237,7 @@ export function computeRegionsUncached(world: Pick<SimWorld, 'zones'>): Region[]
 }
 ```
 
-- [ ] **Step 5: build.ts에서 designateRegion을 paintZone·eraseZone으로 교체한다**
+- [x] **Step 5: build.ts에서 designateRegion을 paintZone·eraseZone으로 교체한다**
 
 `BuildReason`에서 `'OUTDOORS'` 항목(과 그 주석)을 지운다. `designateRegion`을 지우고 그 자리에:
 
@@ -296,7 +296,7 @@ export function eraseZone(w: SimWorld, tiles: readonly Pt[]): PlaceResult {
 임포트에 `ZonePaint`를 더하고 `computeRegions` 임포트는 지운다(이 파일에서 더 이상 안 쓴다).
 `demolish`의 앵커 특례 주석(*"앵커는 건드리지 않는다 …"*)을 새 사실로 교체한다: *"칠(zones)은 건드리지 않는다 — 벽을 부숴도 영역은 그대로다(밀폐가 영역의 조건이 아니게 된 것이 이 설계의 목적). 영역을 지우는 길은 「지정 해제」뿐이다."*
 
-- [ ] **Step 6: testHelpers.placeRoom이 사각형 전체를 칠하게 한다**
+- [x] **Step 6: testHelpers.placeRoom이 사각형 전체를 칠하게 한다**
 
 `designateRegion(opened.world, { x: door.x, y: door.y - 1 }, spec.type, dept)` 호출을 교체한다:
 
@@ -311,12 +311,12 @@ export function eraseZone(w: SimWorld, tiles: readonly Pt[]): PlaceResult {
 
 임포트를 `designateRegion` → `paintZone`으로 바꾼다.
 
-- [ ] **Step 7: regions.test GREEN을 확인한다**
+- [x] **Step 7: regions.test GREEN을 확인한다**
 
 Run: `npx vitest run src/sim/regions.test.ts`
 Expected: PASS — 전 항목.
 
-- [ ] **Step 8: build.test.ts의 지정 절을 재작성한다**
+- [x] **Step 8: build.test.ts의 지정 절을 재작성한다**
 
 기존 designate 절(`마당·벽·문 위는 거부한다` 등)을 지우고 새 계약을 잰다. 최소 케이스:
 
@@ -336,14 +336,14 @@ describe('paintZone · eraseZone', () => {
 
 (주석 자리는 실제 단언으로 채운다 — 픽스처는 regions.test의 `paint` 헬퍼와 같은 요령으로 만들되, 벽이 필요한 케이스는 `buildWalls`를 쓴다.)
 
-- [ ] **Step 9: sim 전체 테스트로 회귀를 확인한다**
+- [x] **Step 9: sim 전체 테스트로 회귀를 확인한다**
 
 Run: `npx vitest run src/sim`
 Expected: PASS. **placeRoom 경유 픽스처의 소비자 테스트(patientFlow·needs·emergency·week 등)가 전부 그대로 통과해야 한다** — 밀폐 방에서는 옛 파생(내부 성분)과 새 파생(사각형−벽·문)이 같은 타일 집합을 내기 때문이다. 실패하면 파생 정의가 어긋난 것이므로 그 차이를 먼저 읽는다.
 
 주의: `src/components`는 아직 옛 API를 참조해 **tsc 전역은 이 시점에 깨져 있는 것이 정상**이다(Task 3에서 선다). vitest는 임포트 그래프 단위라 sim 테스트는 돈다.
 
-- [ ] **Step 10: 커밋**
+- [x] **Step 10: 커밋**
 
 제목: `feat: 영역을 칠한 타일에서 파생한다 — 밀폐 판정·OUTDOORS·Region.doors 삭제`
 
@@ -356,16 +356,18 @@ Expected: PASS. **placeRoom 경유 픽스처의 소비자 테스트(patientFlow�
 **Files:**
 - Modify: `src/sim/spots.ts` · `src/sim/patientFlow.ts` · `src/sim/needs.ts` · `src/sim/emergency.ts` (grep으로 실제 위치 확인)
 
-- [ ] **Step 1: 죽은 방어를 찾는다**
+- [x] **Step 1: 죽은 방어를 찾는다**
 
 Run: `npx eslint src/sim --rule '...'` 대신 grep: `r.type ===`는 살아 있는 검사이므로 두고, **truthiness 검사**(`r.type &&`, `r.type ?`, `.filter(r => r.type)`, `r.type !== undefined`)만 걷어낸다. 각 자리에서 주변 주석이 "용도 없는 영역"을 언급하면 그 주석도 함께 고친다.
 
-- [ ] **Step 2: sim 테스트 + 커밋**
+- [x] **Step 2: sim 테스트 + 커밋**
 
 Run: `npx vitest run src/sim` → PASS.
 제목: `refactor: 용도 없는 영역이 사라져 죽은 방어를 걷어낸다`
 
 (걷어낼 것이 없으면 이 Task는 커밋 없이 종료하고 그 사실을 보고한다.)
+
+> 📌 **실행 기록 — 이 Task는 커밋 없이 종료됐다(실측 0건).** 위 **Files**가 지목한 `spots.ts`·`patientFlow.ts`·`needs.ts`·`emergency.ts` 어디에도 truthiness 방어가 없었다. 브랜치 base(`233258b`)의 `src/sim` 전체에서 이 패턴에 걸린 것은 **`regions.ts`의 `region.type !== undefined` 한 줄뿐**이고, 그건 Task 1의 전면 재작성이 이미 지웠다. 소비자들은 `Region.type`이 optional이던 시절에도 `r.type === 'WARD'` 같은 **동등 검사**만 써 왔고 그건 필수 승격 뒤에도 그대로 살아 있는 검사다. 계획이 "옵셔널이면 소비자에 방어가 있을 것"이라고 추정한 자리에 실제 코드는 없었다 — **Files 목록이 grep 실측이 아니라 예측이었던 것**이 이 Task가 빈 것의 원인이다(Step 1이 *"grep으로 실제 위치 확인"*이라고 적어 둔 것이 그 자체로 이 Task가 미확정이었다는 표지였다).
 
 ---
 
@@ -377,7 +379,7 @@ Run: `npx vitest run src/sim` → PASS.
 - Modify: `src/components/SimGame.tsx` (`runTool`·roomType 상태·「지정 해제」 버튼·임포트)
 - Modify: `src/components/TileMap.tsx` (memo 키)
 
-- [ ] **Step 1: simHud 테스트를 먼저 쓴다 (RED)**
+- [x] **Step 1: simHud 테스트를 먼저 쓴다 (RED)**
 
 `simHud.test.ts`에 추가 — 기존 관례(순수 함수를 직접 부른다)를 따른다:
 
@@ -401,7 +403,7 @@ Run: `npx vitest run src/sim` → PASS.
 
 Run: `npx vitest run src/components/simHud.test.ts` → FAIL 확인.
 
-- [ ] **Step 2: simHud를 고친다**
+- [x] **Step 2: simHud를 고친다**
 
 1. `buildBlockReason` — 시그니처의 roomType을 `RoomType | 'ERASE' | null`로 넓히고, `'ERASE'`면 `null`(차단 없음)을 먼저 반환. **`'ERASE'`라는 UI 전용 값이 `RoomType`에 섞이지 않는 것이 계약이다** — 코어(`paintZone`)는 이 값을 모른다.
 2. `previewLabel` — 세 번째 인자 `roomType?: RoomType | 'ERASE' | null`을 받아 DESIGNATE에서 `'ERASE'`면 `${n}칸 — 지정 해제`.
@@ -449,7 +451,7 @@ function reachableTiles(w: SimWorld, blocked: Set<number>): Set<number> {
    - sealed-rooms 단계 → key는 유지하되 label `'모든 영역에 길이 닿게 합니다'`, hint `'벽으로 두른 영역에는 [문]을 내세요. 입구에서 걸어서 닿아야 환자와 의사가 들어갑니다.'`, done `regions.length > 0 && unreachable === 0`, alert `` `길이 닿지 않는 영역 ${unreachable}개 — 벽에 문을 내세요` ``
    - no-exam hint·no-cashier hint에서 벽 전제 표현을 칠하기 표현으로(각 문구는 기존 문장 구조를 유지하며 최소 수정).
 
-- [ ] **Step 3: SimGame을 고친다**
+- [x] **Step 3: SimGame을 고친다**
 
 1. 임포트: `designateRegion` → `paintZone, eraseZone`.
 2. roomType 상태: `useState<RoomType | "ERASE" | null>` — `buildBlockReason`·`previewLabel` 호출부는 시그니처가 이미 받는다(Step 2). `runTool`:
@@ -463,10 +465,14 @@ function reachableTiles(w: SimWorld, blocked: Set<number>): Set<number> {
 ```
 
 (`tiles[0]`이 아니라 **드래그 전체**를 넘기는 것이 이 변경의 요지다. 드래그·미리보기·commit 파이프라인은 이미 FILL 사각형을 만들고 있으므로(`rectModeOf('DESIGNATE') === 'FILL'`) 손대지 않는다.)
+
+> 📌 **실행 기록 — 이 괄호 안의 전제가 틀렸다.** `rectModeOf`가 `'FILL'`을 내는 것은 맞지만 그 앞에 **`isDragTool`이라는 관문**이 따로 있었고, 그게 `tool !== 'DOOR' && tool !== 'DESIGNATE'`로 DESIGNATE를 **명시적으로 제외**하고 있었다 — 즉 파이프라인이 사각형을 만들 준비가 돼 있어도 DESIGNATE는 애초에 드래그로 진입하지 못한다. 이 한 줄을 `tool !== 'DOOR'`로 고치지 않으면 이번 설계의 핵심 조작(드래그로 칠하기)이 **아예 열리지 않는다**. 스펙 §4는 *"`BuildTool`의 `DESIGNATE`가 드래그형 도구로 바뀐다(현행은 클릭형)"*라고 이 항목을 명시했는데 계획서가 옮기면서 빠뜨렸고, 대신 *"손대지 않는다"*라는 반대 문장을 적었다 — **계획이 "안 건드린다"고 단언한 자리가 가장 위험하다**(그 단언이 구현자에게 확인 면제로 읽힌다). 구현자가 설계 §4를 대조해 잡았다(`b4288e5`).
+>
+> 함께 기록 — Step 2가 지시한 `buildBlockReason`의 `'ERASE'` 조기 반환은 **넣지 않았다**. 돌연변이 실측 결과 넣으나 빼나 관측이 안 바뀐다(`'ERASE'`는 `null`도 `'EXAM'`도 아니라 기존 분기를 그냥 통과한다) — 태어날 때부터 죽은 방어라 코드 대신 주석으로 사실만 남겼다.
 3. 용도 목록(ROOM_TYPES.map 아래)에 「지정 해제」 버튼을 같은 스타일로 추가 — `aria-pressed={roomType === "ERASE"}`, 클릭 시 `setRoomType(cur => cur === "ERASE" ? null : "ERASE"); setExamDept(null)`. 목록 위 안내 주석(*"벽이 방을 만드는 게 아니라 용도가 만든다"*)을 새 사실로 갱신: 용도가 **곧** 영역이다 — 벽 없이도 칠하면 생긴다.
 4. `previewLabel` 호출부에 `roomType` 전달.
 
-- [ ] **Step 4: TileMap memo 키를 zones로 교체한다**
+- [x] **Step 4: TileMap memo 키를 zones로 교체한다**
 
 ```tsx
   const { walls, doors, zones } = world;
@@ -479,12 +485,12 @@ function reachableTiles(w: SimWorld, blocked: Set<number>): Set<number> {
 - memo 키 주석(*"walls·doors·designations 셋뿐"*)을 갱신한다: 벽·문은 **지형(벽 렌더)** 때문에 키에 남고, 영역 파생의 키는 이제 `zones` 하나다.
 - `regionAt`(벽 색 빌리기)·조명 중심·오버레이 라벨은 `regions` 파생이라 손대지 않는다.
 
-- [ ] **Step 5: 전체 게이트**
+- [x] **Step 5: 전체 게이트**
 
 Run: `npx vitest run && npx tsc --noEmit && npm run lint`
 Expected: 전부 통과(기존 lint 경고 2건 외 신규 0). **tsc가 여기서 처음으로 전역 초록이 된다.**
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 제목: `feat: 용도를 드래그로 칠한다 — 지정 해제·도달성 경고·문구 갱신`
 
@@ -492,11 +498,11 @@ Expected: 전부 통과(기존 lint 경고 2건 외 신규 0). **tsc가 여기�
 
 ## Task 4: 전체 회귀·브라우저 실측·문서·PR
 
-- [ ] **Step 1: 결정론 회귀** — `npx vitest run && npx tsc --noEmit && npm run lint && npm run build` 전부 통과.
+- [x] **Step 1: 결정론 회귀** — `npx vitest run && npx tsc --noEmit && npm run lint && npm run build` 전부 통과.
 
-- [ ] **Step 2: 프로브** — `npm run probe`. placeRoom의 벽·문·가구는 불변이고 칠 파생이 옛 성분과 같은 집합이므로 **12주 장부가 변경 전과 동일**해야 한다. 다르면 파생이 어긋난 것이다(Task 1 Step 9의 전제가 깨진 것 — 되돌아가 읽는다).
+- [x] **Step 2: 프로브** — `npm run probe`. placeRoom의 벽·문·가구는 불변이고 칠 파생이 옛 성분과 같은 집합이므로 **12주 장부가 변경 전과 동일**해야 한다. 다르면 파생이 어긋난 것이다(Task 1 Step 9의 전제가 깨진 것 — 되돌아가 읽는다).
 
-- [ ] **Step 3: 브라우저 실측** (코디네이터 수행 가능 — 확인 목록):
+- [ ] **Step 3: 브라우저 실측** (코디네이터 수행 — 확인 목록):
   1. **접수처를 문 없이**: 카운터를 놓고 주변 바닥을 RECEPTION으로 칠하면 간호사가 창구에 서고 수납이 돈다 — 이 설계의 존재 이유.
   2. 열린 대기실(벽 없음)에 환자가 와 앉는다.
   3. 이어 칠하면 오버레이에서 한 영역으로, 가운데를 해제하면 둘로 갈린다.
@@ -504,14 +510,14 @@ Expected: 전부 통과(기존 lint 경고 2건 외 신규 0). **tsc가 여기�
   5. 다른 용도를 겹쳐 칠하면 그 타일만 새 용도가 된다.
   6. 개원 준비 체크리스트의 새 문구.
 
-- [ ] **Step 4: 문서 세트**
+- [x] **Step 4: 문서 세트**
   - `claude-docs/changeLog.md` 맨 위 항목(왜/무엇을 — PR 번호 없이).
   - `claude-docs/plan.md` — 해당 항목 ✅ (있으면) + 이 작업 항목 추가.
   - `docs/concept/structural-problems-checklist.md` — 확인(표현·조작 층이라 변경 없을 것으로 예상).
   - 1분+ 디버깅 함정이 있었으면 `claude-docs/troubleshooting/T-###` 신설(번호는 **머지된 main 기준 최대+1**을 실측 — 동시 브랜치 충돌 전례가 T-139·T-140 재번호 사건이다) + 허브 재생성.
   - 계획서 체크박스 갱신.
 
-- [ ] **Step 5: PR** — push 후 `gh pr create --base main`(본문은 `--body-file` UTF-8 경유). 머지는 사용자 승인 후.
+- [ ] **Step 5: PR** (코디네이터 수행) — push 후 `gh pr create --base main`(본문은 `--body-file` UTF-8 경유). 머지는 사용자 승인 후.
 
 ---
 
