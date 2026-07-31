@@ -35,7 +35,7 @@ tags:
 **Files:**
 - Modify: `src/components/backdropPalette.test.ts:42-81`
 
-- [ ] **Step 1: 구간표의 min/max에 일괄 ×2.4를 적용한다**
+- [x] **Step 1: 구간표의 min/max에 일괄 ×2.4를 적용한다**
 
 `CATEGORIES` 배열의 각 항목에서 `min`·`max`만 바꾼다. `name`과 `keys`는 손대지 않는다.
 
@@ -82,7 +82,7 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
 ]
 ```
 
-- [ ] **Step 1-1: 요구 간격도 같은 배수로 올린다**
+- [x] **Step 1-1: 요구 간격도 같은 배수로 올린다**
 
 같은 파일의 간격 단언(`gap` 리터럴)을 함께 올린다.
 
@@ -98,7 +98,7 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
 
 또한 그 위 ⚠️ 주석에 남은 옛 배수·옛 요구값 서술("3.5배", "옛 값(4.0/1.5/1.5)")에 이번 ×2.4 갱신을 덧붙인다.
 
-- [ ] **Step 2: 테스트를 돌려 실패를 눈으로 확인한다**
+- [x] **Step 2: 테스트를 돌려 실패를 눈으로 확인한다**
 
 Run: `npx vitest run src/components/backdropPalette.test.ts`
 Expected: FAIL — **13 failed / 35 passed**. 내역:
@@ -110,7 +110,7 @@ Expected: FAIL — **13 failed / 35 passed**. 내역:
 
 > ⚠️ 여기서 실패를 확인하지 않고 넘어가면, 뒤에서 통과했을 때 그것이 **고쳐서 통과한 것인지 원래 통과했던 것인지** 구별할 수 없다.
 
-- [ ] **Step 3: 커밋**
+- [x] **Step 3: 커밋**
 
 ```bash
 git add src/components/backdropPalette.test.ts
@@ -125,7 +125,7 @@ git commit -m "test: 배경 휘도 구간표를 새 대역으로 올린다 (RED)
 - Create: `scripts/scale-backdrop-palette.mjs` (일회용 — Step 5에서 삭제)
 - Modify: `src/components/Backdrop.tsx` (`BACKDROP_PALETTE` 값 전부)
 
-- [ ] **Step 1: 변환기를 만든다**
+- [x] **Step 1: 변환기를 만든다**
 
 ```js
 // scripts/scale-backdrop-palette.mjs
@@ -156,14 +156,14 @@ writeFileSync(PATH, src.slice(0, start) + block + src.slice(end), 'utf8')
 console.log(clipped.length === 0 ? 'CLIP: 없음' : `CLIP: ${clipped.length}건\n  ${clipped.join('\n  ')}`)
 ```
 
-- [ ] **Step 2: 변환기를 돌린다**
+- [x] **Step 2: 변환기를 돌린다**
 
 Run: `node scripts/scale-backdrop-palette.mjs`
 Expected: `CLIP: 없음`
 
 > 클리핑이 보고되면 그 색은 채널이 255를 넘어 **색상이 틀어진 것**이다. 해당 키만 손으로 낮춰 구간 안에 넣고, 서열이 유지되는지 Step 3에서 확인한다.
 
-- [ ] **Step 3: 테스트를 돌려 통과를 확인한다**
+- [x] **Step 3: 테스트를 돌려 통과를 확인한다**
 
 Run: `npx vitest run src/components/backdropPalette.test.ts`
 Expected: **2 failed / 46 passed** — 구간 8건과 간격 3건이 RED에서 GREEN으로 넘어가고, **부지 비교 2건만 붉게 남는다**(「상한이 부지보다 낮게」·「여유 5 이상」).
@@ -172,12 +172,12 @@ Expected: **2 failed / 46 passed** — 구간 8건과 간격 3건이 RED에서 G
 >
 > 간격 3건이 통과하는 이유: 팔레트가 ×2.4로 오르면 실측 간격도 정확히 ×2.4가 되고(휘도식이 RGB에 선형이라 오차 없다), Task 1에서 요구값도 같은 배수로 올려 뒀으므로 **상대적 조임 강도가 보존된다**. 실측 여유가 현재의 정확히 2.4배로 남는다.
 
-- [ ] **Step 4: 실제 화면을 확인한다**
+- [x] **Step 4: 실제 화면을 확인한다**
 
 Run: `npm run dev` 후 브라우저에서 지역 선택 → 아무 지역 → 개원.
 Expected: 부지 바깥 도시가 검정 덩어리가 아니라 건물·도로 형태가 보인다. 아직 부지는 어둡다(Task 3에서 바꾼다).
 
-- [ ] **Step 5: 변환기를 지우고 커밋한다**
+- [x] **Step 5: 변환기를 지우고 커밋한다**
 
 ```bash
 rm scripts/scale-backdrop-palette.mjs
@@ -194,7 +194,7 @@ git commit -m "feat: 배경 팔레트를 중간톤으로 일괄 상승 (RGB 채�
 **Files:**
 - Modify: `src/components/TileMap.tsx` (`OUTSIDE_FLOOR`·`ROOM_STYLE`·`NEUTRAL_STYLE`·`GRID_LINE`)
 
-- [ ] **Step 1: 실패하는 단언을 먼저 추가한다**
+- [x] **Step 1: 실패하는 단언을 먼저 추가한다**
 
 `src/components/backdropPalette.test.ts` 맨 끝의 `describe` 블록 안에 추가한다:
 
@@ -216,12 +216,12 @@ git commit -m "feat: 배경 팔레트를 중간톤으로 일괄 상승 (RGB 채�
   })
 ```
 
-- [ ] **Step 2: 테스트를 돌려 실패를 확인한다**
+- [x] **Step 2: 테스트를 돌려 실패를 확인한다**
 
 Run: `npx vitest run src/components/backdropPalette.test.ts`
 Expected: FAIL — `마당이 병원의 무대다`가 실패한다. 현재 마당은 71.3이고 랜드마크 평균이 2.4배 올라 약 143이므로 간격이 음수다.
 
-- [ ] **Step 3: 부지·실내 값을 교체한다**
+- [x] **Step 3: 부지·실내 값을 교체한다**
 
 ```ts
 export const OUTSIDE_FLOOR = "#b9c0c4";
@@ -240,17 +240,17 @@ export const ROOM_STYLE: Record<RoomType, { floor: string; wall: string }> = {
 
 > `GRID_LINE`의 알파를 0.16에서 0.10으로 낮춘다 — 바닥이 밝아지면 같은 알파의 어두운 선이 훨씬 진하게 보여 격자가 화면을 지배한다.
 
-- [ ] **Step 4: 테스트를 돌려 통과를 확인한다**
+- [x] **Step 4: 테스트를 돌려 통과를 확인한다**
 
 Run: `npx vitest run src/components/backdropPalette.test.ts`
 Expected: PASS — 새 단언 2건 포함 전부 통과.
 
-- [ ] **Step 5: 전체 테스트로 회귀를 확인한다**
+- [x] **Step 5: 전체 테스트로 회귀를 확인한다**
 
 Run: `npx vitest run`
 Expected: PASS. 실패한다면 다른 테스트가 이 색 상수에 의존하고 있는 것이므로 그 테스트를 읽고 판단한다.
 
-- [ ] **Step 6: 브라우저에서 확인하고 커밋한다**
+- [x] **Step 6: 브라우저에서 확인하고 커밋한다**
 
 Run: `npm run dev` → 개원 후 화면.
 Expected: 부지가 밝은 회색, 방 바닥이 흰색에 가깝다. **의사가 바닥에 묻혀 잘 안 보인다** — 이것이 Task 4가 푸는 문제이고, 여기서 눈으로 확인해 둔다.
@@ -268,7 +268,7 @@ git commit -m "feat: 부지와 실내를 밝은 병원 톤으로 전환"
 - Modify: `src/components/PixelSprite.tsx:24-33` (`DEPT_COLOR`)
 - Modify: `src/components/pixelSprite.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트를 먼저 쓴다**
+- [x] **Step 1: 실패하는 테스트를 먼저 쓴다**
 
 `src/components/pixelSprite.test.ts`의 `describe` 안에 추가한다:
 
@@ -296,12 +296,12 @@ git commit -m "feat: 부지와 실내를 밝은 병원 톤으로 전환"
 import { relativeLuminance } from './Backdrop'
 ```
 
-- [ ] **Step 2: 테스트를 돌려 실패를 확인한다**
+- [x] **Step 2: 테스트를 돌려 실패를 확인한다**
 
 Run: `npx vitest run src/components/pixelSprite.test.ts`
 Expected: FAIL — `무채색 두 과가 없다`에서 `AESTHETICS(#a1a1aa) 채널 폭 9`와 `CHECKUP(#71717a) 채널 폭 9`가 걸린다.
 
-- [ ] **Step 3: 과 색을 교체한다**
+- [x] **Step 3: 과 색을 교체한다**
 
 ```ts
 export const DEPT_COLOR: Record<DeptKey, string> = {
@@ -316,12 +316,12 @@ export const DEPT_COLOR: Record<DeptKey, string> = {
 };
 ```
 
-- [ ] **Step 4: 테스트를 돌려 통과를 확인한다**
+- [x] **Step 4: 테스트를 돌려 통과를 확인한다**
 
 Run: `npx vitest run src/components/pixelSprite.test.ts`
 Expected: PASS — 새 단언 2건 + 기존 `과 색은 8과 전부에 있고 서로 다르다` 통과.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add src/components/PixelSprite.tsx src/components/pixelSprite.test.ts
@@ -339,7 +339,7 @@ git commit -m "feat: 과 색을 채도 낮춘 수술복 톤으로 교체 (미용
 >
 > 참고 — **접지 그림자는 이미 있다.** `TileMap`이 폰마다 `radial-gradient` 한 겹을 스프라이트보다 먼저 깔고(*"이 한 겹이 없으면 아바타가 바닥에 붙지 않고 위에 얹힌 스티커로 보인다"*), 방향은 집기 낙영과 같은 남동쪽으로 통일돼 있다. 3/4 인물은 이 그림자와 오히려 더 잘 맞는다 — 손대지 않는다.
 
-- [ ] **Step 1: `Figure`를 3/4 시점으로 재작성한다**
+- [x] **Step 1: `Figure`를 3/4 시점으로 재작성한다**
 
 `Figure` 함수 전체를 아래로 교체한다. 16단위 좌표계를 유지하되 소매가 몸통 밖으로 나오도록 몸통 폭을 줄였다.
 
@@ -371,7 +371,7 @@ function Figure({
 }
 ```
 
-- [ ] **Step 2: 세 호출부를 새 시그니처에 맞춘다**
+- [x] **Step 2: 세 호출부를 새 시그니처에 맞춘다**
 
 ```tsx
 export function DoctorSprite({ dept, busy, variantKey }: { dept: DeptKey; busy: boolean; variantKey?: string }) {
@@ -400,12 +400,12 @@ export function PatientSprite() {
 
 > 간호사·환자는 `sleeveCuff`를 안 넘긴다 — 커프스는 "가운 안에 다른 옷"을 말하는 장치인데 둘은 가운을 안 입는다. 넘기지 않으면 그 두 패스가 렌더되지 않는다.
 
-- [ ] **Step 3: 타입 검사와 전체 테스트를 돌린다**
+- [x] **Step 3: 타입 검사와 전체 테스트를 돌린다**
 
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: PASS.
 
-- [ ] **Step 4: 브라우저에서 실측한다**
+- [x] **Step 4: 브라우저에서 실측한다**
 
 Run: `npm run dev` → 개원 → 의사가 방에 서 있는 상태.
 확인할 것:
@@ -416,7 +416,7 @@ Run: `npm run dev` → 개원 → 의사가 방에 서 있는 상태.
 
 > 4번이 안 되면 스프라이트를 더 다듬는 것이 아니라 **몸통 폭·소매 돌출을 키운다**. 24px에서는 얇은 단서가 전부 사라진다는 것이 설계 단계의 실측 결론이다.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add src/components/PixelSprite.tsx
@@ -431,7 +431,7 @@ git commit -m "feat: 인물을 3/4 시점으로 재작성 — 흰 가운 안에 
 - Modify: `src/components/PixelSprite.tsx` (`LyingPatientSprite` 신설)
 - Modify: `src/components/TileMap.tsx` (침대 타일 위 폰의 분기)
 
-- [ ] **Step 1: 누운 자세 스프라이트를 만든다**
+- [x] **Step 1: 누운 자세 스프라이트를 만든다**
 
 `PatientSprite` 바로 아래에 추가한다.
 
@@ -450,7 +450,7 @@ export function LyingPatientSprite() {
 }
 ```
 
-- [ ] **Step 2: `TileMap`이 침대 위 환자를 이 스프라이트로 그리게 한다**
+- [x] **Step 2: `TileMap`이 침대 위 환자를 이 스프라이트로 그리게 한다**
 
 `TileMap.tsx`에 **이미 `const lying = bedTiles.has(...)`가 있다**(폰 렌더 루프 안). 그리고 지금은 그 `lying`이 래퍼 div에 `transform: rotate(90deg) scale(0.8)`을 걸어 **서 있는 스프라이트를 눕혀** 쓴다. 3/4 인물을 90° 돌리면 옆으로 누운 사람이 아니라 **옆으로 넘어진 사람**이 되므로 이 회전을 환자에 한해 걷어낸다.
 
@@ -474,24 +474,24 @@ import에 `LyingPatientSprite`를 더하고, 래퍼와 스프라이트 선택을
 >
 > ⚠️ 접지 그림자는 이미 `hidden={lying}`로 처리돼 있다(*"누운 폰은 바닥에 서 있지 않으므로 접지가 없다"*). 새 스프라이트를 써도 그 분기는 그대로 맞다 — 손대지 않는다.
 
-- [ ] **Step 2-1: 이동 transition이 안 끊기는지 확인한다**
+- [x] **Step 2-1: 이동 transition이 안 끊기는지 확인한다**
 
 스프라이트 컴포넌트가 바뀌면 내부 SVG는 remount된다. transition은 바깥 위치 div의 `left`/`top`에 걸려 있으므로 영향이 없어야 한다.
 
 Run: `npm run dev` → 환자가 침대로 걸어가 눕는 것을 본다.
 Expected: 걷는 동안 순간이동이 없고, 침대에 도착하는 순간 누운 그림으로 바뀐다.
 
-- [ ] **Step 3: 타입 검사와 전체 테스트**
+- [x] **Step 3: 타입 검사와 전체 테스트**
 
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: PASS.
 
-- [ ] **Step 4: 브라우저에서 확인한다**
+- [x] **Step 4: 브라우저에서 확인한다**
 
 병동을 짓고 응급 환자가 침대에 눕는 상황을 만든다(또는 배속 3×로 대기).
 Expected: 침대 위 환자가 위에서 본 모습으로 눕고, 걸어다니는 환자는 3/4로 서 있다.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add src/components/PixelSprite.tsx src/components/TileMap.tsx
@@ -507,12 +507,12 @@ git commit -m "feat: 누운 환자는 탑다운으로 그린다 (3/4 예외)"
 
 > 설계에서 남긴 미해결 항목이다 — 3/4 인물에 기존 들어올림 트릭을 그대로 쓰면 "의자 위에 서 있는 사람"이 된다. **실제로 그런지 먼저 보고** 판단한다.
 
-- [ ] **Step 1: 현재 상태를 눈으로 확인한다**
+- [x] **Step 1: 현재 상태를 눈으로 확인한다**
 
 대기실을 짓고 환자가 앉을 때까지 기다린다(배속 3×).
 Expected: 판단이 필요하다 — 앉은 것으로 읽히면 Step 3으로 건너뛴다.
 
-- [ ] **Step 2: 안 읽히면 겹침 순서로 고친다**
+- [x] **Step 2: 안 읽히면 겹침 순서로 고친다**
 
 폰을 들어 올리는 대신 **의자를 폰 위에 겹쳐** 등받이가 어깨 뒤로 보이게 한다. `SEAT_LIFT`를 0으로 두고 의자 스프라이트의 z 순서를 폰보다 앞으로 옮긴다.
 
@@ -522,7 +522,7 @@ const SEAT_LIFT = 0;
 
 의자를 그리는 JSX 블록을 폰을 그리는 블록 **뒤로** 옮긴다(뒤에 그린 것이 위에 온다).
 
-- [ ] **Step 3: 커밋**
+- [x] **Step 3: 커밋**
 
 ```bash
 git add src/components/TileMap.tsx
@@ -531,21 +531,27 @@ git commit -m "fix: 3/4 인물이 의자에 앉은 것으로 읽히게 겹침 �
 
 > Step 1에서 이미 앉은 것으로 읽혔다면 이 Task는 커밋 없이 종료한다. 안 고친 것도 결과다 — 그 경우 계획서의 이 항목에 "확인함, 변경 불필요"를 적는다.
 
+### 실행 기록 — 계획서 처방이 기각되고 다른 해법으로 갔다 (2026-07-31)
+
+Step 1은 **안 읽혔다**(3/4로 몸이 커져 의자가 어깨 뒤 검은 후광으로만 남았다). 그런데 Step 2의 처방 — `SEAT_LIFT = 0` + **의자를 통째로** 폰 앞으로 — 은 실측에서 기각됐다: 의자 전체가 앞에 오면 사람이 머리만 남아 과 색·직종·busy가 한꺼번에 사라진다. `SEAT_LIFT = 0`도 따로 틀렸다. 계획서는 lift를 *머리를 좌면 위로 빼는* 장치로 봤는데, 10배 확대 비교(lift 4 / lift 0 / 오버레이 없음)에서 머리 타원은 좌면 띠보다 3.5단위 위라 **lift가 0이어도 가려질 수 없었다** — lift가 실제로 하는 일은 가운 앞섶 **밑단을 좌면 뒤로 넣는** 것이었다.
+
+채택한 해법은 **좌면 앞단 한 조각만** 폰 위에 덧까는 층이다(`SEAT_LIFT = TILE/4` 유지). 상체(가운·과 색)는 그대로 보이고 하체만 좌면 뒤로 들어가 "앉은 사람"으로 읽힌다. 둘은 짝이라 한쪽만 두면 다시 안 읽힌다. 부수로 접지 그림자 폭을 0.62 → 0.9로 넓혀 발밑으로 되돌렸다. 근거의 단일 출처는 `TileMap.tsx`의 `SEAT_LIFT`·좌면 앞단 레이어 주석이다(안티앨리어싱 3회 합성으로 좌면 윤곽만 굵어지는 `EDGE` 계약의 알려진 예외 포함).
+
 ---
 
 ## Task 8: 전체 회귀와 최종 확인
 
-- [ ] **Step 1: 결정론 회귀를 돌린다**
+- [x] **Step 1: 결정론 회귀를 돌린다**
 
 Run: `npx vitest run && npx tsc --noEmit && npm run lint && npm run build`
 Expected: 전부 통과. 색만 바꿨으므로 시뮬 테스트는 영향이 없어야 한다 — 실패하면 색 상수를 읽는 로직이 있다는 뜻이므로 그 자리를 읽는다.
 
-- [ ] **Step 2: 프로브로 밸런스 무변을 확인한다**
+- [x] **Step 2: 프로브로 밸런스 무변을 확인한다**
 
 Run: `npm run probe`
 Expected: 12주 장부 수치가 **변경 전과 동일**하다. 이 작업은 표시층만 건드렸으므로 하나라도 다르면 시뮬을 건드린 것이다.
 
-- [ ] **Step 3: 브라우저 최종 확인**
+- [ ] **Step 3: 브라우저 최종 확인** — ⚠️ **미수행**. Task 3~7이 각자 브라우저 실측으로 닫혔고(각 Task Step 4~6), 이 Step은 그 다섯을 한 화면에서 다시 보는 확인이다. Task 8을 맡은 세션에 브라우저가 없어 못 했다 — **안 한 것도 결과이므로 체크하지 않는다.**
 
 기본 줌에서 스크린샷을 찍어 설계 목표와 대조한다.
 확인 목록:
@@ -555,13 +561,13 @@ Expected: 12주 장부 수치가 **변경 전과 동일**하다. 이 작업은 �
 4. 과 색이 가슴과 소매에 보인다
 5. 누운 환자와 선 환자가 각각 자연스럽다
 
-- [ ] **Step 4: 문서 갱신 세트**
+- [x] **Step 4: 문서 갱신 세트**
 
 - `claude-docs/changeLog.md` 맨 위에 항목 추가 (왜/무엇을)
 - 1분 이상 디버깅한 함정이 있었으면 `claude-docs/troubleshooting/T-###.md` 신설 후 `powershell -File scripts/rebuild-troubleshooting-index.ps1 -HubPath claude-docs/troubleshooting.md`
 - `docs/concept/structural-problems-checklist.md` — 표현 층 작업이라 반영 상태 변경 없음(확인만)
 
-- [ ] **Step 5: PR**
+- [ ] **Step 5: PR** — 코디네이터가 수행한다(이 Task를 맡은 서브에이전트는 push·PR을 하지 않는다).
 
 ```bash
 git push -u origin feat/bright-art-direction
