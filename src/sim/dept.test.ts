@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { SIM_DEPTS, simDept, HIRABLE_DEPTS, DEFAULT_EXAM_DEPT, type SimDeptKey } from './dept'
 import { createWorld, isWalkable, ENTRANCE, type SimWorld } from './world'
+import { computeRegions } from './regions'
 import { hireDoctor } from './pawn'
 import { hire, placeRoom } from './testHelpers'
 
@@ -61,19 +62,19 @@ describe('EXAM 과 기본값', () => {
   it('EXAM에 dept를 안 주면 INTERNAL_MEDICINE 기본(마이그레이션 절단 — UI는 항상 지정)', () => {
     const r = placeRoom(createWorld(1), { type: 'EXAM', x: 4, y: 4, w: 6, h: 5 })
     if (!r.ok) throw new Error('전제 실패')
-    expect(r.world.designations[0].dept).toBe('INTERNAL_MEDICINE')
+    expect(computeRegions(r.world)[0].dept).toBe('INTERNAL_MEDICINE')
   })
 
   it('EXAM에 dept를 주면 기본값이 그것을 덮지 않는다', () => {
     const r = placeRoom(createWorld(1), { type: 'EXAM', dept: 'CARDIOLOGY', x: 4, y: 4, w: 6, h: 5 })
     if (!r.ok) throw new Error('전제 실패')
-    expect(r.world.designations[0].dept).toBe('CARDIOLOGY')
+    expect(computeRegions(r.world)[0].dept).toBe('CARDIOLOGY')
   })
 
   it('EXAM이 아닌 방은 과가 없다 — 기본값이 방 종류를 가리지 않는다', () => {
     const r = placeRoom(createWorld(1), { type: 'WARD', x: 4, y: 4, w: 6, h: 5 })
     if (!r.ok) throw new Error('전제 실패')
-    expect(r.world.designations[0].dept).toBeUndefined()
+    expect(computeRegions(r.world)[0].dept).toBeUndefined()
   })
 
   it('EXAM이 아닌 방은 과를 **지정해도** 떨군다 — 무의미한 값이 실려 다니지 않는다', () => {
@@ -84,8 +85,8 @@ describe('EXAM 과 기본값', () => {
     for (const type of ['WARD', 'WAITING', 'LOUNGE', 'RECEPTION'] as const) {
       const r = placeRoom(createWorld(1), { type, dept: 'CARDIOLOGY', x: 4, y: 4, w: 6, h: 5 })
       if (!r.ok) throw new Error(`전제 실패: ${type}`)
-      expect(r.world.designations[0].type).toBe(type) // 나머지 스펙은 그대로 실린다
-      expect(r.world.designations[0].dept).toBeUndefined()
+      expect(computeRegions(r.world)[0].type).toBe(type) // 나머지 스펙은 그대로 실린다
+      expect(computeRegions(r.world)[0].dept).toBeUndefined()
     }
   })
 

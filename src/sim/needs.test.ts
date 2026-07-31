@@ -849,8 +849,8 @@ describe('식당 건설', () => {
     expect(FURNITURE_OF.CAFETERIA).toBe('CHAIR')
     const res = placeRoom(createWorld(1), { type: 'CAFETERIA', x: 4, y: 4, w: 8, h: 6 })
     if (!res.ok) throw new Error('전제 실패 — 식당을 못 지었다')
-    expect(res.world.designations[0].type).toBe('CAFETERIA')
-    expect(res.world.designations[0].dept).toBeUndefined() // 진료실만 과를 갖는다(placeRoom이 떨군다)
+    expect(computeRegions(res.world)[0].type).toBe('CAFETERIA')
+    expect(computeRegions(res.world)[0].dept).toBeUndefined() // 진료실만 과를 갖는다(placeRoom이 떨군다)
     expect(res.world.furniture.length).toBeGreaterThan(0)
     expect(res.world.furniture.every(f => f.kind === 'CHAIR')).toBe(true)
 

@@ -1034,16 +1034,15 @@ describe('과 라우팅 — 삼중 일치', () => {
 
   it('방의 과가 다르면 진료가 성립하지 않는다 — 삼중 일치의 방 축', () => {
     // 의사(내과) == 환자(내과)인데 방만 순환기다. 방 조건을 빼면 여기서 진료가 돈다.
-    // ⚠️ 방의 과를 바꾸는 자리가 `rooms`에서 **`designations`(용도 앵커)**로 옮겨왔다 — 규칙이
+    // ⚠️ 방의 과를 바꾸는 자리가 `rooms`에서 **`zones`(칠한 타일)**로 옮겨왔다 — 규칙이
     //    읽는 곳이 거기이기 때문이다. 옛 자리(`rooms`)를 고치면 이 테스트는 아무것도 안 바꾼 채
     //    통과하고, 삼중 일치의 방 축을 지워도 죽지 않는 계측기가 된다.
     const base = soloDeptWorld('INTERNAL_MEDICINE')
-    const mismatched = {
-      ...base,
-      designations: base.designations.map(
-        d => (d.type === 'EXAM' ? { ...d, dept: 'CARDIOLOGY' as const } : d),
-      ),
+    const zones = new Map(base.zones)
+    for (const [i, p] of zones) {
+      if (p.type === 'EXAM') zones.set(i, { ...p, dept: 'CARDIOLOGY' as const })
     }
+    const mismatched = { ...base, zones }
     const w = run(seatPatient(mismatched, 'INTERNAL_MEDICINE'), 120)
     expect(w.stats.examsDone).toBe(0)
     expect(w.stats.byDept).toEqual({})

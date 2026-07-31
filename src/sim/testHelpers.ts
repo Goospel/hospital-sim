@@ -9,7 +9,7 @@
 // 고칠 자리가 여덟 곳이고 **한 곳만 잊어도 그 파일만 조용히 옛 계약으로 돈다**.
 //
 // ⚠️ 상대 경로 임포트 — vitest에 `@/` 별칭이 없다(simHud.ts 머리말과 같은 제약).
-import { buildWalls, designateRegion, placeDoor, placeFurniture, type PlaceResult } from './build'
+import { buildWalls, paintZone, placeDoor, placeFurniture, type PlaceResult } from './build'
 import { DEFAULT_EXAM_DEPT, type SimDeptKey } from './dept'
 import { hireDoctor, hireNurse } from './pawn'
 import type { Furniture, RoomType, SimWorld } from './world'
@@ -131,7 +131,12 @@ export function placeRoom(world: SimWorld, spec: RoomSpec): PlaceResult {
   if (!walls.ok) return walls
   const opened = placeDoor(walls.world, door)
   if (!opened.ok) return opened
-  const named = designateRegion(opened.world, { x: door.x, y: door.y - 1 }, spec.type, dept)
+  // 사각형 **전체**를 칠한다 — 벽·문 타일은 paintZone이 알아서 건너뛰므로(계약) 내부만 남는다.
+  // 옛 앵커(문 위 한 칸)와 결과가 같아야 한다: 밀폐 방의 내부 성분 = 사각형에서 벽·문을 뺀 것.
+  const all: Array<{ x: number; y: number }> = []
+  for (let yy = spec.y; yy < spec.y + spec.h; yy++)
+    for (let xx = spec.x; xx < spec.x + spec.w; xx++) all.push({ x: xx, y: yy })
+  const named = paintZone(opened.world, all, spec.type, dept)
   if (!named.ok) return named
 
   let w = named.world

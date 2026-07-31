@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createWorld, isWalkable, tileIndex, GRID_W, type FurnitureKind, type RoomType, type SimWorld } from './world'
-import { BUILD_COST, refundOf, buildWalls, placeDoor, placeFurniture, designateRegion, demolish } from './build'
+import { BUILD_COST, refundOf, buildWalls, placeDoor, placeFurniture, paintZone, eraseZone, demolish } from './build'
 import { computeRegions } from './regions'
 import { placeRoom, doorTile, FURNITURE_OF } from './testHelpers'
 
@@ -189,13 +189,19 @@ describe('placeFurniture — 가구 4종', () => {
   })
 })
 
-describe('designateRegion — 용도 앵커', () => {
-  /** 벽으로 두르고 문 하나를 낸 6×5 빈 방(가구·용도 없음) */
+describe('paintZone · eraseZone — 용도 칠하기', () => {
+  /** 사각형 안의 모든 좌표 — 드래그가 넘기는 입력 그대로. */
+  const rectPts = (x: number, y: number, w: number, h: number) => {
+    const out: Array<{ x: number; y: number }> = []
+    for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) out.push({ x: tx, y: ty })
+    return out
+  }
+  const ROOM = { x: 4, y: 4, w: 6, h: 5 } // 테두리 18타일(문 1 포함) · 내부 12타일
+
+  /** 벽으로 두르고 문 하나를 낸 6×5 빈 껍데기(가구·칠 없음) */
   function shell(w: SimWorld = createWorld(1)): SimWorld {
-    const border: Array<{ x: number; y: number }> = []
-    for (let x = 4; x < 10; x++) for (let y = 4; y < 9; y++) {
-      if (x === 4 || x === 9 || y === 4 || y === 8) border.push({ x, y })
-    }
+    const border = rectPts(ROOM.x, ROOM.y, ROOM.w, ROOM.h)
+      .filter(t => t.x === 4 || t.x === 9 || t.y === 4 || t.y === 8)
     const r = buildWalls(w, border)
     if (!r.ok) throw new Error('전제 실패 — 껍데기 벽')
     const d = placeDoor(r.world, { x: 7, y: 8 })
@@ -203,58 +209,106 @@ describe('designateRegion — 용도 앵커', () => {
     return d.world
   }
 
-  it('실내 영역을 클릭하면 그 영역이 용도를 갖는다 — 비용은 0이다', () => {
+  it('벽·문 타일은 칠해지지 않는다 — skipped로 보고된다. 비용은 0이다', () => {
     const w = shell()
-    const r = designateRegion(w, { x: 6, y: 6 }, 'WAITING')
+    const r = paintZone(w, rectPts(ROOM.x, ROOM.y, ROOM.w, ROOM.h), 'WAITING')
     expect(r.ok).toBe(true)
     if (!r.ok) return
+    expect(r.tiles).toHaveLength(12)                 // 내부 (6-2)*(5-2)
+    expect(r.skipped).toBe(18)                       // 테두리 = 벽 17 + 문 1
+    expect(r.deltaManwon).toBe(0)
     expect(r.world.treasuryManwon).toBe(w.treasuryManwon)
+    for (const i of r.world.walls) expect(r.world.zones.has(i)).toBe(false)
+    for (const i of r.world.doors) expect(r.world.zones.has(i)).toBe(false)
     const region = computeRegions(r.world).find(x => x.tiles.has(idx(6, 6)))!
     expect(region.type).toBe('WAITING')
   })
 
-  it('같은 영역을 다시 지정하면 옛 앵커를 **교체**한다 — 먼저가 이기는 규칙에 갇히지 않는다', () => {
-    const first = designateRegion(shell(), { x: 6, y: 6 }, 'WAITING')
-    if (!first.ok) throw new Error('전제 실패')
-    const second = designateRegion(first.world, { x: 5, y: 5 }, 'WARD')
-    expect(second.ok).toBe(true)
-    if (!second.ok) return
-    expect(second.world.designations).toHaveLength(1)
-    expect(computeRegions(second.world).find(r => r.tiles.has(idx(6, 6)))!.type).toBe('WARD')
-  })
-
-  it('다른 영역의 앵커는 건드리지 않는다 — 교체는 그 영역 안에서만이다', () => {
-    const w = placeRoom(createWorld(1), { type: 'WAITING', x: 20, y: 4, w: 6, h: 5 })
-    if (!w.ok) throw new Error('전제 실패')
-    const r = designateRegion(shell(w.world), { x: 6, y: 6 }, 'WARD')
+  it('벽 없이도 칠해진다 — 밀폐는 더 이상 조건이 아니다(마당 한복판·부지 가장자리)', () => {
+    const r = paintZone(createWorld(1), rectPts(0, 0, 3, 3), 'WAITING')
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    const types = computeRegions(r.world).map(x => x.type).sort()
-    expect(types).toEqual(['WAITING', 'WARD'])
+    expect(r.tiles).toHaveLength(9)
+    expect(computeRegions(r.world)).toHaveLength(1)
   })
 
-  it('마당·벽·문 위는 거부한다 — 둘러싸이지 않은 곳에는 방이 없다', () => {
-    const w = shell()
-    for (const at of [{ x: 0, y: 0 }, { x: 4, y: 4 }, { x: 7, y: 8 }]) {
-      const r = designateRegion(w, at, 'WAITING')
-      expect(r.ok, `${at.x},${at.y}`).toBe(false)
-      if (r.ok) continue
-      expect(r.reason).toBe('OUTDOORS')
-    }
+  it('가구 타일은 칠해진다 — 가구는 영역 안의 것이지 경계가 아니다', () => {
+    const f = placeFurniture(createWorld(1), 'CHAIR', pts([6, 6]))
+    if (!f.ok) throw new Error('전제 실패 — 의자')
+    const r = paintZone(f.world, pts([6, 6]), 'WAITING')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.tiles).toEqual([idx(6, 6)])
+  })
+
+  it('나중 칠한 것이 이긴다 — 다른 용도 타일을 덮어쓴다', () => {
+    const first = paintZone(createWorld(1), rectPts(4, 4, 4, 3), 'WAITING')
+    if (!first.ok) throw new Error('전제 실패')
+    expect(computeRegions(first.world)[0].tiles.size).toBe(12)
+    // 오른쪽 두 열(4타일)만 접수처로 덮어쓴다 — 대기실은 그만큼 줄고 접수처가 새로 생긴다.
+    const second = paintZone(first.world, rectPts(6, 4, 2, 3), 'RECEPTION')
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    const rs = computeRegions(second.world)
+    expect(rs).toHaveLength(2)
+    expect(rs.map(r => [r.type, r.tiles.size]).sort()).toEqual([['RECEPTION', 6], ['WAITING', 6]])
+  })
+
+  it('전부 같은 칠이면 NOTHING이다 — 같은 사각형을 두 번 칠해도 세계가 안 흔들린다', () => {
+    const first = paintZone(createWorld(1), rectPts(4, 4, 4, 3), 'WAITING')
+    if (!first.ok) throw new Error('전제 실패')
+    const again = paintZone(first.world, rectPts(4, 4, 4, 3), 'WAITING')
+    expect(again.ok).toBe(false)
+    if (again.ok) return
+    expect(again.reason).toBe('NOTHING')
+    expect(again.skipped).toBe(12)
+  })
+
+  it('같은 용도라도 과가 다르면 덮어쓴다 — 진료실의 과 교체가 먹힌다', () => {
+    const first = paintZone(createWorld(1), rectPts(4, 4, 3, 3), 'EXAM', 'INTERNAL_MEDICINE')
+    if (!first.ok) throw new Error('전제 실패')
+    const second = paintZone(first.world, rectPts(4, 4, 3, 3), 'EXAM', 'CARDIOLOGY')
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    expect(computeRegions(second.world)[0].dept).toBe('CARDIOLOGY')
   })
 
   it('진료실은 과가 실린다 — 과 없이 부르면 던진다(화면이 막는 자리다)', () => {
-    const w = shell()
-    expect(() => designateRegion(w, { x: 6, y: 6 }, 'EXAM')).toThrow()
-    const r = designateRegion(w, { x: 6, y: 6 }, 'EXAM', 'CARDIOLOGY')
+    const w = createWorld(1)
+    expect(() => paintZone(w, rectPts(4, 4, 3, 3), 'EXAM')).toThrow()
+    const r = paintZone(w, rectPts(4, 4, 3, 3), 'EXAM', 'CARDIOLOGY')
     if (!r.ok) throw new Error('전제 실패')
-    expect(computeRegions(r.world).find(x => x.tiles.has(idx(6, 6)))!.dept).toBe('CARDIOLOGY')
+    expect(computeRegions(r.world)[0].dept).toBe('CARDIOLOGY')
   })
 
   it('진료실이 아니면 과를 **떨군다** — 「순환기 대기실」이 진료실 행세를 하지 않는다', () => {
-    const r = designateRegion(shell(), { x: 6, y: 6 }, 'WAITING', 'CARDIOLOGY')
+    const r = paintZone(createWorld(1), rectPts(4, 4, 3, 3), 'WAITING', 'CARDIOLOGY')
     if (!r.ok) throw new Error('전제 실패')
-    expect(r.world.designations[0].dept).toBeUndefined()
+    expect(r.world.zones.get(idx(4, 4))!.dept).toBeUndefined()
+    expect(computeRegions(r.world)[0].dept).toBeUndefined()
+  })
+
+  it('지정 해제는 칠만 지운다 — 벽·가구는 그대로다', () => {
+    const built = placeRoom(createWorld(1), { type: 'WAITING', ...ROOM })
+    if (!built.ok) throw new Error('전제 실패')
+    const r = eraseZone(built.world, rectPts(ROOM.x, ROOM.y, ROOM.w, ROOM.h))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.tiles).toHaveLength(12)                       // 칠이 있던 내부만
+    expect(r.world.zones.size).toBe(0)
+    expect(computeRegions(r.world)).toEqual([])            // 영역이 사라졌다
+    expect(r.world.walls).toEqual(built.world.walls)       // 벽은 그대로
+    expect(r.world.doors).toEqual(built.world.doors)
+    expect(r.world.furniture).toEqual(built.world.furniture)
+    expect(r.world.treasuryManwon).toBe(built.world.treasuryManwon) // 환불도 청구도 없다
+  })
+
+  it('빈 범위 해제는 NOTHING이다 — 지울 칠이 없으면 세계가 안 바뀐다', () => {
+    const r = eraseZone(createWorld(1), rectPts(20, 20, 2, 2))
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe('NOTHING')
+    expect(r.skipped).toBe(4)
   })
 })
 
@@ -297,14 +351,15 @@ describe('demolish — 철거와 환불', () => {
     expect(r.deltaManwon).toBe(refundOf('WALL'))
   })
 
-  it('앵커는 건드리지 않는다 — 벽이 뚫려 마당이 되면 영역 인식이 알아서 무효화한다', () => {
+  it('칠은 건드리지 않는다 — 벽을 통째로 헐어도 영역은 그대로다(밀폐가 조건이 아니다)', () => {
     const built = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w: 6, h: 5 })
     if (!built.ok) throw new Error('전제 실패')
+    const before = computeRegions(built.world)
     const r = demolish(built.world, pts([4, 4], [5, 4], [6, 4], [7, 4], [8, 4], [9, 4]))
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.world.designations).toEqual(built.world.designations) // 좌표는 그대로 남는다
-    expect(computeRegions(r.world)).toEqual([])                    // 그러나 방은 사라졌다
+    expect(r.world.zones).toEqual(built.world.zones)  // 칠은 철거의 대상이 아니다
+    expect(computeRegions(r.world)).toEqual(before)   // 벽이 뚫려도 방은 그대로 산다
   })
 })
 
@@ -315,7 +370,7 @@ describe('demolish — 철거와 환불', () => {
   스팟 선택이 통째로 달라지고, 그건 이 헬퍼가 틀린 것이지 규칙이 바뀐 것이 아니다.
 */
 describe('placeRoom(테스트 헬퍼) — 옛 자동 가구 격자 재현', () => {
-  it('벽·문·앵커를 낳아 computeRegions가 그 방을 그대로 인식한다', () => {
+  it('벽·문·칠을 낳아 computeRegions가 그 방을 그대로 인식한다', () => {
     const res = placeRoom(createWorld(1), { type: 'EXAM', dept: 'CARDIOLOGY', x: 4, y: 4, w: 6, h: 5 })
     if (!res.ok) throw new Error('전제 실패')
     const rs = computeRegions(res.world)
@@ -324,7 +379,8 @@ describe('placeRoom(테스트 헬퍼) — 옛 자동 가구 격자 재현', () =
     expect(rs[0].type).toBe('EXAM')
     expect(rs[0].dept).toBe('CARDIOLOGY')
     const door = doorTile({ x: 4, y: 4, w: 6, h: 5 })
-    expect([...rs[0].doors]).toEqual([tileIndex(door.x, door.y)]) // 문은 정확히 하나
+    expect(res.world.doors.has(tileIndex(door.x, door.y))).toBe(true)   // 문은 정확히 하나
+    expect(res.world.doors.size).toBe(1)
     expect(res.world.walls.has(tileIndex(door.x, door.y))).toBe(false) // 문은 벽이 아니다
   })
 
@@ -340,7 +396,7 @@ describe('placeRoom(테스트 헬퍼) — 옛 자동 가구 격자 재현', () =
   it('EXAM에 dept를 안 주면 내과로 접는다 — 옛 마이그레이션 절단을 그대로 물려받는다', () => {
     const res = placeRoom(createWorld(1), { type: 'EXAM', x: 4, y: 4, w: 6, h: 5 })
     if (!res.ok) throw new Error('전제 실패')
-    expect(res.world.designations[0].dept).toBe('INTERNAL_MEDICINE')
+    expect(computeRegions(res.world)[0].dept).toBe('INTERNAL_MEDICINE')
   })
 
   it('WAITING은 내부에 의자를 깔고, WARD는 침대를 놓는다', () => {
@@ -393,13 +449,17 @@ describe('placeRoom(테스트 헬퍼) — 옛 자동 가구 격자 재현', () =
     }
   })
 
-  it('용도 앵커는 문 바로 안쪽 타일 — 가구가 절대 안 놓이는 자리라 항상 유효하다', () => {
+  it('칠한 타일은 사각형에서 테두리를 뺀 내부 전부다 — 옛 앵커 파생과 같은 집합이다', () => {
     for (const [w, h] of [[4, 4], [6, 5], [7, 5], [8, 6]]) {
       const res = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w, h })
       if (!res.ok) throw new Error(`전제 실패 ${w}x${h}`)
-      const door = doorTile({ x: 4, y: 4, w, h })
-      expect(res.world.designations[0].at).toEqual({ x: door.x, y: door.y - 1 })
-      expect(computeRegions(res.world)[0].type).toBe('WAITING')
+      const inside: number[] = []
+      for (let y = 5; y < 4 + h - 1; y++) for (let x = 5; x < 4 + w - 1; x++) inside.push(tileIndex(x, y))
+      expect([...res.world.zones.keys()].sort((a, b) => a - b)).toEqual(inside)
+      const rs = computeRegions(res.world)
+      expect(rs).toHaveLength(1)
+      expect(rs[0].type).toBe('WAITING')
+      expect([...rs[0].tiles].sort((a, b) => a - b)).toEqual(inside)
     }
   })
 

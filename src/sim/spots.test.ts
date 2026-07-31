@@ -4,7 +4,7 @@
 // 필드 값에 따라 다른 방의 것이 되고, 벽을 옮겨 방이 갈라지는 날 그 필드는 조용히 낡는다.
 // 여기 있는 것은 그 필드가 사라진 뒤에도 열거가 **틀리지 않는가**를 재는 계측기다.
 import { describe, it, expect } from 'vitest'
-import { createWorld, tileIndex, type Furniture, type SimWorld } from './world'
+import { createWorld, tileIndex, type Furniture, type SimWorld, type ZonePaint } from './world'
 import { computeRegions } from './regions'
 import { examSlots, furnitureSpots, standSpot, occupySpot } from './spots'
 import { buildBlockedSet } from './path'
@@ -18,15 +18,23 @@ function rectWalls(x: number, y: number, w: number, h: number): number[] {
   return out
 }
 
-/** 두 밀실 — 대기실 (10,10) 6×5(내부 11..14 × 11..13) · 병동 (20,10) 6×5(내부 21..24 × 11..13) */
+/** 사각형 안쪽을 그 용도로 칠한다 — 영역은 이제 칠에서 파생한다(설계 2026-07-31). */
+function paintRect(
+  zones: Map<number, ZonePaint>, x: number, y: number, w: number, h: number, p: ZonePaint,
+): Map<number, ZonePaint> {
+  for (let ty = y; ty < y + h; ty++) for (let tx = x; tx < x + w; tx++) zones.set(tileIndex(tx, ty), p)
+  return zones
+}
+
+/** 두 방 — 대기실 (10,10) 6×5(내부 11..14 × 11..13) · 병동 (20,10) 6×5(내부 21..24 × 11..13).
+ *  벽은 그대로 두른다: 영역과는 무관해졌지만 **통행 판정**(standSpot·occupySpot)이 여전히 읽는다. */
 function twoRooms(furniture: Furniture[]): SimWorld {
+  const zones = paintRect(new Map(), 11, 11, 4, 3, { type: 'WAITING' })
+  paintRect(zones, 21, 11, 4, 3, { type: 'WARD' })
   return {
     ...createWorld(1),
     walls: new Set([...rectWalls(10, 10, 6, 5), ...rectWalls(20, 10, 6, 5)]),
-    designations: [
-      { at: { x: 12, y: 12 }, type: 'WAITING' },
-      { at: { x: 22, y: 12 }, type: 'WARD' },
-    ],
+    zones,
     furniture,
   }
 }
@@ -53,14 +61,14 @@ describe('furnitureSpots — 영역 안의 가구를 좌표로 연다', () => {
     expect(furnitureSpots(w, 'WARD', 'BED')).toEqual([{ x: 22, y: 12 }])
   })
 
-  it('마당(둘러싸이지 않은 곳)에 놓인 가구는 어느 용도로도 열리지 않는다', () => {
-    // 설계 §2: 가구는 마당에도 놓을 수 있으나 **기능은 용도 영역 안에서만** 한다.
+  it('칠하지 않은 곳에 놓인 가구는 어느 용도로도 열리지 않는다', () => {
+    // 설계 §2: 가구는 어디에나 놓을 수 있으나 **기능은 용도 영역 안에서만** 한다.
     const w = twoRooms([{ kind: 'CHAIR', x: 2, y: 2 }])
     expect(furnitureSpots(w, 'WAITING', 'CHAIR')).toEqual([])
   })
 
-  it('용도가 없는 영역의 가구도 열리지 않는다 — 벽만 세우고 지정을 안 한 방', () => {
-    const w = { ...twoRooms([{ kind: 'CHAIR', x: 12, y: 12 }]), designations: [] }
+  it('칠이 없으면 가구도 열리지 않는다 — 벽만 세우고 지정을 안 한 방', () => {
+    const w = { ...twoRooms([{ kind: 'CHAIR', x: 12, y: 12 }]), zones: new Map() }
     expect(furnitureSpots(w, 'WAITING', 'CHAIR')).toEqual([])
   })
 
@@ -144,7 +152,7 @@ function examRoom(furniture: Furniture[]): SimWorld {
   return {
     ...createWorld(1),
     walls: new Set(rectWalls(10, 10, 6, 5)),
-    designations: [{ at: { x: 12, y: 12 }, type: 'EXAM', dept: 'INTERNAL_MEDICINE' }],
+    zones: paintRect(new Map(), 11, 11, 4, 3, { type: 'EXAM', dept: 'INTERNAL_MEDICINE' }),
     furniture,
   }
 }

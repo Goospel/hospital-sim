@@ -3,8 +3,7 @@
 // 사각형 방(placeRoom)이 여기 없는 것이 이 파일의 요지다: 방은 이제 **결과**이지 명령이 아니다.
 // 플레이어는 벽을 두르고 문을 내고 용도를 지정하고 가구를 놓으며, "방"은 그 지형에서 파생된다
 // (regions.computeRegions). 옛 사각 방 헬퍼는 테스트 픽스처로만 남아 있다(testHelpers.placeRoom).
-import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld } from './world'
-import { computeRegions } from './regions'
+import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld, type ZonePaint } from './world'
 import type { SimDeptKey } from './dept'
 import type { Pt } from './path'
 
@@ -28,8 +27,6 @@ export type BuildReason =
   | 'NO_MONEY'
   /** 문은 벽 위에만 낼 수 있다. */
   | 'NOT_WALL'
-  /** 둘러싸인 실내가 아니다(마당·벽·문 위). */
-  | 'OUTDOORS'
 
 /**
  * 건설 한 번의 결과.
@@ -126,34 +123,60 @@ export function placeDoor(w: SimWorld, at: Pt): PlaceResult {
 }
 
 /**
- * 용도 — 클릭한 타일이 속한 **실내 영역**에 앵커를 심는다. 비용은 0이다(지정은 공사가 아니다).
- *
- * 그 영역 안의 옛 앵커를 먼저 걷어내는 것이 교체 규약이다(설계 §2). 안 걷어내면 `computeRegions`의
- * "먼저 지정이 이긴다"에 걸려 **재지정이 영영 먹히지 않는다** — 화면에서는 클릭이 먹통으로 보인다.
- *
- * 진료실인데 과가 없으면 던진다: 과 없는 EXAM 영역은 라우팅이 "아무 환자나 받는 방"으로 새게
- * 만든다. 화면이 과 선택 전에는 클릭을 막으므로(simHud.buildBlockReason) 여기는 도달 불가다.
+ * 용도 칠하기 — 드래그한 타일에 (type·dept)를 입힌다. 영역은 여기서 만들지 않는다(파생 —
+ * regions.computeRegions). 규칙(설계 §1·§3):
+ * - **벽·문 타일은 칠해지지 않는다**(건너뜀). 가구 타일은 칠해진다 — 가구는 영역 안의
+ *   것이지 경계가 아니다.
+ * - **나중 칠한 것이 이긴다** — 다른 용도 타일은 덮어쓴다. 같은 (type·dept)는 건너뜀.
+ * - 지정은 무료다(deltaManwon 0). 실패 계약은 install과 같다(미리보기가 같은 값을 읽는다).
  */
-export function designateRegion(w: SimWorld, at: Pt, type: RoomType, dept?: SimDeptKey): PlaceResult {
+export function paintZone(w: SimWorld, tiles: readonly Pt[], type: RoomType, dept?: SimDeptKey): PlaceResult {
   if (type === 'EXAM' && dept === undefined) throw new Error('진료실 용도에는 과가 필요하다')
-  const i = tileIndex(at.x, at.y)
-  const region = inBounds(at) ? computeRegions(w).find(r => r.tiles.has(i)) : undefined
-  if (!region) return { ok: false, reason: 'OUTDOORS', tiles: [], skipped: 0, deltaManwon: 0 }
-  // EXAM이 아니면 과를 떨군다 — 대기실·병동에 실려 온 과는 읽는 쪽에서 뜻을 만들어낸다.
-  const anchor = { at: { x: at.x, y: at.y }, type, ...(type === 'EXAM' && dept ? { dept } : {}) }
-  const kept = w.designations.filter(d => !region.tiles.has(tileIndex(d.at.x, d.at.y)))
-  return {
-    ok: true,
-    world: { ...w, designations: [...kept, anchor] },
-    tiles: [...region.tiles], skipped: 0, deltaManwon: 0,
+  // EXAM이 아니면 과를 떨군다 — 대기실에 실려 온 과는 읽는 쪽에서 뜻을 만들어낸다(옛 규약).
+  const paint: ZonePaint = type === 'EXAM' && dept !== undefined ? { type, dept } : { type }
+  const seen = new Set<number>()
+  const targets: number[] = []
+  let skipped = 0
+  for (const t of tiles) {
+    if (!inBounds(t)) { skipped += 1; continue }
+    const i = tileIndex(t.x, t.y)
+    if (seen.has(i)) continue
+    seen.add(i)
+    if (w.walls.has(i) || w.doors.has(i)) { skipped += 1; continue }
+    const cur = w.zones.get(i)
+    if (cur !== undefined && cur.type === paint.type && cur.dept === paint.dept) { skipped += 1; continue }
+    targets.push(i)
   }
+  if (targets.length === 0) return { ok: false, reason: 'NOTHING', tiles: [], skipped, deltaManwon: 0 }
+  const zones = new Map(w.zones)
+  for (const i of targets) zones.set(i, paint)
+  return { ok: true, world: { ...w, zones }, tiles: targets, skipped, deltaManwon: 0 }
+}
+
+/** 지정 해제 — 드래그한 타일의 칠만 지운다. 벽·가구는 그대로(철거 도구와 분리 — 설계 §1). */
+export function eraseZone(w: SimWorld, tiles: readonly Pt[]): PlaceResult {
+  const seen = new Set<number>()
+  const targets: number[] = []
+  let skipped = 0
+  for (const t of tiles) {
+    if (!inBounds(t)) { skipped += 1; continue }
+    const i = tileIndex(t.x, t.y)
+    if (seen.has(i)) continue
+    seen.add(i)
+    if (!w.zones.has(i)) { skipped += 1; continue }
+    targets.push(i)
+  }
+  if (targets.length === 0) return { ok: false, reason: 'NOTHING', tiles: [], skipped, deltaManwon: 0 }
+  const zones = new Map(w.zones)
+  for (const i of targets) zones.delete(i)
+  return { ok: true, world: { ...w, zones }, tiles: targets, skipped, deltaManwon: 0 }
 }
 
 /**
  * 철거 — 훑은 타일의 벽·문·가구를 없애고 환불을 합산한다.
  *
- * 앵커(용도)는 건드리지 않는다: 벽이 뚫려 마당이 되면 그 좌표를 담은 영역이 사라지므로
- * 영역 인식이 알아서 무효화하고, 다시 벽을 두르면 그대로 되살아난다(좌표가 앵커인 이유).
+ * 칠(zones)은 건드리지 않는다 — 벽을 부숴도 영역은 그대로다(밀폐가 영역의 조건이 아니게 된
+ * 것이 이 설계의 목적). 영역을 지우는 길은 「지정 해제」(eraseZone)뿐이다.
  */
 export function demolish(w: SimWorld, tiles: readonly Pt[]): PlaceResult {
   const wanted = new Set<number>()

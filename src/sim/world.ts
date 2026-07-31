@@ -200,9 +200,10 @@ export function regionHirePool(key: SimRegionKey): Record<SimDeptKey, number> {
 
 export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION' | 'CAFETERIA'
 
-/** 용도 앵커 — "이 좌표가 속한 방은 이 용도다". 방이 아니라 **타일**을 가리키는 것이 핵심이다:
- *  벽을 허물어 영역이 병합·분리돼도 앵커는 좌표라 저절로 승계된다(영역 id는 파생값이라 못 쓴다). */
-export interface Designation { at: Pt; type: RoomType; dept?: SimDeptKey }
+/** 칠한 한 타일의 용도 — `dept`는 `EXAM`에만 실린다(옛 Designation과 같은 규약).
+ *  영역은 이 칠에서 **파생**한다(regions.computeRegions — 같은 (type·dept) 성분).
+ *  벽·문 타일에는 칠이 없다는 것이 build.paintZone의 계약이다. */
+export interface ZonePaint { type: RoomType; dept?: SimDeptKey }
 
 export type FurnitureKind = 'DESK' | 'CHAIR' | 'BED' | 'COUNTER'
 /** 집기 한 점 — **소속 필드가 없다**(설계 §1-1). 이 가구가 어느 방의 것인지는 좌표가 말한다:
@@ -231,8 +232,9 @@ export interface SimWorld {
   /** 문 타일 — **통행 가능하되 영역 경계다**(벽 집합에는 없다). 이 이중성이 문의 정의다:
    *  막으면 못 드나들고, 경계가 아니면 두 방이 하나로 붙는다. */
   doors: ReadonlySet<number>
-  /** 용도 앵커 — 배열 순서 = 지정 순서 = 충돌 시 우선순위(먼저가 이긴다). */
-  designations: ReadonlyArray<Designation>
+  /** 칠한 타일 → 용도. **불변 취급** — 편집은 새 Map으로 교체한다(walls와 같은 계약).
+   *  computeRegions memo와 TileMap 지형 memo가 이 참조를 키로 쓴다. */
+  zones: ReadonlyMap<number, ZonePaint>
   furniture: Furniture[]
   pawns: Pawn[]
   nextId: number
@@ -358,7 +360,7 @@ export function createWorld(
   const region = start?.region ?? 'URBAN'
   return {
     minute: 0, day: 1, week: 1, phase: 'RUNNING', treasuryManwon: INITIAL_TREASURY_MANWON,
-    walls: new Set(), doors: new Set(), designations: [],
+    walls: new Set(), doors: new Set(), zones: new Map(),
     furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
     // 시작 풀은 **지역이 정한다** — URBAN은 델타 0이라 전국 풀 그대로다(기존 회귀 무변).
