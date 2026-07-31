@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { BACKDROP_PALETTE, drawBackdrop, relativeLuminance } from './Backdrop'
-import { OUTSIDE_FLOOR, NEUTRAL_STYLE, ROOM_STYLE, SHADE, shade } from './TileMap'
+import { OUTSIDE_FLOOR, NEUTRAL_STYLE, ROOM_STYLE, SHADE, shade, wallBands } from './TileMap'
 import type { SimRegionKey } from '@/sim/world'
 
 /**
@@ -16,7 +16,11 @@ import type { SimRegionKey } from '@/sim/world'
  * 넓힌 것이 지금 표다 — 서열은 그대로 두고 전 항목을 위로 펼쳤다.
  * ④ **그것도 부족했다(2026-07-30)**: 20.4 천장에서도 배경 전체가 7~19에 갇혀 브라우저 실측상 부지 좌우가
  * 그냥 검정이었다 — 지역별 배경 12종이 화면에서 사라졌다. 세 번째 확장에서 **서열과 간격은 그대로 두고
- * 절대값만 3~3.5배로** 옮겼다(부지 천장 20.4 → 71.3). 아래 표가 그 결과다.
+ * 절대값만 3~3.5배로** 옮겼다(부지 천장 20.4 → 71.3).
+ * ⑤ **밝은 병원 톤으로 전환(2026-07-31)**: 어두운 저채도 화면을 중간톤으로 올리는 아트 디렉션 변경이다.
+ * 같은 방식으로 **서열은 그대로 두고 구간표와 요구 간격을 함께 ×2.4** 했다 — 대역만 올리고 요구 간격을
+ * 두면 통과 기준이 2.4분의 1로 느슨해진다(아래 간격 단언의 ⚠️). 아래 표가 그 결과다. 팔레트 값과
+ * 부지 천장(`OUTSIDE_FLOOR`)은 뒤따르는 커밋에서 이 표를 향해 올라온다(지금은 표가 먼저 간 RED 상태다).
  * ⚠️ 이 표는 이제 **알베도**(음영이 곱해지기 전 값)를 잠근다 — 실내는 `TileMap.shade`가 타일마다 조명·AO
  * 계수를 곱하므로, 최종 픽셀의 서열은 맨 아래 「알베도 서열이 음영을 거쳐도 살아남는다」가 따로 잠근다.
  * 색은 눈으로만 검수하면 다음 사람이 한 칸 밝히는 순간 조용히 되돌아간다. 숫자로 잠근다.
@@ -41,7 +45,7 @@ type PaletteKey = keyof typeof BACKDROP_PALETTE
  */
 const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys: readonly PaletteKey[] }> = [
   {
-    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 22, max: 31,
+    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 53, max: 74,
     keys: [
       'ground', 'grassBase', 'grassNoiseDark', 'medianStrip',
       'pavementBase', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
@@ -50,13 +54,13 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '지면 노이즈(밝은 쪽)·논둑', min: 31, max: 37,
+    name: '지면 노이즈(밝은 쪽)·논둑', min: 74, max: 89,
     keys: ['grassNoiseLight', 'pavementNoiseLight', 'dirtNoiseLight', 'fieldFurrowLight', 'paddyCellLight', 'paddyBank'],
   },
-  { name: '도로', min: 32, max: 39, keys: ['road', 'laneShoulder', 'dirtLane'] },
-  { name: '인도·산책로', min: 41, max: 47, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
+  { name: '도로', min: 77, max: 94, keys: ['road', 'laneShoulder', 'dirtLane'] },
+  { name: '인도·산책로', min: 98, max: 113, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
   {
-    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 43, max: 53,
+    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 103, max: 128,
     keys: [
       'roofBase', 'roofEdge', 'aptBody', 'aptEdge',
       'houseRoofWarm', 'houseRoofWarmShade', 'houseRoofCool', 'houseRoofCoolShade',
@@ -65,12 +69,12 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 54, max: 61,
+    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 129, max: 147,
     keys: ['roofVent', 'roofVentShade', 'roofPenthouse', 'aptTower', 'aptTowerLit', 'houseRidgeWarm', 'houseRidgeCool'],
   },
-  { name: '풀포기·관목', min: 41, max: 51, keys: ['tuft', 'tuftShade', 'shrub'] },
+  { name: '풀포기·관목', min: 98, max: 123, keys: ['tuft', 'tuftShade', 'shrub'] },
   {
-    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 55, max: 64,
+    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 132, max: 154,
     keys: [
       'treeCanopy', 'treeCanopyLit', 'treeShade',
       'forestCanopy', 'forestCanopyLit', 'forestCanopyDark',
@@ -120,11 +124,14 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
    */
   /* ⚠️ 대역을 3.5배로 넓혔으면 **요구 간격도 함께 올려야 한다** — 옛 값(4.0/1.5/1.5)을 그대로 두면
      새 대역에서는 통과 기준이 4분의 1로 느슨해져, 다음 사람이 전 항목을 다시 눌러 담아도 초록불이
-     뜬다(이 파일이 세 번 경고한 "상한이 느슨해지면 통과하면서 목적이 증발" 그 자리다). */
+     뜬다(이 파일이 세 번 경고한 "상한이 느슨해지면 통과하면서 목적이 증발" 그 자리다).
+     ⑤(2026-07-31)에서 실제로 그 자리를 밟을 뻔했다 — 대역만 ×2.4 하고 요구 간격을 두면 요구/실측 비율이
+     65% → 27%(정확히 1/2.4)로 내려앉는다. 그래서 14.0/5.0/6.0 → **33.6/12.0/14.4**로 같은 배수를 먹였다.
+     교훈: 이 세 숫자는 대역과 **같은 커밋에서** 움직여야 한다 — 쪼개면 불변식이 깨진 커밋이 히스토리에 남는다. */
   it.each([
-    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 14.0 },
-    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 5.0 },
-    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 6.0 },
+    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 33.6 },
+    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 12.0 },
+    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 14.4 },
   ])('$what 평균 간격이 $gap 이상 — 스프레드가 눌리면 형태가 안 읽힌다', ({ what, a, b, gap }) => {
     const d = meanL(a) - meanL(b)
     expect(d, `${what} = ${meanL(a).toFixed(2)} − ${meanL(b).toFixed(2)} = ${d.toFixed(2)}`).toBeGreaterThanOrEqual(gap)
@@ -159,6 +166,15 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
   it('부지 바닥이 배경 최상단 카테고리보다 충분히 위에 있다 — 여유 5 이상', () => {
     const top = Math.max(...CATEGORIES.map((c) => c.max))
     expect(FLOOR - top, `부지 ${FLOOR.toFixed(2)} − 배경 상한 ${top}`).toBeGreaterThanOrEqual(5)
+  })
+
+  /* 「실내 > 마당」은 여기 두지 않는다 — 아래 describe의 `%s 방 바닥이 부지보다 밝다` +
+     `%s 벽이 자기 바닥보다 밝다`가 ROOM_STYLE 전수로 **같은 두 부등식**을 이미 잠근다.
+     중복 가드는 한쪽만 고쳐질 때 어느 쪽이 진실인지 흐린다. */
+  it('마당이 병원의 무대다 — 배경 랜드마크보다 확실히 밝다(간격 30 이상)', () => {
+    const yard = relativeLuminance(OUTSIDE_FLOOR)
+    const gap = yard - meanL(LANDMARK)
+    expect(gap, `마당 ${yard.toFixed(1)} - 랜드마크 ${meanL(LANDMARK).toFixed(1)}`).toBeGreaterThanOrEqual(30)
   })
 })
 
@@ -206,7 +222,13 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
 
   it('계수가 커지면 휘도도 커진다 — 단조성이 깨지면 광원이 그늘로 보인다', () => {
     for (const hex of Object.values(ROOM_STYLE).map((s) => s.floor)) {
-      const ls = [SHADE.min, SHADE.base, 1, SHADE.max].map((f) => relativeLuminance(shade(hex, f)))
+      /* ⚠️ 계수 목록은 **중복을 걷고 정렬해서** 만든다 — 옛 판은 `[min, base, 1, max]`를 그대로 늘어놓고
+         `max > 1`을 암묵 가정했다. 조명 모델이 그늘 전용으로 바뀌며 `max === 1`이 되자 같은 값이 두 번
+         들어가 단조성이 자기 자신과 비교돼 깨졌다(모델은 멀쩡한데 계측기만 붉어졌다). `1`은 "조명 없음
+         = 알베도" 지점이라 남겨 둔다 — max가 다시 1 위로 가면 저절로 중간 지점으로 돌아온다. */
+      const ls = [...new Set([SHADE.min, SHADE.base, 1, SHADE.max])]
+        .sort((a, b) => a - b)
+        .map((f) => relativeLuminance(shade(hex, f)))
       for (let i = 1; i < ls.length; i++) {
         expect(ls[i], `${hex} 계수 단조성 ${ls.join(' < ')}`).toBeGreaterThan(ls[i - 1])
       }
@@ -232,10 +254,98 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
     }
   })
 
-  it('계수 구간이 실제로 조명·AO를 담을 만큼 벌어져 있다', () => {
+  /**
+   * ⚠️ 대비는 **계수 폭이 아니라 휘도 점수**로 잰다. 옛 판은 `max − min ≥ 0.2`였는데, 그 0.2는
+   * *어두운 알베도(≈100)에서* 광원이 보이는 폭을 factor 단위로 적어 둔 값이었다 — 알베도가 밝아지면
+   * 같은 계수 폭이 더 큰 대비를 내므로 이 숫자는 화면과 무관해진다. 실측이 그걸 보여준다:
+   * 옛 모델(알베도 91~104 · 폭 0.36)의 화면 대비는 **32.6~37.5점**, 새 모델(알베도 218~220 · 폭 0.16)은
+   * **34.9~35.4점** — 계수 폭은 절반 이하로 줄었는데 **눈에 보이는 대비는 그대로다.**
+   * 그래서 단위를 화면 쪽으로 옮긴다. 이건 기준 완화가 아니라 **같은 계약을 옳은 단위로 다시 쓴 것**이고,
+   * 알베도가 어느 대역에 있든 뜻이 유지된다(= 이 파일이 세 번 경고한 "대역을 옮기면 기준도 옮겨야 한다"를
+   * 아예 대역 독립으로 만든 것). 이 단위 착오는 `SHADE` 자체가 밝은 톤에서 무너진 것과 **같은 근인**이다.
+   *
+   * **임계값 30점의 출처**(없으면 다음 사람이 임의로 조정한다): 위 실측의 **하한 32.6점**(옛 모델
+   * NEUTRAL, 알베도 91.7 × 폭 0.36)에서 약간의 여유를 뺀 값이다. 즉 "옛 화면이 내던 최소 대비를
+   * 밑돌지 않는다"가 이 숫자의 뜻이다 — 새로 만든 기준이 아니라 **이미 눈으로 승인된 대비를
+   * 바닥으로 고정한 것**이다. 올릴 근거가 생기면 올리되, 근거 없이 내리지 마라.
+   */
+  it('조명·AO가 실제로 화면에서 읽히는 대비를 낸다 — 계수 폭이 아니라 휘도 점수로', () => {
     expect(SHADE.min).toBeLessThan(SHADE.base)
     expect(SHADE.base).toBeLessThan(SHADE.max)
-    expect(SHADE.max - SHADE.min, '조명 대비가 0.2 미만이면 광원이 안 보인다').toBeGreaterThanOrEqual(0.2)
+    /* 조명 웅덩이가 **평탄화되지 않는다** — `base + pool`이 `max`를 넘으면 방 중심이 클램프에 눌려
+       그라디언트가 판판해진다(AO가 `min`에 눌려 계조를 잃은 것과 정확히 같은 실패다).
+       등호까지 허용하는 이유: 지금 값은 `0.90 + 0.10 = 1.0`으로 딱 붙어 있고, 그게 "웅덩이 중심이
+       알베도에 정확히 닿는다"는 뜻이라 정상이다. 넘는 것만 막는다. */
+    expect(SHADE.base + SHADE.pool, `base ${SHADE.base} + pool ${SHADE.pool}`).toBeLessThanOrEqual(SHADE.max)
+    for (const style of [...Object.values(ROOM_STYLE), NEUTRAL_STYLE]) {
+      const span =
+        relativeLuminance(shade(style.floor, SHADE.max)) - relativeLuminance(shade(style.floor, SHADE.min))
+      expect(span, `${style.floor} 최명부−최암부 = ${span.toFixed(1)}점`).toBeGreaterThanOrEqual(30)
+    }
+  })
+
+  /**
+   * AO 계조 — 벽에 닿은 면이 늘수록 **단계적으로** 어두워져야 구석이 가장자리보다 깊어 보인다.
+   *
+   * 위 「대비」 단언은 최명부−최암부의 **전체 폭**만 본다 — 그 폭이 어떻게 **나뉘는지**는 안 본다.
+   * 2026-07-31 밝은 톤 전환에서 정확히 그 틈으로 회귀가 샜다: `base`−`min` 여유가 0.10 → 0.04로
+   * 줄면서 `ao`(0.04)가 **벽 한 면 만에 `min`을 찍어**, 1·2·3·4면이 전부 같은 밝기가 됐다.
+   * 계조가 4단(94/90/86/84)에서 2단(193/184/184/184)으로 무너졌는데 **49건이 전부 초록이었다** —
+   * `ao`·`checker`의 *크기*를 재는 단언이 하나도 없었기 때문이다. 이 단언이 그 구멍이다.
+   *
+   * 양쪽으로 판별력이 있다: `ao`가 너무 크면(즉시 클램프) 두 번째 단이 0점이 되고,
+   * 너무 작으면 단이 눈에 안 보여 둘 다 걸린다.
+   *
+   * ⚠️ **렌더가 세는 만큼(최대 4면) 봐야 한다.** `[1, 2]`까지만 보던 판은 `ao 0.04`+`base 0.90`에서
+   * 계조가 `0.90/0.86/0.84/0.84/0.84`로 **2·3·4면이 평탄화**되는데도 통과했다 — 이 단언의 존재 이유인
+   * 바로 그 회귀를 부분적으로 놓쳤다. `checker`는 `lum`이 모델에 안 넣으므로(AO만 격리해 보려는 것)
+   * 아래 별도 부등식이 대신 잠근다 — 주석이 "잰다"고 했는데 안 재는 상태를 남기지 않는다.
+   */
+  it('벽에 닿는 면이 늘수록 단계적으로 어두워진다 — 한 면에서 곧장 클램프되면 구석이 평평해진다', () => {
+    /** 렌더와 같은 산술: `f = base − ao × 벽에 닿은 변 수`를 `[min, max]`로 잠근다(TileMap의 factorOf). */
+    const lum = (hex: string, sides: number) =>
+      relativeLuminance(shade(hex, Math.max(SHADE.min, Math.min(SHADE.max, SHADE.base - SHADE.ao * sides))))
+    for (const style of [...Object.values(ROOM_STYLE), NEUTRAL_STYLE]) {
+      for (const sides of [1, 2, 3]) {
+        const step = lum(style.floor, sides - 1) - lum(style.floor, sides)
+        expect(step, `${style.floor} 벽 ${sides - 1}면 → ${sides}면 = ${step.toFixed(1)}점`).toBeGreaterThanOrEqual(2)
+      }
+    }
+  })
+
+  /**
+   * 체커 무늬가 AO 한 단을 삼키지 않는다 — 위 단언은 `checker`를 모델에서 빼고 AO만 격리해 본다.
+   * 그래서 `checker`의 **크기**는 여기서 따로 잠근다(d7545d2가 0.018 → 0.008로 줄인 그 값이다).
+   *
+   * 체커는 이웃한 칸을 `±checker`로 엇갈리게 흔든다 — 진폭이 `2 × checker`이므로, 그게 AO 한 단
+   * (`ao`)보다 크면 **바둑판이 벽 그늘을 덮어** 구석이 깊어 보이는 신호가 무늬에 묻힌다.
+   * (실측: `checker`를 0.08로 키우면 진폭 ±17.5점으로 AO 한 단 4.4점을 통째로 삼킨다.)
+   */
+  it('체커 진폭이 AO 한 단보다 작다 — 무늬가 벽 그늘을 덮으면 구석이 안 읽힌다', () => {
+    expect(2 * SHADE.checker, `체커 진폭 ${2 * SHADE.checker} vs AO 한 단 ${SHADE.ao}`).toBeLessThan(SHADE.ao)
+  })
+
+  /**
+   * 벽 캡이 **방 밝기를 따라간다** — `neighborOf`가 굳이 이웃의 계수까지 넘기는 이유가
+   * *"먼 구석의 벽이 광원 아래 벽과 똑같이 밝으면 깊이가 사라진다"*인데, 옛 캡 식
+   * `min(SHADE.max, factor + 0.16)`은 `factor ≤ 1.0 = max`라 **항상 잘려 상수**였다 — 계약이
+   * 코드에 적혀 있는데 값은 정반대였고, 이 자리에 가드가 없어 그대로 배포됐다.
+   * 세 단이 전부 `factor`에 비례하는지, 그리고 서로 갈리는지를 함께 본다.
+   */
+  it('벽 세 단이 방 밝기를 따라 움직이고 서로 갈린다 — 캡이 상수가 되면 벽에서 깊이가 사라진다', () => {
+    for (const style of [...Object.values(ROOM_STYLE), NEUTRAL_STYLE]) {
+      const dim = wallBands(style.wall, SHADE.min)
+      const lit = wallBands(style.wall, SHADE.max)
+      // ① 같은 벽이라도 어두운 방과 밝은 방에서 캡이 달라야 한다(옛 버그가 정확히 여기서 죽었다)
+      const spread = relativeLuminance(lit.cap) - relativeLuminance(dim.cap)
+      expect(spread, `${style.wall} 캡 factor 변동폭 ${spread.toFixed(1)}점`).toBeGreaterThanOrEqual(10)
+      // ② 한 벽 안에서 캡 > 몸통 > 밑동 — 세 단이 붙으면 두께가 안 읽힌다
+      for (const band of [dim, lit]) {
+        const [c, b, f] = [band.cap, band.body, band.foot].map(relativeLuminance)
+        expect(c - b, `${style.wall} 캡−몸통 ${(c - b).toFixed(1)}점`).toBeGreaterThanOrEqual(10)
+        expect(b - f, `${style.wall} 몸통−밑동 ${(b - f).toFixed(1)}점`).toBeGreaterThanOrEqual(10)
+      }
+    }
   })
 })
 
