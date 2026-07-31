@@ -245,7 +245,7 @@ describe('paintZone · eraseZone — 용도 칠하기', () => {
     const first = paintZone(createWorld(1), rectPts(4, 4, 4, 3), 'WAITING')
     if (!first.ok) throw new Error('전제 실패')
     expect(computeRegions(first.world)[0].tiles.size).toBe(12)
-    // 오른쪽 두 열(4타일)만 접수처로 덮어쓴다 — 대기실은 그만큼 줄고 접수처가 새로 생긴다.
+    // 오른쪽 두 열(6타일)만 접수처로 덮어쓴다 — 대기실은 그만큼 줄고 접수처가 새로 생긴다.
     const second = paintZone(first.world, rectPts(6, 4, 2, 3), 'RECEPTION')
     expect(second.ok).toBe(true)
     if (!second.ok) return
@@ -355,6 +355,11 @@ describe('demolish — 철거와 환불', () => {
     const built = placeRoom(createWorld(1), { type: 'WAITING', x: 4, y: 4, w: 6, h: 5 })
     if (!built.ok) throw new Error('전제 실패')
     const before = computeRegions(built.world)
+    // ⚠️ 기준선에 **절대값**을 물린다. `before`가 자기 자신에서 파생이라, 이것 없이 아래 한 줄만
+    //    두면 파생이 통째로 무너져 양변이 `[]`가 돼도 통과한다(리뷰 실측: computeRegionsUncached를
+    //    `return []`로 돌연변이시켜도 살아남았다). 6×5 방의 내부는 (6-2)*(5-2) = 12타일이다.
+    expect(before).toHaveLength(1)
+    expect(before[0].tiles.size).toBe(12)
     const r = demolish(built.world, pts([4, 4], [5, 4], [6, 4], [7, 4], [8, 4], [9, 4]))
     expect(r.ok).toBe(true)
     if (!r.ok) return
@@ -396,7 +401,9 @@ describe('placeRoom(테스트 헬퍼) — 옛 자동 가구 격자 재현', () =
   it('EXAM에 dept를 안 주면 내과로 접는다 — 옛 마이그레이션 절단을 그대로 물려받는다', () => {
     const res = placeRoom(createWorld(1), { type: 'EXAM', x: 4, y: 4, w: 6, h: 5 })
     if (!res.ok) throw new Error('전제 실패')
-    expect(computeRegions(res.world)[0].dept).toBe('INTERNAL_MEDICINE')
+    const rs = computeRegions(res.world)
+    expect(rs).toHaveLength(1) // [0]을 읽기 전에 전제를 적어 둔다 — 방 하나짜리 세계다
+    expect(rs[0].dept).toBe('INTERNAL_MEDICINE')
   })
 
   it('WAITING은 내부에 의자를 깔고, WARD는 침대를 놓는다', () => {
