@@ -10,6 +10,7 @@ import RegionPicker from "@/components/RegionPicker";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
 import {
   BUILD_TOOLS,
+  ERASE_LABEL,
   ROOM_LABEL,
   TOOL_LABEL,
   alertsOf,
@@ -33,6 +34,7 @@ import {
   turnAwayBatchText,
   type BuildTool,
   type PauseCause,
+  type ZonePick,
 } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
@@ -136,7 +138,7 @@ export default function SimGame() {
    *  순간 고르지도 않은 방으로 클릭이 열린다(옛 examDept와 같은 함정).
    *  `"ERASE"`(「지정 해제」)는 **화면에만 있는 값**이다 — 코어의 `paintZone`은 이 값을 모르고,
    *  `runTool`이 그것을 `eraseZone`으로 갈라 준다(simHud.buildBlockReason 주석의 계약). */
-  const [roomType, setRoomType] = useState<RoomType | "ERASE" | null>(null);
+  const [roomType, setRoomType] = useState<ZonePick | null>(null);
   /** 지정할 진료실의 과 — 진료실을 고른 뒤 **한 번 더** 고르게 한다(과 없는 진료실은 코어가 던진다). */
   const [examDept, setExamDept] = useState<SimDeptKey | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -976,7 +978,7 @@ export default function SimGame() {
                   : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
               }`}
             >
-              지정 해제
+              {ERASE_LABEL}
             </button>
           </div>
         )}

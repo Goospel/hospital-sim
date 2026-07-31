@@ -12,7 +12,10 @@ import {
   clampCamera, pannedCamera, safeArea, settledCamera, zoomedCamera, zoomFloor,
   BACKDROP_MARGIN, ZOOM_MAX, ZOOM_MIN, type Camera, type CameraView, type Insets, type Rect, type Size,
 } from './simHud'
-import { BUILD_COST, buildWalls, demolish, paintZone, placeDoor, type BuildReason, type PlaceResult } from '../sim/build'
+import {
+  BUILD_COST, buildWalls, demolish, paintZone, placeDoor, placeFurniture,
+  type BuildReason, type PlaceResult,
+} from '../sim/build'
 import {
   createWorld, ENTRANCE, GRID_W, GRID_H, REGIONS, simRegion,
   type RoomType, type SimRegionKey, type SimWorld,
@@ -22,7 +25,7 @@ import { emergencySpec, type EmergencyTurnAway } from '../sim/emergency'
 import { HUNGRY_AFTER_MIN } from '../sim/needs'
 import { TRAITS } from '../sim/traits'
 import { DEFAULT_PRIORITY } from '../sim/pawn'
-import { ARRIVAL_DEPT_MIX, hasCashier } from '../sim/patientFlow'
+import { ARRIVAL_DEPT_MIX, cashierSlots, hasCashier } from '../sim/patientFlow'
 import { NURSE_WEEKLY_COST_MANWON } from '../sim/week'
 import { NURSE_RESIGN_SHORT_DAYS, nurseGradeOf, resigningNurses } from '../sim/nurse'
 import type { Pawn, PatientStage, Priority } from '../sim/pawn'
@@ -591,13 +594,13 @@ describe('previewLabel — 나갈 돈과 들어올 돈', () => {
     ({ ok: true as const, world: createWorld(1), tiles: [1, 2, 3], skipped: 0, deltaManwon: -90, ...over })
 
   it('설치는 나갈 금액을, 철거는 **환불**을 말한다 — 부호가 접히면 두 문장이 같아진다', () => {
-    expect(previewLabel('WALL', res())).toContain('3')
-    expect(previewLabel('DEMOLISH', res({ deltaManwon: 45 }))).toContain('환불')
-    expect(previewLabel('WALL', res())).not.toContain('환불')
+    expect(previewLabel('WALL', res(), null)).toContain('3')
+    expect(previewLabel('DEMOLISH', res({ deltaManwon: 45 }), null)).toContain('환불')
+    expect(previewLabel('WALL', res(), null)).not.toContain('환불')
   })
 
   it('금액은 화면 층의 단일 포맷을 지난다 — 헤더 금고와 단위가 갈리지 않는다', () => {
-    expect(previewLabel('WALL', res({ deltaManwon: -90 }))).toContain(formatManwon(90))
+    expect(previewLabel('WALL', res({ deltaManwon: -90 }), null)).toContain(formatManwon(90))
   })
 
   it('용도 지정과 해제가 **다른 말**을 한다 — 한 문장이면 칠하는지 지우는지 손을 떼기 전엔 모른다', () => {
@@ -610,16 +613,16 @@ describe('buildResultText — 거부 사유와 건너뛴 칸을 말한다', () =
   const fail = (reason: BuildReason) => ({ ok: false as const, reason, tiles: [], skipped: 0, deltaManwon: 0 })
 
   it('사유마다 **다른** 말을 한다 — 한 문구로 접히면 무엇을 고쳐야 할지가 사라진다', () => {
-    const texts = (['NOTHING', 'NO_MONEY', 'NOT_WALL'] as const).map(r => buildResultText('WALL', fail(r)))
+    const texts = (['NOTHING', 'NO_MONEY', 'NOT_WALL'] as const).map(r => buildResultText('WALL', fail(r), null))
     expect(new Set(texts).size).toBe(3)
   })
 
   it('문은 벽 위에만 — 거부 문구가 **다음 행동**을 말한다', () => {
-    expect(buildResultText('DOOR', fail('NOT_WALL'))).toContain('벽')
+    expect(buildResultText('DOOR', fail('NOT_WALL'), null)).toContain('벽')
   })
 
   it('철거가 아무것도 못 부수면 그렇게 말한다 — 설치의 "자리가 없다"와 다른 상황이다', () => {
-    expect(buildResultText('DEMOLISH', fail('NOTHING'))).not.toBe(buildResultText('WALL', fail('NOTHING')))
+    expect(buildResultText('DEMOLISH', fail('NOTHING'), null)).not.toBe(buildResultText('WALL', fail('NOTHING'), null))
   })
 
   /*
@@ -651,17 +654,17 @@ describe('buildResultText — 거부 사유와 건너뛴 칸을 말한다', () =
 
   it('성공했는데 건너뛴 칸이 있으면 **그 사실만** 말한다 — 부분 설치는 화면에 흔적이 없다', () => {
     const partial = { ok: true as const, world: createWorld(1), tiles: [1], skipped: 3, deltaManwon: -30 }
-    expect(buildResultText('WALL', partial)).toContain('3')
+    expect(buildResultText('WALL', partial, null)).toContain('3')
   })
 
   it('말끔히 성공했으면 조용하다 — 잘된 일마다 토스트가 뜨면 진짜 사유가 묻힌다', () => {
     const clean = { ok: true as const, world: createWorld(1), tiles: [1], skipped: 0, deltaManwon: -30 }
-    expect(buildResultText('WALL', clean)).toBeNull()
+    expect(buildResultText('WALL', clean, null)).toBeNull()
   })
 
   it('톤 가드레일 — 비난 카피 금지', () => {
     for (const r of ['NOTHING', 'NO_MONEY', 'NOT_WALL'] as const) {
-      const text = buildResultText('WALL', fail(r))!
+      const text = buildResultText('WALL', fail(r), null)!
       for (const word of ['당신', '놓쳤', '실패', '했어야', '탓']) expect(text).not.toContain(word)
     }
   })
@@ -790,6 +793,21 @@ describe('setupSteps — 개원 준비 단계', () => {
       const opened = placeDoor(sealed(), doorTile(spec))
       if (!opened.ok) throw new Error('전제 실패 — 문 거부')
       expect(reachStep(opened.world).done).toBe(true)
+    })
+
+    /* 막는 가구로 **가득 찬** 영역 — no-cashier 힌트가 시키는 배치 그대로다(카운터를 놓고 그
+       위를 접수처로 칠한다). 타일이 전부 blocked라 "닿는 타일"이 하나도 없지만, 그건 고립이
+       아니라 **닿을 필요가 없는 것**이다: 창구는 옆 칸에서 쓰므로 cashierSlots는 멀쩡히 선다.
+       여기서 경고가 뜨면 첫 미완 단계가 이것으로 굳어 뒤 단계 경고가 전부 가려지고, 게다가
+       조언(「벽에 문을 내세요」)이 벽 0개인 판에서 실행 불가능하다. */
+    it('카운터 위에만 칠한 접수처는 길 경고에 걸리지 않는다 — 닿아야 할 빈 칸이 아예 없다', () => {
+      const counters = rectPts(20, 20, 3, 1)
+      const built = placeFurniture(createWorld(1), 'COUNTER', counters)
+      if (!built.ok) throw new Error('전제 실패 — 카운터 거부')
+      const painted = paintZone(built.world, counters, 'RECEPTION')
+      if (!painted.ok) throw new Error('전제 실패 — 칠 거부')
+      expect(cashierSlots(painted.world)).toHaveLength(3) // 창구는 멀쩡히 선다 — 고립이 아니다
+      expect(reachStep(painted.world).done).toBe(true)
     })
 
     it('벽 없이 칠하기만 한 열린 접수처는 경고를 내지 않는다 — 이 설계가 존재하는 이유다', () => {

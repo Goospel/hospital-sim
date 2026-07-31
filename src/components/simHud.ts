@@ -13,7 +13,7 @@ import { HIRABLE_DEPTS, simDept, type DeptMix, type SimDeptKey } from '../sim/de
 import { emergencySpec, wardBeds, type EmergencyTurnAway, type TurnAwayReason } from '../sim/emergency'
 import { resignationLetter, type ResignationLetter } from '../sim/narrative'
 import { prefersRestOverExam, starvedSlowFactor } from '../sim/needs'
-import { buildBlockedSet } from '../sim/path'
+import { buildBlockedSet, isFreeTile } from '../sim/path'
 import { ARRIVAL_DEPT_MIX, cashierSlots, hasCashier, unservedDepts } from '../sim/patientFlow'
 import { nurseGradeOf, resigningNurses } from '../sim/nurse'
 import { NURSE_WEEKLY_COST_MANWON, type NurseGrade } from '../sim/week'
@@ -56,6 +56,20 @@ export const ROOM_LABEL: Record<RoomType, string> = {
   RECEPTION: '접수처',
   CAFETERIA: '식당',
 }
+
+/**
+ * 용도 팔레트가 고르는 값 — 방 6종 **+ 「지정 해제」**.
+ *
+ * `'ERASE'`가 `RoomType`에 안 들어가고 여기서 합쳐지는 것이 이 별칭의 존재 이유다: 지우기는
+ * 방 종류가 아니라 **조작**이라, 코어(`build.paintZone`)는 이 값을 모른다. `RoomType`에 넣으면
+ * 코어의 방 종류 표(`ROOM_STYLE`·`ROOM_LABEL` 등 `Record<RoomType, …>`)가 전부 지우기 항목을
+ * 요구하게 된다 — 그건 규칙에 없는 방이 하나 생기는 것과 같다.
+ */
+export type ZonePick = RoomType | 'ERASE'
+
+/** 「지정 해제」의 이름 — **버튼과 미리보기가 같은 말을 써야** 방금 누른 것과 지금 일어날 일이
+ *  같은 조작으로 읽힌다. 두 곳에 적으면 한쪽만 고치는 날이 오고, 그 어긋남은 화면에만 보인다. */
+export const ERASE_LABEL = '지정 해제'
 
 /** 방 이름 — **진료실만 과가 붙는다**(다른 방엔 과 개념이 없다 — placeRoom이 dept를 떨군다).
  *  과 이름은 카탈로그(simDept)에서 온다: 화면에 과 이름을 따로 적으면 카탈로그와 두 벌이 된다. */
@@ -544,7 +558,10 @@ export function noRestSpotIdle(p: Pawn, busy: ReadonlySet<string>): boolean {
 /** 가구 4종은 이름이 곧 `FurnitureKind`다 — 도구에서 종류로 옮길 때 표를 하나 더 두지 않는다. */
 export type BuildTool = FurnitureKind | 'WALL' | 'DOOR' | 'DESIGNATE' | 'DEMOLISH'
 
-/** 팔레트에 서는 순서 — 벽 → 문 → 가구 → 용도 → 철거(건설 순서를 그대로 읽는다). */
+/** 팔레트에 서는 순서 — 벽 → 문 → 가구 → 용도 → 철거.
+ *  ⚠️ **건설 순서가 아니다**: 영역이 밀폐에서 풀린 뒤로 첫 조작은 용도 칠하기이고 벽은 선택이다
+ *  (설계 2026-07-31 · 체크리스트 hint가 그 순서를 가르친다). 이 배열은 손이 기억하는 **자리**라
+ *  순서를 흔들지 않는다 — 옛 순서를 "인과"라고 설명하던 주장만 뗐다. */
 export const BUILD_TOOLS: readonly BuildTool[] = [
   'WALL', 'DOOR', 'DESK', 'CHAIR', 'BED', 'COUNTER', 'DESIGNATE', 'DEMOLISH',
 ]
@@ -801,9 +818,9 @@ export const rectModeOf = (tool: BuildTool): 'FILL' | 'BORDER' => (tool === 'WAL
  *  이 한 곳에서 갈라 두지 않으면 "50만원이 나간다"와 "50만원이 들어온다"가 같은 문장으로 뜬다.
  *  용도 도구는 **칠하기와 지우기가 같은 조작**이라(같은 드래그·같은 무료) 그 둘도 여기서 갈린다:
  *  한 문장이면 손을 떼기 전에는 어느 쪽인지 알 수 없다. */
-export function previewLabel(tool: BuildTool, res: PlaceResult, roomType?: RoomType | 'ERASE' | null): string {
+export function previewLabel(tool: BuildTool, res: PlaceResult, roomType: ZonePick | null): string {
   const n = res.tiles.length
-  if (tool === 'DESIGNATE') return `${n}칸 — ${roomType === 'ERASE' ? '지정 해제' : '용도 지정'}`
+  if (tool === 'DESIGNATE') return `${n}칸 — ${roomType === 'ERASE' ? ERASE_LABEL : '용도 지정'}`
   const money = formatManwon(Math.abs(res.deltaManwon))
   return tool === 'DEMOLISH' ? `${n}칸 철거 · 환불 ${money}` : `${n}칸 · ${money}`
 }
@@ -821,7 +838,7 @@ export function previewLabel(tool: BuildTool, res: PlaceResult, roomType?: RoomT
  * 것이 이 설계의 경계다: `'ERASE'`는 화면에만 있는 값이라 `BuildReason`이 그것을 알면 안 된다.
  */
 export function buildResultText(
-  tool: BuildTool, res: PlaceResult, roomType?: RoomType | 'ERASE' | null,
+  tool: BuildTool, res: PlaceResult, roomType: ZonePick | null,
 ): string | null {
   if (res.ok) {
     if (res.skipped === 0) return null
@@ -840,7 +857,7 @@ export function buildResultText(
  *  NOTHING만 도구를 본다 — 넷이 서로 다른 상황이고, 한 문구로 접으면 무엇을 고쳐야 하는지가
  *  사라진다: 철거는 부술 게 없고, 지정 해제는 **지울 지정**이 없고, 칠하기는 자리가 없는 게
  *  아니라 **이미 그 용도**이며, 설치만이 자리가 차 있다. */
-const REASON_TEXT: Record<BuildReason, (tool: BuildTool, roomType?: RoomType | 'ERASE' | null) => string> = {
+const REASON_TEXT: Record<BuildReason, (tool: BuildTool, roomType: ZonePick | null) => string> = {
   NOTHING: (tool, roomType) => {
     if (tool === 'DEMOLISH') return '부술 것이 없습니다'
     if (tool === 'DESIGNATE') {
@@ -865,12 +882,10 @@ const REASON_TEXT: Record<BuildReason, (tool: BuildTool, roomType?: RoomType | '
  * 여기에 사유를 붙이면 부지를 누를 때마다 토스트가 떠 진짜 사유가 묻힌다.
  *
  * ⚠️ **`'ERASE'`는 화면에만 있는 값이다** — 용도 목록의 마지막 항목(「지정 해제」)이라 여기서
- * `RoomType`과 같은 자리에 실릴 뿐, 코어(`build.paintZone`)는 이 값을 모른다. 그래서 타입에
- * 섞지 않고 유니온으로 넓히기만 한다: `RoomType`에 넣는 순간 코어의 방 종류 표(ROOM_STYLE·
- * ROOM_LABEL 등 `Record<RoomType, …>`)가 전부 지우기 항목을 요구하게 된다.
+ * 방 종류와 같은 자리에 실릴 뿐, 코어(`build.paintZone`)는 이 값을 모른다(`ZonePick` 주석).
  */
 export function buildBlockReason(
-  tool: BuildTool | null, roomType: RoomType | 'ERASE' | null, dept: SimDeptKey | null,
+  tool: BuildTool | null, roomType: ZonePick | null, dept: SimDeptKey | null,
 ): string | null {
   if (tool !== 'DESIGNATE') return null
   if (roomType === null) return '지정할 용도를 고르세요 — 아래 줄에서 방 종류를 고릅니다'
@@ -1041,7 +1056,16 @@ export function setupSteps(w: SimWorld): SetupStep[] {
   // 잊는" 실수는 남는다. 그때 화면에는 멀쩡한 방으로 보여 이유를 영영 못 찾는 문제(옛 밀실
   // 경고의 존재 이유)도 그대로이므로, 단계를 지우지 않고 판정만 밀폐→도달성으로 바꾼다(설계 §5).
   const reach = reachableTiles(w, blocked)
-  const unreachable = regions.filter(r => ![...r.tiles].some(t => reach.has(t))).length
+  /* **통행 가능한 타일만 본다**(open). 막는 가구로 가득 찬 영역 — 카운터 3칸 위에만 칠한
+     접수처가 정확히 그것이고, no-cashier 힌트가 시키는 배치다 — 는 닿는 타일이 0이지만
+     고립이 아니라 **닿을 필요가 없는 것**이다: 창구는 옆 칸에 서서 쓰므로 규칙은 멀쩡히 돈다
+     (cashierSlots). open을 안 거르면 그런 판에서 「길이 닿지 않는 영역 1개」가 첫 미완 단계로
+     굳어 뒤 단계 경고를 전부 가리고, 게다가 조언(「벽에 문을 내세요」)이 벽 0개인 판에서
+     실행 불가능하다. 밀실·입구 봉쇄는 여전히 걸린다 — 그쪽은 빈 칸이 남아 있다. */
+  const unreachable = regions.filter(r => {
+    const open = [...r.tiles].filter(t => !blocked.has(t))
+    return open.length > 0 && !open.some(t => reach.has(t))
+  }).length
   const roomless = doctors.filter(d => !regions.some(r => r.type === 'EXAM' && r.dept === d.dept)).length
   // 방은 있는데 **앉을 책상**이 모자란 경우(설계 §4) — 정원은 방 크기가 아니라 슬롯 수다.
   // 과별로 세는 것이 계약이다: 미용 진료실에 책상이 남아돌아도 내과 의사는 못 앉는다.
@@ -1136,10 +1160,12 @@ function reachableTiles(w: SimWorld, blocked: Set<number>): Set<number> {
     const cur = stack.pop()!
     const cx = cur % GRID_W, cy = (cur - (cur % GRID_W)) / GRID_W
     for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
-      const nx = cx + dx, ny = cy + dy
-      if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) continue
-      const ni = tileIndex(nx, ny)
-      if (reach.has(ni) || blocked.has(ni)) continue
+      // 경계 검사까지 코어 술어 하나로 — 손으로 붙이면 부지 가장자리에서만 틀리는 판정이
+      // 조용히 생긴다(path.isFreeTile docstring이 정확히 이 함정을 경고한다).
+      const p = { x: cx + dx, y: cy + dy }
+      if (!isFreeTile(blocked, p)) continue
+      const ni = tileIndex(p.x, p.y)
+      if (reach.has(ni)) continue
       reach.add(ni)
       stack.push(ni)
     }
@@ -1352,7 +1378,7 @@ export interface StatusLineInput {
   warning: string | null
   tool: BuildTool | null
   /** 용도 도구가 지정할 방 종류 — 다른 도구에서는 뜻이 없다. `'ERASE'`는 「지정 해제」(UI 전용). */
-  roomType: RoomType | 'ERASE' | null
+  roomType: ZonePick | null
   dept: SimDeptKey | null
 }
 
@@ -1364,6 +1390,11 @@ const TOOL_HINT: Record<BuildTool, string> = {
   CHAIR: '의자 — 드래그한 사각형을 채웁니다. 대기실 의자가 곧 좌석 수입니다.',
   BED: '침대 — 드래그한 사각형을 채웁니다. 응급은 병동 침대에 눕습니다.',
   COUNTER: '카운터 — 드래그한 사각형을 채웁니다. 접수처의 표시물입니다.',
+  /* ⚠️ **도달 불가** — `statusLineText`에서 DESIGNATE는 이 표까지 오지 않는다: 용도를 안 골랐으면
+     `buildBlockReason`이, 골랐으면 그 아래 DESIGNATE 분기가 먼저 반환한다(그쪽이 방 이름·과까지
+     실은 더 구체적인 문장이라 이 표가 낄 자리가 없다). 그래도 지우지 않는 것은 `Record<BuildTool, …>`의
+     완전성 때문이다 — 도구가 늘면 tsc가 여기서 막아 주는 그 계약을 한 칸 빼자고 깨지 않는다.
+     문구를 고쳐도 화면은 안 바뀐다(돌연변이 실측: 값을 바꿔도 전건 통과). */
   DESIGNATE: '용도 — 바닥을 드래그해 무슨 방인지 칠합니다. 벽은 필요 없습니다(칠한 자리가 곧 방입니다).',
   DEMOLISH: '철거 — 드래그한 사각형의 벽·문·가구를 없애고 절반을 돌려받습니다.',
 }
