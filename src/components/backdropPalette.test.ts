@@ -16,7 +16,10 @@ import type { SimRegionKey } from '@/sim/world'
  * 넓힌 것이 지금 표다 — 서열은 그대로 두고 전 항목을 위로 펼쳤다.
  * ④ **그것도 부족했다(2026-07-30)**: 20.4 천장에서도 배경 전체가 7~19에 갇혀 브라우저 실측상 부지 좌우가
  * 그냥 검정이었다 — 지역별 배경 12종이 화면에서 사라졌다. 세 번째 확장에서 **서열과 간격은 그대로 두고
- * 절대값만 3~3.5배로** 옮겼다(부지 천장 20.4 → 71.3). 아래 표가 그 결과다.
+ * 절대값만 3~3.5배로** 옮겼다(부지 천장 20.4 → 71.3).
+ * ⑤ **밝은 병원 톤으로 전환(2026-07-31)**: 어두운 저채도 화면을 중간톤으로 올리는 아트 디렉션 변경이다.
+ * 같은 방식으로 **서열과 간격은 그대로 두고 구간표만 ×2.4** 했다 — 아래 표가 그 결과다. 팔레트 값과
+ * 부지 천장(`OUTSIDE_FLOOR`)은 뒤따르는 커밋에서 이 표를 향해 올라온다(지금은 표가 먼저 간 RED 상태다).
  * ⚠️ 이 표는 이제 **알베도**(음영이 곱해지기 전 값)를 잠근다 — 실내는 `TileMap.shade`가 타일마다 조명·AO
  * 계수를 곱하므로, 최종 픽셀의 서열은 맨 아래 「알베도 서열이 음영을 거쳐도 살아남는다」가 따로 잠근다.
  * 색은 눈으로만 검수하면 다음 사람이 한 칸 밝히는 순간 조용히 되돌아간다. 숫자로 잠근다.
@@ -41,7 +44,7 @@ type PaletteKey = keyof typeof BACKDROP_PALETTE
  */
 const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys: readonly PaletteKey[] }> = [
   {
-    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 22, max: 31,
+    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 53, max: 74,
     keys: [
       'ground', 'grassBase', 'grassNoiseDark', 'medianStrip',
       'pavementBase', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
@@ -50,13 +53,13 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '지면 노이즈(밝은 쪽)·논둑', min: 31, max: 37,
+    name: '지면 노이즈(밝은 쪽)·논둑', min: 74, max: 89,
     keys: ['grassNoiseLight', 'pavementNoiseLight', 'dirtNoiseLight', 'fieldFurrowLight', 'paddyCellLight', 'paddyBank'],
   },
-  { name: '도로', min: 32, max: 39, keys: ['road', 'laneShoulder', 'dirtLane'] },
-  { name: '인도·산책로', min: 41, max: 47, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
+  { name: '도로', min: 77, max: 94, keys: ['road', 'laneShoulder', 'dirtLane'] },
+  { name: '인도·산책로', min: 98, max: 113, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
   {
-    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 43, max: 53,
+    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 103, max: 128,
     keys: [
       'roofBase', 'roofEdge', 'aptBody', 'aptEdge',
       'houseRoofWarm', 'houseRoofWarmShade', 'houseRoofCool', 'houseRoofCoolShade',
@@ -65,12 +68,12 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 54, max: 61,
+    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 129, max: 147,
     keys: ['roofVent', 'roofVentShade', 'roofPenthouse', 'aptTower', 'aptTowerLit', 'houseRidgeWarm', 'houseRidgeCool'],
   },
-  { name: '풀포기·관목', min: 41, max: 51, keys: ['tuft', 'tuftShade', 'shrub'] },
+  { name: '풀포기·관목', min: 98, max: 123, keys: ['tuft', 'tuftShade', 'shrub'] },
   {
-    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 55, max: 64,
+    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 132, max: 154,
     keys: [
       'treeCanopy', 'treeCanopyLit', 'treeShade',
       'forestCanopy', 'forestCanopyLit', 'forestCanopyDark',
