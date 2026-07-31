@@ -167,6 +167,15 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
     const top = Math.max(...CATEGORIES.map((c) => c.max))
     expect(FLOOR - top, `부지 ${FLOOR.toFixed(2)} − 배경 상한 ${top}`).toBeGreaterThanOrEqual(5)
   })
+
+  /* 「실내 > 마당」은 여기 두지 않는다 — 아래 describe의 `%s 방 바닥이 부지보다 밝다` +
+     `%s 벽이 자기 바닥보다 밝다`가 ROOM_STYLE 전수로 **같은 두 부등식**을 이미 잠근다.
+     중복 가드는 한쪽만 고쳐질 때 어느 쪽이 진실인지 흐린다. */
+  it('마당이 병원의 무대다 — 배경 랜드마크보다 확실히 밝다(간격 30 이상)', () => {
+    const yard = relativeLuminance(OUTSIDE_FLOOR)
+    const gap = yard - meanL(LANDMARK)
+    expect(gap, `마당 ${yard.toFixed(1)} - 랜드마크 ${meanL(LANDMARK).toFixed(1)}`).toBeGreaterThanOrEqual(30)
+  })
 })
 
 /**
@@ -213,7 +222,13 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
 
   it('계수가 커지면 휘도도 커진다 — 단조성이 깨지면 광원이 그늘로 보인다', () => {
     for (const hex of Object.values(ROOM_STYLE).map((s) => s.floor)) {
-      const ls = [SHADE.min, SHADE.base, 1, SHADE.max].map((f) => relativeLuminance(shade(hex, f)))
+      /* ⚠️ 계수 목록은 **중복을 걷고 정렬해서** 만든다 — 옛 판은 `[min, base, 1, max]`를 그대로 늘어놓고
+         `max > 1`을 암묵 가정했다. 조명 모델이 그늘 전용으로 바뀌며 `max === 1`이 되자 같은 값이 두 번
+         들어가 단조성이 자기 자신과 비교돼 깨졌다(모델은 멀쩡한데 계측기만 붉어졌다). `1`은 "조명 없음
+         = 알베도" 지점이라 남겨 둔다 — max가 다시 1 위로 가면 저절로 중간 지점으로 돌아온다. */
+      const ls = [...new Set([SHADE.min, SHADE.base, 1, SHADE.max])]
+        .sort((a, b) => a - b)
+        .map((f) => relativeLuminance(shade(hex, f)))
       for (let i = 1; i < ls.length; i++) {
         expect(ls[i], `${hex} 계수 단조성 ${ls.join(' < ')}`).toBeGreaterThan(ls[i - 1])
       }
@@ -239,10 +254,24 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
     }
   })
 
-  it('계수 구간이 실제로 조명·AO를 담을 만큼 벌어져 있다', () => {
+  /**
+   * ⚠️ 대비는 **계수 폭이 아니라 휘도 점수**로 잰다. 옛 판은 `max − min ≥ 0.2`였는데, 그 0.2는
+   * *어두운 알베도(≈100)에서* 광원이 보이는 폭을 factor 단위로 적어 둔 값이었다 — 알베도가 밝아지면
+   * 같은 계수 폭이 더 큰 대비를 내므로 이 숫자는 화면과 무관해진다. 실측이 그걸 보여준다:
+   * 옛 모델(알베도 91~104 · 폭 0.36)의 화면 대비는 **32.6~37.5점**, 새 모델(알베도 218~220 · 폭 0.16)은
+   * **34.9~35.4점** — 계수 폭은 절반 이하로 줄었는데 **눈에 보이는 대비는 그대로다.**
+   * 그래서 단위를 화면 쪽으로 옮긴다. 이건 기준 완화가 아니라 **같은 계약을 옳은 단위로 다시 쓴 것**이고,
+   * 알베도가 어느 대역에 있든 뜻이 유지된다(= 이 파일이 세 번 경고한 "대역을 옮기면 기준도 옮겨야 한다"를
+   * 아예 대역 독립으로 만든 것). 이 단위 착오는 `SHADE` 자체가 밝은 톤에서 무너진 것과 **같은 근인**이다.
+   */
+  it('조명·AO가 실제로 화면에서 읽히는 대비를 낸다 — 계수 폭이 아니라 휘도 점수로', () => {
     expect(SHADE.min).toBeLessThan(SHADE.base)
-    expect(SHADE.base).toBeLessThan(SHADE.max)
-    expect(SHADE.max - SHADE.min, '조명 대비가 0.2 미만이면 광원이 안 보인다').toBeGreaterThanOrEqual(0.2)
+    expect(SHADE.base).toBeLessThanOrEqual(SHADE.max)
+    for (const style of [...Object.values(ROOM_STYLE), NEUTRAL_STYLE]) {
+      const span =
+        relativeLuminance(shade(style.floor, SHADE.max)) - relativeLuminance(shade(style.floor, SHADE.min))
+      expect(span, `${style.floor} 최명부−최암부 = ${span.toFixed(1)}점`).toBeGreaterThanOrEqual(30)
+    }
   })
 })
 
