@@ -45,7 +45,7 @@ type PaletteKey = keyof typeof BACKDROP_PALETTE
  */
 const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys: readonly PaletteKey[] }> = [
   {
-    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 82, max: 100,
+    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 80, max: 102,
     keys: [
       'ground', 'grassBase', 'grassNoiseDark', 'medianStrip',
       'pavementBase', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
@@ -54,13 +54,13 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '지면 노이즈(밝은 쪽)·논둑', min: 98, max: 114,
+    name: '지면 노이즈(밝은 쪽)·논둑', min: 96, max: 116,
     keys: ['grassNoiseLight', 'pavementNoiseLight', 'dirtNoiseLight', 'fieldFurrowLight', 'paddyCellLight', 'paddyBank'],
   },
-  { name: '도로', min: 92, max: 108, keys: ['road', 'laneShoulder', 'dirtLane'] },
-  { name: '인도·산책로', min: 116, max: 132, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
+  { name: '도로', min: 90, max: 110, keys: ['road', 'laneShoulder', 'dirtLane'] },
+  { name: '인도·산책로', min: 114, max: 134, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
   {
-    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 122, max: 142,
+    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 120, max: 144,
     keys: [
       'roofBase', 'roofEdge', 'aptBody', 'aptEdge',
       'houseRoofWarm', 'houseRoofWarmShade', 'houseRoofCool', 'houseRoofCoolShade',
@@ -69,12 +69,12 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 143, max: 156,
+    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 141, max: 158,
     keys: ['roofVent', 'roofVentShade', 'roofPenthouse', 'aptTower', 'aptTowerLit', 'houseRidgeWarm', 'houseRidgeCool'],
   },
-  { name: '풀포기·관목', min: 104, max: 128, keys: ['tuft', 'tuftShade', 'shrub'] },
+  { name: '풀포기·관목', min: 102, max: 130, keys: ['tuft', 'tuftShade', 'shrub'] },
   {
-    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 134, max: 152,
+    name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 132, max: 154,
     keys: [
       'treeCanopy', 'treeCanopyLit', 'treeShade',
       'forestCanopy', 'forestCanopyLit', 'forestCanopyDark',
@@ -89,6 +89,13 @@ const cat = (name: string) => CATEGORIES.find((c) => c.name.startsWith(name))!
 const meanL = (name: string) => {
   const { keys } = cat(name)
   return keys.reduce((s, k) => s + relativeLuminance(BACKDROP_PALETTE[k]), 0) / keys.length
+}
+
+/** 대역의 중점 — 요구 간격을 표에서 파생시키는 데 쓴다(아래 ⚠️). 단언이 재는 것이 **평균**이므로 중점이 옳은 대응이다. */
+const mid = (name: string) => {
+  const { min, max } = cat(name)
+  if (min === undefined) throw new Error(`대역 중점을 못 구한다(하한 없는 카테고리): ${name}`)
+  return (min + max) / 2
 }
 
 const GROUND = '지면 base', BODY = '건물 본체', DETAIL = '건물 디테일'
@@ -131,11 +138,15 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
      ⚠️ **⑥(2026-08-01)은 방향이 반대다** — 야경에서 낮으로 가며 지면(면적 지배)을 63.5 → 90.1로
      끌어올려 스프레드를 79 → 52로 **좁혔다**. 대역을 좁히면서 옛 간격(33.6/12.0/14.4)을 두면
      이번엔 느슨해지는 게 아니라 **통과가 불가능**해진다. 방향이 어느 쪽이든 규칙은 같다:
-     이 세 숫자는 대역과 같은 커밋에서 움직인다. */
+     이 세 숫자는 대역과 같은 커밋에서 움직인다.
+     ⚠️ **그리고 이 숫자를 리터럴로 두는 것 자체가 구멍이었다**(2026-08-01 리뷰 실측: 27.8을
+     20.0으로 낮춰도 1542건 전건 초록 — 간격을 감시하는 단언이 없다). 그래서 표의 **중점에서
+     파생**시킨다. 이제 표를 옮기면 요구 간격이 따라 움직여 「같은 커밋에서」가 규약이 아니라
+     **구조**로 강제된다(이 저장소의 `MEMORY.md` 자동생성·changeLog PR번호 생략과 같은 발상). */
   it.each([
-    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 27.8 },
-    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 13.0 },
-    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 12.5 },
+    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 0.65 * (mid(BODY) - mid(GROUND)) },
+    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 0.65 * (mid(WALK) - mid(ROAD)) },
+    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 0.65 * (mid(DETAIL) - mid(BODY)) },
   ])('$what 평균 간격이 $gap 이상 — 스프레드가 눌리면 형태가 안 읽힌다', ({ what, a, b, gap }) => {
     const d = meanL(a) - meanL(b)
     expect(d, `${what} = ${meanL(a).toFixed(2)} − ${meanL(b).toFixed(2)} = ${d.toFixed(2)}`).toBeGreaterThanOrEqual(gap)
@@ -358,25 +369,25 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
  * 포장면의 이음매 루프와 가로등 방사형 그라디언트가 이번에 새로 들어와, 종료·API 사용을
  * 확인할 계측기가 없으면 무한 루프나 오타가 배포까지 간다.
  */
-describe('drawBackdrop — 12종이 예외 없이 끝까지 그려진다', () => {
-  /** 캔버스 없는 노드 환경용 최소 스텁 — 호출을 세기만 한다. */
-  const stubCtx = () => {
-    const calls = { fillRect: 0, gradient: 0, fills: new Set<string>(), composites: [] as string[] }
-    return {
-      calls,
-      ctx: {
-        set fillStyle(v: unknown) { if (typeof v === 'string') calls.fills.add(v) },
-        set strokeStyle(_v: unknown) {}, set lineWidth(_v: number) {},
-        // 발광 패스는 합성 모드로만 구별된다 — 값을 기록해 "additive로 그렸는가"를 단언한다.
-        set globalCompositeOperation(v: string) { calls.composites.push(v) },
-        fillRect: () => { calls.fillRect++ },
-        strokeRect: () => {}, clearRect: () => {}, beginPath: () => {}, fill: () => {},
-        arc: () => {}, setLineDash: () => {},
-        createRadialGradient: () => { calls.gradient++; return { addColorStop: () => {} } },
-      } as unknown as CanvasRenderingContext2D,
-    }
+/** 캔버스 없는 노드 환경용 최소 스텁 — 호출을 세기만 한다. 아래 두 describe가 함께 쓴다. */
+const stubCtx = () => {
+  const calls = { fillRect: 0, gradient: 0, fills: new Set<string>(), composites: [] as string[] }
+  return {
+    calls,
+    ctx: {
+      set fillStyle(v: unknown) { if (typeof v === 'string') calls.fills.add(v) },
+      set strokeStyle(_v: unknown) {}, set lineWidth(_v: number) {},
+      // 발광 패스는 합성 모드로만 구별된다 — 값을 기록해 "additive로 그렸는가"를 단언한다.
+      set globalCompositeOperation(v: string) { calls.composites.push(v) },
+      fillRect: () => { calls.fillRect++ },
+      strokeRect: () => {}, clearRect: () => {}, beginPath: () => {}, fill: () => {},
+      arc: () => {}, setLineDash: () => {},
+      createRadialGradient: () => { calls.gradient++; return { addColorStop: () => {} } },
+    } as unknown as CanvasRenderingContext2D,
   }
+}
 
+describe('drawBackdrop — 12종이 예외 없이 끝까지 그려진다', () => {
   const REGIONS: readonly SimRegionKey[] = ['URBAN', 'NEWTOWN', 'PROVINCIAL', 'RURAL']
 
   it.each(REGIONS)('%s의 변형 0·1·2가 모두 완주하고 실제로 뭔가를 그린다', (region) => {
@@ -422,5 +433,103 @@ describe('drawBackdrop — 12종이 예외 없이 끝까지 그려진다', () =>
       expect(calls.composites, `${region}/${variant}`).toContain('lighter')
       expect(calls.composites.at(-1), `${region}/${variant} 마지막 합성 모드`).toBe('source-over')
     }
+  })
+})
+
+/**
+ * hex → [색상각(0~360), 채도(0~1)] — **HSL 채도**다. 정의를 명시하는 이유가 있다:
+ * 「채도」라는 한 단어가 이 파일에서 두 개의 다른 질문을 가리킨다.
+ *   ① *"균일 스케일링이 채도를 올렸나"* → HSL S는 L ≤ 0.5에서 정의상 불변이라 **거의 못 본다**.
+ *      2026-07-31의 ×2.4 전환이 그 계측기로 «채도는 안 올렸다»고 오진한 자리다(절대 채도로 재면
+ *      RGB 채널 편차가 20.3 → 48.8로 그대로 커졌다).
+ *   ② *"이 색이 회색축 위에 있나"* → **HSL S가 맞는 도구다**(밝기로 정규화돼 밝은 회색과
+ *      어두운 회색을 같게 본다). 아래 무채색 기준 8%가 그 정의다.
+ * 다른 척도(예: (max−min)/max)로 재면 같은 15키가 5/15로 떨어진다 — 정의를 안 적으면
+ * 다음 사람이 다른 계측기를 집어들고 이 계약이 뜻을 잃는다.
+ */
+function hueSat(hex: string): [number, number] {
+  const n = parseInt(hex.slice(1), 16)
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn
+  let h = 0
+  if (d) {
+    if (mx === r) h = ((g - b) / d) % 6
+    else if (mx === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const l = (mx + mn) / 2
+  return [h, d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1))]
+}
+
+/**
+ * 색조 계약 — **이 축은 2026-08-01까지 무계측이었다.**
+ * ×2.4 일괄 상승이 색상비를 보존한 탓에 도심 배경이 화면의 최대 84%가 보라 · 무채색 0.5%가 됐는데
+ * (브라우저 픽셀 실측과 래스터 면적 집계가 독립적으로 일치), 휘도만 보는 검사는 그것을 **전건
+ * 통과시켰다**. 위 describe가 "얼마나 밝은가"를 잠그듯, 여기서는 "무슨 색인가"를 잠근다.
+ */
+describe('BACKDROP_PALETTE 색조 — 도시는 무채색이고 지역은 색으로 갈린다', () => {
+  /** 도심이 바닥·건물로 쓰는 표면 키 — 아스팔트·콘크리트·유리라 무채색이어야 한다. */
+  const URBAN_SURFACE = [
+    'pavementBase', 'pavementNoiseLight', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
+    'road', 'sidewalk', 'roofBase', 'roofEdge', 'roofVent', 'roofVentShade',
+    'aptBody', 'aptEdge', 'aptTower', 'aptTowerLit',
+  ] as const
+
+  it('도심 표면 키는 전부 무채색이다 — HSL 채도 8% 미만', () => {
+    for (const k of URBAN_SURFACE) {
+      const hex = BACKDROP_PALETTE[k]
+      const [, s] = hueSat(hex)
+      expect(s, `${k}(${hex}) 채도 ${(s * 100).toFixed(1)}%`).toBeLessThan(0.08)
+    }
+  })
+
+  /**
+   * ⚠️ **대역을 250~310이 아니라 230~320으로 잡는 이유** — 조사에서 실측된 함정이다.
+   * HSL 색상각은 순수 sRGB 파랑을 240°라 부르지만 그건 원색의 이름일 뿐 지각 좌표가 아니다.
+   * 지각 공간(OKLCh)에서 재면 순수 파랑이 264°이고 **그 너머가 보라**인데, HSL 250~310으로 세면
+   * `sidewalk`(248°) · `roofEdge`·`roofVent`·`aptTowerLit`(240°)가 전부 대역 **밖으로 빠진다** —
+   * 팔레트 주석이 「인도가 보라색이 된다」라고 스스로 지목한 바로 그 키가 검사를 통과해 버린다.
+   * 이 팔레트의 물색은 195~215°에 있으므로 230부터 막아도 진짜 파랑은 안 걸린다.
+   */
+  it('팔레트 어디에도 보라가 없다 — 색상각 230~320°는 이 게임의 색이 아니다', () => {
+    for (const [k, hex] of Object.entries(BACKDROP_PALETTE)) {
+      const [h, s] = hueSat(hex)
+      if (s < 0.08) continue // 무채색은 색상각이 무의미하다
+      expect(h < 230 || h > 320, `${k}(${hex}) 색상각 ${h.toFixed(0)}°`).toBe(true)
+    }
+  })
+
+  it('자연 키는 유채색을 유지한다 — 무채색화가 초목·물까지 삼키면 지역이 안 갈린다', () => {
+    for (const k of ['grassBase', 'paddyBase', 'forestCanopy', 'treeCanopy', 'seaBase', 'dirtBase'] as const) {
+      const [, s] = hueSat(BACKDROP_PALETTE[k])
+      expect(s, `${k} 채도 ${(s * 100).toFixed(1)}%`).toBeGreaterThan(0.15)
+    }
+  })
+
+  /** 지역별 분리 — 그려진 색을 지역마다 모아 「무채색 비율」과 「초록 비율」의 서열을 잠근다.
+   *  평균 색상각은 원형이라 평균이 뜻을 잃는다(0°와 350°의 평균이 175°). 비율로 잰다.
+   *  ⚠️ 스텁의 `fills`가 Set이라 이건 **면적이 아니라 그 장면이 쓴 서로 다른 색의 비율**이다 —
+   *  "도심이 무채색 팔레트로 그려지는가"를 재기엔 충분하고, 면적은 스텁이 볼 수 없다. */
+  const share = (region: 'URBAN' | 'NEWTOWN' | 'PROVINCIAL' | 'RURAL') => {
+    const { ctx, calls } = stubCtx()
+    drawBackdrop(ctx, region, 1)
+    const hexes = [...calls.fills].filter((f) => /^#[0-9a-fA-F]{6}$/.test(f))
+    const hs = hexes.map(hueSat)
+    const n = hs.length || 1
+    return {
+      neutral: hs.filter(([, s]) => s < 0.08).length / n,
+      green: hs.filter(([h, s]) => s >= 0.08 && h >= 70 && h <= 160).length / n,
+    }
+  }
+
+  it('도심이 가장 무채색이고, 농어촌이 가장 초록이다', () => {
+    const u = share('URBAN'), p = share('PROVINCIAL'), r = share('RURAL')
+    const trace = `무채색 도심 ${u.neutral.toFixed(2)} / 지방 ${p.neutral.toFixed(2)} / 농어촌 ${r.neutral.toFixed(2)}`
+    expect(u.neutral, trace).toBeGreaterThan(p.neutral)
+    expect(u.neutral, trace).toBeGreaterThan(r.neutral)
+    const gtrace = `초록 도심 ${u.green.toFixed(2)} / 농어촌 ${r.green.toFixed(2)}`
+    expect(r.green, gtrace).toBeGreaterThan(u.green)
   })
 })
