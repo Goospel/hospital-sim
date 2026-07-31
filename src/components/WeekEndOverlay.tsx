@@ -5,6 +5,7 @@ import type { DayRecord } from "@/sim/day";
 import { simDept, type SimDeptKey } from "@/sim/dept";
 import type { WeekDeptLine, WeekSummary } from "@/sim/week";
 import type { EndingKind } from "@/sim/world";
+import { LANDING } from "./landingPalette";
 import { formatManwon, NURSE_GRADE_TEXT, nurseAttritionText, type ResigningNotice } from "./simHud";
 
 /**
@@ -271,7 +272,8 @@ export default function WeekEndOverlay({
           <button
             type="button"
             onClick={onNextWeek}
-            className="rounded-xs border border-frame bg-desk-2 py-3 text-base font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+            className="rounded-xs py-3 text-base font-medium transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+            style={{ background: LANDING.accent, color: LANDING.onAccent }}
           >
             다음 주
           </button>

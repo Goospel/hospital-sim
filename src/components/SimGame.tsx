@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { LANDING } from "@/components/landingPalette";
 import TileMap, { OUTSIDE_FLOOR, type BuildPreview } from "@/components/TileMap";
 import DayEndOverlay from "@/components/DayEndOverlay";
 import EventCard from "@/components/EventCard";
@@ -613,7 +614,29 @@ export default function SimGame() {
       맵 크기는 여전히 이 파일에 안 나온다 — TileMap이 자기 자리를 재서 fit을 정하고, 그 위에
       플레이어의 카메라가 얹힌다.
     */
-    <main className="relative h-dvh overflow-hidden" style={{ backgroundColor: OUTSIDE_FLOOR }}>
+    /* 아트 디렉션 ④ — desk 토큰을 이 서브트리에서만 밝은 값으로 재정의한다.
+       @theme inline이라 유틸리티가 var(--desk)를 직접 참조하므로 하위 99곳이
+       클래스 무변으로 뒤집히고, /classic은 :root의 어두운 값 그대로다.
+       hex는 landingPalette(TS)에만 있다 — globals.css 무변 계약. */
+    <main
+      className="relative h-dvh overflow-hidden"
+      style={
+        {
+          backgroundColor: OUTSIDE_FLOOR,
+          /* 전역 html{color-scheme:dark}가 남아 있어, 밝게 뒤집힌 이 서브트리에서도 UA가 그리는
+             스크롤바·선택 하이라이트만 어둡게 칠해진다. color-scheme은 상속 속성이라 여기 한 줄로
+             자손 스크롤 컨테이너까지 따라온다. globals.css를 안 고치는 이유는 /classic이 그 어두운
+             값을 그대로 쓰기 때문 — 전역을 밝히면 클래식이 깨진다. */
+          colorScheme: "light",
+          "--desk": LANDING.backdrop,
+          "--desk-2": LANDING.card,
+          "--frame": LANDING.edge,
+          "--on-desk": LANDING.ink,
+          "--on-desk-muted": LANDING.inkMuted,
+          "--alarm": LANDING.alarmDeep,
+        } as CSSProperties
+      }
+    >
       {/* ── 상단 바 — 시각·금고·오늘 집계·시간 조작 ── */}
       <header ref={headerRef} className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-frame bg-desk-2/80 px-4 py-2 font-mono text-sm tabular-nums text-on-desk backdrop-blur-sm">
         <span className="text-base font-semibold">{formatClockFromOpen(world.minute)}</span>

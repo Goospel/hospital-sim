@@ -9,6 +9,18 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-08-01 · HUD를 밝은 종이 톤으로 — 어두운 채 남은 마지막 층 (아트 디렉션 ④)
+
+**왜** — 게임 캔버스(밝은 아트 디렉션 ①)와 랜딩이 밝은 병원 톤이 된 뒤에도 그 사이의 모든 UI(HUD 상단바·사이드바·채용 패널·이벤트 카드·하루/주간 오버레이)는 어두운 desk 토큰 위에 있었다 — 밝은 랜딩에서 지역을 확정하는 순간 어두운 개원 준비 다이얼로그가 떠서 명암이 널뛰었다. 사용자 지시: *"HUD도 밝게 바꾸자."* 설계 [spec](../docs/superpowers/specs/2026-08-01-bright-hud-design.md)·[플랜](../docs/superpowers/plans/2026-08-01-bright-hud.md).
+
+**무엇을** — ① **토큰 스코프 재정의**: `SimGame` 루트에서 desk 토큰 6종(`--desk`·`--desk-2`·`--frame`·`--on-desk`·`--on-desk-muted`·`--alarm`)을 `landingPalette`의 값으로 재정의했다. `globals.css`의 `@theme inline`이 유틸리티에 **hex가 아니라 `var(--desk)` 참조를 심으므로**(리뷰가 산출 CSS로 실증 — 알파 수식어도 `color-mix(in oklab, var(--desk-2) 80%, transparent)`로 런타임 해석) 본편 하위 99곳이 **클래스 한 글자 안 바뀌고** 뒤집힌다. `/classic`(20파일·284곳)은 `:root`의 어두운 값 그대로고 `globals.css`는 무변 — 사용자가 정한 "본편만" 범위가 코드 구조로 보장된다. ② **경고색 `alarmDeep` 신설**(#b02a30): 기존 #e5484d는 밝은 카드 위 3.26으로 텍스트 기준 미달이라 색상각은 0.78° 차로 유지하고 어둡게 내렸다. 카드 5.43·배경 4.71을 테스트가 잠근다. ③ **청록은 진행 확정 버튼 3곳만**(개원 준비 시작·다음 날·다음 주) — 랜딩 「여기에 짓는다」와 같은 축이고, hover 필터는 어둡게 하는 방향([T-142](troubleshooting/T-142.md)).
+
+**배경과 글자가 쌍으로 뒤집혀 대비 구조가 보존된다** — 이것이 99곳을 안 건드리고도 성립하는 이유다. 덤으로 `TileMap`의 9px 방 라벨(1.03:1로 사실상 안 보이던 것)이 3.35~4.17:1이 됐고, 어두운 후광 트릭(`textShadow: 0 0 2px var(--desk)`)도 밝은 후광으로 자동 반전됐다.
+
+**검수가 잡은 defect 1건** — 전역 `html { color-scheme: dark }`가 남아, 밝게 뒤집힌 패널 6곳의 UA 스크롤바·선택 하이라이트가 어두웠다. 토큰 6종이 못 덮는 **일곱 번째 값**이다. 루트 style에 `colorScheme: "light"` 한 줄(상속 속성이라 자손 스크롤 컨테이너가 따라오고, `globals.css`는 `/classic`이 쓰므로 여전히 무변).
+
+**1542 vitest**·tsc 0·eslint 0 error·브라우저 전 화면 검수(랜딩→채용→HUD→건설 팔레트→체크리스트→경고 칩→하루 정산). 분류표 반영 상태 변경 없음(표현 층). 부수 함정 [T-143](troubleshooting/T-143.md).
+
 ## 2026-07-31 · 랜딩을 밝은 종이 톤으로 — 첫 화면과 본편의 명암 통일
 
 **왜** — 본편은 밝은 병원 톤으로 전환됐는데(아트 디렉션 ①) 첫 화면인 지역 선택은 어두운 desk 토큰 위에 있었다 — 게임을 켜면 어두운 화면이 먼저 나오고 지역을 고른 뒤에야 밝아지는, 첫인상이 아트 디렉션과 정반대인 상태. 사용자 지시: *"랜딩페이지 디자인 변경하자. 지금까지 변경한 것과 통일성 있게."* 설계 [spec](../docs/superpowers/specs/2026-07-31-bright-landing-design.md)·[플랜](../docs/superpowers/plans/2026-07-31-bright-landing.md).
