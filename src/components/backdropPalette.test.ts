@@ -45,7 +45,7 @@ type PaletteKey = keyof typeof BACKDROP_PALETTE
  */
 const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys: readonly PaletteKey[] }> = [
   {
-    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 53, max: 74,
+    name: '지면 base(풀밭·포장면·논·밭 어두운 이랑·나대지)', min: 80, max: 102,
     keys: [
       'ground', 'grassBase', 'grassNoiseDark', 'medianStrip',
       'pavementBase', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
@@ -54,13 +54,13 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '지면 노이즈(밝은 쪽)·논둑', min: 74, max: 89,
+    name: '지면 노이즈(밝은 쪽)·논둑', min: 96, max: 116,
     keys: ['grassNoiseLight', 'pavementNoiseLight', 'dirtNoiseLight', 'fieldFurrowLight', 'paddyCellLight', 'paddyBank'],
   },
-  { name: '도로', min: 77, max: 94, keys: ['road', 'laneShoulder', 'dirtLane'] },
-  { name: '인도·산책로', min: 98, max: 113, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
+  { name: '도로', min: 90, max: 110, keys: ['road', 'laneShoulder', 'dirtLane'] },
+  { name: '인도·산책로', min: 114, max: 134, keys: ['sidewalk', 'parkPath', 'leveePath', 'seawall'] },
   {
-    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 103, max: 128,
+    name: '건물 본체·시설·차량(옥상·아파트·주택 지붕)', min: 120, max: 144,
     keys: [
       'roofBase', 'roofEdge', 'aptBody', 'aptEdge',
       'houseRoofWarm', 'houseRoofWarmShade', 'houseRoofCool', 'houseRoofCoolShade',
@@ -69,10 +69,10 @@ const CATEGORIES: ReadonlyArray<{ name: string; min?: number; max: number; keys:
     ],
   },
   {
-    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 129, max: 147,
+    name: '건물 디테일(실외기·승강기탑·용마루·옥탑)', min: 141, max: 158,
     keys: ['roofVent', 'roofVentShade', 'roofPenthouse', 'aptTower', 'aptTowerLit', 'houseRidgeWarm', 'houseRidgeCool'],
   },
-  { name: '풀포기·관목', min: 98, max: 123, keys: ['tuft', 'tuftShade', 'shrub'] },
+  { name: '풀포기·관목', min: 102, max: 130, keys: ['tuft', 'tuftShade', 'shrub'] },
   {
     name: '랜드마크(수관·숲·하천·바다·천창 불빛·벤치)', min: 132, max: 154,
     keys: [
@@ -89,6 +89,13 @@ const cat = (name: string) => CATEGORIES.find((c) => c.name.startsWith(name))!
 const meanL = (name: string) => {
   const { keys } = cat(name)
   return keys.reduce((s, k) => s + relativeLuminance(BACKDROP_PALETTE[k]), 0) / keys.length
+}
+
+/** 대역의 중점 — 요구 간격을 표에서 파생시키는 데 쓴다(아래 ⚠️). 단언이 재는 것이 **평균**이므로 중점이 옳은 대응이다. */
+const mid = (name: string) => {
+  const { min, max } = cat(name)
+  if (min === undefined) throw new Error(`대역 중점을 못 구한다(하한 없는 카테고리): ${name}`)
+  return (min + max) / 2
 }
 
 const GROUND = '지면 base', BODY = '건물 본체', DETAIL = '건물 디테일'
@@ -127,11 +134,19 @@ describe('BACKDROP_PALETTE — 배경은 부지보다 어둡되, 배경 안에�
      뜬다(이 파일이 세 번 경고한 "상한이 느슨해지면 통과하면서 목적이 증발" 그 자리다).
      ⑤(2026-07-31)에서 실제로 그 자리를 밟을 뻔했다 — 대역만 ×2.4 하고 요구 간격을 두면 요구/실측 비율이
      65% → 27%(정확히 1/2.4)로 내려앉는다. 그래서 14.0/5.0/6.0 → **33.6/12.0/14.4**로 같은 배수를 먹였다.
-     교훈: 이 세 숫자는 대역과 **같은 커밋에서** 움직여야 한다 — 쪼개면 불변식이 깨진 커밋이 히스토리에 남는다. */
+     교훈: 이 세 숫자는 대역과 **같은 커밋에서** 움직여야 한다 — 쪼개면 불변식이 깨진 커밋이 히스토리에 남는다.
+     ⚠️ **⑥(2026-08-01)은 방향이 반대다** — 야경에서 낮으로 가며 지면(면적 지배)을 63.5 → 90.1로
+     끌어올려 스프레드를 79 → 52로 **좁혔다**. 대역을 좁히면서 옛 간격(33.6/12.0/14.4)을 두면
+     이번엔 느슨해지는 게 아니라 **통과가 불가능**해진다. 방향이 어느 쪽이든 규칙은 같다:
+     이 세 숫자는 대역과 같은 커밋에서 움직인다.
+     ⚠️ **그리고 이 숫자를 리터럴로 두는 것 자체가 구멍이었다**(2026-08-01 리뷰 실측: 27.8을
+     20.0으로 낮춰도 1542건 전건 초록 — 간격을 감시하는 단언이 없다). 그래서 표의 **중점에서
+     파생**시킨다. 이제 표를 옮기면 요구 간격이 따라 움직여 「같은 커밋에서」가 규약이 아니라
+     **구조**로 강제된다(이 저장소의 `MEMORY.md` 자동생성·changeLog PR번호 생략과 같은 발상). */
   it.each([
-    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 33.6 },
-    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 12.0 },
-    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 14.4 },
+    { what: '건물 본체 − 지면', a: BODY, b: GROUND, gap: 0.65 * (mid(BODY) - mid(GROUND)) },
+    { what: '인도 − 도로', a: WALK, b: ROAD, gap: 0.65 * (mid(WALK) - mid(ROAD)) },
+    { what: '건물 디테일 − 건물 본체', a: DETAIL, b: BODY, gap: 0.65 * (mid(DETAIL) - mid(BODY)) },
   ])('$what 평균 간격이 $gap 이상 — 스프레드가 눌리면 형태가 안 읽힌다', ({ what, a, b, gap }) => {
     const d = meanL(a) - meanL(b)
     expect(d, `${what} = ${meanL(a).toFixed(2)} − ${meanL(b).toFixed(2)} = ${d.toFixed(2)}`).toBeGreaterThanOrEqual(gap)
@@ -351,28 +366,29 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
 
 /**
  * 12종이 **끝까지 그려지는지**만 본다(그림의 아름다움은 눈이 판정한다).
- * 포장면의 이음매 루프와 가로등 방사형 그라디언트가 이번에 새로 들어와, 종료·API 사용을
+ * 포장면의 이음매 루프와 발광 flush의 방사형 그라디언트처럼 루프·API가 얽힌 자리는, 종료·API 사용을
  * 확인할 계측기가 없으면 무한 루프나 오타가 배포까지 간다.
+ * (가로등의 지면 광원 웅덩이는 2026-08-01 낮 전환에서 제거됐다 — 낮에 가로등은 안 켜져 있다.)
  */
-describe('drawBackdrop — 12종이 예외 없이 끝까지 그려진다', () => {
-  /** 캔버스 없는 노드 환경용 최소 스텁 — 호출을 세기만 한다. */
-  const stubCtx = () => {
-    const calls = { fillRect: 0, gradient: 0, fills: new Set<string>(), composites: [] as string[] }
-    return {
-      calls,
-      ctx: {
-        set fillStyle(v: unknown) { if (typeof v === 'string') calls.fills.add(v) },
-        set strokeStyle(_v: unknown) {}, set lineWidth(_v: number) {},
-        // 발광 패스는 합성 모드로만 구별된다 — 값을 기록해 "additive로 그렸는가"를 단언한다.
-        set globalCompositeOperation(v: string) { calls.composites.push(v) },
-        fillRect: () => { calls.fillRect++ },
-        strokeRect: () => {}, clearRect: () => {}, beginPath: () => {}, fill: () => {},
-        arc: () => {}, setLineDash: () => {},
-        createRadialGradient: () => { calls.gradient++; return { addColorStop: () => {} } },
-      } as unknown as CanvasRenderingContext2D,
-    }
+/** 캔버스 없는 노드 환경용 최소 스텁 — 호출을 세기만 한다. 아래 두 describe가 함께 쓴다. */
+const stubCtx = () => {
+  const calls = { fillRect: 0, gradient: 0, fills: new Set<string>(), composites: [] as string[] }
+  return {
+    calls,
+    ctx: {
+      set fillStyle(v: unknown) { if (typeof v === 'string') calls.fills.add(v) },
+      set strokeStyle(_v: unknown) {}, set lineWidth(_v: number) {},
+      // 발광 패스는 합성 모드로만 구별된다 — 값을 기록해 "additive로 그렸는가"를 단언한다.
+      set globalCompositeOperation(v: string) { calls.composites.push(v) },
+      fillRect: () => { calls.fillRect++ },
+      strokeRect: () => {}, clearRect: () => {}, beginPath: () => {}, fill: () => {},
+      arc: () => {}, setLineDash: () => {},
+      createRadialGradient: () => { calls.gradient++; return { addColorStop: () => {} } },
+    } as unknown as CanvasRenderingContext2D,
   }
+}
 
+describe('drawBackdrop — 12종이 예외 없이 끝까지 그려진다', () => {
   const REGIONS: readonly SimRegionKey[] = ['URBAN', 'NEWTOWN', 'PROVINCIAL', 'RURAL']
 
   it.each(REGIONS)('%s의 변형 0·1·2가 모두 완주하고 실제로 뭔가를 그린다', (region) => {
@@ -397,10 +413,16 @@ describe('drawBackdrop — 12종이 예외 없이 끝까지 그려진다', () =>
     expect(calls.fills).not.toContain(BACKDROP_PALETTE.pavementBase)
   })
 
-  it('가로등이 있는 변형은 단색 원반이 아니라 방사형 그라디언트를 만든다', () => {
-    /* urban2는 lamp를 4개 세운다 — 얼룩처럼 보이던 단색 arc로 되돌아가면 여기서 걸린다.
+  it('발광은 단색 원반이 아니라 방사형 그라디언트로 얹는다', () => {
+    /* 2026-08-01 낮 전환에서 **취지를 다시 썼다**(삭제하지 않았다). 옛 취지는 「가로등이 세우던
+       지면 광원 웅덩이가 단색 arc로 퇴행하면 걸린다」였는데, 낮에 가로등은 안 켜져 있어 그 웅덩이를
+       없앴다(Backdrop의 lamp 헬퍼) — 겨누던 대상이 사라졌다. 그런데 **계측기까지 공허해지진 않았다**:
+       lamp는 여전히 같은 발광 큐에 햇빛 한 점을 넣고, 이 단언이 세는 그라디언트는 이제 전부 그 큐의
+       것이다. 즉 지키는 규칙이 「가로등 웅덩이」에서 「발광 flush의 감쇠」로 옮겨갔을 뿐이다.
+       ⚠️ 아래 「발광 패스」 단언과 겹치지 않는다 — 그쪽은 *합성 모드*만 본다. 실측(2026-08-01):
+       flush의 `createRadialGradient`를 단색 `fillStyle`로 바꾸면 **이 건만** 깨지고 그쪽은 통과했다.
        ⚠️ 정확한 개수(옛 `toBe(4)`)를 못 쓴다: 발광 패스가 창문·전조등 그라디언트를 변형마다 다른
-       수로 더한다. 대신 하한을 지키고, **발광 패스 자체의 존재**는 바로 아래 두 건이 잠근다. */
+       수로 더한다. 대신 하한을 지킨다(비네트가 1을 항상 보태므로 4는 발광 3개 이상을 뜻한다). */
     const { ctx, calls } = stubCtx()
     drawBackdrop(ctx, 'URBAN', 2)
     expect(calls.gradient).toBeGreaterThanOrEqual(4)
@@ -418,5 +440,159 @@ describe('drawBackdrop — 12종이 예외 없이 끝까지 그려진다', () =>
       expect(calls.composites, `${region}/${variant}`).toContain('lighter')
       expect(calls.composites.at(-1), `${region}/${variant} 마지막 합성 모드`).toBe('source-over')
     }
+  })
+})
+
+/**
+ * hex → [색상각(0~360), 채도(0~1)] — **HSL 채도**다. 정의를 명시하는 이유가 있다:
+ * 「채도」라는 한 단어가 이 파일에서 두 개의 다른 질문을 가리킨다.
+ *   ① *"균일 스케일링이 채도를 올렸나"* → HSL S는 L ≤ 0.5에서 정의상 불변이라 **거의 못 본다**.
+ *      2026-07-31의 ×2.4 전환이 그 계측기로 «채도는 안 올렸다»고 오진한 자리다(절대 채도로 재면
+ *      RGB 채널 편차가 20.3 → 48.8로 그대로 커졌다).
+ *   ② *"이 색이 회색축 위에 있나"* → **HSL S가 맞는 도구다**(밝기로 정규화돼 밝은 회색과
+ *      어두운 회색을 같게 본다). 아래 무채색 기준 8%가 그 정의다.
+ * 다른 척도(예: (max−min)/max)로 재면 같은 15키가 5/15로 떨어진다 — 정의를 안 적으면
+ * 다음 사람이 다른 계측기를 집어들고 이 계약이 뜻을 잃는다.
+ */
+function hueSat(hex: string): [number, number] {
+  const n = parseInt(hex.slice(1), 16)
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn
+  let h = 0
+  if (d) {
+    if (mx === r) h = ((g - b) / d) % 6
+    else if (mx === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const l = (mx + mn) / 2
+  return [h, d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1))]
+}
+
+/**
+ * 색조 계약 — **이 축은 2026-08-01까지 무계측이었다.**
+ * ×2.4 일괄 상승이 색상비를 보존한 탓에 도심 배경이 화면의 최대 84%가 보라 · 무채색 0.5%가 됐는데
+ * (브라우저 픽셀 실측과 래스터 면적 집계가 독립적으로 일치), 휘도만 보는 검사는 그것을 **전건
+ * 통과시켰다**. 위 describe가 "얼마나 밝은가"를 잠그듯, 여기서는 "무슨 색인가"를 잠근다.
+ */
+describe('BACKDROP_PALETTE 색조 — 도시는 무채색이고 지역은 색으로 갈린다', () => {
+  /** 도심이 바닥·건물로 쓰는 표면 키 — 아스팔트·콘크리트·유리라 무채색이어야 한다. */
+  const URBAN_SURFACE = [
+    'pavementBase', 'pavementNoiseLight', 'pavementNoiseDark', 'pavementSeam', 'parkingLot',
+    'road', 'sidewalk', 'roofBase', 'roofEdge', 'roofVent', 'roofVentShade',
+    'aptBody', 'aptEdge', 'aptTower', 'aptTowerLit',
+  ] as const
+
+  it('도심 표면 키는 전부 무채색이다 — HSL 채도 8% 미만', () => {
+    for (const k of URBAN_SURFACE) {
+      const hex = BACKDROP_PALETTE[k]
+      const [, s] = hueSat(hex)
+      expect(s, `${k}(${hex}) 채도 ${(s * 100).toFixed(1)}%`).toBeLessThan(0.08)
+    }
+  })
+
+  /**
+   * ⚠️ **대역을 250~310이 아니라 230~320으로 잡는 이유** — 조사에서 실측된 함정이다.
+   * HSL 색상각은 순수 sRGB 파랑을 240°라 부르지만 그건 원색의 이름일 뿐 지각 좌표가 아니다.
+   * 지각 공간(OKLCh)에서 재면 순수 파랑이 264°이고 **그 너머가 보라**인데, HSL 250~310으로 세면
+   * `sidewalk`(248°) · `roofEdge`·`roofVent`·`aptTowerLit`(240°)가 전부 대역 **밖으로 빠진다** —
+   * 팔레트 주석이 「인도가 보라색이 된다」라고 스스로 지목한 바로 그 키가 검사를 통과해 버린다.
+   * 이 팔레트의 물색은 195~215°에 있으므로 230부터 막아도 진짜 파랑은 안 걸린다.
+   *
+   * ⚠️ **건너뛰기 문턱(3%)이 무채색 문턱(8%)과 다른 것은 의도다** — 두 숫자는 다른 질문이다:
+   * 「회색으로 보이는가」(8% · 위 단언)와 「색상각이 뜻을 갖는가」(3% · 여기). 둘을 8%로 묶었던 판은
+   * **그 사이를 통째로 비웠다**: `sidewalk = #797788`(색상각 247° · 채도 6.67%)이 56건 전건
+   * 초록이었다 — 무채색 단언은 `URBAN_SURFACE` 15키만 보고, 보라 단언은 8% 미만이라 건너뛰었다.
+   * 팔레트의 실제 최저 채도가 3.8%(`sidewalk`)라 3%면 사실상 **전 키를 색상각으로 검사**한다.
+   */
+  it('팔레트 어디에도 보라가 없다 — 색상각 230~320°는 이 게임의 색이 아니다', () => {
+    for (const [k, hex] of Object.entries(BACKDROP_PALETTE)) {
+      const [h, s] = hueSat(hex)
+      if (s < 0.03) continue // 순회색은 색상각 자체가 수치 잡음이다
+      expect(h < 230 || h > 320, `${k}(${hex}) 색상각 ${h.toFixed(0)}° 채도 ${(s * 100).toFixed(1)}%`).toBe(true)
+    }
+  })
+
+  /**
+   * 자연 키 — **채도만으로는 부족하다.** 채도만 보던 판은 `grassBase = #a84c2a`(주황 16°)를
+   * 전건 통과시켰다: 잔디가 주황이어도 "유채색이니 통과"였다. 계열까지 함께 잠근다.
+   */
+  it.each([
+    { k: 'grassBase', lo: 70, hi: 160, 계열: '초목' },
+    { k: 'paddyBase', lo: 70, hi: 160, 계열: '초목' },
+    { k: 'forestCanopy', lo: 70, hi: 160, 계열: '초목' },
+    { k: 'treeCanopy', lo: 70, hi: 160, 계열: '초목' },
+    { k: 'seaBase', lo: 180, hi: 230, 계열: '물' },
+    { k: 'dirtBase', lo: 20, hi: 55, 계열: '흙' },
+  ] as const)('$k는 $계열 색을 유지한다 — 채도 15% 초과 + 색상각 $lo~$hi°', ({ k, lo, hi }) => {
+    const hex = BACKDROP_PALETTE[k]
+    const [h, s] = hueSat(hex)
+    const label = `${k}(${hex}) 채도 ${(s * 100).toFixed(1)}% 색상각 ${h.toFixed(0)}°`
+    expect(s, label).toBeGreaterThan(0.15)
+    expect(h, label).toBeGreaterThanOrEqual(lo)
+    expect(h, label).toBeLessThanOrEqual(hi)
+  })
+
+  /**
+   * 지역별 분리 — 그려진 색을 지역마다 모아 색 계열의 비율을 잰다.
+   * 평균 색상각은 원형이라 평균이 뜻을 잃는다(0°와 350°의 평균이 175°). 비율로 잰다.
+   *
+   * ⚠️ 이건 **면적이 아니라 그 장면이 쓴 서로 다른 색의 비율**이다 — 스텁이 `fillRect` 인자를
+   * 기록하지 않아 면적은 원리적으로 못 잰다. 그래서 "화면의 84%가 보라" 같은 면적 주장은 이 계측기가
+   * 재현하지 못한다. 아래 격차 문턱은 그 한계를 알고 고른 값이다.
+   *
+   * ⚠️ **변형 0·1·2를 모두 합산한다.** 변형 하나(1)만 보던 판은 12장면 중 4개만 봤다 — 나머지
+   * 8장면을 통째로 다시 칠해도 초록이었다.
+   */
+  const share = (region: SimRegionKey) => {
+    const set = new Set<string>()
+    for (const variant of [0, 1, 2]) {
+      const { ctx, calls } = stubCtx()
+      drawBackdrop(ctx, region, variant)
+      for (const f of calls.fills) set.add(f)
+    }
+    const hs = [...set].filter((f) => /^#[0-9a-fA-F]{6}$/.test(f)).map(hueSat)
+    const n = hs.length || 1
+    const frac = (p: (x: [number, number]) => boolean) => hs.filter(p).length / n
+    return {
+      neutral: frac(([, s]) => s < 0.08),
+      green: frac(([h, s]) => s >= 0.08 && h >= 70 && h <= 160),
+      /** 황토·따뜻한 지붕 계열. */
+      warm: frac(([h, s]) => s >= 0.08 && h >= 20 && h <= 50),
+    }
+  }
+
+  const SHARE = {
+    URBAN: share('URBAN'), NEWTOWN: share('NEWTOWN'),
+    PROVINCIAL: share('PROVINCIAL'), RURAL: share('RURAL'),
+  }
+
+  /**
+   * ⚠️ **서열(`>`)이 아니라 최소 격차다 — 서열만 보던 판은 옛 보라 팔레트에서도 전건 통과했다.**
+   * 실측(`407a7b2^` 팔레트를 역매핑해 같은 `share()`를 돌림): 무채색 비율이 도심 0.056 · 지방 0.030 ·
+   * 농어촌 0.028로, `도심 > 지방`도 `도심 > 농어촌`도 **참**이었다. 도심이 "가장 무채색"인 이유가
+   * 무채색이라서가 아니라 **무채색 키가 지역마다 한둘인데 도심의 분모(쓰는 색 가짓수)가 가장 작아서**다 —
+   * 순전한 분모 사고. 그 판이었다면 다음 사람이 도심을 다시 보라로 되돌려도 초록불이다.
+   * 격차로 바꾸면 옛 팔레트의 0.026 · 0.028이 문턱 0.25 아래로 확실히 죽는다.
+   *
+   * ⚠️ **문턱은 실측에서 고른다.** 지금 격차와 문턱 사이 여유를 함께 적어 둔다 — 여유가 0에 붙으면
+   * 그건 대역이 아니라 현재 값의 지문이다(이 파일의 「대역 여유」가 같은 이유로 무너졌던 자리).
+   * `NEWTOWN` 축의 문턱이 0.05로 낮은 것은 실측 격차가 0.104(지방)·0.147(농어촌)이라 0.10을 걸면
+   * 여유가 0.004밖에 안 남기 때문이다 — 낮춘 게 아니라 **지문을 안 만든 것**이고, 0.05로도 옛
+   * 팔레트(0.006·0.008)는 죽는다.
+   */
+  it.each([
+    { what: '무채색: 도심 − 신도시', axis: 'neutral', hi: 'URBAN', lo: 'NEWTOWN', min: 0.15 },
+    { what: '무채색: 도심 − 지방', axis: 'neutral', hi: 'URBAN', lo: 'PROVINCIAL', min: 0.25 },
+    { what: '무채색: 도심 − 농어촌', axis: 'neutral', hi: 'URBAN', lo: 'RURAL', min: 0.25 },
+    { what: '무채색: 신도시 − 지방', axis: 'neutral', hi: 'NEWTOWN', lo: 'PROVINCIAL', min: 0.05 },
+    { what: '무채색: 신도시 − 농어촌', axis: 'neutral', hi: 'NEWTOWN', lo: 'RURAL', min: 0.05 },
+    { what: '초록: 농어촌 − 도심', axis: 'green', hi: 'RURAL', lo: 'URBAN', min: 0.25 },
+    { what: '따뜻한 색: 지방 − 도심', axis: 'warm', hi: 'PROVINCIAL', lo: 'URBAN', min: 0.05 },
+  ] as const)('$what 격차가 $min 이상 — 서열만으로는 분모 사고를 못 거른다', ({ what, axis, hi, lo, min }) => {
+    const d = SHARE[hi][axis] - SHARE[lo][axis]
+    expect(d, `${what} = ${SHARE[hi][axis].toFixed(3)} − ${SHARE[lo][axis].toFixed(3)} = ${d.toFixed(3)}`)
+      .toBeGreaterThanOrEqual(min)
   })
 })
