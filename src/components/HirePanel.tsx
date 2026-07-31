@@ -3,6 +3,7 @@
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import { nurseCount, type Pawn } from "@/sim/pawn";
 import { NURSE_WEEKLY_COST_MANWON } from "@/sim/week";
+import { LANDING } from "./landingPalette";
 import { doctorCountByDept, formatManwon, startingRosterMet, STARTING_ROSTER_MIN } from "./simHud";
 
 /**
@@ -172,7 +173,14 @@ export default function HirePanel({
           type="button"
           disabled={starting && !met}
           onClick={onClose}
-          className="mt-1 rounded-xs border border-frame bg-desk py-2.5 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted disabled:cursor-not-allowed disabled:text-on-desk-muted/40 disabled:hover:bg-desk"
+          /* 「개원 준비 시작」만 확정 버튼(청록) — 「닫기」는 판을 진행시키지 않으므로 중립 그대로다.
+             hover는 어둡게만 한다(밝히면 흰 글자 4.5:1이 런타임에 깨진다 · T-142). */
+          className={
+            starting
+              ? "mt-1 rounded-xs py-2.5 text-sm font-medium transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100"
+              : "mt-1 rounded-xs border border-frame bg-desk py-2.5 text-sm font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted disabled:cursor-not-allowed disabled:text-on-desk-muted/40 disabled:hover:bg-desk"
+          }
+          style={starting ? { background: LANDING.accent, color: LANDING.onAccent } : undefined}
         >
           {starting ? "개원 준비 시작" : "닫기"}
         </button>

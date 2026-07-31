@@ -2,6 +2,7 @@
 
 import type { DayRecord } from "@/sim/day";
 import type { EmergencyTurnAway } from "@/sim/emergency";
+import { LANDING } from "./landingPalette";
 import { formatManwon, turnAwayBreakdownText, unpaidText } from "./simHud";
 
 /**
@@ -123,7 +124,8 @@ export default function DayEndOverlay({
         <button
           type="button"
           onClick={onNextDay}
-          className="rounded-xs border border-frame bg-desk-2 py-3 text-base font-medium text-on-desk transition-colors hover:bg-frame focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+          className="rounded-xs py-3 text-base font-medium transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
+          style={{ background: LANDING.accent, color: LANDING.onAccent }}
         >
           다음 날
         </button>
