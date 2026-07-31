@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-138](troubleshooting/T-138.md) · Git Bash의 GNU tar는 `C:\...`의 드라이브 콜론을 원격 아카이브 `host:path`로 해석해 DNS 조회에 실패한다 — 네이티브 바이너리를 내려받는 npm 전역 설치가 postinstall에서 죽는다. 에러가 "Cannot connect / resolve failed"라 네트워크 문제로 읽히는 게 함정. Windows System32의 bsdtar는 정상이니 PowerShell에서 설치한다
 - [T-137](troubleshooting/T-137.md) · 돌연변이 확인 중 `git checkout -- <file>`로 변조를 되돌리면 미커밋 구현까지 통째로 날아간다 — 복원 기준이 HEAD라 "방금 넣은 변조"와 "아직 커밋 안 한 작업"을 구별하지 않는다. 돌연변이 실험은 반드시 커밋 후에 시작한다(커밋이 곧 복원 지점)
 - [T-136](troubleshooting/T-136.md) · .mjs/.js의 블록 주석 안에 glob 패턴 `**/`를 쓰면 별 두 개+슬래시가 주석 종료 토큰이라 주석이 거기서 끝난다 — eslint가 설정 파일 파싱 단계에서 죽고 에러 메시지는 원인(주석)과 무관해 보인다. glob을 언급하는 주석은 줄 주석(//)으로 쓴다
 - [T-115](troubleshooting/T-115.md) · 어두운 팔레트를 밝은 대역으로 옮길 때 채도를 함께 밀면 파랑 쪽으로 기운 색이 보라로 폭주한다 — 파랑의 휘도 가중치가 0.0722뿐이라 목표 휘도를 B 채널이 혼자 부담한다. 색조 보존은 「채널 비율을 그대로 곱하기」이고, 채도 상한은 밝은 면일수록 낮아야 한다

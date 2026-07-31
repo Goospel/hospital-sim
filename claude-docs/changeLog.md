@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-07-31 · Git Bash의 GNU tar가 `C:\` 경로를 원격 호스트로 오인하는 함정 등재
+
+**왜** — 영상 소재 생성용으로 Higgsfield CLI를 이 환경에 붙이던 중 `npm i -g`가 Bash 도구에서 실패했다. 에러가 `Cannot connect / resolve failed`라 네트워크 문제로 읽히지만 실제 원인은 셸에 따라 갈리는 tar 구현 차이 — 조용히 갈리는 실패라 재발하고, 다음에 또 네트워크를 의심하며 시간을 쓴다.
+
+**무엇을** — [T-138](troubleshooting/T-138.md) 등재. 방아쇠를 실측으로 분리했다(4케이스): 드라이브 콜론 단독으로 실패, `@`는 무관, 같은 경로를 bsdtar로는 성공 — 즉 GNU tar가 `C:`를 원격 아카이브 `host:path`로 해석하는 것이 원인이고, Git Bash의 `/usr/bin/tar`(GNU 1.35)가 System32의 bsdtar를 PATH에서 가린다. npm 스코프 패키지(`@higgsfield`)라 에러 메시지의 호스트 자리에 `C`가 아니라 경로 조각이 찍혀 원인을 적극적으로 오도하던 것까지 기록. 해결은 셸 교체뿐(PowerShell). 레포 코드 변경 없음 — 문서만. 분류표 반영 상태 변경 없음(도구 셋업).
+
 ## 2026-07-31 · 영상 콘티를 본편 기준으로 전면 교체 — 컷 8개, 컷마다 증명 하나
 
 **왜** — 사용자 통찰: 예선 심사에서 겪히는 것은 1분 영상과 첫 화면이지 12주짜리 규칙이 아니다. 그런데 submission-plan의 샷 구성은 구판(`/classic` — 콜 카드·자유 텍스트 매달림) 기준이라 본편에 없는 장면들로 짜여 있었다.
