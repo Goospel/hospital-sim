@@ -29,7 +29,7 @@ tags:
 - Modify: `src/components/landingPalette.ts` (키 1개 추가)
 - Test: `src/components/landingPalette.test.ts` (it 1개 추가)
 
-배경: 기존 `--alarm` #e5484d는 밝은 카드(#edeae3) 위 WCAG 대비 3.19로 텍스트 기준(4.5) 미달이다. 본편 HUD의 `text-alarm` 12곳이 카드·배경 양쪽에 얹히므로 **두 바탕 모두** 4.5 이상인 진한 빨강을 신설한다.
+배경: 기존 `--alarm` #e5484d는 밝은 카드(#edeae3) 위 WCAG 대비 3.26으로 텍스트 기준(4.5) 미달이다. 본편 HUD의 `text-alarm` 12곳이 카드·배경 양쪽에 얹히므로 **두 바탕 모두** 4.5 이상인 진한 빨강을 신설한다.
 
 - [ ] **Step 1: 실패하는 테스트 작성** — `landingPalette.test.ts`의 describe 안에 추가:
 
@@ -157,6 +157,13 @@ style={starting ? { background: LANDING.accent, color: LANDING.onAccent } : unde
 - [ ] **Step 4: 커밋 + PR** — push 후 `gh pr create`(본문 한글, `--body-file` UTF-8). **머지는 사용자에게 물은 뒤에만.**
 
 ---
+
+## 실행 기록 (SDD · 2026-08-01)
+
+- **Task 1** — 계획서 후보 hex `#b02a30` 그대로 GREEN(조정 0). 리뷰가 **분리 돌연변이**로 두 단언의 독립성을 실측했다: `#b52c32`는 카드 5.19로 통과하고 backdrop 4.4997로만 실패 — 즉 backdrop 단언이 실제 구속선이고 두 줄이 중복이 아니다. 계획서·주석의 「#e5484d는 카드 위 3.19」는 실측 **3.26**의 오기(아래 문서 스윕에서 정정).
+- **Task 2** — 리뷰가 설계의 유일한 위험(`@theme inline`이 hex를 굽는가)을 **산출 CSS로 실증**: desk 계열 유틸리티 전수가 `var(--*)` 참조이고 알파는 `color-mix(in oklab, var(--desk-2) 80%, transparent)`로 런타임 해석된다. `createPortal` 0건이라 오버레이 3종도 서브트리 안. 계획 밖 추가 1건 — 인라인 `color`가 `disabled:text-*`를 이겨 잠긴 「개원 준비 시작」이 활성처럼 보이던 것을 `disabled:opacity-50`으로(리뷰가 대비 2.11:1을 계산해 수용 판정).
+- **Task 3** — 브라우저 실측에서 defect 1건: 전역 `color-scheme: dark`가 남아 밝은 패널의 UA 스크롤바가 어두웠다(`getComputedStyle(main).colorScheme === "dark"`로 확인) → 루트 style 한 줄로 해소하고 HMR 후 `"light"` 재확인. 나머지 검수 항목(상단바·사이드바·체크리스트·경고 칩·건설 팔레트·하루 정산 카드·청록 버튼 3곳)은 보정 없이 통과.
+- **부수 함정**: superpowers 문서에서 `claude-docs/`를 `../../`로 링크해 pre-commit LINKS-CHECK에 두 번 걸렸다(랜딩 계획 + 이 스펙) → [T-143](../../../claude-docs/troubleshooting/T-143.md).
 
 ## 계획 자기 검토 (writing-plans self-review)
 
