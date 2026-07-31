@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { BACKDROP_PALETTE, drawBackdrop, relativeLuminance } from './Backdrop'
-import { OUTSIDE_FLOOR, NEUTRAL_STYLE, ROOM_STYLE, SHADE, shade } from './TileMap'
+import { OUTSIDE_FLOOR, NEUTRAL_STYLE, ROOM_STYLE, SHADE, shade, wallBands } from './TileMap'
 import type { SimRegionKey } from '@/sim/world'
 
 /**
@@ -271,7 +271,12 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
    */
   it('조명·AO가 실제로 화면에서 읽히는 대비를 낸다 — 계수 폭이 아니라 휘도 점수로', () => {
     expect(SHADE.min).toBeLessThan(SHADE.base)
-    expect(SHADE.base).toBeLessThanOrEqual(SHADE.max)
+    expect(SHADE.base).toBeLessThan(SHADE.max)
+    /* 조명 웅덩이가 **평탄화되지 않는다** — `base + pool`이 `max`를 넘으면 방 중심이 클램프에 눌려
+       그라디언트가 판판해진다(AO가 `min`에 눌려 계조를 잃은 것과 정확히 같은 실패다).
+       등호까지 허용하는 이유: 지금 값은 `0.90 + 0.10 = 1.0`으로 딱 붙어 있고, 그게 "웅덩이 중심이
+       알베도에 정확히 닿는다"는 뜻이라 정상이다. 넘는 것만 막는다. */
+    expect(SHADE.base + SHADE.pool, `base ${SHADE.base} + pool ${SHADE.pool}`).toBeLessThanOrEqual(SHADE.max)
     for (const style of [...Object.values(ROOM_STYLE), NEUTRAL_STYLE]) {
       const span =
         relativeLuminance(shade(style.floor, SHADE.max)) - relativeLuminance(shade(style.floor, SHADE.min))
@@ -290,15 +295,55 @@ describe('shade — 조명·AO를 곱해도 서열이 뒤집히지 않는다', (
    *
    * 양쪽으로 판별력이 있다: `ao`가 너무 크면(즉시 클램프) 두 번째 단이 0점이 되고,
    * 너무 작으면 단이 눈에 안 보여 둘 다 걸린다.
+   *
+   * ⚠️ **렌더가 세는 만큼(최대 4면) 봐야 한다.** `[1, 2]`까지만 보던 판은 `ao 0.04`+`base 0.90`에서
+   * 계조가 `0.90/0.86/0.84/0.84/0.84`로 **2·3·4면이 평탄화**되는데도 통과했다 — 이 단언의 존재 이유인
+   * 바로 그 회귀를 부분적으로 놓쳤다. `checker`는 `lum`이 모델에 안 넣으므로(AO만 격리해 보려는 것)
+   * 아래 별도 부등식이 대신 잠근다 — 주석이 "잰다"고 했는데 안 재는 상태를 남기지 않는다.
    */
   it('벽에 닿는 면이 늘수록 단계적으로 어두워진다 — 한 면에서 곧장 클램프되면 구석이 평평해진다', () => {
     /** 렌더와 같은 산술: `f = base − ao × 벽에 닿은 변 수`를 `[min, max]`로 잠근다(TileMap의 factorOf). */
     const lum = (hex: string, sides: number) =>
       relativeLuminance(shade(hex, Math.max(SHADE.min, Math.min(SHADE.max, SHADE.base - SHADE.ao * sides))))
     for (const style of [...Object.values(ROOM_STYLE), NEUTRAL_STYLE]) {
-      for (const sides of [1, 2]) {
+      for (const sides of [1, 2, 3]) {
         const step = lum(style.floor, sides - 1) - lum(style.floor, sides)
         expect(step, `${style.floor} 벽 ${sides - 1}면 → ${sides}면 = ${step.toFixed(1)}점`).toBeGreaterThanOrEqual(2)
+      }
+    }
+  })
+
+  /**
+   * 체커 무늬가 AO 한 단을 삼키지 않는다 — 위 단언은 `checker`를 모델에서 빼고 AO만 격리해 본다.
+   * 그래서 `checker`의 **크기**는 여기서 따로 잠근다(d7545d2가 0.018 → 0.008로 줄인 그 값이다).
+   *
+   * 체커는 이웃한 칸을 `±checker`로 엇갈리게 흔든다 — 진폭이 `2 × checker`이므로, 그게 AO 한 단
+   * (`ao`)보다 크면 **바둑판이 벽 그늘을 덮어** 구석이 깊어 보이는 신호가 무늬에 묻힌다.
+   * (실측: `checker`를 0.08로 키우면 진폭 ±17.5점으로 AO 한 단 4.4점을 통째로 삼킨다.)
+   */
+  it('체커 진폭이 AO 한 단보다 작다 — 무늬가 벽 그늘을 덮으면 구석이 안 읽힌다', () => {
+    expect(2 * SHADE.checker, `체커 진폭 ${2 * SHADE.checker} vs AO 한 단 ${SHADE.ao}`).toBeLessThan(SHADE.ao)
+  })
+
+  /**
+   * 벽 캡이 **방 밝기를 따라간다** — `neighborOf`가 굳이 이웃의 계수까지 넘기는 이유가
+   * *"먼 구석의 벽이 광원 아래 벽과 똑같이 밝으면 깊이가 사라진다"*인데, 옛 캡 식
+   * `min(SHADE.max, factor + 0.16)`은 `factor ≤ 1.0 = max`라 **항상 잘려 상수**였다 — 계약이
+   * 코드에 적혀 있는데 값은 정반대였고, 이 자리에 가드가 없어 그대로 배포됐다.
+   * 세 단이 전부 `factor`에 비례하는지, 그리고 서로 갈리는지를 함께 본다.
+   */
+  it('벽 세 단이 방 밝기를 따라 움직이고 서로 갈린다 — 캡이 상수가 되면 벽에서 깊이가 사라진다', () => {
+    for (const style of [...Object.values(ROOM_STYLE), NEUTRAL_STYLE]) {
+      const dim = wallBands(style.wall, SHADE.min)
+      const lit = wallBands(style.wall, SHADE.max)
+      // ① 같은 벽이라도 어두운 방과 밝은 방에서 캡이 달라야 한다(옛 버그가 정확히 여기서 죽었다)
+      const spread = relativeLuminance(lit.cap) - relativeLuminance(dim.cap)
+      expect(spread, `${style.wall} 캡 factor 변동폭 ${spread.toFixed(1)}점`).toBeGreaterThanOrEqual(10)
+      // ② 한 벽 안에서 캡 > 몸통 > 밑동 — 세 단이 붙으면 두께가 안 읽힌다
+      for (const band of [dim, lit]) {
+        const [c, b, f] = [band.cap, band.body, band.foot].map(relativeLuminance)
+        expect(c - b, `${style.wall} 캡−몸통 ${(c - b).toFixed(1)}점`).toBeGreaterThanOrEqual(10)
+        expect(b - f, `${style.wall} 몸통−밑동 ${(b - f).toFixed(1)}점`).toBeGreaterThanOrEqual(10)
       }
     }
   })

@@ -169,7 +169,8 @@ export const ROOM_STYLE: Record<RoomType, { floor: string; wall: string }> = {
  *
  * ⚠️ `min`은 여전히 이 표의 위험한 값이다: 이걸 낮추면 방 구석이 마당보다 어두워져 "실내가 실외보다
  * 어둡다"가 최종 픽셀에서 뒤집힌다(팔레트 리터럴 검사는 그걸 통과시킨다 — backdropPalette.test.ts의
- * shade describe가 잠근다). 지금 여유는 최암부 183.7~185.0 vs 마당 176.0 = 7.7~9.0이다.
+ * shade describe가 잠근다). 지금 여유는 최암부 183.6~185.4 vs 마당 176.0 = 7.6~9.4다
+ * (7개 스타일 전수 — 6개 방 + `NEUTRAL_STYLE`. NEUTRAL을 빼고 세면 상한이 185.0으로 어긋난다).
  *
  * ⚠️⚠️ **이 표의 값은 전부 계수(factor)라, 화면 효과가 알베도 대역에 비례한다** — 같은 숫자가 어두운
  * 팔레트와 밝은 팔레트에서 다른 그림을 그린다. 알베도가 100 → 219로 갔으므로 **모든 factor 상수의
@@ -189,6 +190,14 @@ export const SHADE = { min: 0.84, base: 0.90, max: 1.0, pool: 0.10, ao: 0.02, ch
  *  더 키우면 통행 가능한 칸처럼 넓어 보인다(벽은 한 칸을 통째로 막는다는 규칙이 흐려진다). */
 const CAP_PX = 5;
 
+/** 벽 세 단의 계수 — 캡은 `factor` 그대로(그 방에서 가장 밝은 면), 몸통·밑동은 그 아래로 내려간다.
+ *  0.90/0.78은 단 간격을 저울질해 고른 값이다(factor 0.84에서 캡−몸통 19.8점 · 몸통−밑동 23.0점,
+ *  factor 1.0에서 22.8 · 27.8). 0.88로 내리면 윗면 하이라이트가 접지 그늘보다 커져(23.8 > 19.0)
+ *  무게가 뒤집히고, 0.92로 올리면 캡−몸통이 15.8점으로 눌려 캡이 몸통에 붙는다.
+ *  ⚠️ 이 둘도 factor라 **알베도 대역이 바뀌면 화면 효과가 같이 변한다**(SHADE 주석의 교훈). */
+const WALL_BODY = 0.9;
+const WALL_FOOT = 0.78;
+
 /**
  * 알베도 hex에 계수를 곱한다 — 채널 선형 스케일이라 **색조가 보존된다**(휘도만 움직인다).
  *
@@ -202,6 +211,27 @@ export function shade(hex: string, factor: number): string {
   return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0")}`;
 }
 
+/**
+ * 벽 한 칸의 **세 단**(캡 = 윗면 / 몸통 = 벽면 / 밑동 = 바닥과 만나는 그늘)을 한 번에 낸다.
+ *
+ * ⚠️ **캡을 밝히지 않고 몸통을 어둡게 해서 두께를 만든다** — `SHADE`가 "밝은 알베도에서는 밝히지 않고
+ * 그늘로 깊이를 만든다"로 간 것과 **같은 원칙을 벽에도 적용**한 것이다. 옛 판은 캡을
+ * `min(SHADE.max, factor + 0.16)`으로 올렸는데, `factor ≤ 1.0`이고 `max = 1.0`이라 **덧셈이 항상
+ * 잘려 캡이 상수가 됐다**(7개 스타일 × factor 0.84/0.90/1.0에서 캡 hex가 전부 동일). 그러면 바로 위
+ * `neighborOf`가 계수를 넘기는 이유 — *먼 구석의 벽이 광원 아래 벽과 똑같이 밝으면 깊이가 사라진다* —
+ * 가 통째로 무효가 된다. 지금은 세 단이 전부 `factor`에 비례해 함께 움직인다(캡의 factor 변동폭 36.8점).
+ *
+ * 이건 이 전환에서 **세 번째로 같은 근인**이다 — factor 상수(`+0.16`)를 알베도 대역이 바뀐 뒤에도
+ * 그대로 뒀다. `backdropPalette.test.ts`가 캡이 factor를 따라가는지 단언한다.
+ */
+export function wallBands(wall: string, factor: number) {
+  return {
+    cap: shade(wall, factor),
+    body: shade(wall, factor * WALL_BODY),
+    foot: shade(wall, factor * WALL_FOOT),
+  };
+}
+
 /** 부지 바닥(방 밖) — 복도이자 마당. **화면 전체의 배경이기도 하다**(SimGame): 맵 둘레의 여백이
  *  같은 색이라야 부지가 화면 밖으로 이어지는 것으로 보이고, HUD가 그 위에 뜬 패널로 읽힌다.
  *
@@ -209,10 +239,10 @@ export function shade(hex: string, factor: number): string {
  *  5~13뿐이라 지면·건물·물의 층위가 인지되지 않았다(실측: 해안·대로변 상단이 균일한 검정).
  *  20.4 → 71.3(2026-07-30)으로 두 번 올려 대역을 넓혔고, **네 번째로 176.0까지 올렸다**(2026-07-31):
  *  앞의 셋은 어두운 화면 안에서 대역을 짜내는 싸움이었고, 이번은 화면 전체를 밝은 병원 톤으로
- *  옮기는 아트 디렉션 전환이다 — 배경 팔레트가 먼저 ×2.4로 올라와(랜드마크 평균 142.9) 부지가
+ *  옮기는 아트 디렉션 전환이다 — 배경 팔레트가 먼저 ×2.4로 올라와(랜드마크 평균 142.8) 부지가
  *  그 위에 서려면 천장도 같이 가야 했다. 바꿀 땐 `backdropPalette.test.ts`가 양쪽(배경 < 부지 < 실내)을 잠근다.
  *
- *  ⚠️ 이 값은 위아래로 **동시에** 끼여 있다: 아래로는 배경 랜드마크(142.9)와 30 이상 벌어져야 하고,
+ *  ⚠️ 이 값은 위아래로 **동시에** 끼여 있다: 아래로는 배경 랜드마크(142.8)와 30 이상 벌어져야 하고,
  *  위로는 방 바닥의 **최암부**(바닥 × `SHADE.min`)보다 낮아야 한다. 올릴 땐 실내와 조명 계수를 같이
  *  본다 — 부지만 올리면 실내가 마당보다 어두워지는 반대편 회귀가 열린다. */
 export const OUTSIDE_FLOOR = "#abb1b5";
@@ -503,9 +533,7 @@ export default function TileMap({
     //    다음 벽이 덮을지 말지가 Set의 순회 순서(건설 순서)에 달려 화면이 판마다 달라진다.
     for (const t of walls) {
       const { style, factor } = neighborOf(t);
-      const cap = shade(style.wall, Math.min(SHADE.max, factor + 0.16));
-      const body = shade(style.wall, factor);
-      const foot = shade(style.wall, factor * 0.78);
+      const { cap, body, foot } = wallBands(style.wall, factor);
       const southOpen = !walls.has(t + GRID_W);
       nodes.push(
         <div
