@@ -60,84 +60,100 @@ export const BACKDROP_OFF_Y = BACKDROP_MARGIN.y;
  * 그리고 이 전환은 **실내 조명 모델까지 끌고 갔다**: 밝은 알베도에서는 곱셈 계수가 바닥과 천장을 동시에
  * 뚫어, `TileMap.SHADE`가 "밝히기"를 버리고 그늘 전용(max 1.0)으로 바뀌었다 — 그쪽 주석이 단일 출처다.
  *
+ * ⚠️ **다섯 번째 — 야경에서 낮으로**(2026-08-01). 앞의 넷은 어두운 화면 안에서 대역을 짜내거나
+ * 통째로 밀어 올리는 싸움이었고 이번은 **방향이 반대다**: 지면(면적 지배)을 63.5 → 90.1로 끌어올려
+ * 스프레드를 79 → 52로 **좁혔다**. 부지 176이 하드 천장이라 쨍한 정오는 불가능하고, 목표는
+ * 「흐린 날 아침 빛」이다(랜드마크 평균이 146을 넘으면 「부지 − 랜드마크 ≥ 30」이 먼저 깨진다).
+ * 그리고 **색조를 처음으로 손봤다** — ×2.4가 색상비를 보존한 탓에 도심이 화면의 최대 84%가 보라 ·
+ * 무채색 0.5%였다(실행 화면 캔버스 픽셀 + 래스터 면적 집계, 둘이 독립적으로 일치). 옥상 하나
+ * (`roofBase`)가 도심 변형 0의 48%를 혼자 덮고 있었고, **팔레트 채도 상위 10키가 전부 보라**였다
+ * (나무·물보다 콘크리트 옥상이 진했다). 도심 표면 15키를 전부 채도 8% 미만으로 되돌리고, 지역별로
+ * 색조 계열을 갈랐다(도심=중성 / 신도시=냉 회백+조경 / 지방=황토·따뜻한 지붕 / 농어촌=논·숲·물).
+ * ⚠️ 옛 주석의 *"채도는 거의 안 올렸다"*는 **오진이었다** — HSL S는 L ≤ 0.5에서 균일 스케일링에
+ * 정의상 불변이라(분자·분모가 같은 배수로 곱해진다) *"×2.4가 채도를 올렸나"*라는 질문에 답할 수
+ * 없는 계측기였다. 절대 채도(RGB 채널 편차)로 재면 20.3 → 48.8로 ×2.4 그대로 커졌다.
+ * ⚠️ 다만 **"이 색이 회색축 위에 있나"는 HSL S로 재는 것이 맞다** — 밝기로 정규화된 값이라
+ * 밝은 회색과 어두운 회색을 같게 본다. 아래 색조 계약의 무채색 기준(8% 미만)이 그 정의다.
+ * 두 질문에 같은 이름(「채도」)이 붙어 있을 뿐 다른 축이니, 계약을 읽을 땐 어느 쪽인지 먼저 본다.
+ *
  * 카테고리별 휘도 **구간**(상한만이 아니라 하한도) · 평균 서열 · 최소 간격은 `backdropPalette.test.ts`가 잠근다.
  */
 export const BACKDROP_PALETTE = {
   /** 배경 전체의 바탕 — 어느 블록도 안 덮은 자리에 남는 색. */
-  ground: "#3e3e5b",
+  ground: "#575c62",
 
   // ── 지면 — 면적을 지배하므로 가장 어둡다. 이게 스프레드의 바닥이다. ──
-  grassBase: "#35463c",
-  grassNoiseLight: "#3a5e3a",
-  grassNoiseDark: "#353e35",
-  tuft: "#4f7d6a",
-  tuftShade: "#467362",
-  shrub: "#597360",
-  medianStrip: "#354635",
+  grassBase: "#47683d",
+  grassNoiseLight: "#537847",
+  grassNoiseDark: "#405c36",
+  tuft: "#628d53",
+  tuftShade: "#4f7345",
+  shrub: "#577e4a",
+  medianStrip: "#47673c",
   /** 도심 포장면 — 저채도 회색. 도심인데 잔디가 깔려 있으면 도심으로 안 읽힌다. */
-  pavementBase: "#463c4f",
-  pavementNoiseLight: "#52525b",
-  pavementNoiseDark: "#353e52",
-  pavementSeam: "#4f3559",
-  parkingLot: "#414165",
-  dirtBase: "#4f3e30",
-  dirtNoiseLight: "#605237",
-  dirtNoiseDark: "#483e2b",
-  fieldFurrowLight: "#5b5235",
-  fieldFurrowDark: "#483e2b",
-  paddyBase: "#304d37",
-  paddyCellLight: "#375b48",
-  paddyCellDark: "#2b4635",
-  forestFloor: "#2b4635",
-  houseYardShadow: "#353e2b",
+  pavementBase: "#575a5e",
+  pavementNoiseLight: "#63676c",
+  pavementNoiseDark: "#54575b",
+  pavementSeam: "#53565a",
+  parkingLot: "#5e6165",
+  dirtBase: "#6d5a3b",
+  dirtNoiseLight: "#7c6743",
+  dirtNoiseDark: "#695839",
+  fieldFurrowLight: "#74613f",
+  fieldFurrowDark: "#695839",
+  paddyBase: "#556c3a",
+  paddyCellLight: "#546c3a",
+  paddyCellDark: "#4d6235",
+  forestFloor: "#37663b",
+  houseYardShadow: "#615134",
 
   // ── 도로·인도·길 — 인도가 도로보다 밝아야 둘이 갈린다 ──
-  road: "#485976",
-  sidewalk: "#6a62a1",
-  laneShoulder: "#485948",
-  dirtLane: "#605937",
-  leveePath: "#766a46",
-  seawall: "#4f7346",
-  parkPath: "#7f654d",
-  paddyBank: "#525932",
+  road: "#666a6f",
+  sidewalk: "#72767b",
+  laneShoulder: "#46663c",
+  dirtLane: "#7f6a45",
+  leveePath: "#9c8154",
+  seawall: "#707579",
+  parkPath: "#90784e",
+  paddyBank: "#607c43",
 
   // ── 건물·시설·차량 — 지면보다 확실히 위(평균 +14 이상). 디테일은 본체보다 또 한 단 위. ──
-  roofBase: "#7a6eb2",
-  roofEdge: "#7373b9",
-  roofVent: "#8686d8",
-  roofVentShade: "#8e7dcc",
-  roofPenthouse: "#a88965",
-  aptBody: "#7a6eb4",
-  aptEdge: "#7176b4",
-  aptTower: "#8e84d3",
-  aptTowerLit: "#8689d6",
-  houseRoofWarm: "#957359",
-  houseRoofWarmShade: "#7d6c4a",
-  houseRidgeWarm: "#a88965",
-  houseRoofCool: "#846aaf",
-  houseRoofCoolShade: "#6767a6",
-  houseRidgeCool: "#9284d6",
-  materialStack: "#82734d",
-  materialStackShade: "#7f6c4a",
-  breakwater: "#6a7390",
-  lampPost: "#7d7348",
-  vehicleBlue: "#5e739a",
-  vehicleRed: "#a36273",
-  vehicleGreen: "#597d59",
+  roofBase: "#828a92",
+  roofEdge: "#858d95",
+  roofVent: "#9399a1",
+  roofVentShade: "#889198",
+  roofPenthouse: "#a0998b",
+  aptBody: "#828a92",
+  aptEdge: "#878f97",
+  aptTower: "#9399a1",
+  aptTowerLit: "#959da4",
+  houseRoofWarm: "#b28563",
+  houseRoofWarmShade: "#a47551",
+  houseRidgeWarm: "#bc9476",
+  houseRoofCool: "#6d8ca2",
+  houseRoofCoolShade: "#607f96",
+  houseRidgeCool: "#859eb1",
+  materialStack: "#8d8574",
+  materialStackShade: "#857d6c",
+  breakwater: "#81868a",
+  lampPost: "#8b8372",
+  vehicleBlue: "#6186bb",
+  vehicleRed: "#c2726a",
+  vehicleGreen: "#4c9959",
 
   // ── 랜드마크 — 배경에서 가장 밝지만 부지(71.3) 아래를 지킨다. 지역 식별의 핵심이라 여기가 상단이다. ──
-  treeCanopy: "#6c9c76",
-  treeCanopyLit: "#6aa373",
-  treeShade: "#609c71",
-  forestCanopy: "#629c7f",
-  forestCanopyLit: "#65a376",
-  forestCanopyDark: "#76927f",
-  riverBase: "#6e8eb9",
-  riverFlow: "#7395c0",
-  seaBase: "#6e8eb9",
-  seaRipple: "#7695c2",
-  roofSkylight: "#a89265",
-  bench: "#9a9059",
+  treeCanopy: "#5fa354",
+  treeCanopyLit: "#68ac5e",
+  treeShade: "#5b9d51",
+  forestCanopy: "#57a15d",
+  forestCanopyLit: "#62aa68",
+  forestCanopyDark: "#539a59",
+  riverBase: "#5791ac",
+  riverFlow: "#6a9cb5",
+  seaBase: "#5791ac",
+  seaRipple: "#6c9eb6",
+  roofSkylight: "#a5986f",
+  bench: "#9d8d60",
 } as const;
 
 /**
