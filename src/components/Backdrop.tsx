@@ -70,8 +70,10 @@ export const BACKDROP_OFF_Y = BACKDROP_MARGIN.y;
  * (나무·물보다 콘크리트 옥상이 진했다). 도심 표면 15키를 전부 채도 8% 미만으로 되돌리고, 지역별로
  * 색조 계열을 갈랐다(도심=중성 / 신도시=냉 회백+조경 / 지방=황토·따뜻한 지붕 / 농어촌=논·숲·물).
  * ⚠️ 옛 주석의 *"채도는 거의 안 올렸다"*는 **오진이었다** — HSL S는 L ≤ 0.5에서 균일 스케일링에
- * 정의상 불변이라(분자·분모가 같은 배수로 곱해진다) *"×2.4가 채도를 올렸나"*라는 질문에 답할 수
- * 없는 계측기였다. 절대 채도(RGB 채널 편차)로 재면 20.3 → 48.8로 ×2.4 그대로 커졌다.
+ * 정의상 불변이라(분자·분모가 같은 배수로 곱해진다) *"×2.4가 채도를 올렸나"*라는 질문을 거의 못
+ * 보는 계측기였다 (L ≤ 0.5를 유지한 41키는 변화 0.02pp였고, L > 0.5로 넘어간 24키에서만 +9.5pp —
+ * 전체로는 22.25% → 25.78%, 즉 +3.5pp라 거의 안 움직인 것처럼 보였다).
+ * 절대 채도(RGB 채널 편차)로 재면 20.3 → 48.8로 ×2.4 그대로 커졌다.
  * ⚠️ 다만 **"이 색이 회색축 위에 있나"는 HSL S로 재는 것이 맞다** — 밝기로 정규화된 값이라
  * 밝은 회색과 어두운 회색을 같게 본다. 아래 색조 계약의 무채색 기준(8% 미만)이 그 정의다.
  * 두 질문에 같은 이름(「채도」)이 붙어 있을 뿐 다른 축이니, 계약을 읽을 땐 어느 쪽인지 먼저 본다.
@@ -215,9 +217,12 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   const glow = (x: number, y: number, rad: number, col: string, a: number) => {
     glows.push({ x, y, rad, col, a });
   };
-  /** 창문 불빛 — 건물 헬퍼 셋이 공유한다. 옥상 탑뷰라 빛은 **건물 둘레로 새어** 지면에 떨어진다. */
-  const WINDOW_WARM = "255,222,150";
-  const WINDOW_COOL = "196,222,255";
+  /** 창 반사광 — 건물 헬퍼 셋이 공유한다. 옥상 탑뷰라 빛은 **건물 둘레에서** 지면 쪽으로 번진다. */
+  /* 낮 전환(③) — 창불(밤)에서 **유리·금속에 튄 햇빛**으로 바뀌었다. 밝은 팔레트 위에서 additive는
+     쉽게 타므로(이 파일 아래 발광 flush 주석의 경고) 색은 중성 백색에 가깝게, 알파는 밤 값의
+     1/3 수준으로 내린다. 창의 **자리**는 낮에도 같으므로 좌표·반경은 그대로 둔다. */
+  const SUN_GLINT = "255,251,236";
+  const SKY_GLINT = "226,240,255";
 
   function grass(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
     px(c, x, y, w, h, P.grassBase);
@@ -247,37 +252,37 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   function roadH(c: Ctx, x: number, y: number, w: number, lanes: number) {
     const h = lanes * 2;
     px(c, x, y, w, h, P.road);
-    c.fillStyle = "rgba(216,207,175,0.14)";
+    c.fillStyle = "rgba(52,58,64,0.14)";
     for (let dx = 0; dx < w; dx += 3) c.fillRect((x + dx) * T, (y + h / 2) * T - 1, 2 * T - 4, 2);
-    c.fillStyle = "rgba(216,207,175,0.07)";
+    c.fillStyle = "rgba(52,58,64,0.07)";
     c.fillRect(x * T, y * T, w * T, 2); c.fillRect(x * T, (y + h) * T - 2, w * T, 2);
   }
   function roadV(c: Ctx, x: number, y: number, h: number, lanes: number) {
     const w = lanes * 2;
     px(c, x, y, w, h, P.road);
-    c.fillStyle = "rgba(216,207,175,0.14)";
+    c.fillStyle = "rgba(52,58,64,0.14)";
     for (let dy = 0; dy < h; dy += 3) c.fillRect((x + w / 2) * T - 1, (y + dy) * T, 2, 2 * T - 4);
-    c.fillStyle = "rgba(216,207,175,0.07)";
+    c.fillStyle = "rgba(52,58,64,0.07)";
     c.fillRect(x * T, y * T, 2, h * T); c.fillRect((x + w) * T - 2, y * T, 2, h * T);
   }
   /** 1차선 좁은 길 — 중앙선이 없는 것이 읍내·농로의 표식이다. */
   function laneH(c: Ctx, x: number, y: number, w: number) {
     px(c, x, y, w, 2, P.road);
-    c.fillStyle = "rgba(216,207,175,0.07)";
+    c.fillStyle = "rgba(52,58,64,0.07)";
     c.fillRect(x * T, y * T, w * T, 2); c.fillRect(x * T, (y + 2) * T - 2, w * T, 2);
   }
   function sidewalkH(c: Ctx, x: number, y: number, w: number) {
     px(c, x, y, w, 1, P.sidewalk);
-    c.fillStyle = "rgba(216,207,175,0.05)";
+    c.fillStyle = "rgba(52,58,64,0.05)";
     for (let dx = 0; dx < w; dx += 2) c.fillRect((x + dx) * T, y * T, 1, T);
   }
   function sidewalkV(c: Ctx, x: number, y: number, h: number) {
     px(c, x, y, 1, h, P.sidewalk);
-    c.fillStyle = "rgba(216,207,175,0.05)";
+    c.fillStyle = "rgba(52,58,64,0.05)";
     for (let dy = 0; dy < h; dy += 2) c.fillRect(x * T, (y + dy) * T, T, 1);
   }
   function crosswalk(c: Ctx, x: number, y: number, w: number, h: number) {
-    c.fillStyle = "rgba(216,207,175,0.13)";
+    c.fillStyle = "rgba(52,58,64,0.13)";
     if (w >= h) { for (let dy = 0; dy < h * T; dy += 6) c.fillRect(x * T, y * T + dy, w * T, 3); }
     else { for (let dx = 0; dx < w * T; dx += 6) c.fillRect(x * T + dx, y * T, 3, h * T); }
   }
@@ -289,27 +294,21 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
       pxf(c, x * T + 3 + Math.floor(r() * (T * 2 - 7)), y * T + 3 + Math.floor(r() * (T * 2 - 7)), 2, 2, P.treeShade);
     }
   }
-  /** 가로등 — 불빛은 **방사형 그라디언트**여야 한다. 단색 원반은 회색 얼룩으로 읽힌다(실측).
-   *  등 자체의 원반은 여기서 그리고(지면에 닿는 빛), 공중의 헤일로는 발광 큐가 맨 위에 얹는다. */
+  /** 가로등 — 낮에는 **꺼져 있다**. 지면에 깔던 광원 웅덩이는 낮에 거짓말이라 지웠고, 기둥과
+   *  등갓에 튄 햇빛(발광 큐가 맨 위에 얹는 옅은 한 점)만 남는다. */
   function lamp(c: Ctx, x: number, y: number) {
     pxf(c, x * T - 1, y * T - 1, 3, 3, P.lampPost);
-    const rad = T * 1.6;
-    const g = c.createRadialGradient(x * T, y * T, 0, x * T, y * T, rad);
-    g.addColorStop(0, "rgba(216,207,175,0.10)");
-    g.addColorStop(1, "rgba(216,207,175,0)");
-    c.fillStyle = g;
-    c.beginPath(); c.arc(x * T, y * T, rad, 0, 7); c.fill();
-    glow(x, y, 1.9, "255,214,150", 0.2);
+    glow(x, y, 1.9, SUN_GLINT, 0.05);
   }
   function car(c: Ctx, x: number, y: number, col: string, vert: boolean) {
     if (vert) pxf(c, x * T + 2, y * T + 1, T - 4, T * 2 - 3, col);
     else pxf(c, x * T + 1, y * T + 2, T * 2 - 3, T - 4, col);
-    c.fillStyle = "rgba(216,207,175,0.10)";
+    c.fillStyle = "rgba(52,58,64,0.10)";
     if (vert) c.fillRect(x * T + 3, y * T + 3, T - 6, 3);
     else c.fillRect(x * T + 3, y * T + 3, 3, T - 6);
-    // 전조등 — 진행 방향 끝. 차 한 대에 점 하나뿐이라 도로가 붐비지 않는다.
-    if (vert) glow(x + 0.5, y + 2, 1.1, "255,240,200", 0.3);
-    else glow(x + 2, y + 0.5, 1.1, "255,240,200", 0.3);
+    // 앞유리 반사 — 진행 방향 끝. 차 한 대에 점 하나뿐이라 도로가 붐비지 않는다.
+    if (vert) glow(x + 0.5, y + 2, 1.1, SUN_GLINT, 0.05);
+    else glow(x + 2, y + 0.5, 1.1, SUN_GLINT, 0.05);
   }
   /** 건물 옥상 덩어리 — 실외기·옥탑이 흩어진다. */
   function roof(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
@@ -323,11 +322,11 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     if (r() < 0.8) {
       const gx = x + 1 + Math.floor(r() * (w - 4)), gy = y + 1 + Math.floor(r() * (h - 3));
       pxf(c, gx * T, gy * T, T * 2, T, P.roofPenthouse); pxf(c, gx * T + 2, gy * T + 2, T * 2 - 4, T - 4, P.roofSkylight);
-      glow(gx + 1, gy + 0.5, 1.5, WINDOW_WARM, 0.3);   // 천창 — 옥탑에서 새는 빛
+      glow(gx + 1, gy + 0.5, 1.5, SUN_GLINT, 0.12);   // 천창 — 유리가 해를 되쏜다
     }
     // 사무동 창문 — 건물 둘레를 따라 몇 점. 위치가 시드 파생이라 같은 판에서 같은 자리다.
     for (let i = 0; i < Math.max(1, Math.round(w * 0.45)); i++) {
-      glow(x + 0.4 + r() * (w - 0.8), y + h, 0.85, WINDOW_COOL, 0.16);
+      glow(x + 0.4 + r() * (w - 0.8), y + h, 0.85, SKY_GLINT, 0.07);
     }
   }
   /** 판상형 아파트 동(옥상) — 승강기탑이 일정 간격. */
@@ -338,11 +337,11 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     for (let gx = x + 2; gx < x + w - 2; gx += 5) {
       pxf(c, gx * T, (y + Math.floor(h / 2)) * T - 4, T + 4, T - 2, P.aptTower);
       pxf(c, gx * T + 2, (y + Math.floor(h / 2)) * T - 2, T, 2, P.aptTowerLit);
-      glow(gx + 0.5, y + Math.floor(h / 2), 1.2, WINDOW_COOL, 0.18);   // 계단실 — 밤에도 켜져 있는 자리
+      glow(gx + 0.5, y + Math.floor(h / 2), 1.2, SKY_GLINT, 0.07);   // 계단실 창 — 유리가 하늘을 비춘다
     }
     // 세대 창문 — 아파트는 **아래 변에 여러 점**이다(판상형이라 한 면에 세대가 늘어선다).
     for (let i = 0; i < Math.max(2, Math.round(w * 0.7)); i++) {
-      glow(x + 0.5 + r() * (w - 1), y + h, 0.9, WINDOW_WARM, 0.2);
+      glow(x + 0.5 + r() * (w - 1), y + h, 0.9, SKY_GLINT, 0.06);
     }
     if (r() < 0.9) pxf(c, (x + w - 3) * T, (y + 1) * T, T, T - 4, P.roofPenthouse);
   }
@@ -354,8 +353,8 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     pxf(c, x * T, (y + 1) * T, 3 * T, T, warm ? P.houseRoofWarmShade : P.houseRoofCoolShade);  // 지붕 아랫면(그늘)
     pxf(c, x * T, (y + 1) * T - 1, 3 * T, 2, warm ? P.houseRidgeWarm : P.houseRidgeCool);      // 용마루
     pxf(c, (x + 3) * T, y * T, 2, 2 * T, P.houseYardShadow);                                   // 마당 경계 그림자
-    // 창문 — 집마다 하나. 불이 꺼진 집도 있어야 마을이 산다(시드 파생이라 판마다 고정).
-    if (r() < 0.75) glow(x + 0.6 + r() * 1.8, y + 2, 1.0, warm ? WINDOW_WARM : WINDOW_COOL, 0.22);
+    // 창문 — 집마다 하나. 해가 안 닿는 각도의 집도 있어야 마을이 산다(시드 파생이라 판마다 고정).
+    if (r() < 0.75) glow(x + 0.6 + r() * 1.8, y + 2, 1.0, warm ? SUN_GLINT : SKY_GLINT, 0.08);
   }
   /** 나대지·공사장 — 점선 가설 울타리와 자재 더미. */
   function dirtLot(c: Ctx, x: number, y: number, w: number, h: number, seed: number) {
@@ -365,7 +364,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
       const gx = x * T + Math.floor(r() * w * T), gy = y * T + Math.floor(r() * h * T);
       pxf(c, gx, gy, 2, 2, r() < 0.5 ? P.dirtNoiseLight : P.dirtNoiseDark);
     }
-    c.strokeStyle = "rgba(216,207,175,0.12)"; c.lineWidth = 2;
+    c.strokeStyle = "rgba(52,58,64,0.12)"; c.lineWidth = 2;
     c.setLineDash([6, 6]); c.strokeRect(x * T + 2, y * T + 2, w * T - 4, h * T - 4); c.setLineDash([]);
     pxf(c, (x + 2) * T, (y + 2) * T, T * 3, T, P.materialStack);
     pxf(c, (x + 2) * T, (y + 3) * T + 2, T * 3, T - 4, P.materialStackShade);
@@ -373,7 +372,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   /** 밭 — 이랑 줄무늬. */
   function fieldDry(c: Ctx, x: number, y: number, w: number, h: number) {
     for (let dy = 0; dy < h; dy++) px(c, x, y + dy, w, 1, dy % 2 ? P.fieldFurrowLight : P.fieldFurrowDark);
-    c.fillStyle = "rgba(216,207,175,0.03)";
+    c.fillStyle = "rgba(52,58,64,0.03)";
     for (let dy = 0; dy < h; dy += 2) c.fillRect(x * T, (y + dy) * T, w * T, 1);
   }
   /** 논배미 — 불규칙 격자 + 물빛. */
@@ -391,7 +390,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
         c.fillStyle = P.paddyBank;
         c.fillRect(gx * T, gy * T, cw * T, 2); c.fillRect(gx * T, gy * T, 2, ch * T); // 논둑
         if (r() < 0.5) {
-          c.fillStyle = "rgba(216,207,175,0.05)";
+          c.fillStyle = "rgba(52,58,64,0.05)";
           c.fillRect(gx * T + 4 + Math.floor(r() * cw * T * 0.6), gy * T + 4 + Math.floor(r() * ch * T * 0.6), 4, 1);
         }
         gx += rw;
@@ -417,7 +416,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
       const gx = x * T + Math.floor(r() * (w * T - 2)), gy = y * T + Math.floor(r() * (h * T - 6));
       c.fillRect(gx, gy, 2, 5);
     }
-    c.fillStyle = "rgba(216,207,175,0.05)";
+    c.fillStyle = "rgba(52,58,64,0.05)";
     for (let i = 0; i < h; i += 4) c.fillRect((x + 1) * T + Math.floor(r() * ((w - 2) * T)), (y + i) * T, 2, 8);
   }
   /** 바다 — 남색 + 잔물결. */
@@ -429,7 +428,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
       const gx = x * T + Math.floor(r() * (w * T - 6)), gy = y * T + Math.floor(r() * h * T);
       c.fillRect(gx, gy, 5, 1);
     }
-    c.fillStyle = "rgba(216,207,175,0.05)";
+    c.fillStyle = "rgba(52,58,64,0.05)";
     for (let i = 0; i < w * h * 0.06; i++) {
       const gx = x * T + Math.floor(r() * (w * T - 6)), gy = y * T + Math.floor(r() * h * T);
       c.fillRect(gx, gy, 4, 1);
@@ -496,7 +495,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     grass(c, 0, 0, EW, EH, 201);
     apt(c, 1, 2, 9, 3, 202); apt(c, 1, 9, 9, 3, 203); apt(c, 1, 16, 9, 3, 204); apt(c, 1, 23, 9, 3, 205);
     px(c, 1, 6, 9, 2, P.parkingLot); px(c, 1, 13, 9, 2, P.parkingLot); px(c, 1, 20, 9, 2, P.parkingLot); // 동 사이 주차열
-    c.fillStyle = "rgba(216,207,175,0.10)";
+    c.fillStyle = "rgba(52,58,64,0.10)";
     for (let i = 0; i < 4; i++) { c.fillRect((2 + i * 2) * T, 6 * T, 2, 2 * T); c.fillRect((2 + i * 2) * T, 13 * T, 2, 2 * T); }
     car(c, 2, 6, P.vehicleBlue, true); car(c, 6, 13, P.vehicleRed, true);
     apt(c, LX + 2, 1, 14, 3, 206); apt(c, LX + 20, 1, 14, 3, 207);
@@ -619,7 +618,7 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
     sea(c, SX, 0, EW - SX, EH, 432);
     px(c, SX, 0, 1, EH, P.seawall);                          // 해안선 둑
     px(c, SX, 10, 6, 1, P.breakwater); px(c, SX + 5, 10, 1, 10, P.breakwater); // 방파제 L자
-    c.fillStyle = "rgba(216,207,175,0.10)"; c.fillRect((SX + 5) * T, 19 * T, T, 3); // 등대 불
+    c.fillStyle = "rgba(255,251,236,0.10)"; c.fillRect((SX + 5) * T, 19 * T, T, 3); // 등대 — 흰 등탑에 튄 햇빛
     pxf(c, (SX + 2) * T, 12 * T, T * 2 - 4, T - 2, P.vehicleBlue);
     pxf(c, (SX + 3) * T, 14 * T, T * 2 - 4, T - 2, P.vehicleRed); // 배 두 척
     fieldDry(c, 1, 2, 9, 10);
@@ -667,12 +666,14 @@ export function drawBackdrop(c: Ctx, region: SimRegionKey, variant: number) {
   c.globalCompositeOperation = "source-over";
 
   /* 비네트 — 네 귀퉁이를 떨어뜨려 시선을 가운데(부지)로 모은다. 배경을 밝힌 대가로 화면 주변이
-     시끄러워졌는데, 이 한 겹이 그걸 되돌리면서 「부지가 무대다」를 밝기로 다시 말한다. */
+     시끄러워졌는데, 이 한 겹이 그걸 되돌리면서 「부지가 무대다」를 밝기로 다시 말한다.
+     ⚠️ 낮 전환(③) — 목적은 그대로, 세기만 낮췄다. 밤 값(거의 검정 50%)을 밝은 배경에 그대로 얹으면
+     네 귀퉁이가 진흙이 된다. 중성 회청 22%면 시선은 모이면서 색은 안 죽는다. */
   const vx = (EW * T) / 2, vy = (EH * T) / 2;
   const vr = Math.max(EW, EH) * T * 0.62;
   const vig = c.createRadialGradient(vx, vy, Math.min(EW, EH) * T * 0.34, vx, vy, vr);
-  vig.addColorStop(0, "rgba(6,6,14,0)");
-  vig.addColorStop(1, "rgba(6,6,14,0.5)");
+  vig.addColorStop(0, "rgba(28,32,38,0)");
+  vig.addColorStop(1, "rgba(28,32,38,0.22)");
   c.fillStyle = vig;
   c.fillRect(0, 0, EW * T, EH * T);
 
