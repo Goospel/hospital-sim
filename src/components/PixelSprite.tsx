@@ -43,7 +43,9 @@ export const DEPT_COLOR: Record<DeptKey, string> = {
 
 /** 외곽선 — 순검정이 아니라 어두운 남보라다. 검정은 밝아진 바닥 위에서 스티커처럼 떠 보인다. */
 const INK = "#181426";
-/** 집기 공통 외곽선 굵기(16 단위계). 사람보다 얇게 — 사람이 시선을 먼저 받아야 한다. */
+/** 외곽선 굵기(16 단위계) — **사람과 집기가 같은 값을 쓴다**(2026-07-31). 옛 판은 사람만 0.5~0.55로
+ *  굵혀 시선을 끌었는데, 3/4 인물은 면이 잘게 갈려(소매·커프스·앞섶·옷깃) 굵은 선이 그 면들을
+ *  덮어 버린다. 인물이 앞에 서는 일은 이제 **시점 차이**가 진다 — 사람만 기울어 있고 집기는 납작하다. */
 const EDGE = 0.45;
 
 // 지원자별 초상 변주 — 머리·피부 2슬롯만(character-design.md §1: 실루엣은 하나, 색으로만 구분).
@@ -71,8 +73,19 @@ const DEFAULT_LOOK = { hair: "#3f3f46", skin: "#f0d3b4" };
  * 사람 하나 — **실루엣은 이 하나를 공유하고 팔레트만 다르다**(의사·간호사·환자).
  * 다른 종족이 아니라 같은 사람이 어느 자리에 있느냐의 문제라는 것이 이 게임의 주제다.
  *
- * 셰이딩은 세 단이다: 밑단(`coatShade`)을 깔고 → 상단에 밝은 톤(`coat`)을 덮고 → 어깨에 강조색.
- * 머리는 원 하나 + 위 절반을 덮는 머리카락 호 + 왼위 하이라이트 점으로 구면감을 낸다.
+ * ⚠️ **인물만 3/4 시점이다 — 집기·바닥은 탑다운을 유지한다**(2026-07-31).
+ * 정탑다운에서는 **옷이 원래 안 보인다**: 바로 위에서 내려다보면 어깨와 정수리만 보이고 옷의 정보는
+ * 전부 앞면에 있는데 그 면이 화면을 안 향한다. 그래서 무엇을 그려도 "어깨에 얹은 무늬"가 되고,
+ * 실제로 시안 판정이 *"흰 가운을 입은 것 같지가 않고 그냥 색만 2개 섞은 느낌"*이었다.
+ * 시점이 섞이는 것은 감수한다 — 집기가 납작해 시점을 강하게 주장하지 않아 나란히 놓아도 안 어긋난다
+ * (시안을 집기 옆에 놓고 실측했다).
+ *
+ * ⚠️ **과 색은 두 곳에 나온다 — 가슴(수술복)과 소매 끝(커프스).** 가슴 V만 색이면 뇌가 무늬로 읽고,
+ * 같은 색이 소매 끝에 **다시** 나와야 레이어로 읽힌다 — "가운 안에 다른 옷을 입었다"가 성립하는
+ * 지점이 거기다. 그래서 `sleeveCuff`는 가운을 입는 의사만 넘긴다(간호사·환자는 안 넘겨 안 그려진다).
+ *
+ * 그리는 순서가 곧 겹침 순서다: 소매 → 커프스 → 수술복 몸통 → 가운 앞섶 좌/우 → 옷깃 좌/우 → 머리 →
+ * 머리카락. 셰이딩은 좌우 2단이다 — 왼쪽이 `coat`(밝은 면), 오른쪽이 `coatShade`(그늘진 면).
  */
 function Figure({
   coat,
@@ -80,51 +93,65 @@ function Figure({
   accent,
   hair,
   skin,
+  sleeveCuff,
 }: {
   coat: string;
   coatShade: string;
   accent: string;
   hair: string;
   skin: string;
+  sleeveCuff?: string;
 }) {
   return (
     <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden>
-      {/* 다리 — 몸통보다 먼저(뒤에) 그려 밑단이 겹치게 한다 */}
-      <rect x="5.6" y="12.1" width="1.9" height="3.3" rx=".7" fill={coatShade} stroke={INK} strokeWidth=".5" />
-      <rect x="8.5" y="12.1" width="1.9" height="3.3" rx=".7" fill={coatShade} stroke={INK} strokeWidth=".5" />
-      {/* 몸통 — 어두운 톤 전체 */}
-      <rect x="4.2" y="7.1" width="7.6" height="6.3" rx="1.7" fill={coatShade} stroke={INK} strokeWidth=".55" />
-      {/* 상단 하이라이트 — 두 번째 단 */}
-      <rect x="4.8" y="7.5" width="6.4" height="3.5" rx="1.3" fill={coat} />
-      {/* 어깨 강조 — 과 색(의사) · 계열색(간호사) · 회색(환자)이 전부 이 두 칸에 든다 */}
-      <rect x="4.2" y="7.7" width="1.6" height="3.1" rx=".7" fill={accent} />
-      <rect x="10.2" y="7.7" width="1.6" height="3.1" rx=".7" fill={accent} />
-      {/* 림 라이트 — 어깨 위 한 줄. 인물을 바닥에서 떼어 놓는다 */}
-      <rect x="5.2" y="7.4" width="5.6" height=".45" fill="#ffffff" opacity=".22" />
-      {/* 머리 */}
-      <circle cx="8" cy="4.6" r="3" fill={skin} stroke={INK} strokeWidth=".55" />
-      {/* 머리카락 — 위 절반을 덮는 호(sweep 1이 y-down에서 위로 지난다) */}
-      <path d="M5.05 4.35a2.95 2.95 0 0 1 5.9 0z" fill={hair} />
-      {/* 목 그늘 — 머리와 몸통을 붙인다. 없으면 머리가 떠 보인다 */}
-      <rect x="6.8" y="6.9" width="2.4" height=".8" fill={INK} opacity=".32" />
+      {/* 소매 — 몸통보다 먼저(뒤에) 그린다. 몸통 폭을 줄여 소매가 밖으로 나오게 했다 */}
+      <path d="M3.6 7.4 q-1.5 3 -1 5.6 l1.7 .4 q-.4 -3 1 -5.4 Z" fill={coat} stroke={INK} strokeWidth={EDGE} />
+      <path d="M12.4 7.4 q1.5 3 1 5.6 l-1.7 .4 q.4 -3 -1 -5.4 Z" fill={coatShade} stroke={INK} strokeWidth={EDGE} />
+      {/* 커프스 — 과 색의 두 번째 출현. 이게 없으면 가슴 색이 무늬로 읽힌다(위 계약) */}
+      {sleeveCuff && (
+        <>
+          <path d="M2.5 12.6 l1.7 .4 l-.3 1.4 l-1.7 -.4 Z" fill={sleeveCuff} stroke={INK} strokeWidth={EDGE} />
+          <path d="M13.5 12.6 l-1.7 .4 l.3 1.4 l1.7 -.4 Z" fill={sleeveCuff} stroke={INK} strokeWidth={EDGE} />
+        </>
+      )}
+      {/* 수술복 몸통 — 가운 앞섶 사이로 보이는 안쪽 옷. 과 색(의사)·계열색(간호사)·회색(환자) */}
+      <path d="M6.2 6.6 h3.6 q.9 4.4 .9 8.8 h-5.4 q0 -4.4 .9 -8.8 Z" fill={accent} stroke={INK} strokeWidth={EDGE} />
+      {/* 가운 앞섶 — 좌(밝은 면)·우(그늘진 면). 둘 사이 틈이 위 수술복을 드러낸다 */}
+      <path d="M6.2 6.4 q-2.6 .6 -2.8 3 q-.4 3.6 0 6.2 h2.6 q-.2 -6 .2 -9.2 Z" fill={coat} stroke={INK} strokeWidth={EDGE} />
+      <path d="M9.8 6.4 q2.6 .6 2.8 3 q.4 3.6 0 6.2 h-2.6 q.2 -6 -.2 -9.2 Z" fill={coatShade} stroke={INK} strokeWidth={EDGE} />
+      {/* 옷깃 — 앞섶이 목에서 접혀 넘어간 면. 선을 얇게(EDGE×0.7) 해 앞섶 윤곽에 안 지게 한다 */}
+      <path d="M6.2 6.4 q.7 1.9 1.8 2.3 q-.5 .8 -1.8 .8 q-.8 -1.6 0 -3.1 Z" fill={coat} stroke={INK} strokeWidth={EDGE * 0.7} />
+      <path d="M9.8 6.4 q-.7 1.9 -1.8 2.3 q.5 .8 1.8 .8 q.8 -1.6 0 -3.1 Z" fill={coatShade} stroke={INK} strokeWidth={EDGE * 0.7} />
+      {/* 머리 — 3/4라 정원이 아니라 세로로 살짝 긴 타원이다 */}
+      <ellipse cx="8" cy="4" rx="2.9" ry="3.1" fill={skin} stroke={INK} strokeWidth={EDGE} />
+      {/* 머리카락 — 위쪽을 덮는 호(sweep 1이 y-down에서 위로 지난다) + 이마 선 */}
+      <path d="M5.2 3 A2.9 3.1 0 0 1 10.8 3 q-.9 -.7 -2.8 -.7 q-1.9 0 -2.8 .7 Z" fill={hair} />
       {/*
         ⚠️ **머리에 점을 찍지 않는다.** 구면감을 내려고 왼위에 하이라이트 원을 뒀더니 어두운 머리카락
         위의 흰 점이 **눈 하나**로 읽혔다(160px로 띄워 실측). 표정·얼굴 특징은 금지 규칙이라
         (character-design.md §2·§3 — 환자는 익명, 의사는 개인이 아니다) 우연한 눈도 규칙 위반이다.
-        입체는 위 어깨 림 라이트와 몸통 2단 램프가 이미 내고 있어 이 점이 없어도 평면으로 안 보인다.
+        3/4로 옮긴 지금은 얼굴 면이 화면을 향해 더 넓게 열려 있어 **이 금지가 전보다 더 위험하다** —
+        입체는 좌우 2단 램프와 옷깃·소매의 겹침이 내고 있으니 얼굴에는 아무것도 얹지 않는다.
       */}
     </svg>
   );
 }
 
-/** 의사 — 흰 가운 + 과 색 어깨. busy면 가운이 밝아진다. variantKey(지원자 id)가 있으면 머리·피부 변주. */
+/**
+ * 의사 — 흰 가운 + 과 색 수술복(가슴)과 커프스(소매 끝). busy면 가운이 밝아진다.
+ * variantKey(지원자 id)가 있으면 머리·피부 변주.
+ *
+ * **`sleeveCuff`를 넘기는 유일한 호출부다** — 커프스는 "가운 **안에** 다른 옷을 입었다"를 말하는
+ * 장치라, 가운을 안 입는 간호사·환자에게 붙이면 없는 층을 주장한다(Figure 주석의 계약).
+ */
 export function DoctorSprite({ dept, busy, variantKey }: { dept: DeptKey; busy: boolean; variantKey?: string }) {
   const v = variantKey ? spriteVariant(variantKey) : DEFAULT_LOOK;
   return (
     <Figure
-      coat={busy ? "#ffffff" : "#dcdce2"}
-      coatShade={busy ? "#c9c9d2" : "#a9a9b4"}
+      coat={busy ? "#ffffff" : "#f1f4f7"}
+      coatShade={busy ? "#e4e9ee" : "#d8dee5"}
       accent={DEPT_COLOR[dept]}
+      sleeveCuff={DEPT_COLOR[dept]}
       hair={v.hair}
       skin={v.skin}
     />
@@ -135,26 +162,30 @@ export function DoctorSprite({ dept, busy, variantKey }: { dept: DeptKey; busy: 
  * 간호사 — **의사 스프라이트의 팔레트 변주**다(실루엣은 하나 — §1).
  *
  * 흰 가운 대신 청록 계열을 입는 것이 유일한 차이이고, 그 한 축이 "이 사람은 진료를 하지 않는다"를
- * 말한다. 어깨 강조에 **과 색을 안 쓰는 것도 계약이다**: 간호사는 과가 없으므로(pawn.hireNurse)
+ * 말한다. 강조색에 **과 색을 안 쓰는 것도 계약이다**: 간호사는 과가 없으므로(pawn.hireNurse)
  * 과 색을 빌려 오면 화면이 그를 그 과 소속으로 말하게 된다.
+ *
+ * **`sleeveCuff`를 안 넘긴다** — 간호사는 가운을 안 입으므로 "가운 안의 다른 옷"이라는 층 자체가
+ * 없다(DoctorSprite 주석의 계약). 안 넘기면 그 두 패스가 렌더되지 않는다.
  *
  * `busy`가 없다 — 수납은 인원 판정이라(patientFlow.hasCashier) 간호사에게 "지금 응대 중"이라는
  * 상태 자체가 없다. 없는 축을 색으로 흉내 내면 화면이 시뮬에 없는 사실을 주장한다.
  */
 export function NurseSprite({ variantKey }: { variantKey?: string }) {
   const v = variantKey ? spriteVariant(variantKey) : DEFAULT_LOOK;
-  return <Figure coat="#7de9f9" coatShade="#3fa8c2" accent="#0e7490" hair={v.hair} skin={v.skin} />;
+  return <Figure coat="#4fa39e" coatShade="#37827e" accent="#3f8f8b" hair={v.hair} skin={v.skin} />;
 }
 
 /**
  * 환자 — 익명 회색. 이름도 사연도 없다(의도적 영구 보류):
  * 개인 서사가 붙으면 "시스템이 문제"가 "이 환자가 안됐다"로 미끄러진다.
  *
- * 어깨 강조는 가운보다 **한 단 어둡다** — 같은 회색을 강조에 다시 쓰면 어깨가 사라져
- * 회색 덩어리로 보인다(시안에서 실측했다). 익명은 유지하면서 실루엣만 되찾는다.
+ * 강조색(수술복 몸통)은 겉옷보다 **한 단 어둡다** — 같은 회색을 강조에 다시 쓰면 앞섶 사이의
+ * 틈이 사라져 회색 덩어리로 보인다(시안에서 실측했다). 익명은 유지하면서 실루엣만 되찾는다.
+ * `sleeveCuff`는 안 넘긴다 — 환자복은 가운이 아니다(NurseSprite와 같은 이유).
  */
 export function PatientSprite() {
-  return <Figure coat="#a5a5b0" coatShade="#75757f" accent="#63636f" hair="#4a4a55" skin="#dcc4a8" />;
+  return <Figure coat="#a8b0b8" coatShade="#8d959d" accent="#98a0a8" hair="#4a4a55" skin="#dcc4a8" />;
 }
 
 /*
