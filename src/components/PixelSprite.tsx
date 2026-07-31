@@ -302,14 +302,40 @@ export function DeskSprite() {
   );
 }
 
-/** 대기실 의자 — 등받이 + 좌면. 앉은 폰이 SEAT_LIFT만큼 들리면 아랫단이 밑으로 드러난다(TileMap). */
+/* 좌면 앞단 — 몸체 rect(x2.4 y2.6 w11.2 h10.8 rx2.2)의 **아래 띠를 정확히** 따라간다:
+   바닥 y=2.6+10.8=13.4, 좌우 x=2.4~13.6, 모서리 반지름 2.2(직선 구간이 x4.6~11.4에서 끝난다).
+   그림을 여기 **한 번만** 적는다 — ChairSprite(빈 의자)와 ChairSeatFrontSprite(앉은 폰 위에
+   덧까는 층)가 같은 좌면을 그려야 하는데, 문자열을 양쪽에 두면 한쪽만 고쳐져 빈 의자와 앉은
+   의자의 좌면 모양이 갈린다. */
+function ChairSeatFront() {
+  return (
+    <path
+      d="M2.4 10.6 h11.2 v.6 a2.2 2.2 0 0 1 -2.2 2.2 h-6.8 a2.2 2.2 0 0 1 -2.2 -2.2 Z"
+      fill="#343c46"
+      stroke={INK}
+      strokeWidth={EDGE}
+    />
+  );
+}
+
+/** 대기실 의자 — 등받이 + 좌면 앞단 + 다리. 앉은 폰 위에는 TileMap이 좌면 앞단만 한 겹 더 깐다. */
 export function ChairSprite() {
   return (
     <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden>
       <rect x="2.4" y="2.6" width="11.2" height="10.8" rx="2.2" fill="#3d4550" stroke={INK} strokeWidth={EDGE} />
       <rect x="3.6" y="3.6" width="8.8" height="3.6" rx="1.6" fill="#5b6470" />
+      <ChairSeatFront />
       <rect x="4.4" y="13.2" width="2" height="2.2" rx=".6" fill="#2f353e" />
       <rect x="9.6" y="13.2" width="2" height="2.2" rx=".6" fill="#2f353e" />
+    </svg>
+  );
+}
+
+/** 의자 좌면 앞단만 — 앉은 폰 **위에** 덧까는 층이다(왜인지는 TileMap의 해당 레이어 주석). */
+export function ChairSeatFrontSprite() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden>
+      <ChairSeatFront />
     </svg>
   );
 }

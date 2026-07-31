@@ -15,6 +15,7 @@ import { computeRegions, type Region } from "@/sim/regions";
 import Backdrop from "./Backdrop";
 import {
   BedSprite,
+  ChairSeatFrontSprite,
   ChairSprite,
   CounterSprite,
   DeskSprite,
@@ -375,11 +376,15 @@ export default function TileMap({
   const safeCenter = { x: view.safe.x + view.safe.w / 2, y: view.safe.y + view.safe.h / 2 };
   const zoomBy = (factor: number) => setCam((c) => zoomedCamera(c, safeCenter, factor, view));
 
-  /* 앉아 있는 폰을 몇 px 들어 올린다 — **의자가 화면에서 살아남게 하는 유일한 장치**다.
-     시뮬에서 "앉는다"는 의자 타일에 서는 것인데(world.blocksWalk), 폰과 의자가 같은 16px 칸을
-     쓰므로 그냥 겹쳐 그리면 의자가 통째로 가려 **선 것과 구별되지 않는다** — 기능은 들어갔는데
-     화면은 그대로인, 사용자가 처음 신고한 그 모습으로 되돌아간다.
-     4px(= 타일의 1/4)면 의자 스프라이트의 아랫단(좌석 앞면·다리)이 폰 밑으로 드러난다. */
+  /* 앉아 있는 폰을 몇 px 들어 올린다. 시뮬에서 "앉는다"는 의자 타일에 서는 것인데
+     (world.blocksWalk), 폰과 의자가 같은 16px 칸을 쓰므로 그냥 겹쳐 그리면 **선 것과 구별되지
+     않는다** — 기능은 들어갔는데 화면은 그대로인, 사용자가 처음 신고한 그 모습이다.
+     ⚠️ 이 4px이 하는 일은 인물이 3/4 시점이 된 뒤로(2026-07-31) 바뀌었다. 옛 주석은
+     *"의자 스프라이트의 아랫단(좌석 앞면·다리)이 폰 밑으로 드러난다"*고 적었는데, 3/4 인물은
+     몸이 커져 **의자가 검은 후광 정도로만 남아** 더 이상 참이 아니다. 지금 이 들어올림은
+     **머리를 좌면 위로 빼는** 역할이다 — 앉음을 실제로 읽히게 하는 것은 아래 폰 루프 뒤의
+     좌면 앞단 레이어이고(그쪽 주석이 왜 좌면 "앞단만"인지의 단일 출처), 둘은 짝이라 한쪽만
+     두면 다시 안 읽힌다. */
   const SEAT_LIFT = TILE / 4;
   /* 의자 타일 — 건설로만 갈리는 값이라 `world.furniture` identity에 memo를 건다(지형 memo와 같은 계약:
      폰이 매 프레임 움직여도 이 집합을 다시 만들지 않는다). */
@@ -771,13 +776,20 @@ export default function TileMap({
                 앉은 폰은 SEAT_LIFT만큼 들려 있으므로 그림자도 같이 올라가는 게 맞다 — 의자 위에
                 앉은 사람의 그림자는 의자에 진다.
                 ⚠️ **누운 폰은 그림자가 없다** — 바닥에 서 있지 않으므로 접지가 없고(침대가 자기
-                그림자를 이미 진다), 남겨 두면 침대 발치에 원인 없는 얼룩으로 남는다. */}
+                그림자를 이미 진다), 남겨 두면 침대 발치에 원인 없는 얼룩으로 남는다.
+                ⚠️ 폭 계수를 **줄이지 마라**. 0.62(= 9.92단위, x3.04~12.96)이던 것을 0.90으로
+                넓힌 이유는 3/4 인물의 밑단이 x3.2~12.8을 채워 **옛 폭이 통째로 가려졌기**
+                때문이다 — 그림자 있음/없음을 나란히 렌더해도 구별되지 않았다. 옛 스프라이트는
+                다리 사각형 둘 사이가 벌어져 그 틈으로 비쳤는데, 3/4는 앞섶이 이어져 틈이 없다.
+                즉 위의 "이 한 겹이 없으면 스티커로 보인다"가 **코드는 그대로인 채 화면에서만
+                무효**였다. 높이 0.26과 그라디언트는 그대로 둔다 — closest-side라 짧은 축(세로)이
+                반지름을 정하므로 폭만 키우면 좌우로 퍼질 뿐 진하기는 유지된다. */}
             <div
               className="pointer-events-none absolute left-1/2 -translate-x-1/2"
               hidden={lying}
               style={{
                 bottom: 0,
-                width: TILE * 0.62,
+                width: TILE * 0.9,
                 height: TILE * 0.26,
                 background: "radial-gradient(closest-side, rgba(8,6,16,0.5), rgba(8,6,16,0))",
               }}
@@ -842,6 +854,29 @@ export default function TileMap({
               </span>
             )}
           </div>
+          );
+        })}
+
+        {/* 의자 좌면 앞단 — 폰 **위에** 덧까는 한 겹. 인물이 3/4 시점이 된 뒤로(2026-07-31) 몸이
+            커져 가구 레이어의 의자는 검은 후광 정도로만 남아 **앉은 폰이 선 폰과 구별되지 않는다**.
+            그렇다고 의자를 통째로 앞에 보내면 사람이 머리만 남아 과 색·직종·busy가 전부 사라진다
+            (SEAT_LIFT를 0으로 두는 안과 함께 실측으로 기각). 좌면 앞단 **한 조각만** 앞으로 보내면
+            상체(가운·과 색)는 그대로 보이고 하체만 좌면 뒤로 들어가 "의자에 앉은 사람"으로 읽힌다.
+            zIndex가 폰과 같은 2인 것이 계약이다 — 같은 z에서는 DOM 순서가 늦은 쪽이 위라 새 층이
+            필요 없고, 3·4는 건설 미리보기와 그 라벨이 이미 쓰므로 그쪽으로 올리면 프리뷰가 좌면
+            뒤로 숨는다. 앉은 폰이 있는지 따지지 않고 **모든 의자 타일**에 그린다 — 빈 의자에선
+            ChairSprite가 이미 그린 같은 그림이 제자리에 한 번 더 깔릴 뿐이라 화면이 같다. */}
+        {[...seatTiles].map((key) => {
+          const [x, y] = key.split(",").map(Number);
+          return (
+            <div
+              key={`seat-front-${key}`}
+              className="pointer-events-none absolute"
+              style={{ left: x * TILE, top: y * TILE, width: TILE, height: TILE, zIndex: 2 }}
+              aria-hidden
+            >
+              <ChairSeatFrontSprite />
+            </div>
           );
         })}
 
