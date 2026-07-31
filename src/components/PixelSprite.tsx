@@ -207,14 +207,23 @@ export function PatientSprite() {
  * 이불 덮은 사람은 위에서 보는 것이 자연스러우므로 이 자세만 탑다운으로 되돌린다.
  *
  * 자세마다 3/4 포즈를 새로 그리지 않는 것이 계약이다 — 그러면 그림이 인물 종류 × 자세로 불어난다.
- * 색은 `PatientSprite`와 같은 회색조를 쓴다(익명 유지 — 누웠다고 다른 사람이 되지 않는다).
+ *
+ * 색은 익명 회색조를 유지하되 `PatientSprite`와 **완전히 같지는 않다**: 피부(`#dcc4a8`)·머리(`#4a4a55`)·
+ * 이불(`#98a0a8` = 서 있는 환자의 강조)은 같은 값이고, **겉옷만 한 단 밝다**(`#c9cfd6` ← `#a8b0b8`).
+ * 탑다운이라 좌우로 갈리는 2단 램프가 없어 겉옷이 단일 면으로 가기 때문이고, 그래서 `coatShade`
+ * (`#8d959d`)에 대응하는 슬롯도 여기엔 없다. 설계서가 이 예외를 열어 뒀다(bright-art-direction §"서 있는
+ * 환자와 누운 환자가 다른 그림체가 되는 것을 의도적으로 수용한다").
+ *
+ * ⚠️ **이중 기재** — 환자 회색조가 `PatientSprite`의 호출 인자와 여기 리터럴 두 곳에 각각 적혀 있다.
+ * 환자 회색을 옮기면(설계서 §7이 "환자 회색의 최종 위치"를 미해결로 열어 뒀다) 누운 환자만 조용히
+ * 뒤처진다 — 옮길 때 이 두 곳을 같이 본다.
  */
 export function LyingPatientSprite() {
   return (
     <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden>
       {/* 몸 전체(겉옷) → 이불 → 머리 → 머리카락 순. 세로로 긴 캡슐이 곧 누운 실루엣이다. */}
       <rect x="4.6" y="1.2" width="6.8" height="13.6" rx="3" fill="#c9cfd6" stroke={INK} strokeWidth={EDGE} />
-      <rect x="4.6" y="6" width="6.8" height="8.8" rx="2.4" fill="#98a0a8" />
+      <rect x="4.6" y="6" width="6.8" height="8.8" rx="3" fill="#98a0a8" />
       <ellipse cx="8" cy="3.4" rx="2.4" ry="2.2" fill="#dcc4a8" stroke={INK} strokeWidth={EDGE} />
       <path d="M5.6 2.6 A2.4 2.2 0 0 1 10.4 2.6 Z" fill="#4a4a55" />
     </svg>
@@ -245,7 +254,10 @@ function BedFrame({ y, h, occupied }: { y: number; h: number; occupied: boolean 
       <rect x="3.1" y={y + 1.3} width="9.8" height="2.2" rx=".8" fill="#f7f5f1" stroke={INK} strokeWidth=".3" />
       {occupied ? (
         <>
-          {/* 이불 — 두 단(위가 밝다). 사람이 누워 있다는 신호는 이불 + 머리 하나로 충분하다 */}
+          {/* 이불 두 단(위가 밝다) + 머리 — **전용 그림이 없는 폰**(간호사·의사)이 침대 칸에 있을 때의
+              누움 신호다. 환자는 폰 레이어가 `LyingPatientSprite`를 직접 그려 이 두 단을 덮는다(머리 원은
+              환자 머리 타원에 완전히 가려지고, 이불은 좌우 띠만 남는다 · TileMap의 occupiedTiles 주석).
+              그래도 지우지 않는 이유가 이것이다 — 침대 칸을 지나는 간호사·의사에겐 여전히 이 그림뿐이다. */}
           <rect x="2.2" y={y + 4} width="11.6" height={h - 4.9} rx=".8" fill="#5f7194" />
           <rect x="2.2" y={y + 4} width="11.6" height="1.5" rx=".7" fill="#7f93b8" />
           <circle cx="8" cy={y + 2.4} r="1.4" fill="#e8c9a8" stroke={INK} strokeWidth={EDGE} />
