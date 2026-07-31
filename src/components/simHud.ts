@@ -17,13 +17,13 @@ import { buildBlockedSet } from '../sim/path'
 import { ARRIVAL_DEPT_MIX, cashierSlots, hasCashier, unservedDepts } from '../sim/patientFlow'
 import { nurseGradeOf, resigningNurses } from '../sim/nurse'
 import { NURSE_WEEKLY_COST_MANWON, type NurseGrade } from '../sim/week'
-import { computeRegions, type Region } from '../sim/regions'
+import { computeRegions } from '../sim/regions'
 import { examSlots } from '../sim/spots'
 import { TRAITS, type TraitKey } from '../sim/traits'
 import { priorityOf, type Pawn, type Priority } from '../sim/pawn'
 import type { Pt } from '../sim/path'
 import {
-  GRID_W, GRID_H, simRegion, tileIndex,
+  ENTRANCE, GRID_W, GRID_H, simRegion, tileIndex,
   type FurnitureKind, type RoomType, type SimRegionKey, type SimWorld,
 } from '../sim/world'
 // 타입 전용 — 컴파일에 지워지므로 이 파일은 여전히 React를 모른다(vitest가 그대로 돈다).
@@ -554,8 +554,10 @@ export const TOOL_LABEL: Record<BuildTool, string> = {
   DESIGNATE: '용도', DEMOLISH: '철거',
 }
 
-/** 드래그로 쓰는 도구인가 — 문·용도는 한 칸을 겨누는 클릭이라 사각형이 뜻을 갖지 않는다. */
-export const isDragTool = (tool: BuildTool): boolean => tool !== 'DOOR' && tool !== 'DESIGNATE'
+/** 드래그로 쓰는 도구인가 — **문만** 한 칸을 겨누는 클릭이다(벽 한 칸을 골라 뚫는 조작).
+ *  용도는 드래그로 칠한다(설계 2026-07-31 §4): 영역이 밀폐에서 풀려 "어디까지 지정되나"가
+ *  칠한 사각형 그 자체가 됐으므로, 클릭 한 칸으로는 방 하나를 만들 수 없다. */
+export const isDragTool = (tool: BuildTool): boolean => tool !== 'DOOR'
 
 /** 팔레트 오른쪽 가격표 — 값은 **코어 표**(build.BUILD_COST)에서 온다.
  *  여기서 숫자를 다시 적으면 화면이 말하는 값과 금고에서 빠지는 값이 갈린다. */
@@ -796,10 +798,12 @@ export function rectTiles(a: Pt, b: Pt, mode: 'FILL' | 'BORDER'): Pt[] {
 export const rectModeOf = (tool: BuildTool): 'FILL' | 'BORDER' => (tool === 'WALL' ? 'BORDER' : 'FILL')
 
 /** 드래그 미리보기에 뜨는 한 줄 — **철거는 환불**이라 부호가 뒤집힌다.
- *  이 한 곳에서 갈라 두지 않으면 "50만원이 나간다"와 "50만원이 들어온다"가 같은 문장으로 뜬다. */
-export function previewLabel(tool: BuildTool, res: PlaceResult): string {
+ *  이 한 곳에서 갈라 두지 않으면 "50만원이 나간다"와 "50만원이 들어온다"가 같은 문장으로 뜬다.
+ *  용도 도구는 **칠하기와 지우기가 같은 조작**이라(같은 드래그·같은 무료) 그 둘도 여기서 갈린다:
+ *  한 문장이면 손을 떼기 전에는 어느 쪽인지 알 수 없다. */
+export function previewLabel(tool: BuildTool, res: PlaceResult, roomType?: RoomType | 'ERASE' | null): string {
   const n = res.tiles.length
-  if (tool === 'DESIGNATE') return `${n}칸 — 용도 지정`
+  if (tool === 'DESIGNATE') return `${n}칸 — ${roomType === 'ERASE' ? '지정 해제' : '용도 지정'}`
   const money = formatManwon(Math.abs(res.deltaManwon))
   return tool === 'DEMOLISH' ? `${n}칸 철거 · 환불 ${money}` : `${n}칸 · ${money}`
 }
@@ -828,7 +832,6 @@ const REASON_TEXT: Record<BuildReason, (tool: BuildTool) => string> = {
   NOTHING: tool => (tool === 'DEMOLISH' ? '부술 것이 없습니다' : '놓을 자리가 없습니다 — 이미 차 있습니다'),
   NO_MONEY: () => '자금이 부족합니다',
   NOT_WALL: () => '문은 벽 위에만 낼 수 있습니다',
-  OUTDOORS: () => '둘러싸인 실내가 아닙니다 — 벽으로 두르고 문을 내세요',
 }
 
 /**
@@ -836,16 +839,25 @@ const REASON_TEXT: Record<BuildReason, (tool: BuildTool) => string> = {
  *
  * 용도 도구는 무슨 방인지(진료실이면 과까지) 골라야 열리는데, 안 고른 채로 부지를 누르면 코어에
  * 닿기도 전에 화면에서 삼켜져 미리보기도 토스트도 없다 — 플레이어에게는 **판이 죽은 것**으로
- * 보인다. 과 없는 EXAM은 코어가 아예 던지므로(build.designateRegion) 이 줄이 그 앞을 막는다.
+ * 보인다. 과 없는 EXAM은 코어가 아예 던지므로(build.paintZone) 이 줄이 그 앞을 막는다.
  *
  * ⚠️ 도구를 아예 안 골랐을 때는 `null`이다: 그 클릭은 실패가 아니라 맵을 둘러보는 동작이라,
  * 여기에 사유를 붙이면 부지를 누를 때마다 토스트가 떠 진짜 사유가 묻힌다.
+ *
+ * ⚠️ **`'ERASE'`는 화면에만 있는 값이다** — 용도 목록의 마지막 항목(「지정 해제」)이라 여기서
+ * `RoomType`과 같은 자리에 실릴 뿐, 코어(`build.paintZone`)는 이 값을 모른다. 그래서 타입에
+ * 섞지 않고 유니온으로 넓히기만 한다: `RoomType`에 넣는 순간 코어의 방 종류 표(ROOM_STYLE·
+ * ROOM_LABEL 등 `Record<RoomType, …>`)가 전부 지우기 항목을 요구하게 된다.
  */
 export function buildBlockReason(
-  tool: BuildTool | null, roomType: RoomType | null, dept: SimDeptKey | null,
+  tool: BuildTool | null, roomType: RoomType | 'ERASE' | null, dept: SimDeptKey | null,
 ): string | null {
   if (tool !== 'DESIGNATE') return null
   if (roomType === null) return '지정할 용도를 고르세요 — 아래 줄에서 방 종류를 고릅니다'
+  /* 「지정 해제」(`'ERASE'`)는 아래 두 줄을 **그대로 통과한다** — 지울 때 무슨 방인지 물을 이유가
+     없고, `null`도 `'EXAM'`도 아니므로 따로 분기할 것이 없다. 분기를 더해도 관측이 안 바뀌는
+     자리라(실측: `if (roomType === 'ERASE') return null`을 넣고 빼도 테스트가 전부 통과한다)
+     넣으면 그 줄은 태어날 때부터 죽은 방어다. 통과한다는 사실 자체는 simHud.test가 잠근다. */
   if (roomType === 'EXAM' && dept === null) return '진료실은 과를 골라야 지정할 수 있습니다 — 아래에서 과를 고르세요'
   return null
 }
@@ -1005,9 +1017,11 @@ export function setupSteps(w: SimWorld): SetupStep[] {
   const regions = computeRegions(w)
   const blocked = buildBlockedSet(w)
 
-  // 문 없는 밀실 — 벽만 두르면 영역은 인식되지만 통로가 없어 아무도 못 들어간다(설계 §7).
-  // 버그가 아니라 배치의 결과지만, 화면에는 멀쩡한 방으로 보여 이유를 영영 못 찾는다.
-  const sealed = regions.filter(r => r.type && r.doors.size === 0).length
+  // 입구에서 닿지 않는 영역 — 문 강제는 사라졌지만(영역이 밀폐에서 풀렸다) "벽으로 두르고 문을
+  // 잊는" 실수는 남는다. 그때 화면에는 멀쩡한 방으로 보여 이유를 영영 못 찾는 문제(옛 밀실
+  // 경고의 존재 이유)도 그대로이므로, 단계를 지우지 않고 판정만 밀폐→도달성으로 바꾼다(설계 §5).
+  const reach = reachableTiles(w, blocked)
+  const unreachable = regions.filter(r => ![...r.tiles].some(t => reach.has(t))).length
   const roomless = doctors.filter(d => !regions.some(r => r.type === 'EXAM' && r.dept === d.dept)).length
   // 방은 있는데 **앉을 책상**이 모자란 경우(설계 §4) — 정원은 방 크기가 아니라 슬롯 수다.
   // 과별로 세는 것이 계약이다: 미용 진료실에 책상이 남아돌아도 내과 의사는 못 앉는다.
@@ -1039,25 +1053,25 @@ export function setupSteps(w: SimWorld): SetupStep[] {
     {
       key: 'no-waiting',
       label: '대기실을 만듭니다',
-      hint: '[건설] > [벽]으로 사각형을 끌고 → [문]으로 벽 한 칸을 뚫고 → [용도] > [대기실] → [의자]를 채웁니다.',
+      hint: '[용도] > [대기실]로 바닥을 드래그해 칠하고 → [의자]를 채웁니다. 벽은 두르고 싶을 때만 두릅니다.',
       done: regions.some(r => r.type === 'WAITING'),
       alert: '대기실이 없습니다 — 환자가 들어오지 못합니다',
     },
     {
       key: 'sealed-rooms',
-      label: '모든 방에 문을 냅니다',
-      hint: '[건설] > [문]으로 벽 한 칸을 클릭합니다. 문이 없으면 방이 아니라 밀실입니다.',
-      /* ⚠️ **"문제가 없다"가 아니라 "실제로 갖췄다"가 done이다.** 방이 하나도 없는 빈 판에서
-         `sealed === 0`만 보면 체크리스트가 「문 내기 ✅」로 떠 처음 보는 사람을 속인다.
-         앞 조건이 붙어도 경고는 안 바뀐다 — 경고는 **첫** 미완 단계만 내는데, 방이 없는 판은
+      label: '모든 영역에 길이 닿게 합니다',
+      hint: '벽으로 두른 영역에는 [문]을 내세요. 입구에서 걸어서 닿아야 환자와 의사가 들어갑니다.',
+      /* ⚠️ **"문제가 없다"가 아니라 "실제로 갖췄다"가 done이다.** 영역이 하나도 없는 빈 판에서
+         `unreachable === 0`만 보면 체크리스트가 「길 닿기 ✅」로 떠 처음 보는 사람을 속인다.
+         앞 조건이 붙어도 경고는 안 바뀐다 — 경고는 **첫** 미완 단계만 내는데, 영역이 없는 판은
          그 앞의 `no-waiting`이 먼저 걸려 이 줄까지 오지 않는다(아래 둘도 같은 그늘). */
-      done: regions.some(r => r.type) && sealed === 0,
-      alert: `문이 없는 방 ${sealed}개 — 벽 한 칸을 골라 문을 내세요`,
+      done: regions.length > 0 && unreachable === 0,
+      alert: `길이 닿지 않는 영역 ${unreachable}개 — 벽에 문을 내세요`,
     },
     {
       key: 'no-exam-room',
       label: '뽑은 과마다 진료실을 만듭니다',
-      hint: '대기실과 같은 순서로 짓고 [용도] > [진료실] > 그 과를 고릅니다. 과가 다르면 못 들어갑니다.',
+      hint: '[용도] > [진료실] > 그 과를 고르고 바닥을 드래그해 칠합니다. 과가 다르면 못 들어갑니다.',
       done: doctors.length > 0 && roomless === 0,
       alert: `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요`,
     },
@@ -1073,7 +1087,7 @@ export function setupSteps(w: SimWorld): SetupStep[] {
     {
       key: 'no-cashier',
       label: '수납 창구를 만듭니다',
-      hint: '[건설] > [카운터]를 놓고 [용도] > [접수처]로 지정, [사람] > [채용]에서 간호사를 뽑습니다. 창구가 없으면 진료해도 돈을 받지 못합니다.',
+      hint: '[건설] > [카운터]를 놓고 그 주변을 [용도] > [접수처]로 칠한 뒤, [사람] > [채용]에서 간호사를 뽑습니다. 창구가 없으면 진료해도 돈을 받지 못합니다.',
       /* **체인의 맨 뒤인 것이 계약이다**: 진료가 돌기 전에 창구부터 지으라고 말하면 "순서가 곧
          인과"라는 이 목록의 전제가 뒤집힌다(창구만 있고 의사가 없는 병원은 걷을 돈이 없다).
          뒤에 있어도 늦지 않다 — 경고는 **첫** 미완 단계라, 앞을 다 마친 병원에서 곧바로 뜬다.
@@ -1083,6 +1097,34 @@ export function setupSteps(w: SimWorld): SetupStep[] {
       alert: '수납 창구가 없습니다 — 진료비를 받지 못합니다',
     },
   ]
+}
+
+/**
+ * 입구에서 4방으로 닿는 통행 가능 타일 — 벽·막는 가구가 경계다. 문은 통행 가능이라 지나간다.
+ *
+ * A*(path.findPath)를 영역마다 돌리지 않는 이유: 닿지 **않는** 목적지에 대한 A*는 매번 도달
+ * 가능한 영역 전체를 훑으므로, 영역 수만큼 같은 flood를 되풀이한다. 한 번 퍼뜨려 집합을 만들면
+ * 영역 판정은 조회뿐이다(alertsOf가 regions·blocked를 한 번만 계산해 나눠 쓰는 것과 같은 결).
+ */
+function reachableTiles(w: SimWorld, blocked: Set<number>): Set<number> {
+  const start = tileIndex(ENTRANCE.x, ENTRANCE.y)
+  const reach = new Set<number>()
+  if (blocked.has(start)) return reach
+  const stack = [start]
+  reach.add(start)
+  while (stack.length > 0) {
+    const cur = stack.pop()!
+    const cx = cur % GRID_W, cy = (cur - (cur % GRID_W)) / GRID_W
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+      const nx = cx + dx, ny = cy + dy
+      if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) continue
+      const ni = tileIndex(nx, ny)
+      if (reach.has(ni) || blocked.has(ni)) continue
+      reach.add(ni)
+      stack.push(ni)
+    }
+  }
+  return reach
 }
 
 /** 개원 전에 반드시 뽑아야 하는 의사 수 — **하한이지 상한이 아니다**(더 뽑아도 된다).
@@ -1289,8 +1331,8 @@ export interface StatusLineInput {
   /** `setupWarningText`의 결과 — 이 배치에서 아무 일도 안 일어나는 이유. */
   warning: string | null
   tool: BuildTool | null
-  /** 용도 도구가 지정할 방 종류 — 다른 도구에서는 뜻이 없다. */
-  roomType: RoomType | null
+  /** 용도 도구가 지정할 방 종류 — 다른 도구에서는 뜻이 없다. `'ERASE'`는 「지정 해제」(UI 전용). */
+  roomType: RoomType | 'ERASE' | null
   dept: SimDeptKey | null
 }
 
@@ -1302,7 +1344,7 @@ const TOOL_HINT: Record<BuildTool, string> = {
   CHAIR: '의자 — 드래그한 사각형을 채웁니다. 대기실 의자가 곧 좌석 수입니다.',
   BED: '침대 — 드래그한 사각형을 채웁니다. 응급은 병동 침대에 눕습니다.',
   COUNTER: '카운터 — 드래그한 사각형을 채웁니다. 접수처의 표시물입니다.',
-  DESIGNATE: '용도 — 벽으로 둘러싸인 실내를 클릭해 무슨 방인지 정합니다.',
+  DESIGNATE: '용도 — 바닥을 드래그해 무슨 방인지 칠합니다. 벽은 필요 없습니다(칠한 자리가 곧 방입니다).',
   DEMOLISH: '철거 — 드래그한 사각형의 벽·문·가구를 없애고 절반을 돌려받습니다.',
 }
 
@@ -1327,11 +1369,14 @@ export function statusLineText(s: StatusLineInput): string {
   const blocked = buildBlockReason(s.tool, s.roomType, s.dept)
   if (blocked) return blocked
   if (s.tool === null) {
-    return '벽으로 공간을 두르고 → 문을 내고 → 용도를 지정하고 → 가구를 놓으세요. 진료실엔 책상+의자, 대기실엔 의자가 필요합니다.'
+    return '바닥을 드래그해 용도를 칠하고 → 가구를 놓으세요. 벽은 두르고 싶을 때만 두릅니다. 진료실엔 책상+의자, 대기실엔 의자가 필요합니다.'
   }
-  // 용도는 무슨 방인지까지 정해져야 뜻이 선다 — 그 이름을 문장에 실어 클릭 전에 확인시킨다.
+  // 용도는 무슨 방인지까지 정해져야 뜻이 선다 — 그 이름을 문장에 실어 드래그 전에 확인시킨다.
+  // 지우기는 고를 이름이 없으므로 조작만 말한다(무엇이 남는지까지: 벽·가구는 안 부순다).
   if (s.tool === 'DESIGNATE' && s.roomType) {
-    return `${roomLabel({ type: s.roomType, dept: s.dept ?? undefined })}로 지정합니다 — 둘러싸인 실내를 클릭하세요.`
+    return s.roomType === 'ERASE'
+      ? '드래그한 범위의 지정을 지웁니다 — 벽·가구는 그대로 남습니다.'
+      : `${roomLabel({ type: s.roomType, dept: s.dept ?? undefined })}로 지정합니다 — 바닥을 드래그하세요.`
   }
   return TOOL_HINT[s.tool]
 }
