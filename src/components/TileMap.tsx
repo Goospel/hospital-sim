@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -32,6 +33,7 @@ import {
   doctorRoomlessMark,
   fatigueTone,
   FATIGUE_COLOR,
+  openingZoom,
   pannedCamera,
   roomLabel,
   safeArea,
@@ -101,6 +103,13 @@ function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetLe
     host: { w: 0, h: 0 }, safe: { x: 0, y: 0, w: 0, h: 0 }, base: BASE, margin: MARGIN, fit: 1,
   });
   const [cam, setCam] = useState<Camera>({ zoom: 1, x: 0, y: 0 });
+  /** 플레이어가 카메라를 **한 번이라도** 건드렸는가. 그전까지는 측정이 갱신될 때마다 시작
+   *  프레임을 다시 앉힌다.
+   *  ⚠️ **「첫 측정 때만」으로는 안 된다**: `insets`는 부모(SimGame)가 effect에서 재는데 React가
+   *  자식 effect를 먼저 돌려, 이 컴포넌트의 첫 측정은 **언제나 인셋 0**인 상태로 일어난다.
+   *  그 시점의 안전 영역은 실제와 달라 배율이 어긋난다(1440×900에서 0.923이어야 할 값이 0.889).
+   *  건드림을 기준으로 두면 인셋이 뒤늦게 도착해도 첫 프레임이 의도한 그림으로 맞춰진다. */
+  const touched = useRef(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -116,7 +125,9 @@ function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetLe
          수 있어(배경이 화면보다 작아진다) settledCamera가 하한으로 받친다.
          ponytail: 보던 **중심 유지**는 안 한다 — 창 크기를 바꾸면 화면이 조금 밀린다. 필요해지면
          리사이즈 직전 중심을 앵커로 zoomedCamera(factor 1)를 한 번 태우면 된다. */
-      setCam((c) => settledCamera(c, next));
+      /* 건드리기 전이면 **시작 배율로 다시 앉힌다**. 건드린 뒤에는 옛 계약 그대로 줌을 유지하고
+         하한만 받친다 — 창을 줄였다고 플레이어가 당겨 둔 배율까지 되돌리면 조작이 사라진다. */
+      setCam((c) => settledCamera(touched.current ? c : { ...c, zoom: openingZoom(next) }, next));
     };
     /* ⚠️ **마운트 시 한 번은 직접 잰다** — ResizeObserver의 첫 콜백에 기대면 안 된다.
        그 콜백은 다음 *렌더링 스텝*에 오므로 ① 첫 프레임이 배율 1(768×512)로 그려졌다가 튀고,
@@ -129,7 +140,15 @@ function useCamera(ref: RefObject<HTMLElement | null>, insetTop: number, insetLe
     return () => ro.disconnect();
     // 인셋이 바뀌면(상단 바가 줄바꿈되거나 패널 폭이 갈림) **다시 재고 다시 클램프**해야 한다.
   }, [ref, insetTop, insetLeft]);
-  return { cam, setCam, view };
+  /** 밖으로 나가는 setter는 **건드림을 표시하는 래퍼**다 — 휠·줌 버튼·⌂·팬이 전부 이 반환값을
+   *  쓰므로 호출부를 하나도 안 고쳐도 표시된다(위 `measure`만 원본 setter를 쓴다).
+   *  ⚠️ `useCallback`이 필수다: 휠 효과의 deps가 `[view, setCam]`이라, 매 렌더 새 함수가 되면
+   *  네이티브 리스너를 렌더마다 떼었다 붙인다. */
+  const setCamByUser = useCallback<typeof setCam>((update) => {
+    touched.current = true;
+    setCam(update);
+  }, []);
+  return { cam, setCam: setCamByUser, view };
 }
 
 /**
@@ -940,13 +959,15 @@ export default function TileMap({
       </div>
 
       {/* 줌 버튼 — **터치·트랙패드 사용자의 유일한 줌 수단**이라 필수다(휠이 없는 손이 있다).
-          ⌂는 zoom 1 복귀: 배수의 역수를 한 번 태우면 클램프가 중앙 정렬까지 해 준다.
+          ⌂는 **시작 프레임 복귀**다(zoom 1이 아니다) — 둘이 갈리면 화면에 「기본 화면」이 두 개
+          생겨, 처음 본 그림으로 돌아갈 길이 없어진다. 목표 배율을 현재 배율로 나눈 **배수**를 한 번
+          태우면 클램프가 중앙 정렬까지 해 주고, 하한 받침은 `zoomedCamera`가 안에서 한다.
           ponytail: 핀치 줌은 안 넣었다 — 포인터 두 개를 추적하는 상태가 통째로 필요하고 이 버튼이
           같은 일을 한다. 터치 사용자가 확대를 자주 쓴다는 신호가 오면 그때 붙인다. */}
       <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1">
         {[
           { label: "+", title: "확대", run: () => zoomBy(1.4) },
-          { label: "⌂", title: "부지 전체 보기", run: () => setCam((c) => zoomedCamera(c, safeCenter, 1 / c.zoom, view)) },
+          { label: "⌂", title: "부지 전체 보기", run: () => setCam((c) => zoomedCamera(c, safeCenter, openingZoom(view) / c.zoom, view)) },
           { label: "−", title: "축소", run: () => zoomBy(1 / 1.4) },
         ].map((b) => (
           <button
