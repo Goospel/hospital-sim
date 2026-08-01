@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { spriteVariant, DEPT_COLOR } from './PixelSprite'
+import { spriteVariant, DEPT_COLOR, CHAIR_PALETTE } from './PixelSprite'
 import { relativeLuminance } from './Backdrop'
+import { CHAIR_VARIANTS } from './simHud'
 import type { DeptKey } from '@/game/types'
 
 /**
@@ -62,5 +63,90 @@ describe('spriteVariant — 초상 변주는 id의 순수 함수다', () => {
       const spread = Math.max(r, g, b) - Math.min(r, g, b)
       expect(spread, `${dept}(${hex}) 채널 폭 ${spread}`).toBeGreaterThanOrEqual(25)
     }
+  })
+})
+
+/*
+  ── 의자 변종 팔레트 ────────────────────────────────────────────────────────
+  그림(패스 좌표)은 눈이 판정한다 — 이 저장소의 스프라이트 관행이다. 여기서 재는 것은
+  **판단이 드는 값**뿐이다: 다섯이 실제로 갈리는가, 사람보다 어두운가, 셰이딩이 뒤집히지 않았는가.
+*/
+describe('의자 변종 팔레트 — 다섯이 실제로 갈린다', () => {
+  /** HSL 색상·채도. 「채도」를 함께 재는 이유는 아래 분리 계약의 주석에 있다. */
+  function hueSat(hex: string): { h: number; s: number } {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, l = (mx + mn) / 2
+    if (d === 0) return { h: 0, s: 0 }
+    const h = mx === r ? 60 * (((g - b) / d) % 6) : mx === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4)
+    return { h: (h + 360) % 360, s: (d / (1 - Math.abs(2 * l - 1))) * 100 }
+  }
+  const hueGap = (a: number, b: number) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d }
+
+  it('다섯 변종이 전부 네 색(body·accent·seat·leg)을 갖는다', () => {
+    expect(Object.keys(CHAIR_PALETTE).sort()).toEqual([...CHAIR_VARIANTS].sort())
+    for (const v of CHAIR_VARIANTS) {
+      const p = CHAIR_PALETTE[v]
+      for (const slot of ['body', 'accent', 'seat', 'leg'] as const) {
+        expect(p[slot], `${v}.${slot}`).toMatch(/^#[0-9a-f]{6}$/)
+      }
+    }
+  })
+
+  /** 셰이딩 램프의 **방향**이 계약이다. accent가 body보다 어두우면 등받이·쿠션이 사라지고
+   *  좌면이 몸체보다 밝으면 앞단이 튀어나온 게 아니라 파인 것처럼 읽힌다. */
+  it('변종 안에서 accent > body > seat > leg 순으로 어두워진다', () => {
+    for (const v of CHAIR_VARIANTS) {
+      const p = CHAIR_PALETTE[v]
+      const [a, b, s, g] = [p.accent, p.body, p.seat, p.leg].map(relativeLuminance)
+      expect(a, `${v} accent ${a.toFixed(1)} vs body ${b.toFixed(1)}`).toBeGreaterThan(b)
+      expect(b, `${v} body ${b.toFixed(1)} vs seat ${s.toFixed(1)}`).toBeGreaterThan(s)
+      expect(s, `${v} seat ${s.toFixed(1)} vs leg ${g.toFixed(1)}`).toBeGreaterThan(g)
+    }
+  })
+
+  /** 「집기 톤은 사람보다 낮게 — 아바타가 시선을 먼저 받는다」(PixelSprite 집기 절 머리말).
+   *  대조 대상은 **사람 중 가장 어두운 것**(간호사 가운 `#4fa39e`)이다. 지배 면인 `body`로 잰다 —
+   *  세부까지 묶으면 이미 있는 집기가 규칙을 어긴 것이 된다(침대 베개 `#f7f5f1`는 245다). */
+  it('몸체가 사람보다 어둡다 — 간호사 가운과 20 이상 벌어진다', () => {
+    const NURSE = relativeLuminance('#4fa39e')
+    for (const v of CHAIR_VARIANTS) {
+      const L = relativeLuminance(CHAIR_PALETTE[v].body)
+      expect(NURSE - L, `${v}(${CHAIR_PALETTE[v].body}) = ${L.toFixed(1)}`).toBeGreaterThanOrEqual(20)
+    }
+  })
+
+  /**
+   * 쌍별 분리 — **휘도로 갈리거나, 둘 다 유채색이면서 색상으로 갈리거나**.
+   *
+   * ⚠️ **채도 하한이 이 단언의 핵심이다.** 그것 없이 색상만 보면 무채색 회색이 "색상 178°로
+   * 갈린다"고 주장하는데 채도 4%에서 색상은 뜻이 없다 — **통과하면서 아무것도 안 지키는**
+   * T-144의 형태다. 실제로 첫 벤치 후보(#6a6e72, 채도 3.8%)가 여기 걸려 지금 값으로 바뀌었다.
+   */
+  it('두 변종끼리 반드시 갈린다 — 휘도 12 이상, 또는 양쪽 채도 12% 이상에서 색상 40° 이상', () => {
+    for (let i = 0; i < CHAIR_VARIANTS.length; i++) {
+      for (let j = i + 1; j < CHAIR_VARIANTS.length; j++) {
+        const [va, vb] = [CHAIR_VARIANTS[i], CHAIR_VARIANTS[j]]
+        const [ha, hb] = [CHAIR_PALETTE[va].body, CHAIR_PALETTE[vb].body]
+        const dL = Math.abs(relativeLuminance(ha) - relativeLuminance(hb))
+        const [ca, cb] = [hueSat(ha), hueSat(hb)]
+        const byHue = ca.s >= 12 && cb.s >= 12 && hueGap(ca.h, cb.h) >= 40
+        expect(
+          dL >= 12 || byHue,
+          `${va}(${ha}) ↔ ${vb}(${hb}): ΔL=${dL.toFixed(1)} Δ색상=${hueGap(ca.h, cb.h).toFixed(0)}° 채도 ${ca.s.toFixed(0)}/${cb.s.toFixed(0)}%`,
+        ).toBe(true)
+      }
+    }
+  })
+
+  /** 앉은 폰 위에 덧까는 층도 변종끼리 갈려야 한다 — 좌면만 보이는 각도가 실제로 생긴다. */
+  it('좌면 색도 서로 같지 않다', () => {
+    expect(new Set(CHAIR_VARIANTS.map(v => CHAIR_PALETTE[v].seat)).size).toBe(CHAIR_VARIANTS.length)
+  })
+
+  /** 기본 변종이 **옛 의자 그대로**임을 못박는다 — 이 네 값이 밀리면 기존 화면이 조용히 바뀐다. */
+  it('플라스틱 네 색이 전환 전 의자와 같다', () => {
+    expect(CHAIR_PALETTE.PLASTIC).toEqual({
+      body: '#3d4550', accent: '#5b6470', seat: '#343c46', leg: '#2f353e',
+    })
   })
 })
