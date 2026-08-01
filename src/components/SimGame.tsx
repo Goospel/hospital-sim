@@ -11,6 +11,9 @@ import RegionPicker from "@/components/RegionPicker";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
 import {
   BUILD_TOOLS,
+  CHAIR_VARIANTS,
+  CHAIR_VARIANT_LABEL,
+  DEFAULT_CHAIR_VARIANT,
   ERASE_LABEL,
   ROOM_LABEL,
   TOOL_LABEL,
@@ -39,7 +42,7 @@ import {
 } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
-import { BACKDROP_COUNT, createWorld, type RoomType, type SimWorld } from "@/sim/world";
+import { BACKDROP_COUNT, createWorld, type ChairVariant, type RoomType, type SimWorld } from "@/sim/world";
 import { computeRegions } from "@/sim/regions";
 import { buildWalls, demolish, eraseZone, paintZone, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
@@ -135,6 +138,11 @@ export default function SimGame() {
   const [section, setSection] = useState<PaletteSection | null>(null);
   /** 손에 든 건설 도구 — 벽·문·가구 4종·용도·철거. 없으면 맵은 구경거리다(클릭이 조용히 지나간다). */
   const [tool, setTool] = useState<BuildTool | null>(null);
+  /** 손에 든 의자 변종 — 겉모습만 가른다(기능·가격은 같다).
+   *  ⚠️ **도구를 바꿔도 안 비운다 — `roomType`·`examDept`와 다른 점이다.** 그 둘을 비우는 이유는
+   *  *"안 고른 값으로 클릭이 열린다"*인데, 변종은 기본값이 늘 무장돼 있어 그 위험이 애초에 없다.
+   *  반대로 매번 리셋하면 대기실 한 줄을 같은 의자로 채우는 정상 조작이 방해받는다. */
+  const [chairVariant, setChairVariant] = useState<ChairVariant>(DEFAULT_CHAIR_VARIANT);
   /** 용도 도구가 지정할 방 종류. 도구를 바꾸면 함께 비운다 — 남겨 두면 다음에 용도를 고르는
    *  순간 고르지도 않은 방으로 클릭이 열린다(옛 examDept와 같은 함정).
    *  `"ERASE"`(「지정 해제」)는 **화면에만 있는 값**이다 — 코어의 `paintZone`은 이 값을 모르고,
@@ -394,7 +402,7 @@ export default function SimGame() {
       // roomType은 `ready`가 보장한다 — 진료실이면 과까지(코어는 과 없는 EXAM에 던진다).
       return paintZone(world, tiles, roomType!, examDept ?? undefined);
     }
-    return placeFurniture(world, t, tiles);
+    return placeFurniture(world, t, tiles, chairVariant);
   };
 
   /** 드래그가 낳는 타일 — 벽만 테두리다(simHud.rectModeOf). */
@@ -405,7 +413,7 @@ export default function SimGame() {
     const res = runTool(tool, dragTiles(drag, tool));
     return { tiles: res.tiles, ok: res.ok, label: previewLabel(tool, res, roomType) };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runTool은 아래 값들의 파생이다
-  }, [drag, tool, ready, roomType, examDept, world]);
+  }, [drag, tool, ready, roomType, examDept, chairVariant, world]);
 
   /** 확정 — 성공하면 세계를 갈아 끼우고, 말할 것이 있으면(거부·부분 설치) 토스트로 말한다. */
   const commit = (t: BuildTool, tiles: Array<{ x: number; y: number }>) => {
@@ -959,6 +967,34 @@ export default function SimGame() {
             <p className="font-mono text-[11px] leading-snug tabular-nums text-on-desk-muted">
               {tool ? toolCostText(tool) : "도구를 고르면 비용이 표시됩니다"}
             </p>
+          </div>
+        )}
+
+        {/* 의자 종류 — [의자]를 고르면 열린다. **도구를 늘리는 대신 여기 붙는다**(설계 §4):
+            변종마다 도구를 만들면 `BuildTool`↔`FurnitureKind` 동일성이 깨지고 팔레트가 8→12로 는다.
+            가로로 감싸는 것은 다섯이 세로로 서면 패널이 그만큼 길어지기 때문이다(용도 6종과 다른 점).
+            선택 표시는 팔레트와 **같은 `bg-frame`**이다 — 청록(LANDING.accent)은 확정 버튼 전용이라
+            여기 쓰면 화면에서 「선택」의 색이 둘로 갈린다. */}
+        {tool === "CHAIR" && (
+          <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
+            <span className="text-xs text-on-desk-muted">종류</span>
+            <div className="flex flex-wrap gap-1.5">
+              {CHAIR_VARIANTS.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={chairVariant === v}
+                  onClick={() => setChairVariant(v)}
+                  className={`border px-2.5 py-1 text-xs transition-colors ${
+                    chairVariant === v
+                      ? "border-on-desk-muted bg-frame text-on-desk"
+                      : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
+                  }`}
+                >
+                  {CHAIR_VARIANT_LABEL[v]}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
