@@ -527,9 +527,9 @@ describe('placeRoom(테스트 헬퍼) — 옛 자동 가구 격자 재현', () =
 
 /*
   ── 의자 변종 ──────────────────────────────────────────────────────────────
-  `variant`는 **선택 필드**다. 그 선택성이 계약인 이유가 이 describe의 절반이다:
-  코어가 기본값을 채우면 가구 배열을 통째로 비교하는 회귀(위 146·424행)가 깨지고,
-  읽는 쪽이 「없음」과 「기본값」 둘을 구별해야 한다. 기본값은 **읽는 쪽에서** 접는다.
+  `variant`가 **선택 필드**인 이유는 `Furniture.variant` 주석이 단일 출처다 — 여기 베끼면
+  두 사본이 갈린다(실제로 갈렸다). 여기 적을 것은 하나뿐이다: 아래 「키 자체가 없다」가
+  `variant: undefined` 경로의 **유일한 가드**다. 깊은 비교 회귀는 undefined 키를 무시한다.
 */
 describe('의자 변종 — 겉모습만 싣고 규칙은 안 건드린다', () => {
   const ALL: ChairVariant[] = ['STOOL', 'PLASTIC', 'BENCH', 'SOFA', 'RECLINER']
@@ -567,10 +567,11 @@ describe('의자 변종 — 겉모습만 싣고 규칙은 안 건드린다', () 
   /* 아래 셋이 **「외형만 다르다」(②-a)의 실체**다 — 규칙 세 축이 변종에 무감각함을 실제로 잰다.
      ②-b에서 안락함이 붙으면 이 셋 중 무엇이 갈리는지가 그 설계의 범위가 된다. */
   it('가격이 변종과 무관하다 — 외형이 값을 가르면 선택이 아니라 손해가 된다(스펙 §5)', () => {
-    const base = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]))
     for (const v of ALL) {
       const r = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]), v)
-      expect(r.deltaManwon, v).toBe(base.deltaManwon)
+      // 기준선을 **절대값에 묶는다** — 다른 호출과 비교하면 「둘 다 맞음」과 「둘 다 똑같이
+      // 틀림」이 구별되지 않는다(placeFurniture가 통째로 죽어도 0 === 0으로 초록이었다 · T-144).
+      expect(r.deltaManwon, v).toBe(-BUILD_COST.CHAIR)
     }
   })
 

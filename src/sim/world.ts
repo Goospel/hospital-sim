@@ -228,9 +228,14 @@ export interface Furniture {
   kind: FurnitureKind
   x: number
   y: number
-  /** 의자에만 실린다. **미지정이면 키를 만들지 않는 것이 계약이다** — `undefined`를 채워 넣으면
-   *  가구 배열을 통째로 비교하는 회귀(build.test)가 깨지고, 읽는 쪽이 「없음」과 「기본값」
-   *  둘을 구별해야 한다. 기본값은 그리는 쪽이 접는다(PixelSprite.ChairSprite). */
+  /** 의자에만 실린다. **미지정이면 키를 만들지 않는 것이 계약이다** — 이유는 둘이다:
+   *  ① 진짜 기본값을 채우면 가구 배열을 통째로 비교하는 회귀가 깨진다(EXAM 자동 가구).
+   *  ② 읽는 쪽이 「없음」과 「기본값」 둘을 구별해야 한다.
+   *  ⚠️ 반면 `undefined`를 **값으로** 싣는 것은 그 회귀가 **못 잡는다** — vitest `toEqual`이
+   *  undefined 키를 무시하고 이 저장소엔 `toStrictEqual`이 0건이다(돌연변이 실측). 그래서
+   *  build.test의 `Object.keys` 단언이 그 경로의 **유일한 가드**다 — 「깊은 비교가 이미
+   *  잡으니 중복」이라 판단해 지우면 안 된다(T-145).
+   *  기본값은 그리는 쪽이 접는다(PixelSprite.ChairSprite). */
   variant?: ChairVariant
 }
 

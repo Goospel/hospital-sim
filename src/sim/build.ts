@@ -118,14 +118,13 @@ export function placeFurniture(
   tiles: readonly Pt[],
   variant?: ChairVariant,
 ): PlaceResult {
+  // 의자가 아니면 버린다 — 「소파 책상」이 데이터에 생길 자리를 아예 없앤다.
+  // 드래그 전체가 한 번만 판정한다(루프 불변) — 그래서 "한 드래그 = 한 변종"이 구조로 드러난다.
+  const skin = kind === 'CHAIR' && variant !== undefined ? { variant } : undefined
   return install(w, tiles, kind, (world, targets) => ({
     ...world,
     // 요청 순서를 그대로 유지한다 — 가구 배열 순서가 스팟 선택의 타이브레이크다(spots.ts).
-    furniture: [...world.furniture, ...targets.map(i => {
-      const at = { kind, x: i % GRID_W, y: (i - (i % GRID_W)) / GRID_W }
-      // 의자가 아니면 버린다 — 「소파 책상」이 데이터에 생길 자리를 아예 없앤다.
-      return kind === 'CHAIR' && variant !== undefined ? { ...at, variant } : at
-    })],
+    furniture: [...world.furniture, ...targets.map(i => ({ kind, x: i % GRID_W, y: (i - (i % GRID_W)) / GRID_W, ...skin }))],
   }))
 }
 
