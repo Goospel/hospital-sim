@@ -333,18 +333,18 @@ describe('의자 변종 — 목록·라벨·기본값', () => {
     for (const v of CHAIR_VARIANTS) expect(BUILD_TOOLS as readonly string[]).not.toContain(v)
   })
 
-  it('의자 안내가 「종류를 고른다」를 말한다 — 변종 줄의 존재를 화면이 어디선가는 말해야 한다', () => {
-    const w = createWorld(1)
-    const line = statusLineText({
-      phase: w.phase, paused: false, pauseCause: null, toast: null, warning: null,
+  /** 변종 줄의 존재를 말하는 **화면상의 유일한 문장**이다 — 팔레트 버튼 하이라이트 말고는
+   *  어디서도 안내하지 않는다(`toolCostText`·`previewLabel`·`buildResultText`가 전부
+   *  `TOOL_LABEL[tool]`='의자'만 쓴다). */
+  it('의자 안내가 「종류」를 말한다 — 안 그러면 변종 줄이 있다는 걸 화면이 아무 데서도 안 알린다', () => {
+    const text = statusLineText({
+      toast: null, pause: null, idle: false, warning: null,
       tool: 'CHAIR', roomType: null, dept: null,
     })
-    expect(line).toContain('종류')
+    expect(text).toContain('종류')
   })
 })
 ```
-
-⚠️ `statusLineText`의 인자 모양은 `simHud.ts:1370-1383`의 타입을 그대로 따른다. 위 리터럴이 그 타입과 안 맞으면 **타입을 믿고 리터럴을 고친다**(같은 파일 안에 이미 `statusLineText`를 부르는 테스트가 있으니 그 호출부를 베낀다).
 
 - [ ] **Step 2: 실패를 눈으로 확인한다**
 
