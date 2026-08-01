@@ -158,10 +158,11 @@ describe('의자 변종 — 겉모습만 싣고 규칙은 안 건드린다', () 
   /* 아래 셋이 **「외형만 다르다」(②-a)의 실체**다 — 규칙 세 축이 변종에 무감각함을 실제로 잰다.
      ②-b에서 안락함이 붙으면 이 셋 중 무엇이 갈리는지가 그 설계의 범위가 된다. */
   it('가격이 변종과 무관하다 — 외형이 값을 가르면 선택이 아니라 손해가 된다(스펙 §5)', () => {
-    const base = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]))
     for (const v of ALL) {
       const r = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]), v)
-      expect(r.deltaManwon, v).toBe(base.deltaManwon)
+      // 기준선을 **절대값에 묶는다** — 다른 호출과 비교하면 「둘 다 맞음」과 「둘 다 똑같이
+      // 틀림」이 구별되지 않는다(placeFurniture가 통째로 죽어도 0 === 0으로 초록이었다 · T-144).
+      expect(r.deltaManwon, v).toBe(-BUILD_COST.CHAIR)
     }
   })
 
@@ -220,12 +221,19 @@ export interface Furniture {
   kind: FurnitureKind
   x: number
   y: number
-  /** 의자에만 실린다. **미지정이면 키를 만들지 않는 것이 계약이다** — `undefined`를 채워 넣으면
-   *  가구 배열을 통째로 비교하는 회귀(build.test)가 깨지고, 읽는 쪽이 「없음」과 「기본값」
-   *  둘을 구별해야 한다. 기본값은 그리는 쪽이 접는다(PixelSprite.ChairSprite). */
+  /** 의자에만 실린다. **미지정이면 키를 만들지 않는 것이 계약이다** — 이유는 둘이다:
+   *  ① 진짜 기본값을 채우면 가구 배열을 통째로 비교하는 회귀가 깨진다(EXAM 자동 가구).
+   *  ② 읽는 쪽이 「없음」과 「기본값」 둘을 구별해야 한다.
+   *  ⚠️ 반면 `undefined`를 **값으로** 싣는 것은 그 회귀가 **못 잡는다** — vitest `toEqual`이
+   *  undefined 키를 무시하고 이 저장소엔 `toStrictEqual`이 0건이다(돌연변이 실측). 그래서
+   *  build.test의 `Object.keys` 단언이 그 경로의 **유일한 가드**다 — 「깊은 비교가 이미
+   *  잡으니 중복」이라 판단해 지우면 안 된다(T-145).
+   *  기본값은 그리는 쪽이 접는다(PixelSprite.ChairSprite). */
   variant?: ChairVariant
 }
 ```
+
+> ⚠️ **이 계획서가 처음에 틀렸던 자리다**(2026-08-01 품질 리뷰가 잡음). 옛 판은 *"`undefined`를 채워 넣으면 깊은 비교 회귀가 깨진다"*라고 적었는데 **반대**다 — `toEqual`은 undefined 키를 무시해 안 깨지고, 잡는 것은 `Object.keys` 단언 하나뿐이다. §0 표에는 「기본값을 채우면」이라고 맞게 적혀 있었는데 인라인 주석으로 옮기며 뒤집혔다. 틀린 이유는 없는 이유보다 나쁘다 — 그 주석을 믿으면 유일 가드를 「중복」이라 지우게 된다(T-145의 사고 그대로).
 
 - [ ] **Step 4: `build.ts`가 그 값을 흘려보내게 한다**
 
@@ -982,7 +990,21 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
 ---
 
-## 3. 범위 밖 — 이번에 하지 않는 것
+## 3. 실행 기록 — 이 계획서가 틀렸던 곳
+
+계획을 고쳐 쓰면서 **무엇이 왜 틀렸는지는 지우지 않는다**(자유 영역 플랜의 관례). 계획서의 권위는 맞아서가 아니라 틀린 자리가 드러나 있어서 선다.
+
+| 어디 | 무엇이 틀렸나 | 어떻게 드러났나 |
+|---|---|---|
+| Task 1 · `Furniture.variant` 주석 | *"`undefined`를 채워 넣으면 깊은 비교 회귀가 깨진다"* → **반대**다. `toEqual`이 undefined 키를 무시해 안 깨지고, `Object.keys` 단언이 유일한 가드다. §0 표에는 「**기본값**을 채우면」이라고 맞게 적혀 있었는데 인라인 주석으로 옮기며 뒤집혔다 | 품질 리뷰의 돌연변이 M2(전 가구에 `variant: undefined`) — 깊은 비교 회귀 두 곳이 **전부 초록**이고 신규 단언만 깨졌다 |
+| Task 1 · 「가격이 변종과 무관하다」 | 기준선을 `base.deltaManwon`(다른 호출)에 두어 **공허 통과**했다. `placeFurniture`가 통째로 죽어 42건이 깨지는 돌연변이에서 이 테스트만 `0 === 0`으로 살아남았다 | 같은 리뷰의 돌연변이 M10. 처방(`toBe(-BUILD_COST.CHAIR)`)까지 실측으로 확인 — 그 돌연변이에서 42 → 43건 |
+| Task 2 · `statusLineText` 호출 | 인자 모양을 `phase·paused·pauseCause`로 잘못 적었다. 실제는 `toast·pause·idle·warning·tool·roomType·dept` | 착수 전 코디네이터가 `simHud.ts:1416`을 대조하다 발견 |
+
+**둘 다 같은 병이다** — 통과하면서 아무것도 안 지키거나([T-144](../../../claude-docs/troubleshooting/T-144.md)), 틀린 이유를 남겨 다음 사람이 유일 가드를 지우게 만드는 것([T-145](../../../claude-docs/troubleshooting/T-145.md)). 이 저장소가 두 번 물린 자리에 **세 번째로** 물렸고, 이번엔 돌연변이 리뷰가 커밋 다음 단계에서 잡았다.
+
+---
+
+## 4. 범위 밖 — 이번에 하지 않는 것
 
 | 무엇 | 왜 |
 |---|---|
