@@ -10,7 +10,7 @@ import {
   startingRosterMet, STARTING_ROSTER_MIN, statusLineText, TOOL_LABEL,
   regionRuleText, deptMixText,
   toolCostText, traitBadges, tileFromPoint, turnAwayBatchText, turnAwayBreakdown, turnAwayBreakdownText, turnAwayText,
-  clampCamera, pannedCamera, safeArea, settledCamera, zoomedCamera, zoomFloor,
+  clampCamera, openingZoom, OPENING_PAD_PX, pannedCamera, safeArea, settledCamera, zoomedCamera, zoomFloor,
   BACKDROP_MARGIN, ZOOM_MAX, ZOOM_MIN, type Camera, type CameraView, type Insets, type Rect, type Size,
 } from './simHud'
 import {
@@ -1943,6 +1943,95 @@ describe('부지 카메라 — clampCamera · zoomedCamera · pannedCamera', () 
       expect(c.x).toBeCloseTo(SAFE_L.x + SAFE_L.w - big.w)
       expect(c.y).toBeCloseTo(SAFE_L.y + SAFE_L.h - big.h)
     }
+  })
+
+  /*
+    ── 시작 프레이밍 ────────────────────────────────────────────────────────
+    `zoom 1`은 정의상 "부지 전체가 안전 영역에 맞는 배율"이라 부지가 화면을 꽉 채운다 —
+    그러면 지역 배경 12종이 화면의 4%도 안 남는다(실측 2026-08-01). 게임은 그보다 한 겹
+    빼서 열린다. 그 배율을 **매직 넘버가 아니라 여백에서 파생**시키는 것이 아래 계약의 요지다.
+  */
+  describe('openingZoom — 게임이 열리는 배율', () => {
+    const padded = { w: BASE.w + 2 * OPENING_PAD_PX, h: BASE.h + 2 * OPENING_PAD_PX }
+    /** 창 형상이 극단으로 갈려도 값은 이 둘 사이다 — `fit`이 짧은 축에서 결정되므로 식이
+     *  그 축에서 `BASE / (BASE + 2·PAD)`로 접힌다.
+     *  ⚠️ **리터럴(0.8889/0.9231)로 적지 않는다** — 여백을 3타일로 바꾼 날 이 테스트가
+     *  조용히 낡는다. 그건 이 기능이 배격한 매직 넘버가 검사기 안에서 되살아나는 것이다. */
+    const LO = BASE.h / padded.h
+    const HI = BASE.w / padded.w
+
+    /** 창 하나로 화면 형상 한 벌 — `fit`도 안전 영역에서 파생시킨다(`useCamera`와 같은 식). */
+    const frameOf = (w: number, h: number, insetTop: number, insetLeft: number): CameraView => {
+      const safe = { x: insetLeft, y: insetTop, w: w - insetLeft, h: h - insetTop }
+      return viewOf(safe, Math.min(safe.w / BASE.w, safe.h / BASE.h), { w, h })
+    }
+    const SHAPES: Array<[number, number]> = [
+      [1280, 720], [1440, 900], [1920, 1080], [2560, 1440], [1366, 768],
+      [3840, 800], [800, 1400], [600, 900], [3000, 600], [1024, 1366], [500, 400], [1200, 2400],
+    ]
+    const INSETS: Array<[number, number]> = [[0, 0], [42, 211], [64, 176], [120, 320]]
+    /** 창 × 인셋 전수 — 한 조합만 재면 "그 창에서만 맞는 값"이 통과한다. */
+    const each = (run: (v: CameraView, label: string) => void) => {
+      for (const [w, h] of SHAPES) for (const [t, l] of INSETS) run(frameOf(w, h, t, l), `${w}x${h} 인셋 ${t}/${l}`)
+    }
+
+    it('어떤 창에서도 1을 넘지 않는다 — 넘으면 현행보다 **당겨서** 열린다', () => {
+      each((v, label) => expect(openingZoom(v), label).toBeLessThanOrEqual(1))
+    })
+
+    it('여백에서 파생한 두 극값 사이에 있다 — 창 형상이 값을 흔들지 못한다', () => {
+      each((v, label) => {
+        expect(openingZoom(v), label).toBeGreaterThanOrEqual(LO - 1e-9)
+        expect(openingZoom(v), label).toBeLessThanOrEqual(HI + 1e-9)
+      })
+    })
+
+    it('짧은 축의 배경 여백이 정확히 지정한 만큼이다 — 이게 이 함수의 정의 그 자체다', () => {
+      each((v, label) => {
+        const s = v.fit * openingZoom(v)
+        const padW = (v.safe.w - v.base.w * s) / 2
+        const padH = (v.safe.h - v.base.h * s) / 2
+        expect(Math.min(padW, padH), label).toBeCloseTo(OPENING_PAD_PX * s, 6)
+      })
+    })
+
+    it('부지 전체가 여전히 안전 영역에 들어온다 — ⌂의 이름(「부지 전체 보기」)과 어긋나면 안 된다', () => {
+      each((v, label) => {
+        const s = v.fit * openingZoom(v)
+        expect(v.base.w * s, label).toBeLessThanOrEqual(v.safe.w + 1e-9)
+        expect(v.base.h * s, label).toBeLessThanOrEqual(v.safe.h + 1e-9)
+      })
+    })
+
+    /** 호출부와 같은 조합(`openingZoom` → `settledCamera`)을 한 번 태워 보는 **스모크**다.
+     *
+     *  ⚠️ **이 단언이 실제로 무는 것은 비유한값뿐이다** — 돌연변이 실측(2026-08-01)에서
+     *  `999`·`-1`·`0`은 **전부 생존**하고 `NaN`만 죽였다. 이유는 구조적이다: `settledCamera`가
+     *  `zoomFloor`로 받치고 `clampCamera`가 커버리지를 강제하므로 **유한한 값이면 무엇이 와도
+     *  통과한다**. 그러니 "시작 프레임의 공백을 이 줄이 잡는다"고 읽지 마라 — 공백을 막는 것은
+     *  `settledCamera` 쪽이고 그건 그쪽 테스트가 잠근다. 여기서 남는 몫은 `fit`이 0으로 붕괴한
+     *  창에서 나오는 `NaN`/`Infinity`이고, **그건 위 네 단언 중 아무도 안 잡는다**(그래서 지우지
+     *  않고 남긴다 — T-145의 "승계를 돌연변이로 확인한 뒤 지운다" 절차를 밟은 결과다).
+     *
+     *  ⚠️ **판별력은 옆줄의 `measured` 카운트가 진다**: `zoomFloor`가 늘 `ZOOM_MAX`를 반환하도록
+     *  변조하니 이 테스트가 죽었다(9 failed). 아래 천장 예외가 그물을 통째로 삼키는 것 —
+     *  "전부 스킵"이 초록으로 보이는 것 — 을 그 줄이 막는다.
+     *
+     *  ⚠️ **ZOOM_MAX 천장에 닿은 창은 제외한다** — 600×900에 좌측 인셋 320 같은 극단 형상은
+     *  배경이 뷰포트를 덮으려면 zoom 3.21이 필요한데 ZOOM_MAX가 3이라 **어떤 배율로도 못
+     *  덮는다**(실측 2026-08-01: 배경 840px < 뷰포트 900px). 그건 시작 배율이 만든 공백이
+     *  아니라 위 「하한은 ZOOM_MAX를 넘지 않는다」가 이미 잠근 **이 창의 천장**이고, 올리는
+     *  길은 `BACKDROP_MARGIN`을 키우는 것뿐이다. */
+    it('합성이 유한하다 — 호출부 조합이 비유한값을 안 낳고, 천장 예외가 전수를 삼키지 않는다', () => {
+      let measured = 0
+      each((v, label) => {
+        if (zoomFloor(v) >= ZOOM_MAX) return
+        measured++
+        const opened = settledCamera({ zoom: openingZoom(v), x: 0, y: 0 }, v)
+        expect(covers(opened, v), label).toBe(true)
+      })
+      expect(measured).toBeGreaterThan(40)
+    })
   })
 })
 

@@ -785,6 +785,41 @@ export function zoomFloor(v: CameraView): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, need / v.fit))
 }
 
+/**
+ * 시작 프레이밍의 **여백**(px) — 부지 둘레로 배경이 이만큼 보이는 배율에서 게임이 열린다.
+ *
+ * `2 * 16` 꼴로 적는 것은 **2타일**임을 숨기지 않으려는 것이다. 타일 크기를 `TileMap.TILE`에서
+ * 임포트하지 않는 이유는 이 파일의 오랜 관례다 — 그러면 React가 딸려 와 vitest가 무거워진다
+ * (`simHud.test.ts`의 `BASE`도 같은 이유로 16을 직접 적는다).
+ *
+ * ⚠️ **`BACKDROP_MARGIN`(12×8타일)과 다른 값인 데 이유가 있다**: 그쪽은 배경 그림이 뻗는
+ * 범위이자 **축소의 바닥**이고, 이쪽은 **처음 보여줄 만큼**이다. 배경을 다 보여주겠다고 12타일을
+ * 빼면 부지가 화면의 1/4이 되어 게임이 안 읽힌다.
+ */
+export const OPENING_PAD_PX = 2 * 16
+
+/**
+ * 게임이 열리는 배율 — **부지 둘레로 배경이 `OPENING_PAD_PX`만큼 보이는 zoom**.
+ *
+ * `zoom 1`은 정의상 *"부지 전체가 안전 영역에 맞는 배율"*이라 부지가 화면을 꽉 채운다. 그러면
+ * 지역 배경 12종이 화면의 4%도 안 남는다(1280×720 실측 3.8% · 2026-08-01). 지역 선택은 이
+ * 게임의 **첫 결정**인데(랜딩에서 17곳 → 4타입) 그 보상이 기본 프레임에서 잘려 나가던 자리다.
+ *
+ * **매직 넘버를 안 쓰는 이유**: `fit`이 뷰포트에서 나오므로 "0.9로 시작"은 창마다 다른 그림을
+ * 낸다. 보이고 싶은 것(여백 N px)을 직접 적으면 창이 어떻든 같은 그림이 나온다.
+ *
+ * ⚠️ **이 값은 1을 넘을 수 없다 — 산술로 보장된다.** `fit = min(safe/base)`이라 `fit`을 정하는
+ * 축에서 식이 `base / (base + 2·PAD)`로 접힌다(가로면 768/832 = 0.923, 세로면 512/576 = 0.889).
+ * 그래서 "현행보다 당겨서 열리는" 경우가 없고 상한을 따로 걸 필요도 없다.
+ *
+ * **하한은 여기서 안 받친다** — 호출부(`settledCamera`·`zoomedCamera`)가 이미 `zoomFloor`로
+ * 받친다. 여기서 또 받치면 같은 판정이 두 곳에 생기고, 한쪽만 고쳐지는 날 갈린다.
+ */
+export function openingZoom(v: CameraView): number {
+  const pad = 2 * OPENING_PAD_PX
+  return Math.min(v.safe.w / ((v.base.w + pad) * v.fit), v.safe.h / ((v.base.h + pad) * v.fit))
+}
+
 /** 창이 갈렸을 때(리사이즈·첫 측정) 카메라를 다시 앉힌다 — **줌을 하한으로 받치고** 다시 클램프.
  *  줌을 안 받치면 창을 키운 순간 옛 배율이 하한 아래로 떨어져 배경 밖 공백이 그대로 드러난다. */
 export function settledCamera(cam: Camera, v: CameraView): Camera {
