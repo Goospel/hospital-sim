@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createWorld, isWalkable, tileIndex, GRID_W, type FurnitureKind, type RoomType, type SimWorld } from './world'
+import { createWorld, isWalkable, tileIndex, GRID_W, blocksWalk, type ChairVariant, type FurnitureKind, type RoomType, type SimWorld } from './world'
 import { BUILD_COST, refundOf, buildWalls, placeDoor, placeFurniture, paintZone, eraseZone, demolish } from './build'
 import { computeRegions } from './regions'
 import { placeRoom, doorTile, rectPts, FURNITURE_OF } from './testHelpers'
@@ -522,5 +522,75 @@ describe('placeRoom(테스트 헬퍼) — 옛 자동 가구 격자 재현', () =
     const res = placeRoom(createWorld(1), { type: 'WARD', x: 4, y: 4, w: 4, h: 4 })
     if (!res.ok) throw new Error('전제 실패')
     expect(res.world.walls.has(4 * GRID_W + 4)).toBe(true)
+  })
+})
+
+/*
+  ── 의자 변종 ──────────────────────────────────────────────────────────────
+  `variant`는 **선택 필드**다. 그 선택성이 계약인 이유가 이 describe의 절반이다:
+  코어가 기본값을 채우면 가구 배열을 통째로 비교하는 회귀(위 146·424행)가 깨지고,
+  읽는 쪽이 「없음」과 「기본값」 둘을 구별해야 한다. 기본값은 **읽는 쪽에서** 접는다.
+*/
+describe('의자 변종 — 겉모습만 싣고 규칙은 안 건드린다', () => {
+  const ALL: ChairVariant[] = ['STOOL', 'PLASTIC', 'BENCH', 'SOFA', 'RECLINER']
+
+  it.each(ALL)('%s를 넘기면 그 값이 가구에 실린다', (v) => {
+    const r = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]), v)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.world.furniture).toEqual([{ kind: 'CHAIR', x: 5, y: 5, variant: v }])
+  })
+
+  it('안 넘기면 **키 자체가 없다** — undefined를 채우면 깊은 비교 회귀가 깨진다', () => {
+    const r = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(Object.keys(r.world.furniture[0])).toEqual(['kind', 'x', 'y'])
+  })
+
+  it('의자가 아닌 가구는 변종을 안 받는다 — 「소파 책상」이 데이터에 생길 자리를 없앤다', () => {
+    for (const kind of ['DESK', 'BED', 'COUNTER'] as const) {
+      const r = placeFurniture(createWorld(1), kind, pts([5, 5]), 'SOFA')
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(Object.keys(r.world.furniture[0]), kind).toEqual(['kind', 'x', 'y'])
+    }
+  })
+
+  it('드래그 여러 칸이면 전부 같은 변종이 실린다', () => {
+    const r = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5], [6, 5], [7, 5]), 'BENCH')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.world.furniture.map(f => f.variant)).toEqual(['BENCH', 'BENCH', 'BENCH'])
+  })
+
+  /* 아래 셋이 **「외형만 다르다」(②-a)의 실체**다 — 규칙 세 축이 변종에 무감각함을 실제로 잰다.
+     ②-b에서 안락함이 붙으면 이 셋 중 무엇이 갈리는지가 그 설계의 범위가 된다. */
+  it('가격이 변종과 무관하다 — 외형이 값을 가르면 선택이 아니라 손해가 된다(스펙 §5)', () => {
+    const base = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]))
+    for (const v of ALL) {
+      const r = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]), v)
+      expect(r.deltaManwon, v).toBe(base.deltaManwon)
+    }
+  })
+
+  it('철거 환불도 변종과 무관하다 — 환불은 `kind`에서 파생한다', () => {
+    for (const v of ALL) {
+      const built = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]), v)
+      expect(built.ok).toBe(true)
+      if (!built.ok) return
+      const gone = demolish(built.world, pts([5, 5]))
+      expect(gone.deltaManwon, v).toBe(refundOf('CHAIR'))
+    }
+  })
+
+  it('통행 판정이 변종에 무감각하다 — 벤치가 길을 막으면 좌석·경로 계약이 통째로 흔들린다', () => {
+    for (const v of ALL) {
+      expect(blocksWalk({ kind: 'CHAIR', x: 0, y: 0, variant: v }), v).toBe(false)
+      const r = placeFurniture(createWorld(1), 'CHAIR', pts([5, 5]), v)
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(isWalkable(r.world, 5, 5), v).toBe(true)
+    }
   })
 })
