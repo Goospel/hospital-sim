@@ -573,12 +573,22 @@ describe('건설 도구 — 라벨·비용·조작', () => {
   종류가 늘수록 나빠지는 구조라, 위 describe의 `toHaveLength(8)`이 그 벨트로 남는다.
 */
 describe('의자 변종 — 목록·라벨·기본값', () => {
-  it('다섯 종이 전부 이름을 갖고 서로 다르다 — 이름 없는 버튼이 줄에 서지 않는다', () => {
-    expect(CHAIR_VARIANTS).toHaveLength(5)
+  /** 목록의 **완전성**을 매직 넘버가 아니라 라벨 표에서 파생시킨다 — `CHAIR_VARIANT_LABEL`은
+   *  `Record<ChairVariant, string>`이라 tsc가 다섯을 강제하는데, 목록은 부분집합이어도
+   *  `readonly ChairVariant[]`를 통과한다(타입이 안 잡는 구멍). 둘을 대조하면 유니온에
+   *  변종을 더하는 순간 ⓐ tsc가 라벨 표에서 막고 ⓑ 라벨만 넣고 목록을 빠뜨리면 여기서 막힌다.
+   *  손으로 적은 `5`는 변종이 늘어나는 날 조용히 낡는 값이라 두지 않는다. */
+  it('목록이 라벨 표를 빠짐없이 덮는다 — 라벨만 있고 줄에 안 서는 변종이 없다', () => {
+    expect([...CHAIR_VARIANTS].sort()).toEqual(Object.keys(CHAIR_VARIANT_LABEL).sort())
     for (const v of CHAIR_VARIANTS) expect(CHAIR_VARIANT_LABEL[v].length, v).toBeGreaterThan(0)
-    expect(new Set(CHAIR_VARIANTS.map(v => CHAIR_VARIANT_LABEL[v])).size).toBe(5)
+    expect(new Set(CHAIR_VARIANTS.map(v => CHAIR_VARIANT_LABEL[v])).size).toBe(CHAIR_VARIANTS.length)
   })
 
+  /* ⚠️ 아래 「중복이 없다」는 **지금 단독 판별력이 0이다** — 중복을 양방향으로(길이 5 유지·길이 6)
+     심어 봐도 위 대조가 먼저 잡는다(돌연변이 실측 M5a·M5b). `toEqual`이 *정렬 배열*을 비교하므로
+     개수까지 본다 — 집합 대조가 아니다. 그래도 남긴다: 위 단언의 **이름은 「완전성」**이라, 나중에
+     누가 그걸 `new Set` 대조로 "정리"하면 개수 감시가 부수효과째로 조용히 사라진다. 이 테스트는
+     그 자리에 이름표를 박아 두는 역할이다(승계를 코드 독해로 판단해 유일 가드를 지울 뻔한 T-145). */
   it('목록에 중복이 없다 — 같은 변종이 두 번 서면 버튼 하나가 죽은 채로 보인다', () => {
     expect(new Set(CHAIR_VARIANTS).size).toBe(CHAIR_VARIANTS.length)
   })
