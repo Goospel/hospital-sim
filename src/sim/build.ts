@@ -3,7 +3,7 @@
 // 사각형 방(placeRoom)이 여기 없는 것이 이 파일의 요지다: 방은 이제 **결과**이지 명령이 아니다.
 // 플레이어는 벽을 두르고 문을 내고 용도를 지정하고 가구를 놓으며, "방"은 그 지형에서 파생된다
 // (regions.computeRegions). 옛 사각 방 헬퍼는 테스트 픽스처로만 남아 있다(testHelpers.placeRoom).
-import { GRID_W, GRID_H, tileIndex, type FurnitureKind, type RoomType, type SimWorld, type ZonePaint } from './world'
+import { GRID_W, GRID_H, tileIndex, type ChairVariant, type FurnitureKind, type RoomType, type SimWorld, type ZonePaint } from './world'
 import type { SimDeptKey } from './dept'
 import type { Pt } from './path'
 
@@ -108,12 +108,23 @@ export function buildWalls(w: SimWorld, tiles: readonly Pt[]): PlaceResult {
   }))
 }
 
-/** 가구 — 벽과 같은 부분 설치 규칙. 마당에도 놓인다(기능은 용도 영역 안에서만 — 경고가 잡는다). */
-export function placeFurniture(w: SimWorld, kind: FurnitureKind, tiles: readonly Pt[]): PlaceResult {
+/** 가구 — 벽과 같은 부분 설치 규칙. 마당에도 놓인다(기능은 용도 영역 안에서만 — 경고가 잡는다).
+ *
+ *  `variant`는 **의자에만, 넘어왔을 때만** 실린다. 미지정에 기본값을 채우지 않는 이유는
+ *  `Furniture.variant` 주석에 있다(깊은 비교 회귀 + 「없음」과 「기본값」의 이중 표현). */
+export function placeFurniture(
+  w: SimWorld,
+  kind: FurnitureKind,
+  tiles: readonly Pt[],
+  variant?: ChairVariant,
+): PlaceResult {
+  // 의자가 아니면 버린다 — 「소파 책상」이 데이터에 생길 자리를 아예 없앤다.
+  // 드래그 전체가 한 번만 판정한다(루프 불변) — 그래서 "한 드래그 = 한 변종"이 구조로 드러난다.
+  const skin = kind === 'CHAIR' && variant !== undefined ? { variant } : undefined
   return install(w, tiles, kind, (world, targets) => ({
     ...world,
     // 요청 순서를 그대로 유지한다 — 가구 배열 순서가 스팟 선택의 타이브레이크다(spots.ts).
-    furniture: [...world.furniture, ...targets.map(i => ({ kind, x: i % GRID_W, y: (i - (i % GRID_W)) / GRID_W }))],
+    furniture: [...world.furniture, ...targets.map(i => ({ kind, x: i % GRID_W, y: (i - (i % GRID_W)) / GRID_W, ...skin }))],
   }))
 }
 

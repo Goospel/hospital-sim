@@ -1,4 +1,5 @@
 import type { DeptKey } from "@/game/types";
+import type { ChairVariant } from "@/sim/world";
 
 /**
  * 스프라이트 — inline SVG 벡터. 이미지 파일 0개, 번들 영향 0, 정적 export 안전.
@@ -302,40 +303,182 @@ export function DeskSprite() {
   );
 }
 
-/** 좌면 앞단 — 몸체 rect(x2.4 y2.6 w11.2 h10.8 rx2.2)의 **아래 띠를 정확히** 따라간다:
-   바닥 y=2.6+10.8=13.4, 좌우 x=2.4~13.6, 모서리 반지름 2.2(직선 구간이 x4.6~11.4에서 끝난다).
-   그림을 여기 **한 번만** 적는다 — ChairSprite(빈 의자)와 ChairSeatFrontSprite(앉은 폰 위에
-   덧까는 층)가 같은 좌면을 그려야 하는데, 문자열을 양쪽에 두면 한쪽만 고쳐져 빈 의자와 앉은
-   의자의 좌면 모양이 갈린다. */
-function ChairSeatFront() {
-  return (
-    <path
-      d="M2.4 10.6 h11.2 v.6 a2.2 2.2 0 0 1 -2.2 2.2 h-6.8 a2.2 2.2 0 0 1 -2.2 -2.2 Z"
-      fill="#343c46"
-      stroke={INK}
-      strokeWidth={EDGE}
-    />
-  );
+/**
+ * 의자 변종 5종의 색 — 한 변종당 네 슬롯(몸체·강조·좌면·다리).
+ *
+ * 셰이딩 램프는 **휘도 가산**으로 잡았다(강조 +30.9 · 좌면 −9.1 · 다리 −15.7). 채널을 곱하면
+ * 밝은 몸체에서 강조가 사람 톤을 넘어간다(벤치 후보가 실제로 172.2까지 올라가 간호사 가운
+ * 144.8을 넘겼다) — 폭이 아니라 **비율**이 일정한 램프의 함정이다.
+ *
+ * ⚠️ **PLASTIC 네 값은 전환 전 의자 그대로다.** 기본 변종이 옛 그림이라 이 변경으로 지금까지
+ * 놓인 의자의 픽셀이 한 점도 안 바뀐다 — 테스트가 이 네 값을 리터럴로 잠근다.
+ *
+ * ⚠️ **벤치를 무채색으로 두지 않는다.** 첫 후보 `#6a6e72`는 채도 3.8%였는데, 그러면 스툴과의
+ * 분리를 「색상 178°」가 떠맡는다 — 채도가 없는 색의 색상은 아무것도 뜻하지 않으므로 그 단언은
+ * 통과하면서 아무것도 안 지킨다(T-144). 지금 값은 채도 15%라 그 분리가 실재한다.
+ */
+export const CHAIR_PALETTE: Record<ChairVariant, { body: string; accent: string; seat: string; leg: string }> = {
+  /** 원목 스툴 — 등받이가 없어 실루엣이 원 하나다(가장 강한 구분 신호). */
+  STOOL: { body: "#7b5f3e", accent: "#a27d51", seat: "#705638", leg: "#675034" },
+  /** 플라스틱 의자 — 전환 전 대기실 의자. 기본값이자 회귀의 기준선. */
+  PLASTIC: { body: "#3d4550", accent: "#5b6470", seat: "#343c46", leg: "#2f353e" },
+  /** 강철빛 연결 벤치 — 타일 폭을 꽉 채워 옆칸과 이어진다. */
+  BENCH: { body: "#586a78", accent: "#728a9c", seat: "#50616d", leg: "#4b5a66" },
+  /** 청록 패브릭 소파 — 팔걸이와 등쿠션이 이어진 U자가 곧 "소파"다. */
+  SOFA: { body: "#3f5a54", accent: "#567b73", seat: "#38504b", leg: "#334944" },
+  /** 적갈 가죽 리클라이너 — 머리받침이 위로, 발받침이 아래로 삐져나온다. */
+  RECLINER: { body: "#5a3c3a", accent: "#845855", seat: "#4e3432", leg: "#452e2c" },
+};
+
+/**
+ * 변종별 **좌면 앞단** — 그림을 여기 한 번만 적는다.
+ *
+ * `ChairSprite`(빈 의자)와 `ChairSeatFrontSprite`(앉은 폰 위에 덧까는 층)가 같은 좌면을 그려야
+ * 하는데, 도형을 양쪽에 두면 한쪽만 고쳐져 빈 의자와 앉은 의자의 좌면이 갈린다. 변종이 다섯이
+ * 되면서 그 위험이 **다섯 배**가 됐으므로 표 하나로 접었다.
+ *
+ * 각 도형은 그 변종 몸체의 **아래 띠를 정확히** 따라간다 — 어긋나면 앉은 폰의 하체가 좌면 밖으로
+ * 삐져나와 "앉음"이 깨진다.
+ */
+function ChairSeatFront({ variant }: { variant: ChairVariant }) {
+  const c = CHAIR_PALETTE[variant];
+  switch (variant) {
+    case "STOOL":
+      /* 원 좌면의 아래 초승달. 끝점은 원 위의 점이어야 한다:
+         중심(8,7.6) 반지름 4.9, y=9.8에서 8 ± √(4.9²−2.2²) = 3.622 / 12.378.
+         sweep 0이 y-down에서 아래로 지난다(머리카락 호가 sweep 1로 위를 지나는 것의 반대). */
+      return <path d="M3.622 9.8 A4.9 4.9 0 0 0 12.378 9.8 Z" fill={c.seat} stroke={INK} strokeWidth={EDGE} />;
+    case "PLASTIC":
+      /* 몸체 rect(x2.4 y2.6 w11.2 h10.8 rx2.2)의 아래 띠 — 바닥 y=13.4, 직선 구간 x4.6~11.4. */
+      return (
+        <path
+          d="M2.4 10.6 h11.2 v.6 a2.2 2.2 0 0 1 -2.2 2.2 h-6.8 a2.2 2.2 0 0 1 -2.2 -2.2 Z"
+          fill={c.seat}
+          stroke={INK}
+          strokeWidth={EDGE}
+        />
+      );
+    case "BENCH":
+      /* 타일 폭을 꽉 채운다. **좌우에 잉크선을 긋지 않는 것이 이 변종의 요지다** —
+         위·아래 가로선만 그어야 옆칸의 벤치와 하나로 이어진다(4칸 래스터로 확인). */
+      return (
+        <>
+          <rect x="0" y="10" width="16" height="2.6" fill={c.seat} />
+          <path d="M0 10 h16 M0 12.6 h16" stroke={INK} strokeWidth={EDGE} fill="none" />
+        </>
+      );
+    case "SOFA":
+      /* 팔걸이까지 포함한 **전폭** 앞 립이다 — 팔걸이 사이만 덮으면 앉은 폰의 커프스가
+         양옆으로 삐져나온다(소파는 몸체가 넓어 폰보다 바깥까지 간다). */
+      return (
+        <path
+          d="M1.2 9.8 h13.6 v2.2 a2.4 2.4 0 0 1 -2.4 2.4 h-8.8 a2.4 2.4 0 0 1 -2.4 -2.4 Z"
+          fill={c.seat}
+          stroke={INK}
+          strokeWidth={EDGE}
+        />
+      );
+    case "RECLINER":
+      /* 몸체가 위로 올라붙어(y1.2~11.8) 좌면도 그만큼 높다. 아래의 발받침은 이 띠 **밖**이라
+         앉은 폰의 발이 발받침 위에 얹혀 보인다 — 리클라이너로선 그게 맞는 그림이다. */
+      return (
+        <path
+          d="M2.8 9 h10.4 v.8 a2 2 0 0 1 -2 2 h-6.4 a2 2 0 0 1 -2 -2 Z"
+          fill={c.seat}
+          stroke={INK}
+          strokeWidth={EDGE}
+        />
+      );
+    /* 소진 가드 — 6번째 변종이 생기면 여기서 tsc가 막는다. 없으면 `case`를 잊었을 때
+       `undefined`가 반환되고 React가 그걸 합법으로 받아 **좌면만 조용히 사라진다**. */
+    default: { const unreached: never = variant; return unreached }
+  }
 }
 
-/** 대기실 의자 — 등받이 + 좌면 앞단 + 다리. 앉은 폰 위에는 TileMap이 좌면 앞단만 한 겹 더 깐다. */
-export function ChairSprite() {
+/**
+ * 의자 — 5종. 등받이·좌면 앞단·다리의 구성은 변종마다 다르지만 **좌면 앞단만은 위 표에서 온다**.
+ *
+ * `variant`가 없으면 플라스틱이다. 기본값을 **읽는 쪽에서 접는 것이 계약**이다(코어는 미지정에
+ * 값을 안 채운다 — `Furniture.variant` 주석). 그래서 `/classic`의 `HospitalMap`처럼 세계 데이터
+ * 없이 `<ChairSprite />`만 부르는 자리가 그대로 동작한다.
+ */
+export function ChairSprite({ variant = "PLASTIC" }: { variant?: ChairVariant }) {
+  const c = CHAIR_PALETTE[variant];
   return (
     <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden>
-      <rect x="2.4" y="2.6" width="11.2" height="10.8" rx="2.2" fill="#3d4550" stroke={INK} strokeWidth={EDGE} />
-      <rect x="3.6" y="3.6" width="8.8" height="3.6" rx="1.6" fill="#5b6470" />
-      <ChairSeatFront />
-      <rect x="4.4" y="13.2" width="2" height="2.2" rx=".6" fill="#2f353e" />
-      <rect x="9.6" y="13.2" width="2" height="2.2" rx=".6" fill="#2f353e" />
+      {variant === "STOOL" && (
+        <>
+          {/* 다리를 먼저(뒤에) — 원 좌면 밑으로만 삐져나온다. 간격을 좁히면 버섯으로 읽힌다(실측). */}
+          <rect x="4.3" y="11.4" width="1.7" height="3.8" rx=".5" fill={c.leg} />
+          <rect x="10" y="11.4" width="1.7" height="3.8" rx=".5" fill={c.leg} />
+          <circle cx="8" cy="7.6" r="4.9" fill={c.body} stroke={INK} strokeWidth={EDGE} />
+          {/* 방석 — 등받이가 없으니 이 안쪽 원이 유일한 두 번째 면이다 */}
+          <circle cx="8" cy="7.6" r="3.1" fill={c.accent} />
+        </>
+      )}
+      {variant === "PLASTIC" && (
+        <>
+          <rect x="2.4" y="2.6" width="11.2" height="10.8" rx="2.2" fill={c.body} stroke={INK} strokeWidth={EDGE} />
+          <rect x="3.6" y="3.6" width="8.8" height="3.6" rx="1.6" fill={c.accent} />
+        </>
+      )}
+      {variant === "BENCH" && (
+        <>
+          {/* 좌우 잉크선 없음 — 옆칸과 이어지는 것이 「연결 벤치」의 전부다 */}
+          <rect x="0" y="3.4" width="16" height="9.2" fill={c.body} />
+          <path d="M0 3.4 h16" stroke={INK} strokeWidth={EDGE} fill="none" />
+          <rect x="0" y="4.3" width="16" height="2.6" fill={c.accent} />
+        </>
+      )}
+      {variant === "SOFA" && (
+        <>
+          <rect x="1.2" y="2.4" width="13.6" height="12" rx="2.4" fill={c.body} stroke={INK} strokeWidth={EDGE} />
+          <rect x="4" y="3.4" width="8" height="3.4" rx="1.4" fill={c.accent} />
+          {/* 팔걸이 — **강조색이라야 한다.** 몸체색으로 두면 잉크선만으로 갈려 24px에서 녹색
+              덩어리가 된다(실측). 강조로 두면 등쿠션과 이어져 U자 천이 되고, 그게 소파다.
+              모서리는 `rx=1.5 ry=2.4`인 **타원**이다 — 폭이 3이라 `rx`는 브라우저가 어차피
+              width/2=1.5로 감축하고, `ry`는 상속값 2.4가 height/2=6 아래라 그대로 남는다.
+              **`ry`를 생략하면 안 된다** — `rx="1.5"`만 적으면 `ry`도 1.5를 상속해 지금까지
+              그려지던 것과 달라진다. 적힌 값과 그려지는 값을 맞추되 그림은 그대로 둔다
+              (머리카락 호가 어림값을 안 쓰는 것과 같은 이유). */}
+          <rect x="1.2" y="2.4" width="3" height="12" rx="1.5" ry="2.4" fill={c.accent} stroke={INK} strokeWidth={EDGE} />
+          <rect x="11.8" y="2.4" width="3" height="12" rx="1.5" ry="2.4" fill={c.accent} stroke={INK} strokeWidth={EDGE} />
+        </>
+      )}
+      {variant === "RECLINER" && (
+        <>
+          {/* 발받침 — 몸체(y1.2~11.8) 밖에 떨어져 있다. 실루엣이 아래로 자라는 것이 구분 신호다 */}
+          <rect x="4.6" y="12.4" width="6.8" height="2.6" rx=".8" fill={c.body} stroke={INK} strokeWidth={EDGE} />
+          <rect x="2.8" y="1.2" width="10.4" height="10.6" rx="2" fill={c.body} stroke={INK} strokeWidth={EDGE} />
+          {/* 머리받침 — 몸체 **위로** 삐져나온다(위아래로 자라는 실루엣이 소파와 갈리는 축) */}
+          <rect x="5.2" y=".4" width="5.6" height="1.8" rx=".8" fill={c.accent} stroke={INK} strokeWidth={EDGE} />
+          <rect x="3.9" y="2" width="8.2" height="4.4" rx="1.5" fill={c.accent} />
+        </>
+      )}
+      <ChairSeatFront variant={variant} />
+      {variant === "PLASTIC" && (
+        <>
+          <rect x="4.4" y="13.2" width="2" height="2.2" rx=".6" fill={c.leg} />
+          <rect x="9.6" y="13.2" width="2" height="2.2" rx=".6" fill={c.leg} />
+        </>
+      )}
+      {variant === "BENCH" && (
+        <>
+          {/* 다리는 타일 **안쪽**에만 둔다 — 이음매에 걸리면 이어진 벤치에 세로 이물이 생긴다 */}
+          <rect x="2.6" y="12.6" width="1.8" height="2.4" rx=".5" fill={c.leg} />
+          <rect x="11.6" y="12.6" width="1.8" height="2.4" rx=".5" fill={c.leg} />
+        </>
+      )}
     </svg>
   );
 }
 
-/** 의자 좌면 앞단만 — 앉은 폰 **위에** 덧까는 층이다(왜인지는 TileMap의 해당 레이어 주석). */
-export function ChairSeatFrontSprite() {
+/** 의자 좌면 앞단만 — 앉은 폰 **위에** 덧까는 층이다(왜인지는 TileMap의 해당 레이어 주석).
+ *  변종을 안 받으면 앉은 소파 위에 플라스틱 의자의 좌면이 깔린다 — 에러는 안 난다. */
+export function ChairSeatFrontSprite({ variant = "PLASTIC" }: { variant?: ChairVariant }) {
   return (
     <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden>
-      <ChairSeatFront />
+      <ChairSeatFront variant={variant} />
     </svg>
   );
 }

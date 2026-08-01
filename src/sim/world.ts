@@ -206,11 +206,38 @@ export type RoomType = 'EXAM' | 'WARD' | 'WAITING' | 'LOUNGE' | 'RECEPTION' | 'C
 export interface ZonePaint { type: RoomType; dept?: SimDeptKey }
 
 export type FurnitureKind = 'DESK' | 'CHAIR' | 'BED' | 'COUNTER'
+
+/**
+ * 의자의 겉모습 — **종류가 아니라 하위 속성**이다(설계 §3).
+ *
+ * 새 `FurnitureKind`로 쪼개지 않은 이유: `kind === 'CHAIR'` 검사가 프로덕션에만 여덟 곳이고
+ * (`blocksWalk`·`spots`·`patientFlow`×2·`needs`×2·`TileMap`×2), 하나라도 집합 검사로 못 바꾸면
+ * **앉을 수 없는 소파**가 생기는데 그 버그는 에러 없이 조용하다 — 화면엔 의자가 있는데 폰이 안 앉는다.
+ * `variant`는 그 여덟 곳을 **전부 무변으로** 통과한다.
+ *
+ * ⚠️ **시뮬은 이 필드를 한 번도 읽지 않는다.** 그게 "외형만 다르다"(②-a)를 규칙이 아니라 구조로
+ * 보장하는 자리다 — 기능 차이는 ②-b에서 안락함 수치로 들어온다.
+ */
+export type ChairVariant = 'STOOL' | 'PLASTIC' | 'BENCH' | 'SOFA' | 'RECLINER'
+
 /** 집기 한 점 — **소속 필드가 없다**(설계 §1-1). 이 가구가 어느 방의 것인지는 좌표가 말한다:
  *  `regions.computeRegions`가 낳은 영역 중 이 타일을 담은 것이 곧 이 가구의 방이다.
  *  옛 `roomId`를 지운 이유는 이중 기재다 — 벽을 옮겨 영역이 갈라지거나 합쳐지면 그 필드는
  *  갱신할 자리가 없어 조용히 낡고, 그때부터 화면의 방과 규칙의 방이 달라진다. */
-export interface Furniture { kind: FurnitureKind; x: number; y: number }
+export interface Furniture {
+  kind: FurnitureKind
+  x: number
+  y: number
+  /** 의자에만 실린다. **미지정이면 키를 만들지 않는 것이 계약이다** — 이유는 둘이다:
+   *  ① 진짜 기본값을 채우면 가구 배열을 통째로 비교하는 회귀가 깨진다(EXAM 자동 가구).
+   *  ② 읽는 쪽이 「없음」과 「기본값」 둘을 구별해야 한다.
+   *  ⚠️ 반면 `undefined`를 **값으로** 싣는 것은 그 회귀가 **못 잡는다** — vitest `toEqual`이
+   *  undefined 키를 무시하고 이 저장소엔 `toStrictEqual`이 0건이다(돌연변이 실측). 그래서
+   *  build.test의 `Object.keys` 단언이 그 경로의 **유일한 가드**다 — 「깊은 비교가 이미
+   *  잡으니 중복」이라 판단해 지우면 안 된다(T-145).
+   *  기본값은 그리는 쪽이 접는다(PixelSprite.ChairSprite). */
+  variant?: ChairVariant
+}
 
 /** 세계의 진행 국면 — RUNNING일 때만 시간이 흐른다.
  *  마감·결산 화면 동안 세계가 계속 굴러가면 플레이어가 읽는 숫자와 세계가 어긋난다. */

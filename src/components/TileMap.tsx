@@ -391,10 +391,17 @@ export default function TileMap({
      앉음을 실제로 읽히게 하는 것은 아래 폰 루프 뒤의 좌면 앞단 레이어이고(그쪽 주석이 왜
      좌면 "앞단만"인지의 단일 출처), 둘은 짝이라 한쪽만 두면 다시 안 읽힌다. */
   const SEAT_LIFT = TILE / 4;
-  /* 의자 타일 — 건설로만 갈리는 값이라 `world.furniture` identity에 memo를 건다(지형 memo와 같은 계약:
-     폰이 매 프레임 움직여도 이 집합을 다시 만들지 않는다). */
+  /* 의자 타일 → 그 의자의 변종. 건설로만 갈리는 값이라 `world.furniture` identity에 memo를 건다
+     (지형 memo와 같은 계약: 폰이 매 프레임 움직여도 이 집합을 다시 만들지 않는다).
+     ⚠️ **Set이 아니라 Map인 이유**: 아래 좌면 앞단 층이 변종별로 다른 도형을 깔아야 하는데,
+     좌표만 담으면 그 정보가 여기서 소실돼 앉은 소파 위에 플라스틱 의자의 좌면이 얹힌다(에러 없음). */
   const seatTiles = useMemo(
-    () => new Set(world.furniture.filter((f) => f.kind === "CHAIR").map((f) => `${f.x},${f.y}`)),
+    () =>
+      new Map(
+        world.furniture
+          .filter((f) => f.kind === "CHAIR")
+          .map((f) => [`${f.x},${f.y}`, f.variant] as const),
+      ),
     [world.furniture],
   );
   /* 침대 타일 — 의자와 같은 이유의 같은 집합이다. 시뮬에서 "눕는다"도 그 칸에 서는 것이라
@@ -735,7 +742,7 @@ export default function TileMap({
             {f.kind === "DESK" ? (
               <DeskSprite />
             ) : f.kind === "CHAIR" ? (
-              <ChairSprite />
+              <ChairSprite variant={f.variant} />
             ) : f.kind === "BED" ? (
               <BedSprite occupied={occupiedTiles.has(`${f.x},${f.y}`)} />
             ) : (
@@ -878,11 +885,13 @@ export default function TileMap({
             않는다**이다(2026-07-31 픽셀 비교로 정정). 같은 패스를 두 번 그리면 안티앨리어싱이
             2회 합성돼(α'=1−(1−α)²) 빈 의자도 실제로 달라진다 — 16/29/64px 래스터에서 픽셀의
             3.5~10.9%가 최대 Δ33까지 바뀐다. EDGE=0.45 stroke를 두 번은 단일 0.70과 사실상
-            같고, 좌면 앞단의 좌·우·아래 변은 몸체 rect 윤곽과 겹치므로 여기선 **3회 합성**이다
+            같고, 좌면 앞단의 좌·우·아래 변이 몸체 rect 윤곽과 겹치면 **3회 합성**이다
             (α=1−0.55³=0.83). 즉 좌면 윤곽만 다른 집기보다 굵게 읽힌다 — `EDGE` 계약의 알려진
-            예외다. 굵기를 맞추려면 플래그를 `ChairSprite`까지 밀어야 해 아티팩트 크기 대비
-            과하다고 판단했다. */}
-        {[...seatTiles].map((key) => {
+            예외다. **다만 예외의 크기는 변종마다 다르다**(α=1−0.55ⁿ): 3회는 플라스틱·스툴
+            기준이고, 벤치는 몸체 rect에 `stroke`가 아예 없어 겹칠 윤곽이 없으므로 2회(0.70),
+            소파는 팔걸이 rect가 잉크를 한 번 더 그어 4회(0.91)다. 굵기를 맞추려면 플래그를
+            `ChairSprite`까지 밀어야 해 아티팩트 크기 대비 과하다고 판단했다. */}
+        {[...seatTiles].map(([key, variant]) => {
           const [x, y] = key.split(",").map(Number);
           return (
             <div
@@ -891,7 +900,7 @@ export default function TileMap({
               style={{ left: x * TILE, top: y * TILE, width: TILE, height: TILE, zIndex: 2 }}
               aria-hidden
             >
-              <ChairSeatFrontSprite />
+              <ChairSeatFrontSprite variant={variant} />
             </div>
           );
         })}

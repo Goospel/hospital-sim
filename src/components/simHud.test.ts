@@ -3,6 +3,7 @@ import { doorTile, hire, placeRoom, rectPts } from '../sim/testHelpers'
 import {
   alertsOf, escTarget, inspectCard, regionOverlayOn, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
+  CHAIR_VARIANTS, CHAIR_VARIANT_LABEL, DEFAULT_CHAIR_VARIANT,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle,
   NURSE_GRADE_TEXT, nurseAttritionText, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidCauseText, unpaidText,
@@ -562,6 +563,60 @@ describe('건설 도구 — 라벨·비용·조작', () => {
     for (const t of ['WALL', 'DESK', 'CHAIR', 'BED', 'COUNTER', 'DESIGNATE', 'DEMOLISH'] as const) {
       expect(isDragTool(t), `${t}`).toBe(true)
     }
+  })
+})
+
+/*
+  ── 의자 변종 줄 ────────────────────────────────────────────────────────────
+  도구는 여덟 그대로이고 변종은 그 **아래**에 열린다(설계 §4). 변종마다 도구를 만들면
+  `BuildTool`↔`FurnitureKind` 동일성이 깨지고 매핑 표가 하나 더 생긴다 —
+  종류가 늘수록 나빠지는 구조라, 위 describe의 `toHaveLength(8)`이 그 벨트로 남는다.
+*/
+describe('의자 변종 — 목록·라벨·기본값', () => {
+  /** 목록의 **완전성**을 매직 넘버가 아니라 라벨 표에서 파생시킨다 — `CHAIR_VARIANT_LABEL`은
+   *  `Record<ChairVariant, string>`이라 tsc가 다섯을 강제하는데, 목록은 부분집합이어도
+   *  `readonly ChairVariant[]`를 통과한다(타입이 안 잡는 구멍). 둘을 대조하면 유니온에
+   *  변종을 더하는 순간 ⓐ tsc가 라벨 표에서 막고 ⓑ 라벨만 넣고 목록을 빠뜨리면 여기서 막힌다.
+   *  손으로 적은 `5`는 변종이 늘어나는 날 조용히 낡는 값이라 두지 않는다. */
+  it('목록이 라벨 표를 빠짐없이 덮는다 — 라벨만 있고 줄에 안 서는 변종이 없다', () => {
+    expect([...CHAIR_VARIANTS].sort()).toEqual(Object.keys(CHAIR_VARIANT_LABEL).sort())
+    for (const v of CHAIR_VARIANTS) expect(CHAIR_VARIANT_LABEL[v].length, v).toBeGreaterThan(0)
+    expect(new Set(CHAIR_VARIANTS.map(v => CHAIR_VARIANT_LABEL[v])).size).toBe(CHAIR_VARIANTS.length)
+  })
+
+  /* ⚠️ 아래 「중복이 없다」는 **지금 단독 판별력이 0이다** — 중복을 양방향으로(길이 5 유지·길이 6)
+     심어 봐도 위 대조가 먼저 잡는다(돌연변이 실측 M5a·M5b). `toEqual`이 *정렬 배열*을 비교하므로
+     개수까지 본다 — 집합 대조가 아니다. 그래도 남긴다: 위 단언의 **이름은 「완전성」**이라, 나중에
+     누가 그걸 `new Set` 대조로 "정리"하면 개수 감시가 부수효과째로 조용히 사라진다. 이 테스트는
+     그 자리에 이름표를 박아 두는 역할이다(승계를 코드 독해로 판단해 유일 가드를 지울 뻔한 T-145). */
+  it('목록에 중복이 없다 — 같은 변종이 두 번 서면 버튼 하나가 죽은 채로 보인다', () => {
+    expect(new Set(CHAIR_VARIANTS).size).toBe(CHAIR_VARIANTS.length)
+  })
+
+  it('기본값이 목록 안에 있다 — 밖이면 손에 든 변종에 해당하는 버튼이 없다', () => {
+    expect(CHAIR_VARIANTS).toContain(DEFAULT_CHAIR_VARIANT)
+  })
+
+  /** 기본값이 **현행 의자**여야 한다 — 아니면 이 PR이 지금까지 놓인 의자의 그림까지 바꾼다.
+   *  Task 3이 `CHAIR_PALETTE.PLASTIC`에 전환 전 네 색을 그대로 넣어 그 약속을 지킨다. */
+  it('기본값은 플라스틱이다 — 지금까지 놓인 의자의 그림이 안 바뀐다', () => {
+    expect(DEFAULT_CHAIR_VARIANT).toBe('PLASTIC')
+  })
+
+  it('도구 목록은 여전히 여덟이다 — 변종이 도구로 승격되지 않았다(설계 §4)', () => {
+    expect(BUILD_TOOLS).toHaveLength(8)
+    for (const v of CHAIR_VARIANTS) expect(BUILD_TOOLS as readonly string[]).not.toContain(v)
+  })
+
+  /** 변종 줄의 존재를 말하는 **화면상의 유일한 문장**이다 — 팔레트 버튼 하이라이트 말고는
+   *  어디서도 안내하지 않는다(`toolCostText`·`previewLabel`·`buildResultText`가 전부
+   *  `TOOL_LABEL[tool]`='의자'만 쓴다). */
+  it('의자 안내가 「종류」를 말한다 — 안 그러면 변종 줄이 있다는 걸 화면이 아무 데서도 안 알린다', () => {
+    const text = statusLineText({
+      toast: null, pause: null, idle: false, warning: null,
+      tool: 'CHAIR', roomType: null, dept: null,
+    })
+    expect(text).toContain('종류')
   })
 })
 
