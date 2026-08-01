@@ -389,6 +389,9 @@ function ChairSeatFront({ variant }: { variant: ChairVariant }) {
           strokeWidth={EDGE}
         />
       );
+    /* 소진 가드 — 6번째 변종이 생기면 여기서 tsc가 막는다. 없으면 `case`를 잊었을 때
+       `undefined`가 반환되고 React가 그걸 합법으로 받아 **좌면만 조용히 사라진다**. */
+    default: { const unreached: never = variant; return unreached }
   }
 }
 
@@ -432,9 +435,14 @@ export function ChairSprite({ variant = "PLASTIC" }: { variant?: ChairVariant })
           <rect x="1.2" y="2.4" width="13.6" height="12" rx="2.4" fill={c.body} stroke={INK} strokeWidth={EDGE} />
           <rect x="4" y="3.4" width="8" height="3.4" rx="1.4" fill={c.accent} />
           {/* 팔걸이 — **강조색이라야 한다.** 몸체색으로 두면 잉크선만으로 갈려 24px에서 녹색
-              덩어리가 된다(실측). 강조로 두면 등쿠션과 이어져 U자 천이 되고, 그게 소파다. */}
-          <rect x="1.2" y="2.4" width="3" height="12" rx="2.4" fill={c.accent} stroke={INK} strokeWidth={EDGE} />
-          <rect x="11.8" y="2.4" width="3" height="12" rx="2.4" fill={c.accent} stroke={INK} strokeWidth={EDGE} />
+              덩어리가 된다(실측). 강조로 두면 등쿠션과 이어져 U자 천이 되고, 그게 소파다.
+              모서리는 `rx=1.5 ry=2.4`인 **타원**이다 — 폭이 3이라 `rx`는 브라우저가 어차피
+              width/2=1.5로 감축하고, `ry`는 상속값 2.4가 height/2=6 아래라 그대로 남는다.
+              **`ry`를 생략하면 안 된다** — `rx="1.5"`만 적으면 `ry`도 1.5를 상속해 지금까지
+              그려지던 것과 달라진다. 적힌 값과 그려지는 값을 맞추되 그림은 그대로 둔다
+              (머리카락 호가 어림값을 안 쓰는 것과 같은 이유). */}
+          <rect x="1.2" y="2.4" width="3" height="12" rx="1.5" ry="2.4" fill={c.accent} stroke={INK} strokeWidth={EDGE} />
+          <rect x="11.8" y="2.4" width="3" height="12" rx="1.5" ry="2.4" fill={c.accent} stroke={INK} strokeWidth={EDGE} />
         </>
       )}
       {variant === "RECLINER" && (
