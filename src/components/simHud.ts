@@ -24,7 +24,7 @@ import { priorityOf, type Pawn, type Priority } from '../sim/pawn'
 import type { Pt } from '../sim/path'
 import {
   ENTRANCE, GRID_W, GRID_H, simRegion, tileIndex,
-  type FurnitureKind, type RoomType, type SimRegionKey, type SimWorld,
+  type ChairVariant, type FurnitureKind, type RoomType, type SimRegionKey, type SimWorld,
 } from '../sim/world'
 // 타입 전용 — 컴파일에 지워지므로 이 파일은 여전히 React를 모른다(vitest가 그대로 돈다).
 import type { SimSpeed } from './useSimClock'
@@ -570,6 +570,26 @@ export const TOOL_LABEL: Record<BuildTool, string> = {
   WALL: '벽', DOOR: '문', DESK: '책상', CHAIR: '의자', BED: '침대', COUNTER: '카운터',
   DESIGNATE: '용도', DEMOLISH: '철거',
 }
+
+/**
+ * 의자 변종 — 팔레트에서 [의자]를 고르면 그 아래에 열리는 줄(설계 §4).
+ *
+ * **도구를 늘리지 않는다.** `CHAIR_SOFA` 같은 도구를 만들면 위 `BuildTool`의 계약
+ * (*"가구 4종은 이름이 곧 `FurnitureKind`다"*)이 깨지고 매핑 표가 하나 더 생기며, 팔레트가
+ * 8개에서 12개로 늘어난다 — **종류가 늘수록 나빠지는 구조**다. 여기 두면 나중에 책상·침대에
+ * 변종이 생겨도 같은 자리에 붙는다.
+ */
+export const CHAIR_VARIANTS: readonly ChairVariant[] = ['STOOL', 'PLASTIC', 'BENCH', 'SOFA', 'RECLINER']
+
+/** 버튼 문구 — 짧게 둔다. 팔레트 폭(`w-40`)이 맵 배율의 기준이라(SimGame의 `insets.left`)
+ *  라벨이 길어 폭이 밀리면 맵이 흔들린다. */
+export const CHAIR_VARIANT_LABEL: Record<ChairVariant, string> = {
+  STOOL: '스툴', PLASTIC: '플라스틱', BENCH: '벤치', SOFA: '소파', RECLINER: '리클라이너',
+}
+
+/** 손에 처음 들리는 변종 — **현행 의자 그대로다**(Task 3의 `CHAIR_PALETTE.PLASTIC`이 전환 전
+ *  네 색을 그대로 쓴다). 기본값이 다른 것이면 이 변경이 지금까지 놓인 의자의 그림까지 바꾼다. */
+export const DEFAULT_CHAIR_VARIANT: ChairVariant = 'PLASTIC'
 
 /** 드래그로 쓰는 도구인가 — **문만** 한 칸을 겨누는 클릭이다(벽 한 칸을 골라 뚫는 조작).
  *  용도는 드래그로 칠한다(설계 2026-07-31 §4): 영역이 밀폐에서 풀려 "어디까지 지정되나"가
@@ -1387,7 +1407,7 @@ const TOOL_HINT: Record<BuildTool, string> = {
   WALL: '벽 — 부지를 드래그하면 사각형 테두리로 벽이 섭니다(한 줄이면 직선 벽).',
   DOOR: '문 — 벽 한 칸을 클릭해 문을 냅니다. 문이 없으면 아무도 드나들지 못합니다.',
   DESK: '책상 — 드래그한 사각형을 채웁니다. 진료실엔 책상 옆에 의자가 필요합니다.',
-  CHAIR: '의자 — 드래그한 사각형을 채웁니다. 대기실 의자가 곧 좌석 수입니다.',
+  CHAIR: '의자 — 드래그한 사각형을 채웁니다. 종류는 아래 줄에서 고릅니다. 대기실 의자가 곧 좌석 수입니다.',
   BED: '침대 — 드래그한 사각형을 채웁니다. 응급은 병동 침대에 눕습니다.',
   COUNTER: '카운터 — 드래그한 사각형을 채웁니다. 접수처의 표시물입니다.',
   /* ⚠️ **도달 불가** — `statusLineText`에서 DESIGNATE는 이 표까지 오지 않는다: 용도를 안 골랐으면

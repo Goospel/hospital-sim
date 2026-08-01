@@ -3,6 +3,7 @@ import { doorTile, hire, placeRoom, rectPts } from '../sim/testHelpers'
 import {
   alertsOf, escTarget, inspectCard, regionOverlayOn, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
+  CHAIR_VARIANTS, CHAIR_VARIANT_LABEL, DEFAULT_CHAIR_VARIANT,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle,
   NURSE_GRADE_TEXT, nurseAttritionText, PRIORITY_LABEL,
   previewLabel, rectTiles, resigningNotices, roomLabel, saturationText, setupSteps, setupWarningText, unpaidCauseText, unpaidText,
@@ -562,6 +563,50 @@ describe('건설 도구 — 라벨·비용·조작', () => {
     for (const t of ['WALL', 'DESK', 'CHAIR', 'BED', 'COUNTER', 'DESIGNATE', 'DEMOLISH'] as const) {
       expect(isDragTool(t), `${t}`).toBe(true)
     }
+  })
+})
+
+/*
+  ── 의자 변종 줄 ────────────────────────────────────────────────────────────
+  도구는 여덟 그대로이고 변종은 그 **아래**에 열린다(설계 §4). 변종마다 도구를 만들면
+  `BuildTool`↔`FurnitureKind` 동일성이 깨지고 매핑 표가 하나 더 생긴다 —
+  종류가 늘수록 나빠지는 구조라, 위 describe의 `toHaveLength(8)`이 그 벨트로 남는다.
+*/
+describe('의자 변종 — 목록·라벨·기본값', () => {
+  it('다섯 종이 전부 이름을 갖고 서로 다르다 — 이름 없는 버튼이 줄에 서지 않는다', () => {
+    expect(CHAIR_VARIANTS).toHaveLength(5)
+    for (const v of CHAIR_VARIANTS) expect(CHAIR_VARIANT_LABEL[v].length, v).toBeGreaterThan(0)
+    expect(new Set(CHAIR_VARIANTS.map(v => CHAIR_VARIANT_LABEL[v])).size).toBe(5)
+  })
+
+  it('목록에 중복이 없다 — 같은 변종이 두 번 서면 버튼 하나가 죽은 채로 보인다', () => {
+    expect(new Set(CHAIR_VARIANTS).size).toBe(CHAIR_VARIANTS.length)
+  })
+
+  it('기본값이 목록 안에 있다 — 밖이면 손에 든 변종에 해당하는 버튼이 없다', () => {
+    expect(CHAIR_VARIANTS).toContain(DEFAULT_CHAIR_VARIANT)
+  })
+
+  /** 기본값이 **현행 의자**여야 한다 — 아니면 이 PR이 지금까지 놓인 의자의 그림까지 바꾼다.
+   *  Task 3이 `CHAIR_PALETTE.PLASTIC`에 전환 전 네 색을 그대로 넣어 그 약속을 지킨다. */
+  it('기본값은 플라스틱이다 — 지금까지 놓인 의자의 그림이 안 바뀐다', () => {
+    expect(DEFAULT_CHAIR_VARIANT).toBe('PLASTIC')
+  })
+
+  it('도구 목록은 여전히 여덟이다 — 변종이 도구로 승격되지 않았다(설계 §4)', () => {
+    expect(BUILD_TOOLS).toHaveLength(8)
+    for (const v of CHAIR_VARIANTS) expect(BUILD_TOOLS as readonly string[]).not.toContain(v)
+  })
+
+  /** 변종 줄의 존재를 말하는 **화면상의 유일한 문장**이다 — 팔레트 버튼 하이라이트 말고는
+   *  어디서도 안내하지 않는다(`toolCostText`·`previewLabel`·`buildResultText`가 전부
+   *  `TOOL_LABEL[tool]`='의자'만 쓴다). */
+  it('의자 안내가 「종류」를 말한다 — 안 그러면 변종 줄이 있다는 걸 화면이 아무 데서도 안 알린다', () => {
+    const text = statusLineText({
+      toast: null, pause: null, idle: false, warning: null,
+      tool: 'CHAIR', roomType: null, dept: null,
+    })
+    expect(text).toContain('종류')
   })
 })
 
