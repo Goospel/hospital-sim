@@ -102,6 +102,16 @@ export interface WeekSummary {
    * 나간다"가 URBAN 카드의 약속이다).
    */
   rentManwon: number
+  /**
+   * 이번 주 의료소송 합의금 합계(만원, 항상 양수 · `world.lawsuitManwonWeek` 그대로).
+   *
+   * ⚠️ **총액에 안 들어 있는 유일한 줄이다.** 임대료·간호 주급과 달리 이 돈은 이벤트가 붙는
+   * 그 순간 이미 금고에서 빠졌으므로(`events.applyEvent`), `netManwon` 식에 넣으면 주말에 **한
+   * 번 더** 빠진다 — settleWeek이 청구액을 `revenue − net`의 차로 유도하기 때문이다. 그래서
+   * 이 값은 **오직 표시용**이고, 화면의 라벨이 그 사실을 스스로 말한다(「발생 시 차감」).
+   * 싣기만 하고 총액에서 빼지 않는 것이 바로 이 필드의 계약이다(events.test.ts가 잠근다).
+   */
+  lawsuitManwon: number
   /** 이번 주 응급 — 몇 건 받았고 몇 건 되돌아갔나. **사유별 내역은 여기 없다**(그건 그날
    *  그 순간의 메시지라 `stats.emergencyTurnedAway`가 소유한다 — DayRecord와 같은 분담). */
   emergencies: { accepted: number; turnedAway: number }
@@ -139,6 +149,8 @@ export function weekSummary(w: SimWorld): WeekSummary {
     fixedCostManwon,
     nursing,
     rentManwon,
+    // 소송 합의금은 **싣기만 한다** — 아래 netManwon 식에 없는 것이 의도다(이미 차감됐다).
+    lawsuitManwon: w.lawsuitManwonWeek,
     // 임대료도 여기서 빠진다. **공식에 넣는 순간 금고 차감은 자동이다** — settleWeek이 청구액을
     // `revenue − net`의 차로 유도하기 때문이다(간호 가감산이 판 길 그대로). 요약에 싣기만 하고
     // 이 줄에서 빼먹으면 화면엔 임대료가 보이는데 금고는 안 줄어든다(week.test.ts가 잠근다).
@@ -303,6 +315,9 @@ export function startNextWeek(w: SimWorld): SimWorld {
     week: w.week + 1,
     day: 1,
     days: [],       // 주간 기록은 이번 주치 — 안 비우면 다음 주 7일차가 오기 전에 결산이 열린다
+    // 소송 누계도 주간 축이다 — 안 비우면 결산표의 「이번 주 소송」이 판 누계가 되어, 소송이
+    // 없던 주에도 지난주 액수가 남는다(금고는 그대로인데 표만 돈이 나갔다고 말한다).
+    lawsuitManwonWeek: 0,
     weekSettled: false,
   }
 }

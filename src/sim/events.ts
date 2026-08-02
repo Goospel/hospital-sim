@@ -206,9 +206,15 @@ export function applyEvent(w: SimWorld, kind: SimEventKind): SimWorld {
   // 소송 비용에는 **지역 배율**이 곱해진다(world.REGIONS): URBAN 0.5 = 400(옆 건물에도 병원이
   // 있으니 돌려보내도 책임이 절반만 돌아온다) · RURAL 2.0 = 1,600(한 시간 거리에 갈 곳이
   // 없었다). 만원 단위 정수가 유지되는지는 카탈로그 불변식 I-R6이 잠근다.
+  const costManwon = LAWSUIT_COST_MANWON * simRegion(w.region).lawsuitMul
   const billed: SimWorld = {
     ...next,
-    treasuryManwon: next.treasuryManwon - LAWSUIT_COST_MANWON * simRegion(w.region).lawsuitMul,
+    treasuryManwon: next.treasuryManwon - costManwon,
+    // 나간 액수를 **두 곳에 싣는다**: ⓐ 이벤트의 이름표(카드가 "얼마가 빠져나갔는지"를 말한다)
+    // ⓑ 주간 누계(결산표의 소송 줄). 둘 다 **이미 일어난 차감의 기록**이지 보정치가 아니다 —
+    // 돈은 바로 윗줄에서 빠졌고, 누계를 결산 공식에 끼우면 이중 차감이다(world.lawsuitManwonWeek).
+    event: { kind, costManwon },
+    lawsuitManwonWeek: w.lawsuitManwonWeek + costManwon,
   }
   // 위축될 사람이 없어도(그 과 의사가 없거나 전부 이미 0) **금고는 그대로 깎인다** — 청구서는
   // 병원에 오지 사람에게 오지 않는다.
@@ -223,7 +229,9 @@ export function applyEvent(w: SimWorld, kind: SimEventKind): SimWorld {
     ...setDoctorPriority(billed, chilled.id, 'emergency', lowered),
     // 이름을 이벤트에 실어 화면이 읽는다(narrative.chillNotice). 손세계 폰처럼 이름이 없으면
     // 필드도 없다 — 「undefined 의사가」라는 문장이 서느니 그 줄이 없는 편이 낫다.
-    event: { kind, ...(chilled.name ? { chilledName: chilled.name } : {}) },
+    // ⚠️ `costManwon`을 **다시 적는다** — 이 자리는 `event`를 통째로 새로 세우므로 위 `billed`의
+    // 이름표가 통째로 덮인다. 빠뜨리면 하필 **사람까지 물러선 소송**에서만 액수가 사라진다.
+    event: { kind, costManwon, ...(chilled.name ? { chilledName: chilled.name } : {}) },
   }
 }
 

@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { EVENT_KINDS, type SimEventKind } from './events'
 import { TRAITS, type TraitKey } from './traits'
 import type { EndingKind } from './world'
-import { EVENT_NARRATIONS, chillNotice, epilogueText, eventNarration, resignationLetter } from './narrative'
+import {
+  EVENT_NARRATIONS, chillNotice, epilogueText, eventNarration, resignationLetter, settlementNotice,
+} from './narrative'
 
 /** ⚠️ 이 파일은 **문장 카탈로그의 계약**을 잰다: 전 종류에 폴백이 있는가 · 같은 (주,일)이면
  *  같은 문장인가 · 보간값 뒤에 조사가 없는가(T-094) · 엔딩 셋이 실제로 다른 말을 하는가.
@@ -180,6 +182,37 @@ describe('chillNotice — 위축 고지(소송이 사람의 손을 끌어내린�
     const text = chillNotice('김서준')
     // 공용 목록 + 위축 전용 어휘: 물러선 것이 **구조의 결과**이지 그 사람의 성격이 아니다.
     for (const word of [...BANNED, '겁', '회피', '몸을 사']) expect(text, text).not.toContain(word)
+  })
+})
+
+describe('settlementNotice — 합의금 고지(얼마가 나갔는가)', () => {
+  it('액수가 들어가고, **이미 나갔다는 사실**까지 말한다', () => {
+    // 12주 실플레이 관측: 합의금이 이벤트 발생 즉시 금고에서 빠지는데 액수가 어느 화면에도
+    // 없었다. 액수만 말하고 시점을 빼면 이번엔 "주말에 또 빠지나"가 남는다 — 결산표가 이 돈을
+    // 총액에 안 넣는 이유(WeekSummary.lawsuitManwon)와 같은 사실을 카드도 말해야 한다.
+    const text = settlementNotice('400만원')
+    expect(text).toContain('400만원')
+    expect(text).toContain('이미')
+    expect(text).not.toContain('undefined')
+  })
+
+  it('⚠️ T-094 — 보간값 **바로 뒤**에 받침 의존 조사가 없다(기계 검사)', () => {
+    // 「400만원이」는 지금 우연히 맞다(받침 ㄴ). 그런데 액수 표기는 화면 층이 소유하고
+    // (simHud.formatManwon) 1억을 넘으면 「1.2억」으로 접힌다 — 표기 정책이 바뀌는 날 조사가
+    // 조용히 틀린다. 값 뒤는 고정 문자만 온다.
+    for (const cost of ['400만원', '1,600만원', '1.2억']) {
+      expect(particleAfter(settlementNotice(cost), cost), settlementNotice(cost)).toBeNull()
+    }
+  })
+
+  it('⚠️ T-094 — 액수를 바꿔도 **문장 뼈대가 그대로**다(바이트 동일)', () => {
+    expect(settlementNotice('400만원').replace('400만원', 'N'))
+      .toBe(settlementNotice('1.2억').replace('1.2억', 'N'))
+  })
+
+  it('톤 가드레일 — 사실만 말한다(비난도 평가도 없다)', () => {
+    const text = settlementNotice('400만원')
+    for (const word of BANNED) expect(text, text).not.toContain(word)
   })
 })
 

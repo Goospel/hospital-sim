@@ -2,7 +2,8 @@
 
 import type { Candidate } from "@/sim/candidate";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
-import { nurseCount, type Pawn } from "@/sim/pawn";
+import type { NurseGrade } from "@/sim/nurse";
+import type { Pawn } from "@/sim/pawn";
 import { TRAITS } from "@/sim/traits";
 import { NURSE_WEEKLY_COST_MANWON } from "@/sim/week";
 import { LANDING } from "./landingPalette";
@@ -40,6 +41,7 @@ import { doctorCountByDept, formatManwon, startingRosterMet, STARTING_ROSTER_MIN
 export default function HirePanel({
   pawns,
   candidates,
+  nursing,
   treasuryManwon,
   starting = false,
   onHire,
@@ -49,6 +51,11 @@ export default function HirePanel({
   pawns: Pawn[];
   /** 과별 **남은 후보 명단** — 세계가 들고 있는 값의 순수 파생을 그대로 읽는다(화면이 세지 않는다). */
   candidates: Record<SimDeptKey, Candidate[]>;
+  /** 간호 판정 — **결과째 받는다**(화면이 세지도 기준을 다시 적지도 않는다). 인원은 폰에서 셀 수
+   *  있지만 **기준 산식(⌈의사÷2⌉)의 단일 출처는 `sim/nurse.nurseGradeOf`**라, 그 한 줄을 여기
+   *  복제하면 튜닝하는 날 채용 화면만 옛 기준을 말한다 — 그리고 그 어긋남은 결산의 감산이
+   *  붙고 나서야 보인다(이 prop이 생긴 이유가 정확히 그 사후 발견이다). */
+  nursing: { count: number; required: number; grade: NurseGrade };
   treasuryManwon: number;
   /** **개원 전 스타팅 로스터 모드**(사용자 지시 2026-07-29) — 같은 패널을 게이트로 쓴다.
    *  새 화면을 만들지 않은 이유: 이 패널은 이미 "플레이어의 첫 결정"으로 설계돼 있다(머리말).
@@ -66,12 +73,13 @@ export default function HirePanel({
   onClose: () => void;
 }) {
   const counts = doctorCountByDept(pawns);
-  const nurses = nurseCount(pawns);
   // 간호사 주급도 합계에 든다 — 이 줄이 "지금 병원이 매주 무는 돈"이라, 빼면 화면이 말하는
   // 액수와 주간 결산에서 빠지는 액수가 갈린다(결산은 nursing 블록으로 함께 청구한다 · week.ts).
+  // 인원은 **판정과 같은 수**를 쓴다(nursing.count) — 여기서 따로 세면 같은 화면의 「현재 N명」과
+  // 이 합계가 다른 숫자를 근거로 설 수 있다.
   const weeklyTotal =
     HIRABLE_DEPTS.reduce((sum, k) => sum + counts[k] * simDept(k).weeklyCostManwon, 0)
-    + nurses * NURSE_WEEKLY_COST_MANWON;
+    + nursing.count * NURSE_WEEKLY_COST_MANWON;
   const hired = HIRABLE_DEPTS.reduce((n, k) => n + counts[k], 0);
   const met = startingRosterMet(pawns);
   const title = starting ? "개원 준비 — 전국 인력 시장" : "채용 — 전국 인력 시장";
@@ -178,7 +186,23 @@ export default function HirePanel({
             (simHud.startingRosterMet 불변). 체크리스트가 대신 안내한다. */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-frame py-2.5">
           <span className="min-w-24 text-sm text-on-desk">간호사 · 수납 담당</span>
-          <span className="font-mono text-xs tabular-nums text-on-desk-muted">현재 {nurses}명</span>
+          {/* 기준을 인원 **바로 옆**에 놓는 것이 이 줄의 전부다 — 결산 화면이 이미 같은 형태로
+              말하고 있는데(WeekEndOverlay 「간호 인력 (N명 · 기준 M명)」), 뽑는 자리에는 없어서
+              미달이 **주말의 감산으로 처음** 인지됐다(12주 실플레이 관측). 규칙 신설이 아니라
+              이미 있는 규칙을 결정 시점으로 당기는 표시다.
+              해석 카피 없이 사실만(§톤): 툴팁도 "무엇이 일어나는가"까지고 "뽑으세요"는 없다. */}
+          <span
+            className={`font-mono text-xs tabular-nums ${
+              nursing.grade === "SHORT" ? "text-alarm" : "text-on-desk-muted"
+            }`}
+            title={
+              nursing.grade === "SHORT"
+                ? "기준에 못 미치면 주간 진료 수익이 감산됩니다(간호등급)."
+                : undefined
+            }
+          >
+            현재 {nursing.count}명 · 기준 {nursing.required}명
+          </span>
           <span className="ml-auto font-mono text-xs tabular-nums text-on-desk-muted">
             주급 {formatManwon(NURSE_WEEKLY_COST_MANWON)}
           </span>

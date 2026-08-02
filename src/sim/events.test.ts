@@ -3,7 +3,7 @@ import { hire, placeRoom } from './testHelpers'
 import { createWorld, simRegion, type SimWorld } from './world'
 import { tick } from './tick'
 import { DAYS_PER_WEEK, freshMorning, startNextDay } from './day'
-import { CAMPAIGN_WEEKS, startNextWeek } from './week'
+import { CAMPAIGN_WEEKS, settleWeek, startNextWeek, weekSummary } from './week'
 import { EMERGENCY_WINDOW_MIN, emergencyArrivalAt, emergencyArrivalSeed } from './emergency'
 import { ARRIVAL_WINDOW_MIN, arrivalSeed, waitingSeats, wantsDeptSeed } from './patientFlow'
 import { HIRABLE_DEPTS, type SimDeptKey } from './dept'
@@ -138,10 +138,13 @@ describe('applyEvent — 전제와 효과', () => {
     // 기본 세계는 URBAN이라 배율 0.5가 물린다 — 액수 자체의 계약은 아래 「소송 비용」이 잰다.
     expect(after.treasuryManwon)
       .toBe(w1.treasuryManwon - LAWSUIT_COST_MANWON * simRegion('URBAN').lawsuitMul)
-    // ⚠️ **의사가 없는 세계라서** event가 `{ kind }` 하나뿐이다 — 위축(아래 스위트)이 붙은 뒤로
-    // `chilledName`이 같이 실릴 수 있는 자리가 됐다. 이 픽스처는 폰이 하나도 없어 대상이 없고,
-    // "대상이 없으면 금고만 깎인다"가 그 자체로 계약이라 이 단언은 여전히 정확하다.
-    expect(after.event).toEqual({ kind: 'LAWSUIT' })
+    // ⚠️ **의사가 없는 세계라서** `chilledName`이 없다 — 위축(아래 스위트)이 붙은 뒤로 같이
+    // 실릴 수 있는 자리가 됐지만 이 픽스처는 폰이 하나도 없어 대상이 없고, "대상이 없으면 금고만
+    // 깎인다"가 그 자체로 계약이다. `costManwon`은 **대상과 무관하게 항상 실린다** — 청구서는
+    // 병원에 오지 사람에게 오지 않기 때문이다(위 차감이 곧 그 액수다).
+    expect(after.event).toEqual({
+      kind: 'LAWSUIT', costManwon: LAWSUIT_COST_MANWON * simRegion('URBAN').lawsuitMul,
+    })
   })
 
   it('소송 비용은 **지역 배율이 곱해진다** — 갈 곳이 있는가가 이 값의 뜻이다', () => {
@@ -161,6 +164,74 @@ describe('applyEvent — 전제와 효과', () => {
       if (kind === 'LAWSUIT') continue
       expect(applyEvent(w, kind).treasuryManwon).toBe(w.treasuryManwon)
     }
+  })
+
+  it('LAWSUIT은 **얼마가 나갔는지**를 이름표로 남긴다 — event.costManwon = 차감액', () => {
+    // 12주 실플레이 관측: 합의금이 이벤트 발생 즉시 금고에서 빠지는데 **어느 화면에도 액수가
+    // 없었다**. 카드 문장은 "합의금이 청구됐습니다"까지고, 주간 결산표에도 줄이 없어 금고 변화와
+    // 표의 합이 안 맞았다. 이 필드가 그 액수의 출처다 — `chilledName`과 같은
+    // **이미 일어난 일의 이름표**라 "보정치를 저장하지 않는다"에 어긋나지 않는다(world.event 주석).
+    const w = richWorld()
+    const after = applyEvent(w, 'LAWSUIT')
+    const cost = LAWSUIT_COST_MANWON * simRegion(w.region).lawsuitMul
+    expect(after.event?.costManwon).toBe(cost)
+    // 화면이 이 값을 「금고에서 빠져나갔습니다」로 읽으므로, **실제 차감액과 같은 수**여야 한다.
+    expect(after.treasuryManwon).toBe(w.treasuryManwon - after.event!.costManwon!)
+  })
+
+  it('LAWSUIT 말고는 costManwon이 실리지 않는다 — 나간 돈이 없으면 이름표도 없다', () => {
+    const w = richWorld()
+    for (const kind of EVENT_KINDS) {
+      if (kind === 'LAWSUIT') continue
+      expect(applyEvent(w, kind).event?.costManwon, kind).toBeUndefined()
+    }
+  })
+
+  it('위축 대상이 있어도 이름표 둘이 **함께** 실린다 — 한쪽이 다른 쪽을 덮지 않는다', () => {
+    // ⚠️ 이 단언이 없으면 위축 분기가 `event`를 통째로 다시 세우는 구현에서 costManwon이 조용히
+    // 사라진다(그 분기가 `{ kind, chilledName }`을 새로 만드는 자리다 — applyEvent 마지막 return).
+    // 그러면 대상이 없는 소송에만 액수가 뜨고, 하필 **사람까지 물러선 소송**에서 액수가 빈다.
+    const w: SimWorld = { ...richWorld(), pawns: [
+      { id: 'd1', kind: 'DOCTOR', x: 0, y: 0, path: [], dept: 'CARDIOLOGY', name: '김서준' },
+    ] }
+    const after = applyEvent(w, 'LAWSUIT')
+    expect(after.event?.chilledName).toBe('김서준')
+    expect(after.event?.costManwon).toBe(LAWSUIT_COST_MANWON * simRegion(w.region).lawsuitMul)
+  })
+})
+
+describe('lawsuitManwonWeek — 이번 주 소송으로 나간 돈(표시용 장부)', () => {
+  it('합의금은 주간 누계로 쌓이고, 주를 넘기면 0이 된다', () => {
+    const w0 = richWorld()
+    expect(w0.lawsuitManwonWeek, '새 세계의 영점').toBe(0)
+    const cost = LAWSUIT_COST_MANWON * simRegion(w0.region).lawsuitMul
+    const once = applyEvent(w0, 'LAWSUIT')
+    expect(once.lawsuitManwonWeek).toBe(cost)
+    // 한 주에 두 건도 가능하다(하루에 하나씩) — 결산이 말해야 하는 것은 **그 주의 합계**다.
+    const twice = applyEvent(once, 'LAWSUIT')
+    expect(twice.lawsuitManwonWeek).toBe(cost * 2)
+    // 주간 축이라 주를 넘기면 비워진다 — `days`와 같은 계약이고 `turnedAwayTotal`(판 누적)과 다르다.
+    const next = startNextWeek({ ...twice, phase: 'WEEK_END', weekSettled: true })
+    expect(next.lawsuitManwonWeek).toBe(0)
+  })
+
+  it('결산 요약이 그 누계를 그대로 싣는다 — 표가 액수를 말할 자리', () => {
+    const w: SimWorld = { ...richWorld(), lawsuitManwonWeek: 1_600 }
+    expect(weekSummary(w).lawsuitManwon).toBe(1_600)
+  })
+
+  it('주간 결산은 소송 누계를 **다시 빼지 않는다** — 발생 시 이미 차감됐다', () => {
+    // ⚠️ 이 파일에서 가장 중요한 단언이다. `settleWeek`은 청구액을 `revenue − net`의 **차**로
+    // 유도하므로(week.ts), `netManwon` 식에 소송을 한 항 끼우는 순간 그 액수가 주말에 **한 번 더**
+    // 빠진다 — 그리고 화면상 순익은 그럴듯해 보여서 아무도 모른다. 이 장부는 표시용이다.
+    const base: SimWorld = { ...richWorld(), phase: 'WEEK_END' }
+    const withLawsuit: SimWorld = { ...base, lawsuitManwonWeek: 1_600 }
+    const chargeOf = (w: SimWorld) => w.treasuryManwon - settleWeek(w).treasuryManwon
+    expect(chargeOf(base), '계측기 자기검사 — 청구가 0이면 이 대조는 아무것도 못 잰다')
+      .toBeGreaterThan(0)
+    expect(chargeOf(withLawsuit)).toBe(chargeOf(base))
+    // 같은 사실을 순익 쪽에서도 — 소송은 이 식에 없다.
+    expect(weekSummary(withLawsuit).netManwon).toBe(weekSummary(base).netManwon)
   })
 })
 
