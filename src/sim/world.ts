@@ -404,8 +404,11 @@ export function createWorld(
     furniture: [], pawns: [], nextId: 1, seed,
     stats: freshStats(), days: [], insolvencyStreak: 0, weekSettled: false,
     // 시작 풀은 **지역이 정한다** — URBAN은 델타 0이라 전국 풀 그대로다(기존 회귀 무변).
-    // ⚠️ 이 한 줄이 `pawn.hiredEver`의 기준까지 바꾼다: 의사 이름 서수가 "초기 풀 − 남은 풀"의
-    // 합이라, 그쪽 기준을 함께 옮기지 않으면 PROVINCIAL이 시작부터 서수 8이 된다(에러 0).
+    // ⚠️ 이 한 줄이 **채용 화면에 누가 남아 있는지**까지 정한다: 남은 후보는 시작 풀에서 소비된
+    // 슬롯을 뺀 나머지이고(candidate.remainingCandidates), 지역이 풀을 깎으면 뒤쪽 슬롯의
+    // 사람들은 그 판에 아예 존재하지 않는다. 이름은 (과, 슬롯)이 정하므로 풀 크기가 바뀌어도
+    // 남은 사람들의 이름은 그대로다 — 옛 서수 방식이 겪던 "지역을 깎으면 이름이 밀린다"는
+    // 조용한 어긋남(에러 0)이 그 분할로 사라졌다.
     hirePool: regionHirePool(region), hiredSlots: freshHiredSlots(),
     turnedAwayTotal: 0, nursesResignedTotal: 0,
     region, backdrop: safeBackdrop(start?.backdrop),

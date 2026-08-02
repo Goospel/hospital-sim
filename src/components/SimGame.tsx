@@ -42,7 +42,8 @@ import {
 } from "@/components/simHud";
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
-import { BACKDROP_COUNT, createWorld, type ChairVariant, type RoomType, type SimWorld } from "@/sim/world";
+import { BACKDROP_COUNT, createWorld, regionHirePool, type ChairVariant, type RoomType, type SimWorld } from "@/sim/world";
+import { remainingCandidates } from "@/sim/candidate";
 import { computeRegions } from "@/sim/regions";
 import { buildWalls, demolish, eraseZone, paintZone, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
@@ -432,12 +433,14 @@ export default function SimGame() {
    *  같이 보면 뒤엣것이 앞엣것을 덮어 한 명이 유실된다. 실사용 위험이 낮은 건 클릭이 discrete
    *  이벤트라 React가 각 클릭을 별도 태스크로 갈라 사이에 렌더가 끼기 때문이지, 정지 자체가
    *  막아 주기 때문이 아니다. 업데이터로 옮기려면 StrictMode 이중 채용 검증이 먼저다. */
-  const hire = (dept: SimDeptKey) => {
+  const hire = (dept: SimDeptKey, slot: number) => {
     // 채용도 건설(commit)과 같은 모양으로 실패한다 — 전국에 그 과 사람이 남지 않았으면 거부되고
     // 세계는 그대로다. 여기서 조용히 삼키면 버튼이 먹통인 것과 구별되지 않는다.
-    // ⚠️ 패널이 풀 0인 과의 버튼을 비활성으로 잠그는 지금도 **이 거부 경로는 남긴다** — 이중
-    // 벨트다: 화면 쪽 판정이 어긋나 버튼이 열려도 세계는 안 바뀌고, 그 사실이 토스트로 말해진다.
-    const res = hireDoctor(world, dept);
+    // ⚠️ 패널이 남은 후보만 카드로 펴는 지금도 **이 거부 경로는 남긴다** — 이중 벨트다: 화면 쪽
+    // 판정이 어긋나 버튼이 열려도 세계는 안 바뀌고, 그 사실이 토스트로 말해진다. 바로 위 스냅샷
+    // 문단이 말한 연타가 그 벨트의 실체다 — 같은 카드를 두 번 누르면 뒤엣것이 SLOT_TAKEN으로
+    // 거부되어, 한 명이 조용히 유실되는 대신 "이미 채용됐습니다"가 뜬다.
+    const res = hireDoctor(world, dept, slot);
     if (res.ok) setWorld(res.world);
     else showToast(HIRE_REASON_TEXT[res.reason]);
   };
@@ -1165,7 +1168,10 @@ export default function SimGame() {
       {regionPicked && (hireOpen || rosterOpen) && (
         <HirePanel
           pawns={world.pawns}
-          hirePool={world.hirePool}
+          /* 렌더마다 다시 계산한다 — 카드 수십 장 규모의 순수 파생이라 memo가 아깝다.
+             세계가 후보 목록을 들고 있지 않은 것이 요점이다: 소비된 슬롯(hiredSlots)만 저장하고
+             명단은 그것에서 파생하므로 두 곳이 어긋날 자리가 없다. */
+          candidates={remainingCandidates(regionHirePool(world.region), world.hiredSlots)}
           treasuryManwon={world.treasuryManwon}
           // 스타팅 모드는 **게이트가 열려 있는 동안만**이다 — 닫은 뒤 [채용]으로 다시 열면
           // 평소 패널이다(같은 컴포넌트가 두 얼굴을 갖되 상태는 하나다).
