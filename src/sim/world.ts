@@ -308,13 +308,36 @@ export interface SimWorld {
    *  의사의 이름**이고(events.applyEvent), 화면이 그걸로 고지문을 세운다(narrative.chillNotice).
    *  효과가 아니라 **이미 일어난 일의 이름표**라 위 "보정치를 저장하지 않는다"에 어긋나지 않는다:
    *  우선순위는 그 폰에 이미 적혔고 여기 남는 건 누가 그랬는지뿐이다. LAWSUIT이 아니거나 대상이
-   *  없으면 **필드 자체가 없다**(다음 아침이 event를 통째로 지우므로 별도 정리 경로도 없다). */
-  event?: { kind: SimEventKind; chilledName?: string }
+   *  없으면 **필드 자체가 없다**(다음 아침이 event를 통째로 지우므로 별도 정리 경로도 없다).
+   *
+   *  ⚠️ `costManwon`은 그 계약의 **둘째 입주자**다 — LAWSUIT이 그 자리에서 금고에서 뺀 액수
+   *  (지역 배율 포함)이고, 화면이 그걸로 「합의금 N만원이 빠져나갔습니다」를 세운다. 역시
+   *  **이미 일어난 일의 이름표**라 "보정치를 저장하지 않는다"에 어긋나지 않는다: 돈은 이미
+   *  `treasuryManwon`에서 빠졌고 여기 남는 건 얼마였는지뿐이다(누구였는지를 남기는 chilledName과
+   *  같은 성격). LAWSUIT이 아니면 **필드 자체가 없다**. */
+  event?: { kind: SimEventKind; chilledName?: string; costManwon?: number }
   /** **판 전체**에서 되돌아간 응급의 누적 건수 — 의료소송(LAWSUIT) 전제의 유일한 근거다.
    *  기존 `stats.emergencyTurnedAway`는 아침마다 비워지고 `days`는 주마다 비워져 "이 판에서
    *  몇 명을 돌려보냈나"를 읽을 축이 없었다. 단조 증가하고 하루·주 리셋이 없다
    *  (`saturatedDays`와 같은 계약 — *돌려보낸 일은 남는다*). */
   turnedAwayTotal: number
+  /**
+   * 이번 **주**에 의료소송 합의금으로 나간 돈의 누계(만원, 항상 양수) — **표시용 장부다.**
+   *
+   * ⚠️ **차감은 이 값이 하지 않는다.** 합의금은 이벤트가 붙는 그 순간 `applyEvent`가 이미
+   * 금고에서 뺐고, 이 누계는 주간 결산표가 *"이번 주 소송으로 얼마가 나갔나"*를 말하기 위해서만
+   * 존재한다. `weekSummary.netManwon` 식이나 `settleWeek`의 청구에 끼우면 **같은 돈이 주말에 한 번
+   * 더 빠진다** — settleWeek이 청구액을 `revenue − net`의 **차**로 유도하기 때문이다(week.ts).
+   * 그 이중 차감은 화면상 순익이 그럴듯해 보여서 조용하다. events.test.ts 「주간 결산은 소송
+   * 누계를 다시 빼지 않는다」가 이 계약을 잠근다.
+   *
+   * 이 축이 생긴 이유는 12주 실플레이 관측이다: 합의금이 어느 화면에도 안 보여, **금고 변화와
+   * 결산표의 합이 안 맞는데 어디서 갈렸는지 물을 자리가 없었다.**
+   *
+   * **주간 축이라 주를 넘기면 0이다**(`days`와 같은 계약 · `startNextWeek`). 판 누적인
+   * `turnedAwayTotal`·`nursesResignedTotal`과 갈리는 지점이 그것이다 — 결산표는 그 주의 이야기다.
+   */
+  lawsuitManwonWeek: number
   /**
    * **판 전체**에서 병원을 떠난 간호사의 누적 — 「유휴」 장부다(설계 2026-07-30 §3).
    *
@@ -410,7 +433,7 @@ export function createWorld(
     // 남은 사람들의 이름은 그대로다 — 옛 서수 방식이 겪던 "지역을 깎으면 이름이 밀린다"는
     // 조용한 어긋남(에러 0)이 그 분할로 사라졌다.
     hirePool: regionHirePool(region), hiredSlots: freshHiredSlots(),
-    turnedAwayTotal: 0, nursesResignedTotal: 0,
+    turnedAwayTotal: 0, nursesResignedTotal: 0, lawsuitManwonWeek: 0,
     region, backdrop: safeBackdrop(start?.backdrop),
   }
 }

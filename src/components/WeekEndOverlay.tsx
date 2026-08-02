@@ -207,6 +207,21 @@ export default function WeekEndOverlay({
                 라벨이 그 사실을 직접 말한다(숫자만 놓으면 표와 어긋나 보인다).
                 ⚠️ 사유별 내역(의사 없음/병상 없음)은 **하루 마감**에만 있다 — 코어의 주간 기록
                 (DayRecord.emergencies)이 건수만 들고 사유는 그날의 stats에만 남기 때문이다. */}
+            {/* 의료소송 합의금 — **총액에 안 들어 있는 유일한 줄**이다(week.WeekSummary.lawsuitManwon).
+                합의금은 이벤트가 붙는 그 순간 이미 금고에서 빠졌으므로, 여기 있는 것은 순익을
+                만드는 항이 아니라 **그 주에 얼마가 나갔는지**의 기록이다.
+                ⚠️ 라벨의 「발생 시 차감」이 이 줄의 핵심이다: 그 말이 없으면 표의 항목을 다 더한
+                값과 금고가 안 맞아 보여, 화면이 스스로 만든 어긋남을 플레이어가 버그로 읽는다
+                (이 줄이 생긴 이유가 바로 그 어긋남이다 — 12주 실플레이 관측).
+                **0인 주에는 줄이 없다**(임대료·간호 블록의 "0이어도 선다"와 갈리는 지점): 저 둘은
+                매주 나가는 고정 항목이라 0이 정보지만, 소송은 안 일어난 주가 기본값이라 0줄은
+                매주 「나가지 않은 돈」을 세는 빈칸이 된다. */}
+            {summary.lawsuitManwon > 0 && (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="font-sans text-xs text-ink-2">의료소송 합의금 (발생 시 차감)</dt>
+                <dd className="text-stamp-ink">−{formatManwon(summary.lawsuitManwon)}</dd>
+              </div>
+            )}
             <div className="flex items-baseline justify-between">
               <dt className="font-sans text-xs text-ink-2">응급 (문앞 판정)</dt>
               <dd className="text-ink">
