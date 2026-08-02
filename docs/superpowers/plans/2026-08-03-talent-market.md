@@ -7,6 +7,8 @@ tags:
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> ⚠️ 구현 시 정정: hireDoctor의 slot은 필수가 됐다(초안의 optional 폴백 기각 — 근거는 스펙 §2). 본문 Task 2의 slot? 서술은 초안 스냅샷이다.
+
 **Goal:** 채용 패널의 "전국 잔여 N명" 숫자를, 개원 시점부터 이름·특성·초상이 정해진 **후보 카드**로 바꾼다(풀 숫자·밸런스 무변).
 
 **Architecture:** ① 새 leaf-급 모듈 `src/sim/candidate.ts`가 `(과, 슬롯) → 사람`을 순수 함수로 제공(RNG 0). ② `SimWorld.hiredSlots`가 소비된 슬롯을 기록하고 `hireDoctor(w, dept, slot?)`가 특정 후보를 소비. ③ `HirePanel`을 과별 4열 카드 그리드로 대개편, 초상 키를 이름으로 통일해 카드=맵 얼굴 일치.

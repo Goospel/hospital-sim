@@ -142,8 +142,12 @@ export default function HirePanel({
                     {/* 사연 한 줄 — 첫 특성의 story를 **그대로** 쓴다. 이름·과를 끼워 넣지 않는
                         것이 traits.ts의 계약이다(보간값 뒤 조사 분기 · T-094). */}
                     <p className="text-[11px] text-on-desk-muted">{TRAITS[cand.traits[0]].story}</p>
+                    {/* 보이는 라벨은 「채용」 하나로 족하다(카드 안에 이미 사람이 있다) — 그러나
+                        접근성 이름엔 사람이 실려야 한다: 스크린리더의 버튼 목록에서는 카드 맥락이
+                        사라져 「채용」 여덟 개만 남는다. */}
                     <button
                       type="button"
+                      aria-label={`${cand.name} 채용`}
                       onClick={() => onHire(cand.dept, cand.slot)}
                       className="border border-frame px-3 py-1 text-xs text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-desk-muted"
                     >
