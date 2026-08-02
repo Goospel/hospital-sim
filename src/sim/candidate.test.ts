@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { candidateOf, freshHiredSlots, remainingCandidates } from './candidate'
 import { HIRABLE_DEPTS, simDept } from './dept'
+import { hireDoctor } from './pawn'
 import { DOCTOR_NAMES } from './traits'
-import { regionHirePool } from './world'
+import { createWorld, regionHirePool } from './world'
 
 describe('candidateOf — (과, 슬롯)의 순수 함수', () => {
   it('같은 (과, 슬롯)은 언제나 같은 사람이다 — 세계 상태 없이 결정된다', () => {
@@ -46,5 +47,53 @@ describe('remainingCandidates — 지역 풀에서 소비분을 뺀 나머지', 
     const hired = { ...freshHiredSlots(), AESTHETICS: [1] }
     const rest = remainingCandidates(regionHirePool('URBAN'), hired)
     expect(rest.AESTHETICS.map(c => c.slot)).toEqual([0, 2, 3, 4, 5, 6, 7])
+  })
+})
+
+describe('hireDoctor — 슬롯 지정 채용', () => {
+  it('슬롯을 지정하면 정확히 그 후보의 이름·특성으로 폰이 선다', () => {
+    const cand = candidateOf('CARDIOLOGY', 1)
+    const res = hireDoctor(createWorld(1), 'CARDIOLOGY', 1)
+    if (!res.ok) throw new Error('채용이 거부됐다')
+    const doc = res.world.pawns.find(p => p.kind === 'DOCTOR')!
+    expect(doc.name).toBe(cand.name)
+    expect(doc.traits).toEqual(cand.traits)
+    expect(res.world.hiredSlots.CARDIOLOGY).toEqual([1])
+    expect(res.world.hirePool.CARDIOLOGY).toBe(1) // 카운트도 함께 준다
+  })
+
+  it('이미 소비된 슬롯·범위 밖 슬롯은 거부되고 세계는 그대로다', () => {
+    const w1 = hireDoctor(createWorld(1), 'CARDIOLOGY', 0)
+    if (!w1.ok) throw new Error('선행 채용이 거부됐다')
+    expect(hireDoctor(w1.world, 'CARDIOLOGY', 0)).toEqual({ ok: false, reason: 'SLOT_TAKEN' })
+    expect(hireDoctor(createWorld(1), 'CARDIOLOGY', 9)).toEqual({ ok: false, reason: 'SLOT_TAKEN' })
+  })
+
+  it('슬롯 생략 = 남은 최소 슬롯 — 기존 호출부 하위호환', () => {
+    const w1 = hireDoctor(createWorld(1), 'AESTHETICS', 0)
+    if (!w1.ok) throw new Error('선행 채용이 거부됐다')
+    const w2 = hireDoctor(w1.world, 'AESTHETICS')
+    if (!w2.ok) throw new Error('생략 채용이 거부됐다')
+    expect(w2.world.hiredSlots.AESTHETICS).toEqual([0, 1])
+  })
+
+  it('지역 축소 풀에서는 지역 범위 밖 슬롯이 거부된다 — 지방 순환기는 슬롯 0뿐', () => {
+    const w = createWorld(1, { region: 'PROVINCIAL' })
+    expect(hireDoctor(w, 'CARDIOLOGY', 1)).toEqual({ ok: false, reason: 'SLOT_TAKEN' })
+    expect(hireDoctor(w, 'CARDIOLOGY', 0).ok).toBe(true)
+  })
+
+  it('불변식: hirePool[d] + hiredSlots[d].length === 지역 시작 풀 — 채용 열 뒤에도', () => {
+    let w = createWorld(1, { region: 'NEWTOWN' })
+    for (const [dept, slot] of [
+      ['AESTHETICS', 3], ['INTERNAL_MEDICINE', 0], ['GENERAL_SURGERY', 1], ['AESTHETICS', 0],
+    ] as const) {
+      const res = hireDoctor(w, dept, slot)
+      if (!res.ok) throw new Error(`${dept} ${slot} 채용이 거부됐다`)
+      w = res.world
+    }
+    const start = regionHirePool('NEWTOWN')
+    for (const dept of HIRABLE_DEPTS)
+      expect(w.hirePool[dept] + w.hiredSlots[dept].length, dept).toBe(start[dept])
   })
 })

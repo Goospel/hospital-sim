@@ -2,6 +2,7 @@
 // 경로는 목적지가 정해질 때 findPath로 1회 계산해 path에 저장하고, 틱은 소비만 한다
 // (findPath는 최장 경로 ~3ms라 매 틱 재탐색하면 폰 수만큼 곱해져 프레임을 먹는다).
 import { GRID_W, GRID_H, ENTRANCE, isWalkable, regionHirePool, type SimWorld } from './world'
+import { candidateOf, type Candidate } from './candidate'
 import { HIRABLE_DEPTS, type SimDeptKey } from './dept'
 import type { EmergencyKind } from './emergency' // 타입 전용 — emergency.ts가 pawn을 되받아도 순환 무해
 import type { Pt } from './path'
@@ -266,18 +267,26 @@ function hiredEver(w: SimWorld): number {
   return HIRABLE_DEPTS.reduce((sum, key) => sum + (initial[key] - w.hirePool[key]), 0)
 }
 
-export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
+export function spawnDoctor(
+  w: SimWorld, dept: SimDeptKey, at: Pt,
+  identity?: Pick<Candidate, 'name' | 'traits'>,
+): SimWorld {
   // 피로·부하·허기를 **명시적으로 0**에서 시작한다 — `?? 0` 폴백이 있어도 필드가 실재해야 UI·저장이
   // "아직 일 안 한 의사"와 "필드가 없는 손세계 폰"을 구별할 수 있다.
   // 허기 0 = 밥을 먹고 출근했다(freshMorning의 아침 리셋과 같은 각색).
   // 우선순위도 같은 이유로 명시한다 — 새 의사는 세 축이 전부 '보통'이다.
   // 포화 일수도 명시적으로 0이다 — 이 사람은 아직 하루도 갈리지 않았다.
   // 이름·특성 둘 다 **시드를 소비하지 않는다**(traits.ts 머리말) — 채용 한 번이 도착·응급
-  // 스트림을 밀지 않는다. 다만 **인덱스가 서로 다르다**: 이름은 유일해야 해서 채용 서수를,
-  // 특성은 유형이라 겹쳐도 자연스러워 `nextId`를 쓴다.
+  // 스트림을 밀지 않는다.
+  //
+  // 신원(`identity`)은 **채용 경로가 후보에서 실어 온다**(hireDoctor → candidate.candidateOf):
+  // 카드에 미리 보인 사람과 실제로 선 폰이 같은 사람이어야 하므로, 여기서 다시 뽑으면 그 약속이
+  // 스폰 시점에 조용히 깨진다. 미지정 폴백은 **채용을 거치지 않는 직접 호출**(테스트의 손세계 폰)
+  // 전용이라 종전 서수 방식 그대로다 — 기존 손세계가 안 깨진다.
   const p: Pawn = {
     id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept,
-    name: doctorName(hiredEver(w)), traits: pickTraits(w.nextId),
+    name: identity?.name ?? doctorName(hiredEver(w)),
+    traits: identity?.traits ?? pickTraits(w.nextId),
     fatigue: 0, loadMinToday: 0, hungerMin: 0, saturatedDays: 0, priorities: freshPriorities(),
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
@@ -328,7 +337,7 @@ function spawnSpotNear(w: SimWorld, from: Pt): Pt {
  *  그러면 채용 버튼이 조용히 먹히고 플레이어는 왜 안 뽑히는지 알 길이 없다. */
 export type HireResult =
   | { ok: true; world: SimWorld }
-  | { ok: false; reason: 'NO_POOL' }
+  | { ok: false; reason: 'NO_POOL' | 'SLOT_TAKEN' }
 
 /** 채용 — 그 과 의사 한 명이 정문으로 걸어 들어오고, **전국에 남은 그 과 사람이 하나 줄어든다**.
  *  **일시금이 없다**(금고 무변): 기존 게임의 계약금(DEPARTMENTS.hireCostManwon)은 PR C/D 절단이고,
@@ -337,12 +346,31 @@ export type HireResult =
  *
  *  그 대신 **사람 쪽 대가**가 여기 있다: 풀이 0인 과는 돈이 아무리 많아도 못 뽑는다(응급의
  *  배후과 하드락과 같은 형태의 비협상 제약이다). 실패한 채용은 세계를 스치지도 않는다 —
- *  차감만 하고 폰을 안 세우거나 그 반대면 인원과 풀이 조용히 갈린다. */
-export function hireDoctor(w: SimWorld, dept: SimDeptKey): HireResult {
+ *  차감만 하고 폰을 안 세우거나 그 반대면 인원과 풀이 조용히 갈린다.
+ *
+ *  ⚠️ 뽑히는 것은 **특정 후보 한 명**이다(candidate.ts): `slot`이 그 사람을 가리키고, 채용은
+ *  그 슬롯을 소비한다(`hiredSlots`). 카운트(`hirePool`)도 함께 하나 줄어 둘이 늘 맞는다 —
+ *  쓰기 경로가 이 함수 하나뿐이라 어긋날 면이 없고, 불변식 테스트가 그걸 잠근다. */
+export function hireDoctor(w: SimWorld, dept: SimDeptKey, slot?: number): HireResult {
   const remaining = w.hirePool[dept]
   if (remaining <= 0) return { ok: false, reason: 'NO_POOL' }
-  const world = spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE))
-  return { ok: true, world: { ...world, hirePool: { ...world.hirePool, [dept]: remaining - 1 } } }
+  const regionN = regionHirePool(w.region)[dept]
+  const taken = w.hiredSlots[dept]
+  // 생략 = 남은 최소 슬롯(기존 호출부 하위호환). remaining > 0이면 불변식상 반드시 있다.
+  const pick = slot ?? Array.from({ length: regionN }, (_, s) => s).find(s => !taken.includes(s))
+  // SLOT_TAKEN 하나로 접는 이유: UI는 remainingCandidates가 준 슬롯만 넘기므로 이 거부는
+  // 연타·stale 스냅샷 경로뿐이고, 플레이어에게 할 말은 "그 사람은 이미 없다" 하나다.
+  if (pick === undefined || !Number.isInteger(pick) || pick < 0 || pick >= regionN || taken.includes(pick))
+    return { ok: false, reason: 'SLOT_TAKEN' }
+  const world = spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE), candidateOf(dept, pick))
+  return {
+    ok: true,
+    world: {
+      ...world,
+      hirePool: { ...world.hirePool, [dept]: remaining - 1 },
+      hiredSlots: { ...world.hiredSlots, [dept]: [...taken, pick] },
+    },
+  }
 }
 
 /** 이 병원의 간호사 수 — 수납 판정(patientFlow.hasCashier)·주급(week)이 **같은 한 줄**을 본다.

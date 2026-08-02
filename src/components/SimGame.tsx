@@ -76,6 +76,7 @@ const ROOM_TYPES: RoomType[] = ["EXAM", "WAITING", "WARD", "RECEPTION", "LOUNGE"
 /** 채용 거부 사유 → 화면 문구. 건설 쪽 대응물은 simHud.buildResultText다(사유는 코어가, 말은 화면이). */
 const HIRE_REASON_TEXT: Record<Exclude<HireResult, { ok: true }>["reason"], string> = {
   NO_POOL: "전국에 남은 그 과 의사가 없습니다",
+  SLOT_TAKEN: "그 사람은 이미 채용됐습니다",
 };
 
 /**

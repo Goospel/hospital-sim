@@ -95,10 +95,10 @@ describe('spawnDoctor — 이름·특성 부여', () => {
     expect(spawned(1, 11).traits).toEqual(pickTraits(11))
   })
 
-  it('이름은 **채용 서수**다 — 한 판에서 동명이인이 없다(풀 소진까지)', () => {
+  it('이름은 **(과, 슬롯)의 전역 분할**이다 — 한 판에서 동명이인이 없다(풀 소진까지)', () => {
     // ⚠️ nextId로 매기면 겹친다: nextId는 방·환자·응급까지 올리는 **전역** 카운터라
-    //    채용 순서와 무관하게 뛴다(실측: 8명 채용에 같은 이름 2회). 채용 서수는 풀 소진량
-    //    합계라 판 안에서 단조 증가·유일이고, 사직자는 풀로 안 돌아와 되감기지도 않는다.
+    //    채용 순서와 무관하게 뛴다(실측: 8명 채용에 같은 이름 2회). 지금은 이름이 전국 풀
+    //    18칸에 1:1로 분할돼(candidate.ts) 과가 달라도 겹칠 자리가 아예 없다.
     const w = hireEveryone(1, { busy: true })
     const docs = doctorsOf(w)
     expect(docs.length).toBe(TOTAL_POOL)          // 계측기 자기검사 — 풀을 실제로 다 썼다
@@ -106,32 +106,34 @@ describe('spawnDoctor — 이름·특성 부여', () => {
     expect(new Set(docs.map(p => p.name)).size).toBe(TOTAL_POOL)
   })
 
-  it('이름은 0번부터 순서대로 붙는다 — 채용이 목록을 건너뛰지 않는다', () => {
-    // hireDoctor가 spawnDoctor를 **차감 전에** 부르므로 첫 채용자의 서수가 0이다.
-    // 차감 후로 바뀌면 목록의 첫 이름이 영영 안 쓰인다(에러 0).
+  it('전국 풀을 다 쓰면 목록을 정확히 다 쓴다 — 남거나 건너뛴 이름이 없다', () => {
+    // 전국 풀 합계(18) = 목록 길이라, 전 과를 슬롯 0부터 끝까지 채우면 카탈로그 기재 순서대로
+    // 목록 전체가 나온다. 오프셋 누적이 한 칸이라도 어긋나면 여기서 어긋난 자리가 드러난다.
     expect(doctorsOf(hireEveryone(1, { busy: true })).map(p => p.name))
       .toEqual(DOCTOR_NAMES.slice(0, TOTAL_POOL))
   })
 
-  it('서수의 기준은 **그 지역의 시작 풀**이다 — 얇은 지역도 첫 채용자가 0번이다', () => {
-    // 서수는 `Σ(초기 풀 − 남은 풀)`이라 "초기 풀 = 전국 풀"이라는 전제가 깔려 있었다. 지역이
-    // 초기 풀을 깎으면 그 전제가 깨진다: 전국 기준으로 세면 PROVINCIAL은 아무도 안 뽑았는데
-    // 이미 8을 소진한 것으로 읽혀 **목록 8번부터** 이름이 붙는다(에러 0 — 이름만 조용히 밀린다).
-    for (const region of ['PROVINCIAL', 'NEWTOWN', 'RURAL'] as const) {
+  it('이름은 **지역과 무관하다** — 어느 지역에서도 내과 첫 슬롯은 같은 사람이다', () => {
+    // 옛 규칙(채용 서수 = Σ(초기 풀 − 남은 풀))은 "초기 풀 = 전국 풀"을 전제해서, 지역이
+    // 초기 풀을 깎으면 이름이 에러 없이 조용히 밀렸다. 지금 이름은 **전국 풀 기준 (과, 슬롯)의
+    // 순수 함수**(candidate.ts)라 그 축에 지역이 아예 없다 — 회귀를 재는 자리는 그대로 두고
+    // 기대값만 새 규칙(내과 오프셋 8)으로 옮긴다.
+    for (const region of ['URBAN', 'PROVINCIAL', 'NEWTOWN', 'RURAL'] as const) {
       const w = hire(createWorld(1, { region }), 'INTERNAL_MEDICINE')
-      expect(doctorsOf(w)[0].name, region).toBe(DOCTOR_NAMES[0])
+      expect(doctorsOf(w)[0].name, region).toBe(DOCTOR_NAMES[8])
     }
   })
 
-  it('얇은 지역에서도 이름은 **0번부터 순서대로** 붙는다 — 목록을 건너뛰지 않는다', () => {
-    // 첫 한 명만 재면 "초기 − 남은" 대신 "채용 횟수"를 세는 구현도 통과한다. 풀을 통째로
-    // 비워 서수가 끝까지 단조 증가·유일함을 잠근다(전국 기준 회귀는 여기서 8번부터 시작한다).
+  it('얇은 지역에서도 과마다 **슬롯 0부터** 붙는다 — 과 구획을 건너뛰지 않는다', () => {
+    // 첫 한 명만 재면 과 오프셋을 무시하는 구현도 통과한다. 풀을 통째로 비워 과별 구획이
+    // 끝까지 지켜지는지를 잠근다: RURAL 2/3/2/1이면 미용 0~1 · 내과 8~10 · 외과 13~14 ·
+    // 순환기 16이고, 이름이 과 경계를 넘어 이어 붙으면(= 옛 채용 서수로의 회귀) 여기서 터진다.
     let w = createWorld(1, { region: 'RURAL' })
     const start = { ...w.hirePool }
     for (const dept of HIRABLE_DEPTS) for (let i = 0; i < start[dept]; i++) w = hire(w, dept)
-    const total = HIRABLE_DEPTS.reduce((s, k) => s + start[k], 0)
-    expect(total).toBe(8) // 계측기 자기검사 — RURAL 2/3/2/1
-    expect(doctorsOf(w).map(p => p.name)).toEqual(DOCTOR_NAMES.slice(0, total))
+    expect(HIRABLE_DEPTS.reduce((s, k) => s + start[k], 0)).toBe(8) // 계측기 자기검사 — RURAL 2/3/2/1
+    expect(doctorsOf(w).map(p => p.name))
+      .toEqual([0, 1, 8, 9, 10, 13, 14, 16].map(i => DOCTOR_NAMES[i]))
   })
 
   it('이름·특성 어느 쪽도 **난수를 뽑지 않는다** — 같은 채용 순서면 같은 사람이 온다', () => {

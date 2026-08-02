@@ -1,5 +1,6 @@
 // 타일 세계 — 순수 데이터와 통행 판정. 렌더·React 임포트 금지.
 // dept.ts는 world를 모른다(단방향) — 그래서 값(freshHirePool)까지 당겨도 순환이 없다.
+import { freshHiredSlots } from './candidate'
 import { freshHirePool, type DeptMix, type SimDeptKey, type SimDeptStats } from './dept'
 import type { EmergencyTurnAway } from './emergency' // 타입 전용 — emergency.ts가 world를 되받아도 런타임 순환 없음
 import type { SimEventKind } from './events' // 타입 전용 — events.ts는 leaf라 값도 순환은 없지만 필요한 건 타입뿐이다
@@ -290,6 +291,11 @@ export interface SimWorld {
    *  필수의료를 떠난 것이라, 이 숫자는 한 판 동안 단조 감소한다.
    *  초기값은 카탈로그 파생이다(dept.freshHirePool) — 두 곳에 적지 않는다. */
   hirePool: Record<SimDeptKey, number>
+  /** 과별로 **이미 뽑힌 후보 슬롯**(candidate.ts) — hirePool 카운트의 명단판이다.
+   *  카운트를 지우지 않는 이유: 기존 테스트·화면·이벤트가 전부 카운트를 읽는다. 쓰기 경로가
+   *  hireDoctor 하나뿐이라 어긋날 면이 없고, 일치는 불변식 테스트가 잠근다
+   *  (hirePool[d] + hiredSlots[d].length === regionHirePool(region)[d]). */
+  hiredSlots: Record<SimDeptKey, number[]>
   /** 판을 끝낸 결말 — **`phase: 'CLOSED'`와 항상 함께** 세팅된다(settleWeek 한 곳).
    *  살아 있는 세계에는 없다(optional인 이유): 있으면 끝난 판이고, 없으면 아직 굴러가는 판이다. */
   ending?: EndingKind
@@ -400,7 +406,8 @@ export function createWorld(
     // 시작 풀은 **지역이 정한다** — URBAN은 델타 0이라 전국 풀 그대로다(기존 회귀 무변).
     // ⚠️ 이 한 줄이 `pawn.hiredEver`의 기준까지 바꾼다: 의사 이름 서수가 "초기 풀 − 남은 풀"의
     // 합이라, 그쪽 기준을 함께 옮기지 않으면 PROVINCIAL이 시작부터 서수 8이 된다(에러 0).
-    hirePool: regionHirePool(region), turnedAwayTotal: 0, nursesResignedTotal: 0,
+    hirePool: regionHirePool(region), hiredSlots: freshHiredSlots(),
+    turnedAwayTotal: 0, nursesResignedTotal: 0,
     region, backdrop: safeBackdrop(start?.backdrop),
   }
 }

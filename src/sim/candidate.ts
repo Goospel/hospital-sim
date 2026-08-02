@@ -43,7 +43,10 @@ export function candidateOf(dept: SimDeptKey, slot: number): Candidate {
 
 /** 과별 빈 소비 목록 — SimWorld.hiredSlots의 초기값(createWorld가 쓴다). */
 export function freshHiredSlots(): Record<SimDeptKey, number[]> {
-  return Object.fromEntries(HIRABLE_DEPTS.map(key => [key, []])) as Record<SimDeptKey, number[]>
+  // `[] as number[]` — 그냥 `[]`면 TS가 `never[]`로 좁혀 캐스트가 막힌다(값 타입이 안 겹친다).
+  return Object.fromEntries(
+    HIRABLE_DEPTS.map(key => [key, [] as number[]]),
+  ) as Record<SimDeptKey, number[]>
 }
 
 /** 남은 후보 — 지역 시작 풀(regionHirePool 결과)에서 소비된 슬롯을 뺀 나머지.
