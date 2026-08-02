@@ -2,6 +2,7 @@
 // 경로는 목적지가 정해질 때 findPath로 1회 계산해 path에 저장하고, 틱은 소비만 한다
 // (findPath는 최장 경로 ~3ms라 매 틱 재탐색하면 폰 수만큼 곱해져 프레임을 먹는다).
 import { GRID_W, GRID_H, ENTRANCE, isWalkable, regionHirePool, type SimWorld } from './world'
+import { candidateOf, type Candidate } from './candidate'
 import { HIRABLE_DEPTS, type SimDeptKey } from './dept'
 import type { EmergencyKind } from './emergency' // 타입 전용 — emergency.ts가 pawn을 되받아도 순환 무해
 import type { Pt } from './path'
@@ -119,7 +120,9 @@ export interface Pawn {
    *     "도착"으로 오인한다 — 그래서 도착 판정은 항상 **위치 == dest**로 한다. */
   dest?: Pt
   // DOCTOR
-  /** 이 의사의 이름 — **의사만**. 채용·스폰이 `nextId`로 결정론 부여한다(traits.doctorName).
+  /** 사람 이름 — **의사·간호사**(환자는 익명이다). 부여는 셋 다 결정론이되 출처가 갈린다:
+   *  의사 채용은 후보의 신원(candidate.candidateOf — (과, 슬롯) 전역 분할), 간호사와 손세계
+   *  폴백은 서수(traits.doctorName). 어느 쪽이든 시드를 소비하지 않는다.
    *  optional인 이유는 손세계 폰·저장된 옛 세계 때문이다(우선순위 필드와 같은 계약). */
   name?: string
   /** 이 의사의 특성 두 개 — **의사만**. 서로 다른 두 값이 보장된다(traits.pickTraits).
@@ -243,7 +246,12 @@ export function doctorDeptOf(p: Pawn): SimDeptKey {
 }
 
 /**
- * 이 판에서 지금까지 채용한 인원 — **이름의 인덱스**다(풀 소진량의 합).
+ * 이 판에서 지금까지 채용한 인원 — **손세계 폴백 전용 이름 인덱스**다(풀 소진량의 합).
+ *
+ * ⚠️ **채용 경로는 여기를 지나지 않는다**: `hireDoctor`가 후보에서 신원을 실어 오므로
+ * (candidate.candidateOf — (과, 슬롯) 전역 분할) 뽑힌 의사의 이름은 이 합과 무관하다. 이 함수가
+ * 남아 있는 건 `spawnDoctor`를 **직접** 부르는 손세계 폰(테스트)의 폴백 때문이고, 아래 논지는
+ * 그 폴백 안에서만 유효하다.
  *
  * `nextId`를 쓰지 않는 이유: 그건 방·환자·응급까지 올리는 **전역** 카운터라 채용 순서와 무관하게
  * 뛴다 — 8명만 뽑아도 목록을 한 바퀴 돌아 동명이인이 났다(리뷰 실측). 풀은 **단조 감소**하고
@@ -256,28 +264,34 @@ export function doctorDeptOf(p: Pawn): SimDeptKey {
  * 하나도 안 나고 이름만 조용히 밀린다(traits.test.ts가 잠근다). 새 필드를 만들지 않는 것은
  * 그대로다: 시작 풀도 `region`의 순수 파생이라 이중 기재가 아니다.
  *
- * ⚠️ `hireDoctor`가 `spawnDoctor`를 **차감 전에** 부르므로 첫 채용자의 서수는 0이다. 순서를
- * 뒤집으면 목록의 첫 이름이 영영 안 쓰인다(에러 0 — 테스트가 잠근다).
- * ⚠️ 채용을 거치지 않는 `spawnDoctor` 직접 호출(테스트의 손세계 폰)은 풀을 안 건드리므로 전부
- * 서수 0을 받는다 — 의도된 결과다. 이름의 유일성은 **채용 경로의 성질**이지 스폰의 성질이 아니다.
+ * ⚠️ 손세계 폰은 풀을 안 건드리므로 전부 서수 0(목록의 첫 이름)을 받는다 — 의도된 결과다.
+ * 이름의 유일성은 **채용 경로의 성질**(슬롯이 사람의 좌표다)이지 스폰의 성질이 아니다.
  */
 function hiredEver(w: SimWorld): number {
   const initial = regionHirePool(w.region)
   return HIRABLE_DEPTS.reduce((sum, key) => sum + (initial[key] - w.hirePool[key]), 0)
 }
 
-export function spawnDoctor(w: SimWorld, dept: SimDeptKey, at: Pt): SimWorld {
+export function spawnDoctor(
+  w: SimWorld, dept: SimDeptKey, at: Pt,
+  identity?: Pick<Candidate, 'name' | 'traits'>,
+): SimWorld {
   // 피로·부하·허기를 **명시적으로 0**에서 시작한다 — `?? 0` 폴백이 있어도 필드가 실재해야 UI·저장이
   // "아직 일 안 한 의사"와 "필드가 없는 손세계 폰"을 구별할 수 있다.
   // 허기 0 = 밥을 먹고 출근했다(freshMorning의 아침 리셋과 같은 각색).
   // 우선순위도 같은 이유로 명시한다 — 새 의사는 세 축이 전부 '보통'이다.
   // 포화 일수도 명시적으로 0이다 — 이 사람은 아직 하루도 갈리지 않았다.
   // 이름·특성 둘 다 **시드를 소비하지 않는다**(traits.ts 머리말) — 채용 한 번이 도착·응급
-  // 스트림을 밀지 않는다. 다만 **인덱스가 서로 다르다**: 이름은 유일해야 해서 채용 서수를,
-  // 특성은 유형이라 겹쳐도 자연스러워 `nextId`를 쓴다.
+  // 스트림을 밀지 않는다.
+  //
+  // 신원(`identity`)은 **채용 경로가 후보에서 실어 온다**(hireDoctor → candidate.candidateOf):
+  // 카드에 미리 보인 사람과 실제로 선 폰이 같은 사람이어야 하므로, 여기서 다시 뽑으면 그 약속이
+  // 스폰 시점에 조용히 깨진다. 미지정 폴백은 **채용을 거치지 않는 직접 호출**(테스트의 손세계 폰)
+  // 전용이라 종전 서수 방식 그대로다 — 기존 손세계가 안 깨진다.
   const p: Pawn = {
     id: `doc-${w.nextId}`, kind: 'DOCTOR', x: at.x, y: at.y, path: [], dept,
-    name: doctorName(hiredEver(w)), traits: pickTraits(w.nextId),
+    name: identity?.name ?? doctorName(hiredEver(w)),
+    traits: identity?.traits ?? pickTraits(w.nextId),
     fatigue: 0, loadMinToday: 0, hungerMin: 0, saturatedDays: 0, priorities: freshPriorities(),
   }
   return { ...w, nextId: w.nextId + 1, pawns: [...w.pawns, p] }
@@ -328,7 +342,7 @@ function spawnSpotNear(w: SimWorld, from: Pt): Pt {
  *  그러면 채용 버튼이 조용히 먹히고 플레이어는 왜 안 뽑히는지 알 길이 없다. */
 export type HireResult =
   | { ok: true; world: SimWorld }
-  | { ok: false; reason: 'NO_POOL' }
+  | { ok: false; reason: 'NO_POOL' | 'SLOT_TAKEN' }
 
 /** 채용 — 그 과 의사 한 명이 정문으로 걸어 들어오고, **전국에 남은 그 과 사람이 하나 줄어든다**.
  *  **일시금이 없다**(금고 무변): 기존 게임의 계약금(DEPARTMENTS.hireCostManwon)은 PR C/D 절단이고,
@@ -337,12 +351,35 @@ export type HireResult =
  *
  *  그 대신 **사람 쪽 대가**가 여기 있다: 풀이 0인 과는 돈이 아무리 많아도 못 뽑는다(응급의
  *  배후과 하드락과 같은 형태의 비협상 제약이다). 실패한 채용은 세계를 스치지도 않는다 —
- *  차감만 하고 폰을 안 세우거나 그 반대면 인원과 풀이 조용히 갈린다. */
-export function hireDoctor(w: SimWorld, dept: SimDeptKey): HireResult {
+ *  차감만 하고 폰을 안 세우거나 그 반대면 인원과 풀이 조용히 갈린다.
+ *
+ *  ⚠️ 뽑히는 것은 **특정 후보 한 명**이다(candidate.ts): `slot`이 그 사람을 가리키고, 채용은
+ *  그 슬롯을 소비한다(`hiredSlots`). 카운트(`hirePool`)도 함께 하나 줄어 둘이 늘 맞는다 —
+ *  쓰기 경로가 이 함수 하나뿐이라 어긋날 면이 없고, 불변식 테스트가 그걸 잠근다.
+ *
+ *  ⚠️ **`slot`은 필수다** — "남은 아무나" 폴백을 두지 않는다. 폴백이 있으면 화면이 슬롯을
+ *  떨어뜨려도(예: `hireDoctor(w, dept)`) 컴파일도 테스트도 전원 통과하면서 *카드에서 고른 그
+ *  사람이 아닌* 다른 사람이 조용히 선다 — 이 슬라이스의 논지가 어떤 계측기에도 안 걸리는
+ *  유일한 회귀 경로였다(리뷰 실측). 필수로 두면 그 회귀가 **컴파일 에러**가 된다.
+ *  손세계 픽스처용 "남은 최소 슬롯" 폴백은 테스트 헬퍼(testHelpers.hire)에 산다. */
+export function hireDoctor(w: SimWorld, dept: SimDeptKey, slot: number): HireResult {
   const remaining = w.hirePool[dept]
   if (remaining <= 0) return { ok: false, reason: 'NO_POOL' }
-  const world = spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE))
-  return { ok: true, world: { ...world, hirePool: { ...world.hirePool, [dept]: remaining - 1 } } }
+  const regionN = regionHirePool(w.region)[dept]
+  const taken = w.hiredSlots[dept]
+  // SLOT_TAKEN 하나로 접는 이유: UI는 remainingCandidates가 준 슬롯만 넘기므로 이 거부는
+  // 연타·stale 스냅샷 경로뿐이고, 플레이어에게 할 말은 "그 사람은 이미 없다" 하나다.
+  if (!Number.isInteger(slot) || slot < 0 || slot >= regionN || taken.includes(slot))
+    return { ok: false, reason: 'SLOT_TAKEN' }
+  const world = spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE), candidateOf(dept, slot))
+  return {
+    ok: true,
+    world: {
+      ...world,
+      hirePool: { ...world.hirePool, [dept]: remaining - 1 },
+      hiredSlots: { ...world.hiredSlots, [dept]: [...taken, slot] },
+    },
+  }
 }
 
 /** 이 병원의 간호사 수 — 수납 판정(patientFlow.hasCashier)·주급(week)이 **같은 한 줄**을 본다.

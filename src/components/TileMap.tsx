@@ -861,10 +861,14 @@ export default function TileMap({
                 래퍼는 자세와 무관하게 **늘 있다** — 조건부로 감싸면 React 트리가 갈려 이동
                 transition이 remount로 끊긴다(이 파일 머리말의 폰 규칙). */}
             <div className="absolute inset-0" style={{ transform: lying && !lyingPatient ? "rotate(90deg) scale(0.8)" : undefined }}>
+              {/* 변주 키는 **이름 우선**이다(폴백은 id). 채용 카드가 그리는 얼굴과 같은 값이라야
+                  카드에서 고른 사람이 부지에도 그대로 선다 — `p.id`(`doc-${nextId}`)는 채용이
+                  확정돼야 정해지는 값이라 카드 시점에는 알 수 없고, 그러면 두 화면이 같은 사람을
+                  다른 얼굴로 그린다. 이름은 후보 시점부터 확정이다(sim/candidate.ts). */}
               {p.kind === "NURSE" ? (
-                <NurseSprite variantKey={p.id} />
+                <NurseSprite variantKey={p.name ?? p.id} />
               ) : p.kind === "DOCTOR" && p.dept ? (
-                <DoctorSprite dept={p.dept} busy={busyDoctors.has(p.id)} variantKey={p.id} />
+                <DoctorSprite dept={p.dept} busy={busyDoctors.has(p.id)} variantKey={p.name ?? p.id} />
               ) : lyingPatient ? (
                 <LyingPatientSprite />
               ) : (

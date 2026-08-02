@@ -232,14 +232,15 @@ describe('전국 풀 — 사람은 무한하지 않다', () => {
     for (let i = 0; i < n; i++) w = hire(w, 'CARDIOLOGY')
     expect(docs(w)).toHaveLength(n)
     expect(w.hirePool.CARDIOLOGY).toBe(0)
-    expect(hireDoctor(w, 'CARDIOLOGY')).toEqual({ ok: false, reason: 'NO_POOL' })
+    // 슬롯은 아무 값이나 준다 — 풀 검사가 슬롯 검사보다 **먼저**라 여기서 재는 건 NO_POOL뿐이다.
+    expect(hireDoctor(w, 'CARDIOLOGY', 0)).toEqual({ ok: false, reason: 'NO_POOL' })
   })
 
   it('풀이 0이면 NO_POOL — 세계는 **값으로** 불변이고 다른 과는 여전히 뽑힌다', () => {
     const base = createWorld(1)
     const w: SimWorld = { ...base, hirePool: { ...base.hirePool, CARDIOLOGY: 0 } }
     const snapshot = structuredClone(w)
-    expect(hireDoctor(w, 'CARDIOLOGY')).toEqual({ ok: false, reason: 'NO_POOL' })
+    expect(hireDoctor(w, 'CARDIOLOGY', 0)).toEqual({ ok: false, reason: 'NO_POOL' })
     expect(w).toEqual(snapshot) // 거부는 세계를 스치지도 않는다
     expect(docs(hire(w, 'AESTHETICS'))).toHaveLength(1)
   })
@@ -269,6 +270,6 @@ describe('전국 풀 — 사람은 무한하지 않다', () => {
     }
     expect(rookie.saturatedDays).toBe(0) // 포화도 상속되지 않는다
     // 순환기 풀이 이걸로 바닥났다 — 갈아 넣은 만큼 세 번째 사람은 없다.
-    expect(hireDoctor(rehired, 'CARDIOLOGY')).toEqual({ ok: false, reason: 'NO_POOL' })
+    expect(hireDoctor(rehired, 'CARDIOLOGY', 0)).toEqual({ ok: false, reason: 'NO_POOL' })
   })
 })
