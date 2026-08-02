@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { candidateOf, freshHiredSlots, remainingCandidates } from './candidate'
 import { HIRABLE_DEPTS, simDept } from './dept'
 import { hireDoctor } from './pawn'
+import { hire } from './testHelpers'
 import { DOCTOR_NAMES } from './traits'
 import { createWorld, regionHirePool } from './world'
 
@@ -69,14 +70,6 @@ describe('hireDoctor — 슬롯 지정 채용', () => {
     expect(hireDoctor(createWorld(1), 'CARDIOLOGY', 9)).toEqual({ ok: false, reason: 'SLOT_TAKEN' })
   })
 
-  it('슬롯 생략 = 남은 최소 슬롯 — 기존 호출부 하위호환', () => {
-    const w1 = hireDoctor(createWorld(1), 'AESTHETICS', 0)
-    if (!w1.ok) throw new Error('선행 채용이 거부됐다')
-    const w2 = hireDoctor(w1.world, 'AESTHETICS')
-    if (!w2.ok) throw new Error('생략 채용이 거부됐다')
-    expect(w2.world.hiredSlots.AESTHETICS).toEqual([0, 1])
-  })
-
   it('지역 축소 풀에서는 지역 범위 밖 슬롯이 거부된다 — 지방 순환기는 슬롯 0뿐', () => {
     const w = createWorld(1, { region: 'PROVINCIAL' })
     expect(hireDoctor(w, 'CARDIOLOGY', 1)).toEqual({ ok: false, reason: 'SLOT_TAKEN' })
@@ -95,5 +88,16 @@ describe('hireDoctor — 슬롯 지정 채용', () => {
     const start = regionHirePool('NEWTOWN')
     for (const dept of HIRABLE_DEPTS)
       expect(w.hirePool[dept] + w.hiredSlots[dept].length, dept).toBe(start[dept])
+  })
+})
+
+describe('testHelpers.hire — 손세계 픽스처의 슬롯 폴백', () => {
+  // 폴백은 코어(hireDoctor)가 아니라 이 헬퍼에 산다: 프로덕션은 슬롯을 반드시 지목해야 하고
+  // (그래야 카드에서 고른 그 사람이 선다) 손세계 픽스처만 아무나 뽑으면 된다.
+  it('슬롯을 안 주면 남은 최소 슬롯을 뽑는다', () => {
+    const w1 = hireDoctor(createWorld(1), 'AESTHETICS', 0)
+    if (!w1.ok) throw new Error('선행 채용이 거부됐다')
+    const w2 = hire(w1.world, 'AESTHETICS')
+    expect(w2.hiredSlots.AESTHETICS).toEqual([0, 1])
   })
 })

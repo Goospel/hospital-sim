@@ -12,19 +12,27 @@
 import { buildWalls, paintZone, placeDoor, placeFurniture, type PlaceResult } from './build'
 import { DEFAULT_EXAM_DEPT, type SimDeptKey } from './dept'
 import { hireDoctor, hireNurse } from './pawn'
-import type { Furniture, RoomType, SimWorld } from './world'
+import { regionHirePool, type Furniture, type RoomType, type SimWorld } from './world'
 
 /**
- * 채용 성공을 **전제**로 세계만 꺼낸다 — 풀 고갈(NO_POOL)은 이 헬퍼를 쓰는 파일의 관심사가
- * 아니다(그 계약은 resignation.test.ts가 따로 잰다).
+ * **누구든 한 명** 뽑아 세계만 꺼낸다(남은 최소 슬롯) — 채용 성공이 **전제**다. 풀 고갈
+ * (NO_POOL)은 이 헬퍼를 쓰는 파일의 관심사가 아니다(그 계약은 resignation.test.ts가 따로 잰다).
  *
  * 거부를 던지는 것이 핵심이다: 실패를 입력 세계로 접으면(`r.ok ? r.world : w`) 픽스처가
  * 의사 없이 세워지고, 그 뒤의 단언들은 **아무것도 관측하지 않은 채 통과**한다. 전국 풀은
  * 과마다 2~8명뿐이라(dept.ts nationalPool) 픽스처가 사람을 여럿 뽑기 시작하면 실제로 닿는
  * 경계다 — 조용히 통과하느니 터지는 편이 낫다.
+ *
+ * ⚠️ **"남은 최소 슬롯" 폴백이 여기 사는 이유**: 프로덕션 경로는 슬롯을 **반드시 지목**해야
+ * 하고(hireDoctor의 `slot`은 필수 — 카드에서 고른 그 사람이 선다), 손세계 테스트만 아무나
+ * 뽑으면 된다. 이 폴백이 코어에 있으면 화면이 슬롯을 흘려도 tsc도 테스트도 못 잡는다.
  */
 export function hire(w: SimWorld, dept: SimDeptKey): SimWorld {
-  const r = hireDoctor(w, dept)
+  const taken = w.hiredSlots[dept]
+  const regionN = regionHirePool(w.region)[dept]
+  // 남는 슬롯이 없으면 -1 → hireDoctor가 SLOT_TAKEN으로 거부하고 아래에서 터진다(조용히 안 넘어간다).
+  const slot = Array.from({ length: regionN }, (_, s) => s).find(s => !taken.includes(s)) ?? -1
+  const r = hireDoctor(w, dept, slot)
   if (!r.ok) throw new Error(`전제 실패 — 채용 거부(${r.reason})`)
   return r.world
 }

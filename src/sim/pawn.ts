@@ -355,25 +355,29 @@ export type HireResult =
  *
  *  ⚠️ 뽑히는 것은 **특정 후보 한 명**이다(candidate.ts): `slot`이 그 사람을 가리키고, 채용은
  *  그 슬롯을 소비한다(`hiredSlots`). 카운트(`hirePool`)도 함께 하나 줄어 둘이 늘 맞는다 —
- *  쓰기 경로가 이 함수 하나뿐이라 어긋날 면이 없고, 불변식 테스트가 그걸 잠근다. */
-export function hireDoctor(w: SimWorld, dept: SimDeptKey, slot?: number): HireResult {
+ *  쓰기 경로가 이 함수 하나뿐이라 어긋날 면이 없고, 불변식 테스트가 그걸 잠근다.
+ *
+ *  ⚠️ **`slot`은 필수다** — "남은 아무나" 폴백을 두지 않는다. 폴백이 있으면 화면이 슬롯을
+ *  떨어뜨려도(예: `hireDoctor(w, dept)`) 컴파일도 테스트도 전원 통과하면서 *카드에서 고른 그
+ *  사람이 아닌* 다른 사람이 조용히 선다 — 이 슬라이스의 논지가 어떤 계측기에도 안 걸리는
+ *  유일한 회귀 경로였다(리뷰 실측). 필수로 두면 그 회귀가 **컴파일 에러**가 된다.
+ *  손세계 픽스처용 "남은 최소 슬롯" 폴백은 테스트 헬퍼(testHelpers.hire)에 산다. */
+export function hireDoctor(w: SimWorld, dept: SimDeptKey, slot: number): HireResult {
   const remaining = w.hirePool[dept]
   if (remaining <= 0) return { ok: false, reason: 'NO_POOL' }
   const regionN = regionHirePool(w.region)[dept]
   const taken = w.hiredSlots[dept]
-  // 생략 = 남은 최소 슬롯(기존 호출부 하위호환). remaining > 0이면 불변식상 반드시 있다.
-  const pick = slot ?? Array.from({ length: regionN }, (_, s) => s).find(s => !taken.includes(s))
   // SLOT_TAKEN 하나로 접는 이유: UI는 remainingCandidates가 준 슬롯만 넘기므로 이 거부는
   // 연타·stale 스냅샷 경로뿐이고, 플레이어에게 할 말은 "그 사람은 이미 없다" 하나다.
-  if (pick === undefined || !Number.isInteger(pick) || pick < 0 || pick >= regionN || taken.includes(pick))
+  if (!Number.isInteger(slot) || slot < 0 || slot >= regionN || taken.includes(slot))
     return { ok: false, reason: 'SLOT_TAKEN' }
-  const world = spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE), candidateOf(dept, pick))
+  const world = spawnDoctor(w, dept, spawnSpotNear(w, ENTRANCE), candidateOf(dept, slot))
   return {
     ok: true,
     world: {
       ...world,
       hirePool: { ...world.hirePool, [dept]: remaining - 1 },
-      hiredSlots: { ...world.hiredSlots, [dept]: [...taken, pick] },
+      hiredSlots: { ...world.hiredSlots, [dept]: [...taken, slot] },
     },
   }
 }

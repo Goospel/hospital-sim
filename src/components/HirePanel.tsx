@@ -154,7 +154,7 @@ export default function HirePanel({
 
                 {rest.length === 0 && (
                   <p className="border border-dashed border-frame px-2.5 py-3 text-[11px] text-alarm">
-                    전국에 남은 {spec.label} 의사가 없습니다 — 떠난 사람은 이 숫자로 돌아오지 않습니다.
+                    전국에 남은 {spec.label} 의사가 없습니다.
                   </p>
                 )}
                 {/* 바닥이 보이기 시작하는 지점 — 카드가 두 장 이하로 줄면 그 사실을 말한다.

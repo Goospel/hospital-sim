@@ -101,11 +101,16 @@ describe('EXAM 과 기본값', () => {
   it('카탈로그 밖 과는 방·의사에 **컴파일에서** 막힌다', () => {
     // 넓은 DeptKey를 그대로 두면 이 두 줄이 타입을 통과하고, 그 방·의사는 라우팅이 simDept를
     // 부르는 **런타임**에야 터진다(그마저 그 방에 환자가 갈 때만). 좁혀 두면 여기로 당겨진다.
-    // @ts-expect-error EXAM의 과는 SimDeptKey다 — 'CHECKUP'은 2주차 절단 과라 들어갈 수 없다
-    placeRoom(createWorld(1), { type: 'EXAM', dept: 'CHECKUP', x: 4, y: 4, w: 6, h: 5 })
-    // @ts-expect-error 의사의 전공과도 SimDeptKey다
-    hireDoctor(createWorld(1), 'CHECKUP')
-    expect(true).toBe(true) // 이 테스트의 단언은 위 두 줄이 **컴파일되지 않는다**는 것이다(tsc 게이트)
+    //
+    // ⚠️ 부르지 않는 클로저에 담는 것이 계약이다: 재는 것은 오직 tsc이고, 실제로 실행하면
+    //    카탈로그 밖 과라 세계의 과별 표(hiredSlots·regionHirePool)에 칸이 없어 런타임에 터진다.
+    const compileOnly = () => {
+      // @ts-expect-error EXAM의 과는 SimDeptKey다 — 'CHECKUP'은 2주차 절단 과라 들어갈 수 없다
+      placeRoom(createWorld(1), { type: 'EXAM', dept: 'CHECKUP', x: 4, y: 4, w: 6, h: 5 })
+      // @ts-expect-error 의사의 전공과도 SimDeptKey다
+      hireDoctor(createWorld(1), 'CHECKUP', 0)
+    }
+    expect(compileOnly).toBeInstanceOf(Function) // 단언은 위 두 줄이 **컴파일되지 않는다**는 것이다(tsc 게이트)
   })
 })
 
@@ -177,7 +182,7 @@ describe('hireDoctor', () => {
   it('순수 — 입력 세계를 건드리지 않는다', () => {
     const w0 = createWorld(7)
     const snapshot = structuredClone(w0)
-    hireDoctor(w0, 'INTERNAL_MEDICINE')
+    hireDoctor(w0, 'INTERNAL_MEDICINE', 0)
     expect(w0).toEqual(snapshot)
   })
 

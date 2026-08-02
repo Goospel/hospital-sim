@@ -49,9 +49,15 @@ tags:
 hiredSlots: Record<SimDeptKey, number[]>   // 과별로 이미 뽑힌 슬롯 (빈 배열로 시작)
 ```
 
-- `hireDoctor(w, dept, slot?)` — slot 지정 시 그 후보를 소비. **slot 생략 시 남은 최소
-  슬롯**(기존 테스트 호환 — 시그니처 하위호환). 검증: 슬롯 범위(지역 풀 기준)·미소비.
+- `hireDoctor(w, dept, slot)` — 그 후보를 소비한다. 검증: 슬롯 범위(지역 풀 기준)·미소비.
   실패는 기존 `NO_POOL`에 더해 슬롯이 이미 소비된 경우도 같은 형태로 거부한다.
+- **`slot`은 필수다**(구현 시 정정 — 설계 초안의 "생략 시 남은 최소 슬롯" 하위호환은 기각).
+  근거는 리뷰 실측이다: optional 폴백이 있으면 화면(SimGame)이 slot을 떨어뜨려도 tsc와
+  테스트 1596건이 **전원 통과**하면서 카드에서 고른 사람이 아닌 다른 사람이 조용히 선다 —
+  이 슬라이스의 논지가 어떤 계측기에도 안 걸리는 유일한 회귀 경로였다. 경고 주석은 벨트가
+  아니다: 필수로 올리면 그 회귀가 **컴파일 에러**가 된다(런타임 비용 0·새 테스트 0).
+  기존 손세계 픽스처를 위한 "남은 최소 슬롯" 폴백은 테스트 헬퍼(`testHelpers.hire`)로 옮겼다 —
+  프로덕션은 사람을 지목하고, 픽스처만 아무나 뽑는다.
 - `hirePool` 카운트는 **그대로 두고**(기존 테스트·화면·이벤트가 전부 이 값을 읽는다)
   두 값의 일치를 불변식 테스트로 잠근다:
   `hirePool[d] + hiredSlots[d].length === regionHirePool(region)[d]`.
@@ -96,7 +102,8 @@ hiredSlots: Record<SimDeptKey, number[]>   // 과별로 이미 뽑힌 슬롯 (�
 3. 슬롯 소비: `hireDoctor(w, dept, slot)`이 정확히 그 후보의 이름·특성으로 폰을 세운다.
    이미 소비된 슬롯·범위 밖 슬롯은 거부(세계 무변).
 4. 불변식: 임의 채용 열 뒤 `hirePool[d] + hiredSlots[d].length === regionHirePool(region)[d]`.
-5. 하위호환: slot 생략 채용 = 남은 최소 슬롯. 손세계 `spawnDoctor` 직접 호출 무변.
+5. 픽스처 폴백: `testHelpers.hire(w, dept)` = 남은 최소 슬롯 채용(코어가 아니라 헬퍼의
+   성질이다 — §2 정정). 손세계 `spawnDoctor` 직접 호출 무변.
 6. UI: 열별 카드 수 = 잔여 풀, 카드 채용 클릭이 그 슬롯으로 `onHire` 호출, 빈 열 사유 문구,
    스타팅 게이트 동작 무변.
 
