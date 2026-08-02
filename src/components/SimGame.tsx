@@ -50,6 +50,7 @@ import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import { hireDoctor, hireNurse, setDoctorPriority, type HireResult, type Priority, type PriorityKind } from "@/sim/pawn";
 import { ARRIVAL_WINDOW_MIN } from "@/sim/patientFlow";
 import { startNextDay } from "@/sim/day";
+import { nurseGradeOf } from "@/sim/nurse";
 import { applyMorningEvent, eligibleEvents, fallbackDirectorChoice, type DirectorChoice } from "@/sim/director";
 import { chillNotice, epilogueText, eventNarration } from "@/sim/narrative";
 import { resigningSimDoctors, settleWeek, startNextWeek, weekSummary } from "@/sim/week";
@@ -1172,6 +1173,9 @@ export default function SimGame() {
              세계가 후보 목록을 들고 있지 않은 것이 요점이다: 소비된 슬롯(hiredSlots)만 저장하고
              명단은 그것에서 파생하므로 두 곳이 어긋날 자리가 없다. */
           candidates={remainingCandidates(regionHirePool(world.region), world.hiredSlots)}
+          /* 간호 판정은 **코어가 준 결과를 그대로** 내린다 — 패널이 기준 산식을 다시 적으면
+             ⌈의사÷2⌉를 튜닝하는 날 채용 화면만 옛 기준으로 남는다(HirePanel.nursing 주석). */
+          nursing={nurseGradeOf(world)}
           treasuryManwon={world.treasuryManwon}
           // 스타팅 모드는 **게이트가 열려 있는 동안만**이다 — 닫은 뒤 [채용]으로 다시 열면
           // 평소 패널이다(같은 컴포넌트가 두 얼굴을 갖되 상태는 하나다).
