@@ -19,7 +19,7 @@ import { nurseCount, priorityOf, type Pawn, type PatientStage } from './pawn'
 import {
   simDept, addExamToDeptStats, type DeptMix, type SimDeptKey, type SimDeptStats,
 } from './dept'
-import { applyWorkLoads } from './fatigue'
+import { applyWorkLoads, fatigueOf } from './fatigue'
 // 작업 소요식(피로 × 허기 감속)은 needs.ts가 **단일 출처**다(응급도 같은 함수를 부른다) —
 // 여기서 식을 다시 적으면 진료만 느려지고 처치는 그대로인 병원이 조용히 생긴다.
 import { prefersRestOverExam, workDurationMin } from './needs'
@@ -484,11 +484,20 @@ function assignWaitingToExam(w: SimWorld, regions: readonly Region[]): SimWorld 
     else idleByDept.set(p.dept, [{ doc: p, i }])
   }
   if (idleByDept.size === 0) return w
-  // 줄 안의 순서는 **exam 내림차순, 동률이면 폰 배열 순서**다. 배열 인덱스를 명시적으로 들고
-  // 타이브레이크에 쓰는 이유는 `Array.sort`의 안정성에 기대지 않기 위해서다 — 결정론이 런타임
-  // 구현 세부에 얹히면 그 근거를 코드에서 읽을 수 없다(대기 환자 정렬과 같은 형태).
+  // 줄 안의 순서는 **exam 내림차순 → 피로 오름차순 → 폰 배열 순서**다. 배열 인덱스를 명시적으로
+  // 들고 마지막 타이브레이크에 쓰는 이유는 `Array.sort`의 안정성에 기대지 않기 위해서다 —
+  // 결정론이 런타임 구현 세부에 얹히면 그 근거를 코드에서 읽을 수 없다(대기 환자 정렬과 같은 형태).
+  //
+  // 피로 축이 인덱스 **앞**에 있는 이유: 한 방에 책상이 여럿이면 같은 과 의사들이 사실상 등거리라
+  // 유휴 동률이 매 분 반복되는데, 인덱스뿐이면 **항상 앞선 의사**가 이겨(실측 4주 31:5) 그 한 명만
+  // 피로 → 감속 → 건당 부하 증가의 양성 피드백을 타고 f100까지 단조 소진된다. 덜 지친 쪽을 먼저
+  // 집으면 그 되먹임이 음성으로 뒤집혀 부하가 저절로 균등해진다. 폰 상태만 보는 순수 정렬이라
+  // 결정론은 그대로다. (거리에서 오는 쏠림은 배치의 인과라 의도된 것 — 여기서 안 건드린다.)
   for (const queue of idleByDept.values()) {
-    queue.sort((a, b) => priorityOf(b.doc, 'exam') - priorityOf(a.doc, 'exam') || a.i - b.i)
+    queue.sort((a, b) =>
+      priorityOf(b.doc, 'exam') - priorityOf(a.doc, 'exam')
+      || fatigueOf(a.doc) - fatigueOf(b.doc)
+      || a.i - b.i)
   }
   const updates = new Map<number, Pawn>()
   for (const { p, i } of waiting) {

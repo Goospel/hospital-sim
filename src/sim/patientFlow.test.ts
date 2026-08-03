@@ -614,6 +614,26 @@ describe('진료 배정', () => {
     expect(w.pawns.find(p => p.id === 'late')?.stage).toBe('WAITING')
   })
 
+  it('같은 과 유휴 의사가 둘이면 **덜 지친 쪽**이 받는다 — 동률이 한 명만 갈아넣지 않는다', () => {
+    // 방 하나에 책상 둘이면 두 의사는 사실상 등거리라 유휴 동률이 매 분 반복된다. 타이브레이크가
+    // 폰 인덱스뿐이면 **항상 앞선 의사**가 이겨(실측 4주 31:5) 그 한 명만 피로 → 감속 → 부하 증가의
+    // 양성 피드백을 타고 소진된다. 피로 축이 그 되먹임을 음성으로 뒤집는지를 여기서 잰다.
+    let w = run(multiDeskWorld(2), 80)
+    const [d0, d1] = w.pawns.filter(p => p.kind === 'DOCTOR')
+    expect(!!d0.deskAt && !!d1.deskAt).toBe(true) // 전제: 둘 다 책상 앞에 섰다
+    // 폰 배열이 **앞선** 의사를 더 지치게 만든다 — 인덱스만 보면 그래도 d0이 이긴다.
+    w = { ...w, pawns: w.pawns.map(p => (p.id === d0.id ? { ...p, fatigue: 60 } : p)) }
+    w = tick(seatPatientsOutsideBigRoom(w, 1), 1)
+    expect(w.pawns.find(p => p.id === 'pat-hand-0')!.doctorId).toBe(d1.id)
+  })
+
+  it('피로가 같으면 종전대로 폰 배열 순서다 — 피로 축이 기존 결정론을 갈아엎지 않는다', () => {
+    let w = run(multiDeskWorld(2), 80)
+    const [d0] = w.pawns.filter(p => p.kind === 'DOCTOR')
+    w = tick(seatPatientsOutsideBigRoom(w, 1), 1)
+    expect(w.pawns.find(p => p.id === 'pat-hand-0')!.doctorId).toBe(d0.id)
+  })
+
   it('의사 한 명은 동시에 환자 한 명만 본다', () => {
     let w = hospitalWorld(3)
     const docs = w.pawns.filter(p => p.kind === 'DOCTOR').length
