@@ -49,30 +49,59 @@ const INK = "#181426";
  *  덮어 버린다. 인물이 앞에 서는 일은 이제 **시점 차이**가 진다 — 사람만 기울어 있고 집기는 납작하다. */
 const EDGE = 0.45;
 
-// 지원자별 초상 변주 — 머리·피부 2슬롯만(character-design.md §1: 실루엣은 하나, 색으로만 구분).
+// 지원자별 초상 변주 — 머리색·피부색 + 머리카락 형태 3종(character-design.md §1: **몸** 실루엣은 하나).
 // id 해시 파생이라 결정론(RNG 0). 기본값(변주 키 없음) = 종전과 같은 조합.
 const HAIR_VARIANTS = ["#3f3f46", "#1c1917", "#7c5a3a", "#57534e"];
 const SKIN_VARIANTS = ["#f0d3b4", "#e3b58a", "#c99a6b"];
 
 /**
- * 문자열 키 → 머리·피부 조합. **결정론이 계약이다**(RNG 0 원칙은 표시 레이어에도 적용된다) —
- * 같은 지원자 id는 언제나 같은 초상이라, 채용 카드와 맵의 아바타가 같은 사람으로 보인다.
+ * 머리카락 형태 3종 — **바뀌는 것은 이 path 하나뿐**이고 얼굴·몸은 한 점도 안 건드린다
+ * (character-design.md §1 개정 2026-08-03: 12조합이 18명 명부의 대형 초상에서 반복돼 축을 하나 더했다).
+ *
+ * ⚠️ **끝점은 전부 머리 타원(cx8 cy4 rx2.9 ry3.1) 위의 점이다** — `x = 8 ± 2.9·√(1−((y−4)/3.1)²)`.
+ * 어림값을 쓰면 호 중심이 밀려 머리카락이 머리 외곽선을 덮어 **정수리 잉크가 깎인다**. 세 형태 모두
+ * 위쪽은 이 타원을 그대로 따라가는 호(sweep 1 = y-down에서 위로)이고, **다른 것은 아래쪽 이마 선뿐**이다.
+ *
+ * ⚠️ 형태를 늘릴 때도 **얼굴 면에는 아무것도 얹지 않는다** — 아래 「머리에 점을 찍지 않는다」 주석의
+ * 실측(흰 점 하나가 눈으로 읽혔다)이 그대로 적용된다. 이마 선은 머리카락 **덩어리의 경계**이지
+ * 얼굴에 그린 선이 아니다.
  */
-export function spriteVariant(key: string): { hair: string; skin: string } {
+const HAIR_PATHS = [
+  /* ⓪ 아치 — 종전 그대로. y=3에서 8 ± 2.745 = 5.255 / 10.745, 이마 중앙은 2.3까지 올라간다. */
+  "M5.255 3 A2.9 3.1 0 0 1 10.745 3 q-.9 -.7 -2.745 -.7 q-1.845 0 -2.745 .7 Z",
+  /* ① 가르마 — 호의 좌우 끝을 다른 높이에 둬(왼 y=3.6 · 오른 y=2.45) 이마 선이 한쪽으로 기운다.
+     왼쪽 관자놀이를 덮고 오른쪽은 드러나, 머리를 한쪽으로 넘긴 것으로 읽힌다.
+     y=3.6 → 8 − 2.876 = 5.124 · y=2.45 → 8 + 2.5115 = 10.5115. */
+  "M5.124 3.6 A2.9 3.1 0 0 1 10.5115 2.45 q-1.3 -.15 -2.1 .35 q-1.1 .7 -3.2645 .8 Z",
+  /* ② 짧은 올림 — 끝점을 위로 올려(y=2.2) 호 높이를 줄이고 이마 선도 1.9로 올린다.
+     중앙 두께가 1.4 → 1.0으로 얇아져 짧게 친 머리가 된다. y=2.2 → 8 ± 2.361 = 5.639 / 10.361. */
+  "M5.639 2.2 A2.9 3.1 0 0 1 10.361 2.2 q-.8 -.3 -2.361 -.3 q-1.561 0 -2.361 .3 Z",
+];
+
+/**
+ * 문자열 키 → 머리색·피부색·머리 모양. **결정론이 계약이다**(RNG 0 원칙은 표시 레이어에도 적용된다) —
+ * 같은 지원자 id는 언제나 같은 초상이라, 채용 카드와 맵의 아바타가 같은 사람으로 보인다.
+ *
+ * 세 축의 **제수가 서로 다른 것**(1·7·29)이 요지다 — 같은 수로 나누면 축이 함께 움직여 조합이
+ * 36이 아니라 12로 되돌아간다(테스트가 실례 키 쌍으로 잠근다).
+ */
+export function spriteVariant(key: string): { hair: string; skin: string; hairStyle: number } {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (Math.imul(h, 31) + key.charCodeAt(i)) | 0;
   const u = h >>> 0;
   return {
     hair: HAIR_VARIANTS[u % HAIR_VARIANTS.length],
     skin: SKIN_VARIANTS[Math.floor(u / 7) % SKIN_VARIANTS.length],
+    hairStyle: Math.floor(u / 29) % HAIR_PATHS.length,
   };
 }
 
-const DEFAULT_LOOK = { hair: "#3f3f46", skin: "#f0d3b4" };
+const DEFAULT_LOOK = { hair: "#3f3f46", skin: "#f0d3b4", hairStyle: 0 };
 
 /**
- * 사람 하나 — **실루엣은 이 하나를 공유하고 팔레트만 다르다**(의사·간호사·환자).
- * 다른 종족이 아니라 같은 사람이 어느 자리에 있느냐의 문제라는 것이 이 게임의 주제다.
+ * 사람 하나 — **몸 실루엣은 이 하나를 공유하고, 변주는 팔레트 + 머리카락 형태다**(의사·간호사·환자).
+ * 다른 종족이 아니라 같은 사람이 어느 자리에 있느냐의 문제라는 것이 이 게임의 주제다 —
+ * 그래서 **몸**은 안 나눈다(머리카락은 2026-08-03 개정으로 열렸다 · character-design.md §1).
  *
  * ⚠️ **인물만 3/4 시점이다 — 집기·바닥은 탑다운을 유지한다**(2026-07-31).
  * 정탑다운에서는 **옷이 원래 안 보인다**: 바로 위에서 내려다보면 어깨와 정수리만 보이고 옷의 정보는
@@ -95,6 +124,7 @@ function Figure({
   coatShade,
   accent,
   hair,
+  hairStyle = 0,
   skin,
   sleeveCuff,
 }: {
@@ -102,6 +132,7 @@ function Figure({
   coatShade: string;
   accent: string;
   hair: string;
+  hairStyle?: number;
   skin: string;
   sleeveCuff?: boolean;
 }) {
@@ -128,9 +159,8 @@ function Figure({
       {/* 머리 — 3/4라 정원이 아니라 세로로 살짝 긴 타원이다 */}
       <ellipse cx="8" cy="4" rx="2.9" ry="3.1" fill={skin} stroke={INK} strokeWidth={EDGE} />
       {/* 머리카락 — 위쪽을 덮는 호(sweep 1이 y-down에서 위로 지난다) + 이마 선.
-          끝점 x는 머리 타원 위의 점이어야 한다: y=3에서 8 ± 2.9·√(1−(1/3.1)²) = 5.255 / 10.745.
-          어림값(5.2/10.8)을 쓰면 호 중심이 밀려 머리카락이 머리 외곽선을 덮어 정수리 잉크가 깎인다. */}
-      <path d="M5.255 3 A2.9 3.1 0 0 1 10.745 3 q-.9 -.7 -2.745 -.7 q-1.845 0 -2.745 .7 Z" fill={hair} />
+          형태 3종과 그 좌표 계약은 위 `HAIR_PATHS` 주석에 있다(끝점은 머리 타원 위의 점). */}
+      <path d={HAIR_PATHS[hairStyle]} fill={hair} />
       {/*
         ⚠️ **머리에 점을 찍지 않는다.** 구면감을 내려고 왼위에 하이라이트 원을 뒀더니 어두운 머리카락
         위의 흰 점이 **눈 하나**로 읽혔다(160px로 띄워 실측). 표정·얼굴 특징은 금지 규칙이라
@@ -167,6 +197,7 @@ export function DoctorSprite({ dept, busy, variantKey }: { dept: DeptKey; busy: 
       accent={DEPT_COLOR[dept]}
       sleeveCuff
       hair={v.hair}
+      hairStyle={v.hairStyle}
       skin={v.skin}
     />
   );
@@ -187,7 +218,9 @@ export function DoctorSprite({ dept, busy, variantKey }: { dept: DeptKey; busy: 
  */
 export function NurseSprite({ variantKey }: { variantKey?: string }) {
   const v = variantKey ? spriteVariant(variantKey) : DEFAULT_LOOK;
-  return <Figure coat="#4fa39e" coatShade="#37827e" accent="#3f8f8b" hair={v.hair} skin={v.skin} />;
+  return (
+    <Figure coat="#4fa39e" coatShade="#37827e" accent="#3f8f8b" hair={v.hair} hairStyle={v.hairStyle} skin={v.skin} />
+  );
 }
 
 /**

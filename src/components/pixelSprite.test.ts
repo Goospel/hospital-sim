@@ -1,5 +1,7 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, it, expect } from 'vitest'
-import { spriteVariant, DEPT_COLOR, CHAIR_PALETTE } from './PixelSprite'
+import { spriteVariant, DEPT_COLOR, CHAIR_PALETTE, DoctorSprite } from './PixelSprite'
 import { relativeLuminance } from './Backdrop'
 import { CHAIR_VARIANTS } from './simHud'
 import type { DeptKey } from '@/game/types'
@@ -33,6 +35,57 @@ describe('spriteVariant — 초상 변주는 id의 순수 함수다', () => {
   it('서로 다른 키들이 한 조합으로 뭉치지 않는다', () => {
     const seen = new Set(Array.from({ length: 40 }, (_, i) => JSON.stringify(spriteVariant(`d${i}`))))
     expect(seen.size, `40개 키에서 조합 ${seen.size}종`).toBeGreaterThanOrEqual(4)
+  })
+
+  /**
+   * 머리 모양 축 — 2026-08-03 신설. 머리4×피부3=12조합으로는 18명 명부의 **대형 초상**에서
+   * 같은 얼굴이 눈에 띄게 반복됐다(채용 패널 재설계 스펙 §3). 세 번째 축을 더해 36조합이 된다.
+   * 형태는 눈이 판정하지만 **어느 키가 어느 형태인가**는 계약이라 여기서 잠근다.
+   */
+  it('hairStyle이 0·1·2 중 하나이고, 같은 키는 항상 같은 형태다', () => {
+    for (const key of KEYS) {
+      const s = spriteVariant(key).hairStyle
+      expect([0, 1, 2], `key "${key}" → ${s}`).toContain(s)
+      expect(spriteVariant(key).hairStyle, `key "${key}"`).toBe(s)
+    }
+  })
+
+  /** 세 형태가 실제로 다 쓰이는지 — 한 값으로 굳으면 위 범위 테스트는 통과하면서 축이 증발한다. */
+  it('세 형태가 전부 나온다', () => {
+    const seen = new Set(Array.from({ length: 40 }, (_, i) => spriteVariant(`d${i}`).hairStyle))
+    expect([...seen].sort(), `40개 키에서 형태 ${[...seen].sort().join(',')}`).toEqual([0, 1, 2])
+  })
+
+  /**
+   * 축 독립 — `hair = u%4` · `skin = (u/7)%3` · `hairStyle = (u/29)%3`은 제수가 서로 달라
+   * 따로 움직인다. 한 축이 다른 축을 따라가면 조합이 36이 아니라 12로 되돌아간다.
+   * 실례 두 키를 박아 둔다: 머리색이 같은데 형태가 갈리는 쌍이 실제로 존재해야 한다.
+   */
+  it('머리색이 같아도 머리 모양은 갈린다 (d1 ↔ d12)', () => {
+    const a = spriteVariant('d1'), b = spriteVariant('d12')
+    expect(a.hair, `d1 ${a.hair} vs d12 ${b.hair}`).toBe(b.hair)
+    expect(a.hairStyle, `둘 다 형태 ${a.hairStyle}`).not.toBe(b.hairStyle)
+  })
+
+  /**
+   * 형태 축의 **배선** — 위 테스트들은 전부 `spriteVariant`의 반환값만 보므로 `HAIR_PATHS[hairStyle]`을
+   * `HAIR_PATHS[0]`으로 바꿔도 전원 초록이다(리뷰 2026-08-03 돌연변이 실측). 36조합은 계산이 아니라
+   * **그려져야** 뜻이 있으니 렌더 결과에서 잰다.
+   *
+   * d1↔d12는 머리색이 같은 쌍이라(위 축 독립 테스트) 두 마크업의 유일한 차이가 머리카락 path다 —
+   * 색은 `d`에 안 실리고 얼굴·몸은 형태를 안 받으므로, `d` 목록이 갈리면 그 원인은 이 배선뿐이다.
+   */
+  it('머리 형태가 렌더까지 배선된다 — d1↔d12의 path 좌표가 갈린다', () => {
+    const paths = (key: string) => {
+      const svg = renderToStaticMarkup(
+        createElement(DoctorSprite, { dept: 'CARDIOLOGY' as DeptKey, busy: false, variantKey: key }),
+      )
+      return [...svg.matchAll(/ d="([^"]+)"/g)].map(m => m[1])
+    }
+    const [a, b] = [paths('d1'), paths('d12')]
+    expect(a.length, '패스 수').toBeGreaterThan(0)
+    expect(a.length, '두 초상의 패스 수는 같다(형태만 갈린다)').toBe(b.length)
+    expect(a, `d1 형태 ${spriteVariant('d1').hairStyle} vs d12 형태 ${spriteVariant('d12').hairStyle}`).not.toEqual(b)
   })
 
   it('과 색은 8과 전부에 있고 서로 다르다 — 가슴 수술복과 소매 커프스가 과를 나르는 신호다', () => {

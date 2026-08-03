@@ -7,7 +7,7 @@
   /* 종이(paper) */
   --paper: #e5dcc4; --paper-2: #d3c6a3; --paper-edge: #c4b58f;
   --border-paper: #a2966f; --rule: #b0a37e;
-  --ink: #26221a; --ink-2: #585039; /*★*/ --ink-3: #7d7358;
+  --ink: #26221a; --ink-2: #585039; /*★*/ /* 잉크는 2단이다 — 3단 --ink-3 삭제(2026-08-03): paper-2 위 4.5:1을 지키면 ink-2와 1.047:1로 붙어 육안 구분이 불가능했다(스펙 §6 정정) */
   --stamp: #8f1a17; --stamp-ink: #7a1414; --stamp-field: #e9d9c4;
   --go: #1b5e3d; /*★*/
   /* 전역 = 지면 */
@@ -35,7 +35,6 @@
   --color-rule: var(--rule);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
-  --color-ink-3: var(--ink-3);
   --color-stamp: var(--stamp);
   --color-stamp-ink: var(--stamp-ink);
   --color-stamp-field: var(--stamp-field);
