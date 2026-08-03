@@ -271,7 +271,12 @@ export const OUTSIDE_FLOOR = "#abb1b5";
  *  밝은 선(216,207,175)만이 대비를 낼 수 있었지만, 71.3부터는 같은 선이 바닥을 하얗게 들어 올린다.
  *  콘크리트 슬래브의 줄눈처럼 어두운 쪽이 자연스럽다. **알파는 바닥 밝기에 반비례해야 한다** —
  *  같은 어두운 선이 176.0짜리 밝은 바닥 위에서는 훨씬 진하게 보여 격자가 화면을 지배하므로,
- *  부지를 71.3 → 176.0으로 올리면서 0.16 → 0.10으로 낮췄다(합성 대비 ΔL/L ≈ 9%). */
+ *  부지를 71.3 → 176.0으로 올리면서 0.16 → 0.10으로 낮췄다(합성 대비 ΔL/L ≈ 9%).
+ *
+ *  ⚠️ **평시엔 아예 안 깔린다**(`buildReady`일 때만 — 아래 맵 루트의 backgroundImage). 격자는
+ *  배치 보조선이지 평시 정보가 아니다: 타일 경계는 부지 테두리·영역 색이 이미 내고, 격자가 더할
+ *  것은 "어디에 놓이는가" 하나인데 그 질문은 도구를 들었을 때만 존재한다. 알파를 아무리 낮춰도
+ *  모눈종이 인상은 남으므로 톤이 아니라 **표시 시점**으로 푼다. */
 const GRID_LINE = "rgba(10,8,18,0.10)";
 
 /** 어느 영역에도 안 닿은 벽의 색. 벽을 세웠지만 아직 무슨 방인지 안 정한 상태가 화면에
@@ -663,7 +668,11 @@ export default function TileMap({
              그 1px이 곧 **마지막 타일 줄이 footer 밑에 깔리는 양**이다(실측 1.14px). 그림자는
              레이아웃을 안 건드려 격자와 상자가 정확히 겹친다(포인터→타일 산술도 같이 정확해진다). */
           boxShadow: "inset 0 0 0 1px var(--frame)",
-          backgroundImage: `repeating-linear-gradient(90deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px), repeating-linear-gradient(180deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px)`,
+          /* 격자는 **도구를 들었을 때만** 깔린다 — 판정은 다시 세지 않고 `buildReady`를 그대로 쓴다
+             (도구 팔레트와 맵의 "지을 수 있다"가 갈리지 않게 — 위 prop 주석의 계약). */
+          backgroundImage: buildReady
+            ? `repeating-linear-gradient(90deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px), repeating-linear-gradient(180deg, ${GRID_LINE} 0 1px, transparent 1px ${TILE}px)`
+            : undefined,
         }}
         role="img"
         aria-label={`병원 부지 ${GRID_W}×${GRID_H} 타일 — 방 ${roomCount}개, 인원 ${world.pawns.length}명`}
