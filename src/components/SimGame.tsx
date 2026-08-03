@@ -43,7 +43,7 @@ import {
 import { effectiveSpeed, useSimClock, SIM_MS_PER_GAME_MIN, type SimSpeed } from "@/components/useSimClock";
 import { formatClockFromOpen } from "@/game/daysim";
 import { BACKDROP_COUNT, createWorld, regionHirePool, type ChairVariant, type RoomType, type SimWorld } from "@/sim/world";
-import { remainingCandidates } from "@/sim/candidate";
+import { candidateOf, remainingCandidates, type Candidate } from "@/sim/candidate";
 import { computeRegions } from "@/sim/regions";
 import { buildWalls, demolish, eraseZone, paintZone, placeDoor, placeFurniture, type PlaceResult } from "@/sim/build";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
@@ -1173,6 +1173,14 @@ export default function SimGame() {
              세계가 후보 목록을 들고 있지 않은 것이 요점이다: 소비된 슬롯(hiredSlots)만 저장하고
              명단은 그것에서 파생하므로 두 곳이 어긋날 자리가 없다. */
           candidates={remainingCandidates(regionHirePool(world.region), world.hiredSlots)}
+          /* 소비된 슬롯의 사람 — 잔상 프레임의 재료다. **여기서 매핑하는 것이 계약**이다:
+             패널이 `hiredSlots`를 받아 스스로 풀면 화면이 세계 데이터를 해석하게 된다
+             (candidates와 같은 이유). `candidateOf`가 순수라 이름·초상이 언제나 재현된다. */
+          consumed={
+            Object.fromEntries(
+              HIRABLE_DEPTS.map(d => [d, world.hiredSlots[d].map(s => candidateOf(d, s))]),
+            ) as Record<SimDeptKey, Candidate[]>
+          }
           /* 간호 판정은 **코어가 준 결과를 그대로** 내린다 — 패널이 기준 산식을 다시 적으면
              ⌈의사÷2⌉를 튜닝하는 날 채용 화면만 옛 기준으로 남는다(HirePanel.nursing 주석). */
           nursing={nurseGradeOf(world)}
