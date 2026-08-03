@@ -1,0 +1,23 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Malgun Gothic,56,&H00FFFFFF,&H00FFFFFF,&H78000000,&H78000000,-1,0,0,0,100,100,0,0,3,12,0,2,80,80,56,1
+Style: TitleSub,Malgun Gothic,56,&H00FFFFFF,&H00FFFFFF,&H78000000,&H78000000,-1,0,0,0,100,100,0,0,3,12,0,2,80,80,190,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.30,0:00:02.90,Default,,0,0,0,,병원 세울 자리를 고릅니다 — 자본 5억, 12주.
+Dialogue: 0,0:00:03.20,0:00:06.00,Default,,0,0,0,,의사와 간호사를 뽑습니다.
+Dialogue: 0,0:00:06.40,0:00:09.80,Default,,0,0,0,,순환기 의사는 전국에 2명뿐입니다.
+Dialogue: 0,0:00:12.60,0:00:18.20,Default,,0,0,0,,벽을 두르고 진료실과 병동을 만듭니다.
+Dialogue: 0,0:00:18.60,0:00:22.80,Default,,0,0,0,,개원 — 환자들이 들어오기 시작합니다.
+Dialogue: 0,0:00:25.20,0:00:32.60,Default,,0,0,0,,아침 속보는 AI가 그날의 사건을 골라 직접 씁니다.
+Dialogue: 0,0:00:33.30,0:00:39.10,Default,,0,0,0,,외과 의사가 없어, 응급 환자가 문앞에서 되돌아갑니다.
+Dialogue: 0,0:00:39.80,0:00:45.20,Default,,0,0,0,,돌려보낸 응급은 소송으로 돌아오고 — 의사는 응급 호출을 줄입니다.
+Dialogue: 0,0:00:54.20,0:00:58.90,TitleSub,,0,0,0,,최선을 다해도 남는 것 — 못 받은 환자와 떠난 사람.
