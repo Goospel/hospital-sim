@@ -6,21 +6,25 @@
  * `loadMinToday`(표준강도분)를 함께 찍는다 — 이 값이 밸런스 판정의 기준선이다.
  *
  * **기준선**: 하루 지속가능 부하 = `FATIGUE_FREE_MIN` + (`FATIGUE_REST` / `FATIGUE_PER_OVER_HOUR`) × 60
- * = 160 + 80 = **240 표준강도분**. 이보다 큰 날이 이어지면 피로는 하룻밤 회복으로 안 돌아온다.
+ * = 160 + 120 = **280 표준강도분**(REST 30 기준). 이보다 큰 날이 이어지면 피로는 하룻밤 회복으로
+ * 안 돌아온다. 상수를 건드리면 이 선이 같이 움직이니 아래 결론도 다시 재야 한다.
  *
  * `cut-scenario-probe.ts`의 `run()` 하네스를 복사해 넷을 보탰다:
  *   ① 의사별·일별 (마감 피로 f, 포화일수 s, 하루 부하 L) 타임라인
  *   ② 그날 수용한 응급 건수 — 부하 급등이 응급 몰림에서 왔는지 외래에서 왔는지 가른다
  *   ③ 하루치 응급 되돌림 내역(kind·reason) — `stats.emergencyTurnedAway`는 아침마다 비므로
  *      마감 시점(DAY_END)에 통째로 걷는다. perMinute를 안 켜도 된다.
- *   ④ 대조군 S3(응급 전부 거절)·S5(방 고정 증원) — 응급 강도와 증원이 **실제로** 레버인지 잰다
+ *   ④ 대조군 S6(응급 없는 균형 편성)·S3(응급 전부 거절)·S5(방 고정 증원) — 응급 강도와 증원이
+ *      **실제로** 레버인지 잰다
  *
- * **1차 실측 결론(2026-08-04 · 서울 URBAN 시드 1 · 4주)** — 응급 강도는 사직의 손잡이가 아니다:
- *   · S3(응급 0건)에서도 외과 의사는 외래만으로 3주2일 포화 → 3주말 사직. 내과 의사도 마찬가지다.
- *   · 응급 강도를 1.7 → 1.3으로 내려 5개 시나리오를 다시 돌려도 **사직 주차가 하나도 안 바뀐다**
- *     (포화 시작만 S1에서 2일차 → 4일차로 밀린다).
- *   · 응급이 몰린 날은 하루 7건까지 오는데, 그 부하는 두 명이 나눠도 각자 500 표준강도분이 넘는다.
- *   → 손잡이는 `game/doctor.ts`의 세 상수(FREE_MIN·PER_OVER_HOUR·REST)나 외래 도착량 쪽이다.
+ * **실측 이력(서울 URBAN 시드 1 · 12주)** — 이 프로브가 지금까지 죽인 가설 둘:
+ *   ① *"응급 강도가 사직의 손잡이"* → **거짓**. 1.7 → 1.3으로 내려도 5개 시나리오의 사직 주차가
+ *      하나도 안 바뀐다(포화 시작만 밀린다). 되돌렸다.
+ *   ② *"회복을 올리면 외과 2인 증원이 회복 레버가 된다"* → **절반만 참**. `FATIGUE_REST` 20 → 30이
+ *      균형 편성(S6)의 사직을 없애 "사직 = 기본 경로"는 깼지만, 하루 7건이 오는 날은 외과 2인이
+ *      나눠도 각자 L750~1000이라 **그날 안에** 포화한다. 회복은 이튿날 아침에 오지 그날 오후에
+ *      오지 않아서 35·40·**60**에서도 외과 2인의 사직이 안 사라졌다.
+ *   → 남은 손잡이는 응급 도착 분포(몰림)나 `RESIGN_SATURATED_DAYS`(누적 리셋 없음) 쪽이다.
  *
  * 실행: npx vitest run --config vitest.probe.config.ts scripts/surgeon-load-probe.ts
  */
@@ -31,7 +35,7 @@ import { hire, placeRoom, type RoomSpec } from '@/sim/testHelpers'
 import { nurseGradeOf } from '@/sim/nurse'
 import { hireNurse, setDoctorPriority } from '@/sim/pawn'
 import { tick } from '@/sim/tick'
-import { settleWeek, startNextWeek, weekSummary } from '@/sim/week'
+import { CAMPAIGN_WEEKS, settleWeek, startNextWeek, weekSummary } from '@/sim/week'
 import { applyMorningEvent } from '@/sim/director'
 import { SIM_EVENTS } from '@/sim/events'
 import { createWorld, type SimRegionKey, type SimWorld } from '@/sim/world'
@@ -95,7 +99,9 @@ interface RunOpts {
 }
 
 function run(opts: RunOpts): RunResult {
-  const { region, seed = 1, weeks = 4, make } = opts
+  // 12주(캠페인 전장)가 기본이다 — 포화일수는 **리셋이 없어** 4주로는 "가끔 넘긴 날이 열두 주에
+  // 걸쳐 쌓여 사직"이 안 잡힌다. 사직 0을 주장하려면 판이 끝나는 데까지 돌려야 한다.
+  const { region, seed = 1, weeks = CAMPAIGN_WEEKS, make } = opts
   let w = make(createWorld(seed, { region }))
 
   const days: DayLog[] = []
@@ -218,7 +224,20 @@ function standard(
 const surgeonOf = (w: SimWorld) =>
   w.pawns.find(p => p.kind === 'DOCTOR' && p.dept === 'GENERAL_SURGERY')!
 
-describe('외과 부하 프로브 (서울 URBAN · 시드 1 · 4주)', () => {
+describe(`의사 부하 프로브 (서울 URBAN · 시드 1 · ${CAMPAIGN_WEEKS}주)`, () => {
+  /* 균형 편성 기준선 — 응급을 받는 과가 아예 없다. 여기서 사직이 나오면 그것은 응급도
+     1인 편성도 아닌 **곡선 자체**가 낸 사직이다. 목표: 12주 사직 0. */
+  it('S6 균형 편성 — 내과2·미용1 (응급 없음)', () => {
+    report('S6 내과2·미용1', run({
+      region: 'URBAN',
+      make: w => standard(
+        w,
+        ['INTERNAL_MEDICINE', 'INTERNAL_MEDICINE', 'AESTHETICS'],
+        { INTERNAL_MEDICINE: 2, AESTHETICS: 1 },
+      ),
+    }))
+  })
+
   it('S1 재현 — 내과2·외과1·미용1', () => {
     report('S1 내과2·외과1·미용1', run({
       region: 'URBAN',
