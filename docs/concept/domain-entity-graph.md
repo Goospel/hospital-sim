@@ -52,7 +52,7 @@ flowchart TD
     LOOP["전원(뺑뺑이)"]
   end
   subgraph FIN["💰 재정"]
-    BUDGET["채용 예산 100억"]
+    BUDGET["채용 예산(위저드 한도)"]
     LEDGER["병원 장부"]
   end
 
@@ -138,7 +138,7 @@ flowchart LR
   LAWRISK["소송 리스크"] -.->|기피 유발| OBGYN
   LAWRISK -.->|기피 유발| THOR
 
-  BUDGET["채용 예산 100억"] -->|배분 선택| DERM
+  BUDGET["채용 예산(위저드 한도)"] -->|배분 선택| DERM
   BUDGET -->|배분 선택| THOR
   BUDGET -->|배분 선택| PED
   BUDGET -->|배분 선택| OBGYN

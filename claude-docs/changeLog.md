@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-08-04 · 엔티티 카탈로그 갱신 — 간호 N1·N2 병합 + 낡은 수치 현행화 + 「게임 대응」 절의 이중 기재 제거
+
+**왜** — 바로 아래 항목의 커버리지 재감사가 적재한 카탈로그 갱신 후보들을 반영했다: 예산 「100억」(현행 5억)·거절 사유 「4종」(현행 7종)이 낡아 있었고, [nursing-entities.md](../docs/concept/nursing-entities.md)가 예고한 병합 조건("구현 축이 확정되면 본 카탈로그에 병합")이 감사로 충족됐다.
+
+**무엇을** — ⓐ [domain-entities.md](../docs/concept/domain-entities.md)에 간호 N1(등급→돈)·N2(소진→이탈) 엔티티 17개(표기 🩺)와 문제 12·13을 병합 — 총 ~109→~126, 미구현 N3(PA)는 안 옮김 ⓑ 낡은 수치 현행화(예산·거절 사유 — 위저드 예산은 수치 대신 `setup.ts` 상수를 단일 출처로 지정) ⓒ 카탈로그의 「게임 메커니즘 대응」 절을 목록에서 [entity-code-coverage.md](../docs/concept/entity-code-coverage.md) 포인터로 교체 — 코드와 함께 움직이는 값을 문서 두 곳에 적는 이중 기재가 실제로 낡음을 만든 것이 적발됐기 때문(changeLog PR 번호 생략 규약과 같은 병) ⓓ detail 문서 머리에 "게임 대응 줄은 2026-07-18 시점 기록" 경고 1줄, graph의 예산 노드 라벨 2곳 중립화. 게임 코드 무변경.
+
 ## 2026-08-04 · 엔티티 커버리지 스냅샷 재생성 — #62 기준 → #197 기준 + 간호 증보 축 편입
 
 **왜** — [entity-code-coverage.md](../docs/concept/entity-code-coverage.md)는 `392f76d`(#62, 2026-07-19) 기준 스냅샷이라 그 뒤 134커밋(타일 시뮬·간호·지역·소송 위축)이 전부 빠져 있었다. "예전에 뽑은 엔티티가 지금 게임에 얼마나 흡수됐나"를 다시 실측했다.
