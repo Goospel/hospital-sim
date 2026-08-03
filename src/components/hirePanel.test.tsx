@@ -14,8 +14,8 @@ import { freshHirePool, HIRABLE_DEPTS, simDept, type SimDeptKey } from '@/sim/de
  * `react-dom/server`로 렌더한 HTML을 읽는다 — 그래서 **클릭은 못 재고 「무엇이 그려지는가」만 잰다**.
  * 클릭 배선(`onHire(cand.dept, cand.slot)`)은 이 변경에서 한 글자도 안 건드린 줄이다.
  *
- * 자리 수가 계약인 이유: 열의 길이 = 그 지역 풀 총량이라, **뽑을수록 카드가 빈 프레임으로 바뀌되
- * 열은 짧아지지 않는다**. 열이 짧아지면 "인력이 소진됐다"가 화면에서 사라진다.
+ * 자리 수가 계약인 이유: 과별 자리 수 = 그 지역 풀 총량이라, **뽑을수록 카드가 빈 프레임으로
+ * 바뀌되 자리 수는 줄지 않는다**. 자리가 사라지면 "인력이 소진됐다"도 화면에서 사라진다.
  */
 
 /** 소비 슬롯 — 두 과에 구멍을 낸다(미용 0·2 / 내과 1). 나머지 두 과는 만석 대조군이다. */
@@ -82,6 +82,38 @@ describe('채용 패널 — 자리 수는 지역 풀 총량이다', () => {
     // (패널 자신의 aria-label은 「채용 — 전국 인력 시장」이라 이 꼬리와 안 겹친다.)
     const remaining = HIRABLE_DEPTS.reduce((n, d) => n + candidates[d].length, 0)
     expect(count(markup, ' 채용"'), '채용 버튼 수').toBe(remaining)
+  })
+
+  /**
+   * 가로 선반 계약 — 과별 인원이 8·5·3·2로 갈려 세로 4열에서는 짧은 과 아래가 통째로 비었다.
+   * 과가 줄(선반)이 되면 빈 공간은 줄 끝에만 생긴다. 그 줄이 서려면 두 가지가 필요하다:
+   * 감싸는 `flex flex-wrap` 래퍼와, **종이 카드와 잔상 프레임이 같은 폭**이라는 것. 폭이 갈리면
+   * 한 줄 안에서 자리가 어긋나 열이 다시 들쭉날쭉해진다 — 그래서 두 종류를 각각 잰다.
+   */
+  it('가로 선반: 과마다 flex-wrap 래퍼 · 종이 카드와 잔상 프레임이 같은 폭(w-40)', () => {
+    const col = columns(render())
+    for (const d of HIRABLE_DEPTS) {
+      // ⚠️ 맨 `flex flex-wrap`으로는 못 잰다 — 카드 안 특성 칩이 이미 그 조합이라 세로 4열에서도
+      //    초록불이 뜬다(실측). 선반만 갖는 `items-stretch`까지 봐야 갈린다(한 줄 안 높이 맞춤).
+      const shelf = col[d].indexOf('flex flex-wrap items-stretch')
+      expect(shelf, `${d} 선반 래퍼`).toBeGreaterThan(-1)
+      // 래퍼만 있고 자리가 그 밖에 있으면 줄이 안 선다 — 첫 카드보다 앞서야 감쌀 수 있다.
+      expect(shelf, `${d} 선반이 자리를 감싼다`).toBeLessThan(col[d].indexOf('<article'))
+    }
+
+    // 폭은 `<article` 자신의 여는 태그에서만 인정한다(자손 span에 붙은 건 줄을 안 맞춘다).
+    const openTag = (chunk: string) => chunk.slice(0, chunk.indexOf('>'))
+    const articles = render().split('<article').slice(1).map(openTag)
+    const paper = articles.filter(a => a.includes('paper-card'))
+    const ghost = articles.filter(a => a.includes('border-dashed'))
+    expect(paper.length, '종이 카드 수').toBe(
+      HIRABLE_DEPTS.reduce((n, d) => n + candidates[d].length, 0),
+    )
+    expect(ghost.length, '잔상 프레임 수').toBe(
+      HIRABLE_DEPTS.reduce((n, d) => n + consumed[d].length, 0),
+    )
+    for (const tag of paper) expect(tag, '종이 카드 폭').toContain('w-40')
+    for (const tag of ghost) expect(tag, '잔상 프레임 폭').toContain('w-40')
   })
 
   it('스타팅 게이트 시점(소비 0)엔 전 열이 만석이다', () => {
