@@ -30,9 +30,7 @@ export default function SegmentTree({
       <p className="font-sans text-xs font-medium uppercase tracking-widest text-ink-2">{title}</p>
       {segments.map((s, i) => (
         <div key={s.label} className="flex items-baseline justify-between pl-3 text-xs text-ink-2">
-          {/* 트리 글리프는 ink-2로 본문과 같은 잉크다 — 스펙이 여기에 ink-3을 금지한다(§2-B).
-              (금지의 옛 근거였던 "ink-3은 소형에서 대비 미달"은 2026-08-03에 해소됐다 —
-               토큰이 AA 위로 올라갔다. 남는 근거는 「결산 본문은 한 잉크」라는 스펙 규칙이다.) */}
+          {/* 트리 글리프는 ink-2로 본문과 같은 잉크다 — 「결산 본문은 한 잉크」(스펙 §2-B). */}
           <span>
             {i === segments.length - 1 ? "└" : "├"} {s.label}
           </span>

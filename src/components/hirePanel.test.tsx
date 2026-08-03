@@ -129,8 +129,9 @@ describe('채용 패널 — 기존 계약 무변', () => {
  * 종이 위 본문 대비(스펙 §4-4) — 값은 globals.css **원본을 읽어** 잰다. 여기 hex를 다시 적으면
  * 토큰을 옮기는 날 테스트만 옛 색을 지키며 통과한다(이중 기재).
  *
- * `--ink-3`도 이 계약 안에 있다 — 사연·잔상 이름은 11px 소형 텍스트라 「흐린 3단」이 곧 안 읽히는
- * 3단이 된다(옛 #7d7358은 paper-2 위 3.44:1로 AA 미달이었다). 흐림은 톤이 아니라 크기가 낸다.
+ * **잉크는 2단뿐이다**(2026-08-03 정정 — 스펙 말미 「§6 정정」). 3단 `--ink-3`은 paper-2 위
+ * 4.5:1을 지키면서 ink-2와 육안으로 갈리는 값이 없어(1.047:1까지 붙었다) 토큰째 삭제했다 —
+ * 사연은 ink-2다. 흐림은 톤이 아니라 크기가 낸다(11px).
  */
 describe('종이 카드 본문 대비 — ink/paper 4.5:1', () => {
   const css = readFileSync(fileURLToPath(new URL('../app/globals.css', import.meta.url)), 'utf8')
@@ -149,9 +150,9 @@ describe('종이 카드 본문 대비 — ink/paper 4.5:1', () => {
     return (hi + 0.05) / (lo + 0.05)
   }
 
-  it('ink·ink-2·ink-3가 종이 그라디언트 양 끝에서 4.5:1 이상', () => {
+  it('ink·ink-2가 종이 그라디언트 양 끝에서 4.5:1 이상', () => {
     expect(wcag('#000000', '#ffffff')).toBeCloseTo(21, 4) // 식의 고정점
-    for (const ink of ['ink', 'ink-2', 'ink-3']) {
+    for (const ink of ['ink', 'ink-2']) {
       for (const bg of ['paper', 'paper-2']) {
         const r = wcag(token(ink), token(bg))
         expect(r, `${ink}(${token(ink)}) on ${bg}(${token(bg)}) = ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
@@ -159,11 +160,29 @@ describe('종이 카드 본문 대비 — ink/paper 4.5:1', () => {
     }
   })
 
-  it('잉크 3단의 서열: ink < ink-2 < ink-3 (대비를 올리다 3단을 본문에 붙여버리지 않는다)', () => {
-    // 대비 하한만 잠그면 ink-3를 ink-2까지 어둡게 하는 것이 초록불을 받는다 — 그러면 사연이
+  it('잉크 2단의 서열: ink < ink-2 (대비를 올리다 흐린 단을 본문에 붙여버리지 않는다)', () => {
+    // 대비 하한만 잠그면 ink-2를 ink까지 어둡게 하는 것이 초록불을 받는다 — 그러면 칩·사연이
     // 본문과 같은 톤이 된다. 서열은 종이가 밝으니 「대비가 작을수록 흐린 단」으로 뒤집어 읽는다.
     const onPaper2 = (t: string) => wcag(token(t), token('paper-2'))
-    expect(onPaper2('ink-3')).toBeLessThan(onPaper2('ink-2'))
     expect(onPaper2('ink-2')).toBeLessThan(onPaper2('ink'))
+  })
+
+  /**
+   * 잔상 프레임의 이름 — **이 카드만 종이가 아니다**. 뒤가 어두운 모달(desk-2)이라 배경에 알파를
+   * 주면 합성 결과가 종이도 desk도 아닌 중간색이 되고, 그 위의 흐린 잉크는 1.19:1까지 내려간다
+   * (리뷰 2026-08-03 실측). 그래서 배경은 **불투명 paper-edge**, 글자는 **ink**다 — 토큰 대비와
+   * 마크업을 **같이** 재야 한다: 수치만 잠그면 컴포넌트가 다른 조합을 써도 초록불이 뜬다.
+   */
+  it('잔상 이름: 불투명 paper-edge 위 ink — 수치 4.5:1이고 마크업도 그 조합이다', () => {
+    const r = wcag(token('ink'), token('paper-edge'))
+    expect(r, `ink(${token('ink')}) on paper-edge(${token('paper-edge')}) = ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+
+    const gone = consumed.AESTHETICS[0]
+    const frame = render().split('<article').find(p => p.includes(gone.name))
+    expect(frame, `${gone.name}(소비) 프레임`).toBeDefined()
+    // 알파(`bg-paper-edge/45`)면 뒤의 모달이 비쳐 위 수치가 뜻을 잃는다 — 공백까지 봐야 갈린다.
+    expect(frame, '불투명 배경').toContain('bg-paper-edge ')
+    // `text-ink-3`·`text-ink-2`는 따옴표 앞에서 갈린다(클래스 끝).
+    expect(frame, '이름 잉크').toContain('text-ink"')
   })
 })

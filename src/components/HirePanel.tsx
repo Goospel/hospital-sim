@@ -158,17 +158,21 @@ export default function HirePanel({
                   taken ? (
                     /* 잔상 프레임 — **라벨도 사유도 없다.** "채용됨/떠남"을 화면이 새로 판정하지
                        않고, 그 사람이 그 자리였고 지금 명단에 없다는 사실만 그린다. 점선 테두리와
-                       흐린 종이 바탕이 "여기 종이가 있었다"를 말한다. */
+                       탁한 종이 바탕이 "여기 종이가 있었다"를 말한다.
+                       ⚠️ **배경에 알파를 주지 않는다**(옛 `bg-paper-edge/45`) — 뒤가 어두운 모달
+                       (desk-2)이라 합성 결과가 종이도 desk도 아닌 중간색(#655e50)이 되고, 그 위
+                       흐린 잉크가 1.19:1까지 내려갔다(리뷰 2026-08-03 실측). 불투명 paper-edge는
+                       paper보다 탁해 "빈 자리" 톤 차이를 알파 없이도 낸다. */
                     <article
                       key={cand.slot}
-                      className="flex flex-col items-center gap-1 border border-dashed border-border-paper bg-paper-edge/45 px-2 py-2"
+                      className="flex flex-col items-center gap-1 border border-dashed border-border-paper bg-paper-edge px-2 py-2"
                     >
                       {/* 잉크 단색 실루엣 — CSS 필터로 채도를 죽이고 어둡게 눌러 옅게 얹는다
                           (SVG 그라디언트·id는 계약상 금지 · PixelSprite 머리말). */}
                       <span className="h-14 w-14 opacity-25 grayscale brightness-[0.15]">
                         <DoctorSprite dept={cand.dept} busy={false} variantKey={cand.name} />
                       </span>
-                      <p className="w-full truncate text-center text-[11px] text-ink-3">{cand.name}</p>
+                      <p className="w-full truncate text-center text-[11px] text-ink">{cand.name}</p>
                     </article>
                   ) : (
                     <article key={cand.slot} className="paper-card flex flex-col gap-1.5 overflow-hidden pb-2">
@@ -197,7 +201,7 @@ export default function HirePanel({
                         </div>
                         {/* 사연 한 줄 — 첫 특성의 story를 **그대로** 쓴다. 이름·과를 끼워 넣지 않는
                             것이 traits.ts의 계약이다(보간값 뒤 조사 분기 · T-094). */}
-                        <p className="text-[11px] leading-relaxed text-ink-3">{TRAITS[cand.traits[0]].story}</p>
+                        <p className="text-[11px] leading-relaxed text-ink-2">{TRAITS[cand.traits[0]].story}</p>
                         {/* 보이는 라벨은 「채용」 하나로 족하다(카드 안에 이미 사람이 있다) — 그러나
                             접근성 이름엔 사람이 실려야 한다: 스크린리더의 버튼 목록에서는 카드 맥락이
                             사라져 「채용」 여덟 개만 남는다.

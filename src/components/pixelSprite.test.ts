@@ -1,5 +1,7 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, it, expect } from 'vitest'
-import { spriteVariant, DEPT_COLOR, CHAIR_PALETTE } from './PixelSprite'
+import { spriteVariant, DEPT_COLOR, CHAIR_PALETTE, DoctorSprite } from './PixelSprite'
 import { relativeLuminance } from './Backdrop'
 import { CHAIR_VARIANTS } from './simHud'
 import type { DeptKey } from '@/game/types'
@@ -63,6 +65,27 @@ describe('spriteVariant — 초상 변주는 id의 순수 함수다', () => {
     const a = spriteVariant('d1'), b = spriteVariant('d12')
     expect(a.hair, `d1 ${a.hair} vs d12 ${b.hair}`).toBe(b.hair)
     expect(a.hairStyle, `둘 다 형태 ${a.hairStyle}`).not.toBe(b.hairStyle)
+  })
+
+  /**
+   * 형태 축의 **배선** — 위 테스트들은 전부 `spriteVariant`의 반환값만 보므로 `HAIR_PATHS[hairStyle]`을
+   * `HAIR_PATHS[0]`으로 바꿔도 전원 초록이다(리뷰 2026-08-03 돌연변이 실측). 36조합은 계산이 아니라
+   * **그려져야** 뜻이 있으니 렌더 결과에서 잰다.
+   *
+   * d1↔d12는 머리색이 같은 쌍이라(위 축 독립 테스트) 두 마크업의 유일한 차이가 머리카락 path다 —
+   * 색은 `d`에 안 실리고 얼굴·몸은 형태를 안 받으므로, `d` 목록이 갈리면 그 원인은 이 배선뿐이다.
+   */
+  it('머리 형태가 렌더까지 배선된다 — d1↔d12의 path 좌표가 갈린다', () => {
+    const paths = (key: string) => {
+      const svg = renderToStaticMarkup(
+        createElement(DoctorSprite, { dept: 'CARDIOLOGY' as DeptKey, busy: false, variantKey: key }),
+      )
+      return [...svg.matchAll(/ d="([^"]+)"/g)].map(m => m[1])
+    }
+    const [a, b] = [paths('d1'), paths('d12')]
+    expect(a.length, '패스 수').toBeGreaterThan(0)
+    expect(a.length, '두 초상의 패스 수는 같다(형태만 갈린다)').toBe(b.length)
+    expect(a, `d1 형태 ${spriteVariant('d1').hairStyle} vs d12 형태 ${spriteVariant('d12').hairStyle}`).not.toEqual(b)
   })
 
   it('과 색은 8과 전부에 있고 서로 다르다 — 가슴 수술복과 소매 커프스가 과를 나르는 신호다', () => {
