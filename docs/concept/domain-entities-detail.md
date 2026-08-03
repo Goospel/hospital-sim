@@ -10,6 +10,7 @@ tags:
 > **관련**: [domain-entities.md](domain-entities.md)(카탈로그·문제→엔티티 역인덱스) · [domain-entity-graph.md](domain-entity-graph.md)(관계 다이어그램) · [current-korea-starting-world.md](../research/current-korea-starting-world.md) · [game-concept.md](game-concept.md)
 >
 > ⚠️ **수치의 단일 출처는 원 리서치 문서**(`docs/research/*`)다. 여기 근거에 붙는 값은 인용이며, 게임 번역 시 **부호·대소·비율만** 근거로 쓰고 절대치는 각색한다.
+> ⚠️ **각 엔티티의 「게임 대응」 줄은 2026-07-18 시점 기술이다** — 그 뒤 코드가 크게 움직여(예: 위저드 예산 100억→5억, 거절 사유 4종→7종, 메인이 타일 시뮬로 교체) 일부는 낡았다. **현행 코드 대응의 단일 출처는 [entity-code-coverage.md](entity-code-coverage.md)**(✅/🟡/⬜ + `file:line` + sim/classic 축)이고, 여기 「게임 대응」은 당시 설계 의도의 기록으로 읽는다.
 
 ---
 
