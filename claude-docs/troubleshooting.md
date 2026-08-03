@@ -42,6 +42,7 @@ promoted: 훅 승격        # 선택 — 승격했으면
      각 항목의 frontmatter(summary)에서 재생성합니다. 내용을 바꾸려면 그 항목의
      summary를 고치세요(단일 출처). 최신 항목이 위. -->
 
+- [T-152](troubleshooting/T-152.md) · 돌연변이 확인용 치환 스크립트가 CRLF 파일에서 아무것도 안 바꾸고 조용히 통과 — `\n`을 포함한 패턴은 CRLF 파일에 매치되지 않는다. 계측기가 무성 no-op이면 "돌연변이가 살아남았다"는 거짓 결론이 나온다. 치환은 반드시 바뀐 바이트 수를 확인하고 실패 시 크래시시켜라
 - [T-151](troubleshooting/T-151.md) · region-balance-probe 하네스를 복사해 만든 이벤트 측정 프로브가 84일 내내 이벤트 0건 — 기존 프로브는 startNextDay/Week만 부르고 applyMorningEvent를 안 부른다(UI는 부른다). 헤드리스로 UI 동작을 재현할 땐 SimGame의 전이 호출렬을 그대로 복사해야 한다
 - [T-150](troubleshooting/T-150.md) · Playwright addInitScript로 Math.random을 전역 고정하면 게임의 모든 클릭이 에러 없이 무반응이 된다 — react-dom이 모듈 평가 시점에 Math.random으로 이벤트 프로퍼티 키를 만드는데, 상수를 주면 앱 react-dom과 next-devtools 내장 react-dom이 같은 키를 만들어 이벤트 위임이 핸들러에 못 닿는다. 결정론이 필요하면 전역 고정 대신 호출 지점 국소 패치
 - [T-149](troubleshooting/T-149.md) · NO_PEOPLE(사람이 바닥남) 엔딩은 구조적으로 도달 불가다 — 모든 지역 시작 풀에 미용이 있는데, 미용 의사는 하루 피로 증가 상한(5)이 하룻밤 회복(20)보다 작아 영원히 사직하지 않는다. 안 뽑으면 풀이 안 비고 뽑으면 안 떠나, 판정의 두 조건이 동시에 참이 될 수 없다. 코드프리즈 직전이라 코드 무변경 + 문서화로 결정(2026-08-03)

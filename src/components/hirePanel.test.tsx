@@ -129,8 +129,8 @@ describe('채용 패널 — 기존 계약 무변', () => {
  * 종이 위 본문 대비(스펙 §4-4) — 값은 globals.css **원본을 읽어** 잰다. 여기 hex를 다시 적으면
  * 토큰을 옮기는 날 테스트만 옛 색을 지키며 통과한다(이중 기재).
  *
- * ⚠️ `--ink-3`는 여기 없다 — 사연·잔상 이름에 쓰는 **의도적으로 흐린 3단**이고 종이 위 3.44:1이다.
- * 본문 계약은 ink·ink-2까지다(스펙이 "본문"이라 적은 범위).
+ * `--ink-3`도 이 계약 안에 있다 — 사연·잔상 이름은 11px 소형 텍스트라 「흐린 3단」이 곧 안 읽히는
+ * 3단이 된다(옛 #7d7358은 paper-2 위 3.44:1로 AA 미달이었다). 흐림은 톤이 아니라 크기가 낸다.
  */
 describe('종이 카드 본문 대비 — ink/paper 4.5:1', () => {
   const css = readFileSync(fileURLToPath(new URL('../app/globals.css', import.meta.url)), 'utf8')
@@ -149,13 +149,21 @@ describe('종이 카드 본문 대비 — ink/paper 4.5:1', () => {
     return (hi + 0.05) / (lo + 0.05)
   }
 
-  it('ink·ink-2가 종이 그라디언트 양 끝에서 4.5:1 이상', () => {
+  it('ink·ink-2·ink-3가 종이 그라디언트 양 끝에서 4.5:1 이상', () => {
     expect(wcag('#000000', '#ffffff')).toBeCloseTo(21, 4) // 식의 고정점
-    for (const ink of ['ink', 'ink-2']) {
+    for (const ink of ['ink', 'ink-2', 'ink-3']) {
       for (const bg of ['paper', 'paper-2']) {
         const r = wcag(token(ink), token(bg))
         expect(r, `${ink}(${token(ink)}) on ${bg}(${token(bg)}) = ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
       }
     }
+  })
+
+  it('잉크 3단의 서열: ink < ink-2 < ink-3 (대비를 올리다 3단을 본문에 붙여버리지 않는다)', () => {
+    // 대비 하한만 잠그면 ink-3를 ink-2까지 어둡게 하는 것이 초록불을 받는다 — 그러면 사연이
+    // 본문과 같은 톤이 된다. 서열은 종이가 밝으니 「대비가 작을수록 흐린 단」으로 뒤집어 읽는다.
+    const onPaper2 = (t: string) => wcag(token(t), token('paper-2'))
+    expect(onPaper2('ink-3')).toBeLessThan(onPaper2('ink-2'))
+    expect(onPaper2('ink-2')).toBeLessThan(onPaper2('ink'))
   })
 })
