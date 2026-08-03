@@ -124,8 +124,12 @@ describe('stepFatigue — 하루 강도 가중 부하로 피로 누적(주 간 �
     nightLoad: new Map(nightLoad),
   })
 
+  // ⚠️ 초과분이 **회복보다 커야** 대소가 0 클램프 밖에서 살아남는다. 옛 값(초과 1·2시간)은
+  // FATIGUE_REST 20에서만 통했고 회복 상향(20 → 30, 2026-08-04)에 둘 다 0으로 붙어 죽었다.
+  // 그래서 초과를 4·8시간으로 재기준화한다 — 재는 것("클수록 오른다")은 그대로다.
   it('부하가 클수록 더 오른다', () => {
-    const next = stepFatigue({}, load([['a', FATIGUE_FREE_MIN + 60], ['b', FATIGUE_FREE_MIN + 120]]))
+    const next = stepFatigue({}, load([['a', FATIGUE_FREE_MIN + 240], ['b', FATIGUE_FREE_MIN + 480]]))
+    expect(next.a).toBeGreaterThan(0) // 계측기가 0끼리 비교하고 있지 않다
     expect(next.b).toBeGreaterThan(next.a)
   })
 
@@ -153,9 +157,12 @@ describe('stepFatigue — 하루 강도 가중 부하로 피로 누적(주 간 �
     expect(next.a).toBe(FATIGUE_MAX)
   })
 
+  // 초과 2시간(옛 값)은 회복 상향(20 → 30) 뒤 하루 순증이 음수라 이틀 다 0이었다 — 위와 같은
+  // 재기준화(4시간). 하루 순증이 양수인 날에만 "누적한다"를 잴 수 있다.
   it('이전 값에 누적한다(리셋 아님)', () => {
-    const day1 = stepFatigue({}, load([['a', FATIGUE_FREE_MIN + 120]]))
-    const day2 = stepFatigue(day1, load([['a', FATIGUE_FREE_MIN + 120]]))
+    const day1 = stepFatigue({}, load([['a', FATIGUE_FREE_MIN + 240]]))
+    const day2 = stepFatigue(day1, load([['a', FATIGUE_FREE_MIN + 240]]))
+    expect(day1.a).toBeGreaterThan(0)
     expect(day2.a).toBeGreaterThan(day1.a)
   })
 })
