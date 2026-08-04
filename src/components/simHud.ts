@@ -1152,7 +1152,7 @@ export function setupSteps(w: SimWorld): SetupStep[] {
     {
       key: 'no-waiting',
       label: '대기실을 만듭니다',
-      hint: '[용도] > [대기실]로 바닥을 드래그해 칠하고 → [의자]를 채웁니다. 벽은 두르고 싶을 때만 두릅니다.',
+      hint: '[건설] > [용도] > [대기실]로 바닥을 드래그해 칠하고 → [의자]를 채웁니다. 벽은 두르고 싶을 때만 두릅니다.',
       done: regions.some(r => r.type === 'WAITING'),
       alert: '대기실이 없습니다 — 환자가 들어오지 못합니다',
     },
@@ -1170,7 +1170,7 @@ export function setupSteps(w: SimWorld): SetupStep[] {
     {
       key: 'no-exam-room',
       label: '뽑은 과마다 진료실을 만듭니다',
-      hint: '[용도] > [진료실] > 그 과를 고르고 바닥을 드래그해 칠합니다. 과가 다르면 못 들어갑니다.',
+      hint: '[건설] > [용도] > [진료실] > 그 과를 고르고 바닥을 드래그해 칠합니다. 과가 다르면 못 들어갑니다.',
       done: doctors.length > 0 && roomless === 0,
       alert: `진료실 없는 의사 ${roomless}명 — 그 과 진료실을 지으세요`,
     },
