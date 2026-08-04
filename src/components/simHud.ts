@@ -1398,6 +1398,52 @@ export function escTarget(s: { modalOpen: boolean; inspectOpen: boolean; tool: B
   return null
 }
 
+/** 좌측 팔레트의 최상위 묶음 — 라벨(`PALETTE_SECTIONS`)은 여전히 JSX가 갖는다(여긴 판정만). */
+export type PaletteSection = 'PEOPLE' | 'BUILD'
+
+/** 팔레트가 지금 내는 **한 계층** — 드릴다운이라 언제나 정확히 하나다. */
+export type PaletteLevel = 'ROOT' | PaletteSection | 'ROOMTYPE' | 'DEPT'
+
+/**
+ * 지금 팔레트가 서 있는 계층 — **아래가 위를 이긴다**(escTarget과 반대 방향의 같은 체인).
+ *
+ * 계층은 상태가 아니라 **파생**이다: 고르는 순간 그 계층으로 들어가고 놓는 순간 나온다.
+ * 따로 `level` 상태를 두면 그것과 `tool`·`roomType`이 어긋나는 조합이 생기고(도구는 용도인데
+ * 화면은 도구 목록), 그 어긋남은 화면에만 나타나 테스트가 못 겨눈다.
+ *
+ * 세로로 누적하던 아코디언을 대체한다 — 카테고리 2줄 + 도구 8줄 + 용도 7줄 + 과 목록이 한꺼번에
+ * 쌓이면 20줄 가까이 되어 짧은 창에서 스크롤이었다(폭 `w-40`은 맵 인셋이라 못 넓힌다 — T-101).
+ */
+export function paletteLevel(s: {
+  section: PaletteSection | null
+  tool: BuildTool | null
+  roomType: ZonePick | null
+}): PaletteLevel {
+  if (s.tool === 'DESIGNATE') return s.roomType === 'EXAM' ? 'DEPT' : 'ROOMTYPE'
+  if (s.section !== null) return s.section
+  return 'ROOT'
+}
+
+/** 뒤로가기가 비우는 화면 상태의 이름들 — 그대로 setter 넷에 대응한다. */
+export type PaletteKey = 'section' | 'tool' | 'roomType' | 'examDept'
+
+/**
+ * 그 계층에서 「‹ 뒤로」가 놓는 것 — **그 계층에 들어오게 만든 상태만** 비운다.
+ *
+ * 위로 갈수록 비우는 것이 늘어나는 이유는 무장이 계층에 얹혀 있기 때문이다: 묶음을 빠져나오는데
+ * 도구가 손에 남으면 안 보이는 도구로 부지가 바뀐다(옛 `toggleSection`이 세 줄을 함께 비운
+ * 그 이유 — 여기로 옮겨 왔다). 반대로 과 목록에서 나올 땐 용도 도구를 **남긴다**: 그게 바로
+ * 위 계층의 무장이라, 놓으면 두 단계를 한 번에 올라간다.
+ */
+export function paletteBack(level: PaletteLevel): readonly PaletteKey[] {
+  switch (level) {
+    case 'ROOT': return []
+    case 'DEPT': return ['roomType', 'examDept']
+    case 'ROOMTYPE': return ['tool', 'roomType', 'examDept']
+    default: return ['section', 'tool', 'roomType', 'examDept']
+  }
+}
+
 /**
  * 지금 **영역 오버레이**(과 색 틴트 + 방 이름표)를 그리는가 — 안 그리는 것이 기본이다.
  *
