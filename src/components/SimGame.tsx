@@ -24,6 +24,8 @@ import {
   formatManwon,
   inspectCard,
   isDragTool,
+  paletteBack,
+  paletteLevel,
   previewLabel,
   rectModeOf,
   rectTiles,
@@ -37,6 +39,8 @@ import {
   traitBadges,
   turnAwayBatchText,
   type BuildTool,
+  type PaletteLevel,
+  type PaletteSection,
   type PauseCause,
   type ZonePick,
 } from "@/components/simHud";
@@ -82,21 +86,30 @@ const HIRE_REASON_TEXT: Record<Exclude<HireResult, { ok: true }>["reason"], stri
 };
 
 /**
- * 좌측 패널의 최상위 묶음 — 누르면 그 아래가 열린다(아코디언: 한 번에 하나).
+ * 좌측 패널의 최상위 묶음 — 누르면 패널 내용이 **그 묶음으로 갈린다**(드릴다운: 한 번에 한 계층).
  *
  * 가른 축은 **무엇을 바꾸는가**다: `PEOPLE`은 사람을, `BUILD`는 부지를 바꾼다. 도구 8종이
  * 전부 `BUILD`인 것은 용도·철거도 결국 부지 편집이라서다 — 「용도」를 따로 세우면 최상위가
  * 셋이 되는데, 그 셋째는 클릭 한 번에 도구까지 무장하는 **다른 종류의 버튼**이 되어
- * "카테고리는 열기만 한다"는 규칙이 첫 줄부터 깨진다(보이는 것보다 규칙이 먼저다).
+ * "카테고리는 들어가기만 한다"는 규칙이 첫 줄부터 깨진다(보이는 것보다 규칙이 먼저다).
  *
  * ⚠️ 여기 있고 `simHud`에 없는 이유: 라벨을 읽는 것이 JSX뿐이다. `TOOL_LABEL`이 저쪽에 있는
  * 것은 순수 함수(`statusLineText`·`toolCostText`)가 그 표를 읽기 때문이지 라벨이라서가 아니다.
+ * 계층 **판정**만은 저쪽이다(`paletteLevel`) — 판정이 JSX 안에 있으면 테스트가 못 겨눈다.
  */
-type PaletteSection = "PEOPLE" | "BUILD";
 const PALETTE_SECTIONS: Array<{ key: PaletteSection; label: string }> = [
   { key: "PEOPLE", label: "사람" },
   { key: "BUILD", label: "건설" },
 ];
+
+/** 「‹ 뒤로」 줄에 쓰는 계층 이름 — 지금 어디에 있는지와 나가는 길을 한 줄이 겸한다.
+ *  `ROOT`가 없는 것이 계약이다: 뿌리에는 나갈 위가 없어 그 줄 자체를 안 그린다. */
+const LEVEL_LABEL: Record<Exclude<PaletteLevel, "ROOT">, string> = {
+  PEOPLE: "사람",
+  BUILD: "건설",
+  ROOMTYPE: "용도",
+  DEPT: "진료실 과",
+};
 
 const SPEEDS: Array<{ value: SimSpeed; label: string; title: string }> = [
   { value: 0, label: "❚❚", title: "일시정지" },
@@ -135,9 +148,9 @@ export default function SimGame() {
     if (s !== 0) lastRunSpeed.current = s;
     setSpeed(s);
   };
-  /** 지금 펼쳐 둔 좌측 패널 묶음 — **한 번에 하나**(아코디언)이고 `null`이면 전부 접혀 있다.
-   *  묶은 이유는 평평한 10줄이 곧 스크롤이기 때문이다: 카테고리만 서 있으면 패널이 짧게 유지되고,
-   *  펼친 하나만 아래로 자란다(사용자 지시 *"건설은 건설로 묶자"*). */
+  /** 지금 들어와 있는 좌측 패널 묶음 — `null`이면 뿌리(카테고리 둘)다.
+   *  **계층은 이 값 하나로 정해지지 않는다** — 도구·방 종류까지 합쳐 `paletteLevel`이 파생한다
+   *  (계층을 따로 상태로 두면 그것과 무장이 어긋나는 조합이 생긴다). */
   const [section, setSection] = useState<PaletteSection | null>(null);
   /** 손에 든 건설 도구 — 벽·문·가구 4종·용도·철거. 없으면 맵은 구경거리다(클릭이 조용히 지나간다). */
   const [tool, setTool] = useState<BuildTool | null>(null);
@@ -326,7 +339,7 @@ export default function SimGame() {
           setInspectId(null);
           break;
         case "tool":
-          // 도구를 놓을 땐 용도·과도 함께 비운다 — 팔레트의 초기화(toggleSection)와 같은 세 줄이다.
+          // 도구를 놓을 땐 용도·과도 함께 비운다 — 팔레트의 뒤로가기(paletteBack)와 같은 세 줄이다.
           setTool(null);
           setRoomType(null);
           setExamDept(null);
@@ -598,19 +611,23 @@ export default function SimGame() {
     return () => ro.disconnect();
   }, []);
 
-  /** 카테고리 토글 — 같은 것을 다시 누르면 접힌다.
+  /** 팔레트가 지금 내는 한 계층 — 파생이라 상태가 아니다(판정은 simHud.paletteLevel). */
+  const level = paletteLevel({ section, tool, roomType });
+
+  /** 「‹ 뒤로」 — 한 단계 위로. **무엇을 비우는지는 `paletteBack`이 정한다**(그래야 테스트가 겨눈다).
    *
-   *  **접거나 갈아탈 때 들고 있던 도구를 놓는 것**이 이 함수의 요점이다: 안 보이는 도구가 무장된
-   *  채로 남으면 부지를 눌렀을 때 벽이 서는데 화면 어디에도 그 이유가 없다(팔레트가 접혀 있으니
-   *  무엇을 들었는지 볼 자리가 없다). 도구 버튼이 이미 쓰는 초기화와 같은 세 줄이다.
+   *  묶음을 빠져나올 때 들고 있던 도구를 놓는 것이 요점이다: 안 보이는 도구가 무장된 채로 남으면
+   *  부지를 눌렀을 때 벽이 서는데 화면 어디에도 그 이유가 없다(그 계층을 떠났으니 무엇을 들었는지
+   *  볼 자리가 없다).
    *
-   *  ⚠️ 업데이터 **바깥**에서 초기화한다 — 안에서 부르면 StrictMode의 이중 호출에 side effect가
+   *  ⚠️ 업데이터 **바깥**에서 비운다 — 안에서 부르면 StrictMode의 이중 호출에 side effect가
    *  두 번 실린다(이 파일의 `onTileUp`이 같은 이유로 setState 밖에서 확정한다). */
-  const toggleSection = (s: PaletteSection) => {
-    setSection((cur) => (cur === s ? null : s));
-    setTool(null);
-    setRoomType(null);
-    setExamDept(null);
+  const goBack = () => {
+    const clear = paletteBack(level);
+    if (clear.includes("section")) setSection(null);
+    if (clear.includes("tool")) setTool(null);
+    if (clear.includes("roomType")) setRoomType(null);
+    if (clear.includes("examDept")) setExamDept(null);
   };
 
   return (
@@ -855,10 +872,14 @@ export default function SimGame() {
       {/*
         ── 좌측 패널 — **판을 바꾸는 행동이 전부 여기 있다.** 상단 바에 남은 것은 읽는 값과 시계뿐이다.
 
-        행동은 **카테고리로 묶여 접혀 있다**(사용자 지시 *"건설은 건설로 묶자"*): [사람]·[건설]이
-        서 있고 누른 하나만 아래로 열린다. 평평하게 늘어놓던 10줄이 짧은 창에서 곧 스크롤이었고
-        (600px에서 실측 `878 > 558`), 그 스크롤은 맨 아래 상태줄까지 밀어냈다.
-        도구가 아니라 **묶음**이 최상위인 것이 계약이다 — 카테고리는 열기만 하고 도구는 안 든다. ──
+        행동은 **카테고리로 묶여 있고, 고른 계층 하나만 패널에 남는다**(드릴다운 — 사용자 결정
+        2026-08-05). [사람]·[건설]이 서 있고 누르면 그 안이 **패널을 갈아 끼운다**.
+        도구가 아니라 **묶음**이 최상위인 것이 계약이다 — 카테고리는 들어가기만 하고 도구는 안 든다.
+
+        ⚠️ **누적(아코디언)에서 교체(드릴다운)로 바꾼 이유**: 접었어도 카테고리 2줄 + 도구 8줄 +
+        용도 7줄 + 과 목록이 **세로로 쌓여** 20줄에 가까웠고(용도→진료실까지 들어가면 언제나 그
+        상태다), 짧은 창에서 곧 스크롤이라 맨 아래 상태줄이 밀렸다. 폭(`w-40`)은 맵 인셋이라
+        넓혀서 풀 수 없다(아래 T-101) — 그러면 남는 축은 "한 번에 하나만 보인다"뿐이다. ──
 
         **하단 전폭 바에서 좌측 세로 패널로 옮겨 왔다.** 부지는 가로로 넓은 48×32라 zoom 1에서
         좌우에 늘 여백이 남는데(fit이 세로에 걸린다), 하단 바는 그 남는 가로를 못 쓰면서 세로만
@@ -878,48 +899,60 @@ export default function SimGame() {
         style={{ top: insets.top }}
         className="absolute bottom-0 left-0 z-10 flex w-40 flex-col gap-2 overflow-y-auto border-r border-frame bg-desk-2/80 px-3 py-3 backdrop-blur-sm"
       >
-        {/* ── 카테고리 — 누르면 **바로 아래에** 그 묶음이 열린다(아코디언: 한 번에 하나). ──
-            평평한 10줄이 곧 스크롤이었다: 600px 높이에서 [용도]·[진료실]까지 펼치면 패널이
-            잘렸다. 카테고리만 서 있으면 패널이 두 줄로 유지되고 펼친 하나만 아래로 자란다.
+        {/* ── 이탈 경고 — **모든 계층에 상시**. 계층 안으로 들어가면 뿌리가 안 보이므로
+            [사람] 버튼에 승계해 두면 건설하는 동안 붉은 신호가 통째로 사라진다. 주말 통지를
+            기다리지 않고 **주중에 눈에 띄어야** 대응할 시간이 생기는 것이 이 경고의 존재
+            이유라, 안 보이면 없는 것과 같다 — 그래서 계층 위(패널 최상단)로 올렸다.
+            누르면 곧장 인사 패널이다: 경고가 가리키는 곳과 손이 갈 곳이 같아야 한 번에 끝난다. ── */}
+        {resigning.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setPriorityOpen(true)}
+            className="border border-alarm px-3 py-1.5 text-left text-sm text-alarm transition-colors hover:bg-alarm/10"
+          >
+            이탈 {resigning.length} · 인사
+          </button>
+        )}
 
-            ⚠️ [사람]에 **이탈 경고를 승계**한다 — 안쪽 [인사]에만 두면 묶음이 접힌 동안 붉은
-            신호가 통째로 사라진다. 주말 통지를 기다리지 않고 **주중에 눈에 띄어야** 대응할
-            시간이 생기는 것이 그 경고의 존재 이유라, 접힌 채로 안 보이면 없는 것과 같다. */}
-        <div className="flex flex-col gap-1.5">
-          {PALETTE_SECTIONS.map((s) => {
-            const open = section === s.key;
-            const alarm = s.key === "PEOPLE" && resigning.length > 0;
-            return (
+        {/* ── 뿌리 — 카테고리 둘. 누르면 패널이 그 묶음으로 **갈아 끼워진다**(누적이 아니다). ── */}
+        {level === "ROOT" ? (
+          <div className="flex flex-col gap-1.5">
+            {PALETTE_SECTIONS.map((s) => (
               <button
                 key={s.key}
                 type="button"
-                aria-expanded={open}
-                onClick={() => toggleSection(s.key)}
-                className={`flex items-center justify-between border px-3 py-1.5 text-sm transition-colors ${
-                  open
-                    ? "border-on-desk-muted bg-frame text-on-desk"
-                    : alarm
-                      ? "border-alarm text-alarm hover:bg-alarm/10"
-                      : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
-                }`}
+                onClick={() => setSection(s.key)}
+                className="flex items-center justify-between border border-frame px-3 py-1.5 text-sm text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk"
               >
-                <span>
-                  {s.label}
-                  {alarm ? ` · 이탈 ${resigning.length}` : ""}
-                </span>
-                {/* 펼침 표시 — 화살표 하나가 "이 버튼은 창을 여는 버튼"임을 말한다(도구 버튼과 구별). */}
+                <span>{s.label}</span>
+                {/* 화살표 하나가 "이 버튼은 안으로 들어가는 버튼"임을 말한다(도구 버튼과 구별). */}
                 <span aria-hidden className="font-mono text-xs">
-                  {open ? "▾" : "▸"}
+                  ▸
                 </span>
               </button>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        ) : (
+          /* 머리줄 — **지금 어디인가**와 **나가는 길**을 한 줄이 겸한다. 드릴다운은 위 계층을
+             가리므로 그 둘이 따로 있으면 좁은 패널에서 두 줄을 잡아먹는다. 비우는 것은
+             `paletteBack`이 정한다(한 단계 위로 — 도구는 그 계층의 무장이라 함께 놓인다). */
+          <button
+            type="button"
+            onClick={goBack}
+            className="flex items-center gap-1.5 border-b border-frame px-1 pb-2 text-sm text-on-desk-muted transition-colors hover:text-on-desk"
+          >
+            <span aria-hidden className="font-mono">
+              ‹
+            </span>
+            {LEVEL_LABEL[level]}
+          </button>
+        )}
 
         {/* ── 사람 — [채용]·[인사]. 채용이 "사람을 들이는" 버튼이면 인사는 **들인 사람이
-            무엇을 할지** 정하는 버튼이다. ── */}
-        {section === "PEOPLE" && (
-          <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
+            무엇을 할지** 정하는 버튼이다. 이탈 경고를 여기 다시 얹지 않는 것이 계약이다 —
+            위 상시 줄이 이미 그 말을 하고 있고, 두 번 적으면 둘이 어긋날 자리가 생긴다. ── */}
+        {level === "PEOPLE" && (
+          <div className="flex flex-col gap-1.5">
             <button
               type="button"
               onClick={() => setHireOpen(true)}
@@ -930,22 +963,19 @@ export default function SimGame() {
             <button
               type="button"
               onClick={() => setPriorityOpen(true)}
-              className={`border px-3 py-1.5 text-sm transition-colors ${
-                resigning.length > 0
-                  ? "border-alarm text-alarm hover:bg-alarm/10"
-                  : "border-frame text-on-desk-muted hover:border-on-desk-muted hover:text-on-desk"
-              }`}
+              className="border border-frame px-3 py-1.5 text-sm text-on-desk-muted transition-colors hover:border-on-desk-muted hover:text-on-desk"
             >
-              인사{resigning.length > 0 ? ` · 이탈 ${resigning.length}` : ""}
+              인사
             </button>
           </div>
         )}
 
         {/* ── 건설 — 도구 8종. 용도로 바닥을 칠하고 → 가구를 놓는다. 벽·문은 나누고 싶을 때만 세운다
             (칠한 자리가 곧 영역이라 방을 만드는 데 벽이 필요 없다 — 설계 2026-07-31 §2).
-            용도·철거까지 여기 드는 것은 셋 다 **부지를 바꾸는 행위**라서다(PALETTE_SECTIONS 주석). ── */}
-        {section === "BUILD" && (
-          <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
+            용도·철거까지 여기 드는 것은 셋 다 **부지를 바꾸는 행위**라서다(PALETTE_SECTIONS 주석).
+            [용도]를 고르면 이 목록은 사라지고 용도 계층이 그 자리에 선다(`paletteLevel`). ── */}
+        {level === "BUILD" && (
+          <div className="flex flex-col gap-1.5">
             {BUILD_TOOLS.map((t) => (
               <button
                 key={t}
@@ -967,20 +997,16 @@ export default function SimGame() {
                 {TOOL_LABEL[t]}
               </button>
             ))}
-            {/* 가격표는 **고른 도구의 값**이다 — 값 자체는 코어 표에서 온다(simHud.toolCostText).
-                건설 묶음 안에 있는 이유: 도구가 없으면 말할 값도 없다(접혀 있을 땐 빈 줄이 된다). */}
-            <p className="font-mono text-[11px] leading-snug tabular-nums text-on-desk-muted">
-              {tool ? toolCostText(tool) : "도구를 고르면 비용이 표시됩니다"}
-            </p>
           </div>
         )}
 
-        {/* 의자 종류 — [의자]를 고르면 열린다. **도구를 늘리는 대신 여기 붙는다**(설계 §4):
-            변종마다 도구를 만들면 `BuildTool`↔`FurnitureKind` 동일성이 깨지고 팔레트가 8→12로 는다.
-            가로로 감싸는 것은 다섯이 세로로 서면 패널이 그만큼 길어지기 때문이다(용도 6종과 다른 점).
+        {/* 의자 종류 — [의자]를 고르면 **건설 계층 안에** 붙는다(이것만 인라인이다: 다섯이 가로로
+            감기므로 두 줄이면 끝나 계층을 하나 더 팔 값어치가 없다).
+            **도구를 늘리는 대신 여기 붙는다**(설계 §4): 변종마다 도구를 만들면
+            `BuildTool`↔`FurnitureKind` 동일성이 깨지고 팔레트가 8→12로 는다.
             선택 표시는 팔레트와 **같은 `bg-frame`**이다 — 청록(LANDING.accent)은 확정 버튼 전용이라
             여기 쓰면 화면에서 「선택」의 색이 둘로 갈린다. */}
-        {tool === "CHAIR" && (
+        {level === "BUILD" && tool === "CHAIR" && (
           <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
             <span className="text-xs text-on-desk-muted">종류</span>
             <div className="flex flex-wrap gap-1.5">
@@ -1003,12 +1029,11 @@ export default function SimGame() {
           </div>
         )}
 
-        {/* 용도 6종 + 지정 해제 — [용도]를 고르면 열린다. 용도가 **곧** 영역이라는 것을 이 목록이
+        {/* 용도 6종 + 지정 해제 — [용도]를 고른 계층. 용도가 **곧** 영역이라는 것을 이 목록이
             말한다: 벽으로 두르지 않아도 칠한 자리가 그대로 방이 된다(설계 2026-07-31 §2).
             벽은 통행을 막고 그림을 만드는 것이지 방의 조건이 아니다. */}
-        {tool === "DESIGNATE" && (
-          <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
-            <span className="text-xs text-on-desk-muted">용도</span>
+        {level === "ROOMTYPE" && (
+          <div className="flex flex-col gap-1.5">
             {ROOM_TYPES.map((t) => (
               <button
                 key={t}
@@ -1049,9 +1074,8 @@ export default function SimGame() {
 
         {/* 진료실의 과 — 진료가 성립하려면 환자·진료실·의사의 과가 셋 다 같아야 하므로
             (코어의 삼중 일치), 무슨 과로 지정하는지가 건설의 절반이다. */}
-        {tool === "DESIGNATE" && roomType === "EXAM" && (
-          <div className="flex flex-col gap-1.5 border-t border-frame pt-2">
-            <span className="text-xs text-on-desk-muted">과</span>
+        {level === "DEPT" && (
+          <div className="flex flex-col gap-1.5">
             {HIRABLE_DEPTS.map((d) => (
               <button
                 key={d}
@@ -1068,6 +1092,16 @@ export default function SimGame() {
               </button>
             ))}
           </div>
+        )}
+
+        {/* 가격표는 **고른 도구의 값**이다 — 값 자체는 코어 표에서 온다(simHud.toolCostText).
+            건설 쪽 계층 셋 전부에 한 벌로 서는 것이 요점이다: 용도·과로 내려가도 [용도]의 값은
+            여전히 지금 칠하려는 값이라, 계층마다 베껴 두면 세 곳이 갈릴 자리가 생긴다.
+            [사람]·뿌리에는 없다 — 도구가 없으면 말할 값도 없다. */}
+        {level !== "ROOT" && level !== "PEOPLE" && (
+          <p className="font-mono text-[11px] leading-snug tabular-nums text-on-desk-muted">
+            {tool ? toolCostText(tool) : "도구를 고르면 비용이 표시됩니다"}
+          </p>
         )}
 
         {/* 상태줄 — **화면에서 유일하게 문구가 바뀌는 자리**. 무엇을 쓸지는 simHud.statusLineText

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { doorTile, hire, placeRoom, rectPts } from '../sim/testHelpers'
 import {
-  alertsOf, escTarget, inspectCard, regionOverlayOn, rosterFilters, toggledSpeed,
+  alertsOf, escTarget, inspectCard, paletteBack, paletteLevel, regionOverlayOn, rosterFilters, toggledSpeed,
   buildBlockReason, buildResultText, BUILD_TOOLS, busyDoctorIds, doctorActivityMark, doctorCountByDept,
   CHAIR_VARIANTS, CHAIR_VARIANT_LABEL, DEFAULT_CHAIR_VARIANT,
   doctorRoomlessMark, fatigueTone, formatManwon, isDragTool, nextPriority, noRestSpotIdle,
@@ -1321,6 +1321,77 @@ describe('escTarget — ESC가 닫는 한 겹', () => {
   it('아무것도 안 열려 있으면 **아무 일도 안 한다** — 결산 오버레이는 ESC로 닫히지 않는다', () => {
     // 닫으면 다음 행동(다음 날 버튼)이 화면에서 사라진다 — 그래서 결산은 이 판정의 입력에 없다.
     expect(target()).toBeNull()
+  })
+})
+
+describe('paletteLevel — 좌측 팔레트가 지금 보여줄 한 계층', () => {
+  const level = (over: Partial<Parameters<typeof paletteLevel>[0]> = {}) =>
+    paletteLevel({ section: null, tool: null, roomType: null, ...over })
+
+  it('아무것도 안 골랐으면 뿌리 — 카테고리 둘만 선다', () => {
+    expect(level()).toBe('ROOT')
+  })
+
+  it('묶음을 고르면 그 묶음 계층', () => {
+    expect(level({ section: 'PEOPLE' })).toBe('PEOPLE')
+    expect(level({ section: 'BUILD' })).toBe('BUILD')
+  })
+
+  it('용도 도구를 들면 **도구 목록이 아니라** 용도 목록이다 — 드릴다운은 한 번에 한 계층만 낸다', () => {
+    expect(level({ section: 'BUILD', tool: 'DESIGNATE' })).toBe('ROOMTYPE')
+  })
+
+  it('진료실을 고르면 과 목록으로 한 단계 더 들어간다', () => {
+    expect(level({ section: 'BUILD', tool: 'DESIGNATE', roomType: 'EXAM' })).toBe('DEPT')
+  })
+
+  it('진료실이 아닌 용도에서는 과로 안 내려간다', () => {
+    expect(level({ section: 'BUILD', tool: 'DESIGNATE', roomType: 'WAITING' })).toBe('ROOMTYPE')
+    expect(level({ section: 'BUILD', tool: 'DESIGNATE', roomType: 'ERASE' })).toBe('ROOMTYPE')
+  })
+
+  it('용도가 아닌 도구는 방 종류가 남아 있어도 건설 계층이다 — 아래가 위를 이기는 것은 용도 도구뿐', () => {
+    expect(level({ section: 'BUILD', tool: 'WALL', roomType: 'EXAM' })).toBe('BUILD')
+  })
+
+  it('도구가 묶음을 이긴다 — 도구를 든 채로는 그 도구의 계층에 머문다', () => {
+    expect(level({ section: 'PEOPLE', tool: 'DESIGNATE' })).toBe('ROOMTYPE')
+  })
+})
+
+describe('paletteBack — 뒤로 한 단계가 비우는 것', () => {
+  it('과 목록에서 뒤로: 방 종류와 과만 놓는다 — 용도 도구는 손에 남는다', () => {
+    expect([...paletteBack('DEPT')].sort()).toEqual(['examDept', 'roomType'])
+  })
+
+  it('용도 목록에서 뒤로: 도구까지 놓아 건설 계층으로 올라간다', () => {
+    expect([...paletteBack('ROOMTYPE')].sort()).toEqual(['examDept', 'roomType', 'tool'])
+  })
+
+  it('묶음에서 뒤로: 묶음과 손에 든 것 전부 — 안 보이는 도구가 무장된 채 남으면 부지를 눌렀을 때 이유 없는 벽이 선다', () => {
+    for (const l of ['BUILD', 'PEOPLE'] as const) {
+      expect([...paletteBack(l)].sort()).toEqual(['examDept', 'roomType', 'section', 'tool'])
+    }
+  })
+
+  it('뿌리에서는 비울 것이 없다 — 뒤로가기 줄 자체가 안 뜬다', () => {
+    expect(paletteBack('ROOT')).toEqual([])
+  })
+
+  it('되돌아간 자리가 실제로 한 단계 위다 — paletteLevel과 왕복이 맞는다', () => {
+    const st = { section: 'BUILD' as const, tool: 'DESIGNATE' as const, roomType: 'EXAM' as const }
+    const back = (s: typeof st, keys: readonly string[]) => ({
+      section: keys.includes('section') ? null : s.section,
+      tool: keys.includes('tool') ? null : s.tool,
+      roomType: keys.includes('roomType') ? null : s.roomType,
+    })
+    const l1 = paletteLevel(st) // DEPT
+    const s1 = back(st, paletteBack(l1))
+    expect(paletteLevel(s1)).toBe('ROOMTYPE')
+    const s2 = back(s1 as typeof st, paletteBack('ROOMTYPE'))
+    expect(paletteLevel(s2)).toBe('BUILD')
+    const s3 = back(s2 as typeof st, paletteBack('BUILD'))
+    expect(paletteLevel(s3)).toBe('ROOT')
   })
 })
 
