@@ -132,10 +132,32 @@ async function clickTile(page, [x, y], { approachMs = 0, holdMs = 0 } = {}) {
 // ── 팔레트 조작 ────────────────────────────────────────────────────────────
 const btn = (page, name) => page.getByRole("button", { name, exact: true });
 
-/** 아코디언은 토글이라 **열려 있으면 다시 누르면 닫힌다** — aria-expanded로 판정한다. */
+/* ⚠️ **팔레트는 드릴다운이다**(2026-08-05 · PR #201). 옛 아코디언은 카테고리·도구·용도·과가
+   세로로 **누적**돼 [건설]이 늘 화면에 있었고, 그래서 `aria-expanded`를 보고 열기만 하면 됐다.
+   지금은 한 계층만 **교체**돼 서므로 [건설] 버튼은 뿌리에서만 존재하고, 안에 들어가 있으면
+   그 자리에 머리줄 「‹ 건설」이 선다(같은 접근성 이름이라 이름만으로는 구별이 안 된다).
+   → 어느 계층에 있든 **먼저 뿌리로 되돌린 뒤** 카테고리를 누른다. */
+
+/** 머리줄 「‹ …」 — 뿌리가 아닐 때만 선다(그래서 개수가 곧 "지금 계층 안인가"다). */
+const backRow = (page) => page.locator("aside button").filter({ hasText: "‹" });
+
+/** 팔레트를 뿌리(카테고리 둘)로 되돌린다.
+ *  ESC가 도구·용도·과를 한 번에 놓고(SimGame의 escTarget "tool"), 남은 머리줄을 눌러 나온다.
+ *  ⚠️ 모달이 떠 있으면 ESC가 그 모달부터 닫으므로(escTarget 우선순위) 모달이 없을 때만 부른다. */
+async function goRoot(page) {
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(80);
+  for (let i = 0; i < 4; i++) {
+    if ((await backRow(page).count()) === 0) return;
+    await backRow(page).first().click();
+    await page.waitForTimeout(80);
+  }
+  throw new Error("팔레트 뿌리로 못 돌아간다");
+}
 async function openSection(page, label) {
-  const b = btn(page, label);
-  if ((await b.getAttribute("aria-expanded")) !== "true") await b.click();
+  await goRoot(page);
+  await btn(page, label).click();
+  await page.waitForTimeout(80);
 }
 async function pickTool(page, label) {
   await openSection(page, "건설");
@@ -219,13 +241,28 @@ async function pickRegion(page, label) {
   await page.evaluate(() => { if (window.__realRandom) Math.random = window.__realRandom; });
 }
 
+/* ── 채용 패널 — **과는 탭이다**(2026-08-05 · PR #202) ───────────────────────
+ *
+ * 옛 패널은 과마다 `<section>`이 세로로 서서 네 과의 카드가 한 화면에 다 있었다. 지금은 탭 줄
+ * 하나 + **고른 한 과의 가로 선반**이라, 내과 후보를 누르려면 [내과] 탭을 **먼저** 눌러야 한다.
+ * 안 누르면 첫 과(미용·피부)의 카드가 눌려 판 자체가 달라진다 — 조용히 틀리는 종류의 실패다. */
+
+/** 과 탭 — 접근성 이름이 「내과 주급 1,500만원 · 현재 0명 · 잔여 5명」이라 이름 전체가 아니라
+ *  **머리를 앵커**로 잡는다. 부분일치로 "내과"를 주면 「순환기내과」에도 걸린다(실측 위험). */
+const deptTab = (dlg, dept) => dlg.getByRole("button", { name: new RegExp(`^${dept} 주급`) });
+
+/** 지금 펴진 선반의 후보 카드 「채용」 — 카드 버튼의 접근성 이름은 `{이름} 채용`이다.
+ *  `/채용$/`만 주면 **간호사 줄의 「채용」**(이름이 정확히 "채용")까지 걸리므로 앞을 요구한다. */
+const cardHire = (dlg) => dlg.getByRole("button", { name: /\S 채용$/ });
+
 /** 로스터 게이트 — roster: [[과이름, 인원], ...] · 간호사 nurses명. */
 async function hireRoster(page, roster, nurses = 2) {
   const dlg = page.getByRole("dialog", { name: "개원 준비 — 전국 인력 시장" });
   for (const [dept, n] of roster) {
-    const sec = dlg.locator("section").filter({ has: page.getByRole("heading", { name: dept, exact: true }) });
+    await deptTab(dlg, dept).click();
+    await page.waitForTimeout(120);
     for (let i = 0; i < n; i++) {
-      await sec.getByRole("button", { name: /채용$/ }).first().click();
+      await cardHire(dlg).first().click();
       await page.waitForTimeout(120);
     }
   }
@@ -384,9 +421,9 @@ async function buildHospital(page, roster, { slow = false, ward = false, cafeter
     if (rec) rec.mark("식당 완성");
   }
 
-  // 도구 내려놓기 — 든 채로 두면 영역 오버레이가 계속 켜져 있다(ESC가 도구를 놓는다)
-  await page.keyboard.press("Escape");
-  if ((await btn(page, "건설").getAttribute("aria-expanded")) === "true") await btn(page, "건설").click();
+  // 도구 내려놓기 — 든 채로 두면 영역 오버레이가 계속 켜져 있다. 뿌리까지 나오는 것이 요점이다:
+  // 건설 계층에 남으면 화면 왼쪽에 도구 8줄이 그대로 서 있어 부감·개원 그림이 공사장으로 읽힌다.
+  await goRoot(page);
   await page.waitForTimeout(200);
 }
 
@@ -451,33 +488,35 @@ const CUTS = {
 
     // ── op2 — 채용 ─────────────────────────────────────────────────────────
     const dlg = page.getByRole("dialog", { name: "개원 준비 — 전국 인력 시장" });
-    const sectionOf = (name) =>
-      dlg.locator("section").filter({ has: page.getByRole("heading", { name, exact: true }) });
+    /* 과는 탭이다(hireRoster 머리말) — **탭을 누르는 손도 이 컷의 그림이다**: 옛 판에서는 네 과가
+       한꺼번에 서 있어 "고른다"는 행위가 화면에 없었는데, 지금은 탭을 눌러 그 과의 선반이 펴지는
+       것이 곧 그 행위다. 그래서 탭 클릭을 빠르게 넘기지 않고 glide로 보이게 누른다. */
+    const tabText = async (d) => (await deptTab(dlg, d).innerText()).replace(/\n/g, " · ");
     await page.waitForTimeout(1200);
 
-    // 내과 2명 — 카드가 한 장씩 사라지는 게 보이도록 간격을 크게
+    // 내과 — 탭을 열고, 카드가 한 장씩 잔상으로 바뀌는 게 보이도록 간격을 크게
+    await glideClick(page, deptTab(dlg, "내과"), 800);
+    rec.mark(`op2 [내과] 탭 — ${await tabText("내과")}`);
+    await page.waitForTimeout(800);
     for (let i = 0; i < 2; i++) {
-      const b = sectionOf("내과").getByRole("button", { name: /채용$/ }).first();
-      await glideClick(page, b, 750);
-      rec.mark(`op2 내과 ${i + 1}명 채용`);
+      await glideClick(page, cardHire(dlg).first(), 750);
+      rec.mark(`op2 내과 ${i + 1}명 채용 — ${await tabText("내과")}`);
       await page.waitForTimeout(950);
     }
 
-    // 순환기내과 — 잔여 2명이 프레임에 들어오게 정지 → 채용(2→1 변하는 순간)
-    const card = sectionOf("순환기내과");
-    await card.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(300);
-    const box = await card.boundingBox();
-    await glide(page, box.x + box.width / 2, box.y + 24, 800);
-    rec.mark(`op2 순환기내과 정지 — ${(await card.innerText()).replace(/\n/g, " | ")}`);
-    await page.waitForTimeout(1600);
-    await glideClick(page, card.getByRole("button", { name: /채용$/ }).first(), 600);
-    rec.mark(`op2 순환기 1명 채용 — ${(await card.innerText()).replace(/\n/g, " | ")}`);
+    // 순환기내과 — 탭의 「잔여 2명」과 선반의 카드 두 장이 한 프레임에 든다 → 채용(2→1)
+    await glideClick(page, deptTab(dlg, "순환기내과"), 800);
+    rec.mark(`op2 순환기내과 탭 정지 — ${await tabText("순환기내과")} / 선반: ${(await dlg.getByText("이게 전부입니다").count()) > 0 ? "「이게 전부입니다」 표시" : "(없음)"}`);
+    await page.waitForTimeout(1900);
+    await glideClick(page, cardHire(dlg).first(), 600);
+    rec.mark(`op2 순환기 1명 채용 — ${await tabText("순환기내과")}`);
     await page.waitForTimeout(1500);
 
     // 남은 두 과는 빠르게(ov의 경고칩 0개 조건 — 네 과가 다 있어야 no-dept가 안 뜬다)
     for (const dept of ["미용·피부", "외과"]) {
-      await sectionOf(dept).getByRole("button", { name: /채용$/ }).first().click();
+      await deptTab(dlg, dept).click();
+      await page.waitForTimeout(200);
+      await cardHire(dlg).first().click();
       await page.waitForTimeout(350);
     }
     rec.mark("op2 미용1·외과1 추가 채용 (ov 경고칩 0개 조건)");
@@ -729,10 +768,11 @@ const CUTS = {
     for (let i = 0; i < 16; i++) { await page.mouse.wheel(0, -25); await page.waitForTimeout(200); }
     await page.waitForTimeout(400);
 
-    const sec = dlg.locator("section").filter({ has: page.getByRole("heading", { name: "순환기내과", exact: true }) });
-    const t = rec.mark("순환기내과 섹션 정지 (잔여 2명 · 후보 2장 · 이게 전부입니다)");
-    console.log("   섹션 텍스트:", (await sec.innerText()).replace(/\n/g, " | "));
-    console.log("   섹션 박스:", await sec.boundingBox());
+    // 과가 탭이 된 뒤로는 「보이는 곳까지 스크롤」이 아니라 **탭을 눌러 그 선반을 편다**.
+    await deptTab(dlg, "순환기내과").click();
+    await page.waitForTimeout(300);
+    const t = rec.mark("순환기내과 탭 정지 (잔여 2명 · 후보 2장 · 이게 전부입니다)");
+    console.log("   탭 텍스트:", (await deptTab(dlg, "순환기내과").innerText()).replace(/\n/g, " | "));
     await page.mouse.move(1284, 320); // 순환기 칸 위에 커서를 둔다
     await page.waitForTimeout(4000);
     rec.mark("정지 끝");
@@ -912,8 +952,7 @@ const CUTS = {
     // 식당 — 영역만 있으면 ④가 안 뜬다(가구 판정이 없다). 진료실 줄 아래 빈 왼쪽에 놓는다.
     await pickZone(page, "식당");
     await dragTiles(page, [4, 23], [14, 29], { steps: 6, stepMs: 15 });
-    await page.keyboard.press("Escape");
-    if ((await btn(page, "건설").getAttribute("aria-expanded")) === "true") await btn(page, "건설").click();
+    await goRoot(page);
     await page.waitForTimeout(200);
     await assertReady(page);
     rec.mark("6/6 개원 완료 — 서울 · 4과 전원(미용1·내과2·외과1·순환기1) · 병동 · 식당");
@@ -1114,14 +1153,22 @@ async function lawsuit(page, rec, roster, roomDepts) {
   await setSpeed(page, "3배속");
   rec.mark("3× 개원 — 11주 빨리감기");
   /* 84일 빨리감기는 혼자 돌면 ~11분이지만 다른 녹화와 겹치면 프레임이 굶어 3배까지 늘어난다
-     (실측: 4개 동시에서 15분 동안 5주). 여유를 크게 준다 — 병렬로 돌리지 않는 것이 먼저다. */
-  await runUntil(page, (h) => h.week === 12 && h.day === 1, { ffwd: true, timeoutMs: 2_400_000 });
+     (실측: 4개 동시에서 15분 동안 5주). 여유를 크게 준다 — 병렬로 돌리지 않는 것이 먼저다.
+     ⚠️ **빨리감기는 화면이 무거워질수록 느려진다** — `__ffwd`가 프레임당 250게임분을 넘기므로
+     걸리는 시간은 게임 안 날수가 아니라 **실제 렌더 프레임 수**다. 2026-08-05 재촬영에서
+     40분(옛 상한)이 11주 6일에서 끊겼다: 8/3에는 28분이면 12주 1일이었는데 팔레트 상주
+     로스터가 매 프레임 다시 그려지며 1.5배로 늘었다. 상한을 90분으로 올린다 — 조건이 서면
+     즉시 빠져나오므로 남는 시간은 비용이 아니라 여유다. */
+  await runUntil(page, (h) => h.week === 12 && h.day === 1, { ffwd: true, timeoutMs: 5_400_000 });
   rec.mark(`12주 1일 도달 — ${(await hud(page)).text}`);
 
   await openSection(page, "사람");
   await btn(page, "채용").click();
   const dlg = page.getByRole("dialog", { name: "채용 — 전국 인력 시장" });
   await dlg.waitFor({ timeout: 10000 });
+  // 배준영은 외과다 — 탭을 안 누르면 첫 과(미용·피부)의 선반이 펴져 있어 그 카드가 아예 없다.
+  await deptTab(dlg, "외과").click();
+  await page.waitForTimeout(200);
   await dlg.getByRole("button", { name: "배준영 채용" }).click();
   await page.waitForTimeout(400);
   await btn(page, "닫기").click();
