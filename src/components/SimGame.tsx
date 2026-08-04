@@ -6,6 +6,7 @@ import TileMap, { OUTSIDE_FLOOR, type BuildPreview } from "@/components/TileMap"
 import DayEndOverlay from "@/components/DayEndOverlay";
 import EventCard from "@/components/EventCard";
 import HirePanel from "@/components/HirePanel";
+import PaletteRoster from "@/components/PaletteRoster";
 import PriorityPanel from "@/components/PriorityPanel";
 import RegionPicker from "@/components/RegionPicker";
 import WeekEndOverlay from "@/components/WeekEndOverlay";
@@ -1103,6 +1104,22 @@ export default function SimGame() {
             {tool ? toolCostText(tool) : "도구를 고르면 비용이 표시됩니다"}
           </p>
         )}
+
+        {/* ── 상주 로스터 — **모든 계층에 상시**(시안 A · 사용자 확정 2026-08-05). 피로와 사직
+            예고는 여태 [사람]→[인사]를 **열어야** 보였는데, 사람이 갈리는 것은 결산이 아니라
+            주중 내내 일어나는 일이라 열어야 보이는 값은 사실상 안 보이는 값이었다. 드릴다운으로
+            바뀌며 생긴 하단 여백이 그 값의 자리다 — 건설하는 동안에도 남는다.
+
+            위 상시 경고와 겹쳐 보이지만 **역할이 다르다**: 저 줄은 "몇 명이 떠나는가"(경고,
+            스크롤 밖에서도 살아야 한다)이고 이 목록은 "누가 어떤 상태인가"(상태)다. 그래서
+            여기 표지는 이름 옆의 「떠남」 두 글자까지만이다 — 같은 화면에서 같은 말을 세 번
+            하지 않으려고 인원수를 다시 세지 않는다. ── */}
+        <PaletteRoster
+          doctors={world.pawns.filter((p) => p.kind === "DOCTOR")}
+          resigningIds={resigningIds}
+          nursing={nurseGradeOf(world)}
+          onOpen={() => setPriorityOpen(true)}
+        />
 
         {/* 상태줄 — **화면에서 유일하게 문구가 바뀌는 자리**. 무엇을 쓸지는 simHud.statusLineText
             (우선순위 체인)가 정하고 여기선 칠만 한다: 판정이 JSX 안에 있으면 그 우선순위를 겨눌 수
