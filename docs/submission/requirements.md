@@ -44,7 +44,7 @@ tags:
 > **형식을 바꾸지 말 것**: 스크립트는 `- [ ]` / `- [x]` 로 시작하는 줄만 센다.
 
 - [x] **①** 플레이 가능한 빌드 + 전체 소스 — **GitHub Pages 라이브**(요강 비고와 동일) + Vercel 라이브 + GitHub 공개 저장소. URL 3종 모두 확정치 기입 완료
-- [ ] **②** 플레이 동영상 30~60초 — **영상 제작 완료**(2026-08-03 · 59.4초 · AI 전자동 파이프라인, [scripts/video/](../../scripts/video/README.md)) · **유튜브 업로드만 남음**
+- [x] **②** 플레이 동영상 30~60초 — **v3 재촬영·유튜브 업로드 완료**(2026-08-05 · 59.4초 · 새 UI 반영, AI 전자동 파이프라인 [scripts/video/](../../scripts/video/README.md)) · https://youtu.be/HEyX2uIvhfo (일부 공개)
 - [x] **③** 게임 소개 및 설명 PDF — [`final/03-게임소개-심스피탈.pdf`](final/03-게임소개-심스피탈.pdf) *(2026-08-01 전면 정합화 완료 — 본문 사실 주장 142건을 코드와 1:1 대조해 **21건 정정**, 지역 축 신설, **스크린샷 7장 전량 본편 재캡처**)*
 - [x] **④** AI 활용 기술 PDF — [`final/04-AI활용기술문서-심스피탈.pdf`](final/04-AI활용기술문서-심스피탈.pdf) *(스토리텔러 구현 반영 완료 · §3-1 재집계 완료 · §6-4 실측 4종 기입 완료 — 폴백 강등·프록시 보안·실호출 지연/토큰/비용(2026-07-28)·**실플레이 중 게임이 스스로 부른 호출**(2026-08-03))*
 - [x] **⑤** 팀원 롤 기술서 — **해당 없음(솔로)**
@@ -56,7 +56,7 @@ tags:
 | 제출물 | 실물 | 원본(고칠 곳) |
 |---|---|---|
 | ① 빌드·소스 | **https://goospel.github.io/hospital-sim/** (제출용) · https://hospital-sim-ashy.vercel.app/ (개발·LLM용) · https://github.com/Goospel/hospital-sim | 저장소 전체 |
-| ② 영상 | ⏳ YouTube 링크 | — |
+| ② 영상 | https://youtu.be/HEyX2uIvhfo (일부 공개 · 59.4초) | 재촬영은 [scripts/video/](../../scripts/video/README.md) |
 | ③ PDF | `final/` | [`game-intro.md`](game-intro.md) |
 | ④ PDF | `final/` | [`ai-usage-doc.md`](ai-usage-doc.md) |
 
