@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { Candidate } from "@/sim/candidate";
 import { HIRABLE_DEPTS, simDept, type SimDeptKey } from "@/sim/dept";
 import type { NurseGrade } from "@/sim/nurse";
@@ -43,6 +44,13 @@ import { doctorCountByDept, formatManwon, startingRosterMet, STARTING_ROSTER_MIN
  * 카드 한 장 한 장이 `.paper-card`(globals.css 단일 출처) — 책상 위에 인사 서류가 놓인 그림이다.
  * 종이 위 글자는 **전부 ink 계열**이다: on-desk 계열은 어두운 지면 전용이라 종이 위에 얹으면
  * 대비가 뒤집힌다. 간호사 줄·주 고정비·개원 버튼은 카드가 아니므로 desk 톤 그대로 둔다.
+ *
+ * ⚠️ **과는 탭이다**(2026-08-05 · 세로 4선반에서 바꿈). 네 과를 다 펴면 전국 풀 18장이 세로로
+ * 쌓여 패널이 두 화면을 넘었고, 그러면 아래의 **주 고정비 합계와 개원 버튼이 첫 화면에서
+ * 사라진다** — 이 화면의 논지("뽑을수록 저 숫자가 커진다")를 나르는 두 요소다. 그래서 본문은
+ * 한 과만 펴되, **주급 대조는 탭 줄이 그대로 짊어진다**(탭마다 주급·현재·잔여). 접힌 과의
+ * 소진(잔여 0)도 탭에서 alarm으로 보인다 — 접혔다고 사라지면 안 되는 사실이다.
+ * 과 색 언더라인은 탭이 승계했다(옛 섹션 헤더는 제거 — 같은 정보를 두 곳에 적지 않는다).
  */
 export default function HirePanel({
   pawns,
@@ -51,6 +59,7 @@ export default function HirePanel({
   nursing,
   treasuryManwon,
   starting = false,
+  initialDept = HIRABLE_DEPTS[0],
   onHire,
   onHireNurse,
   onClose,
@@ -75,6 +84,10 @@ export default function HirePanel({
    *  커지는 것**을 뽑기 전에 보게 한다 — 스타팅 로스터가 딜레마여야 하는 이유가 이미 여기 있다.
    *  화면이 둘이면 그 대조를 두 번 그려야 하고, 그중 하나는 반드시 낡는다. */
   starting?: boolean;
+  /** 처음 열려 있는 과 탭 — **테스트 시임**이다. 이 저장소엔 DOM 테스트 인프라가 없어
+   *  (hirePanel.test.tsx 머리말) 탭 클릭을 재현할 수 없으므로, 각 탭의 렌더 결과는 이 prop으로
+   *  잰다. 앱에서는 아무도 넘기지 않는다(기본값 = 첫 과). */
+  initialDept?: SimDeptKey;
   /** 후보 지목 채용 — **(과, 슬롯)이 사람의 좌표다**(candidate.candidateOf). 과만 넘기면
    *  코어가 남은 슬롯 중 하나를 고르게 되어 "카드에서 고른 그 사람"이라는 약속이 깨진다. */
   onHire: (dept: SimDeptKey, slot: number) => void;
@@ -84,6 +97,7 @@ export default function HirePanel({
   /** 닫기 — 스타팅 모드에서는 **최소 인원을 채워야** 열린다(부모가 판정한다). */
   onClose: () => void;
 }) {
+  const [dept, setDept] = useState<SimDeptKey>(initialDept);
   const counts = doctorCountByDept(pawns);
   // 간호사 주급도 합계에 든다 — 이 줄이 "지금 병원이 매주 무는 돈"이라, 빼면 화면이 말하는
   // 액수와 주간 결산에서 빠지는 액수가 갈린다(결산은 nursing 블록으로 함께 청구한다 · week.ts).
@@ -93,6 +107,15 @@ export default function HirePanel({
     HIRABLE_DEPTS.reduce((sum, k) => sum + counts[k] * simDept(k).weeklyCostManwon, 0)
     + nursing.count * NURSE_WEEKLY_COST_MANWON;
   const hired = HIRABLE_DEPTS.reduce((n, k) => n + counts[k], 0);
+  const rest = candidates[dept];
+  /* 선반의 자리 = 남은 후보 + 소비된 슬롯을 **슬롯 번호 순**으로. 한 슬롯은 둘 중 한쪽에만
+     있다(remainingCandidates가 소비분을 뺀 나머지라) — 합쳐 정렬하면 그 지역 풀이 슬롯
+     순서대로 정확히 한 번씩 선다. 뽑힌 사람은 자리를 비우는 게 아니라 **자리에 남은 자국**이
+     된다(그래서 탭을 바꿔도 자리 수는 그 과의 지역 풀 총량 그대로다). */
+  const seats = [
+    ...rest.map((cand) => ({ cand, taken: false })),
+    ...consumed[dept].map((cand) => ({ cand, taken: true })),
+  ].sort((a, b) => a.cand.slot - b.cand.slot);
   const met = startingRosterMet(pawns);
   const title = starting ? "개원 준비 — 전국 인력 시장" : "채용 — 전국 인력 시장";
 
@@ -105,7 +128,10 @@ export default function HirePanel({
          내용이 뷰포트보다 길어지면 아이의 위쪽을 스크롤로 닿을 수 없는 곳으로 밀어낸다. */
       className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-desk/85 p-4"
     >
-      <div className="my-auto flex w-full max-w-5xl flex-col gap-3 border border-frame bg-desk-2 px-5 py-5">
+      {/* 세로 여백은 **후보 8명 판(미용)이 기준**이다 — 카드가 두 행이 되는 유일한 과라 이 판이
+          가장 높고, 그 판이 1280×720에 들어가면 나머지는 전부 들어간다. gap/py를 한 눈금씩
+          줄인 것이 그 예산의 일부다(2026-08-05). */}
+      <div className="my-auto flex w-full max-w-5xl flex-col gap-2 border border-frame bg-desk-2 px-5 py-3">
         <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-semibold text-on-desk">{title}</h2>
           <span className="font-mono text-xs tabular-nums text-on-desk-muted">
@@ -124,133 +150,139 @@ export default function HirePanel({
 
         {/* 해석 카피 없이 사실만 — "필수과는 적자입니다" 같은 문장을 쓰지 않는다. 주급이
             과마다 나란히 서 있으면 대조는 플레이어가 읽는다. */}
+        {/* 두 문장은 한 문단에 붙어 있다 — 문단을 나누면 줄 하나가 더 서는데, 그 높이가
+            미용 판에서는 카드 한 행의 예산을 갉는다. 문장 자체는 한 글자도 안 바꾼다. */}
         <p className="text-xs text-on-desk-muted">
-          채용에 일시금은 없습니다. 비용은 매주 결산에서 주급으로 청구됩니다.
-        </p>
-        <p className="text-xs text-on-desk-muted">
-          전국에 남은 사람이 이 화면의 전부입니다. 떠난 사람은 돌아오지 않습니다.
+          채용에 일시금은 없습니다. 비용은 매주 결산에서 주급으로 청구됩니다. 전국에 남은 사람이 이
+          화면의 전부입니다. 떠난 사람은 돌아오지 않습니다.
         </p>
 
-        {/* 과는 **가로 선반**이다(세로 4열에서 바꿈 · 2026-08-04). 과별 전국 풀이 8·5·3·2로
-            갈려 열로 세우면 짧은 과 아래가 통째로 비고 가장 긴 과가 패널 높이를 끌었다. 과가
-            줄이면 빈 공간은 줄 끝에만 생긴다 — 자리 수 계약(아래)은 그대로다. */}
-        <div className="flex flex-col gap-4">
+        {/* 탭 줄 — 과 넷이 여기 다 선다. 한 탭이 두 줄인 것이 요점이다: 접힌 과의 **주급·현재·
+            잔여**가 탭에 실려 있어야 "본문은 한 과, 대조는 네 과"가 성립한다.
+            선택 표시는 desk 톤(bg-frame)이다 — 청록은 확정 버튼 전용이라 여기 쓰면 「개원 준비
+            시작」과 같은 무게로 읽힌다. role=tablist를 쓰지 않는 것은 저장소 전례 그대로다
+            (aria-pressed 토글 — PriorityPanel·SimGame 팔레트와 같은 패턴). */}
+        <div className="flex flex-wrap gap-1.5">
           {HIRABLE_DEPTS.map((key) => {
             const spec = simDept(key);
-            const rest = candidates[key];
-            /* 줄의 자리 = 남은 후보 + 소비된 슬롯을 **슬롯 번호 순**으로. 한 슬롯은 둘 중 한쪽에만
-               있다(remainingCandidates가 소비분을 뺀 나머지라) — 합쳐 정렬하면 그 지역 풀이
-               슬롯 순서대로 정확히 한 번씩 선다. 뽑힌 사람은 자리를 비우는 게 아니라 **자리에
-               남은 자국**이 된다. */
-            const seats = [
-              ...rest.map((cand) => ({ cand, taken: false })),
-              ...consumed[key].map((cand) => ({ cand, taken: true })),
-            ].sort((a, b) => a.cand.slot - b.cand.slot);
+            const left = candidates[key].length;
+            const on = key === dept;
             return (
-              <section key={key} className="flex flex-col gap-2">
-                {/* 줄은 desk 위 투명 배경이다 — 상자를 하나 더 두면 그 안의 종이가 "액자 속 종이"가
-                    된다. 과를 나르는 것은 헤더 밑의 색 언더라인 하나뿐이다(과 색 단일 출처). */}
-                <header className="border-b-2 pb-1" style={{ borderColor: DEPT_COLOR[key] }}>
-                  <h3 className="text-sm text-on-desk">{spec.label}</h3>
-                  <p className="font-mono text-xs tabular-nums text-on-desk-muted">
-                    주급 {formatManwon(spec.weeklyCostManwon)} · 현재 {counts[key]}명 · 잔여 {rest.length}명
-                  </p>
-                </header>
-
-                {/* 선반 한 줄 — 카드가 가로로 흐르다 넘치면 줄바꿈한다. `items-stretch`가 한 줄
-                    안의 카드·잔상 높이를 맞춘다(사연 길이가 달라 안 맞추면 줄이 들쭉날쭉해진다).
-                    카드 폭은 양쪽 다 `w-40`으로 고정 — 폭이 갈리면 자리가 어긋난다. */}
-                <div className="flex flex-wrap items-stretch gap-2">
-                  {seats.map(({ cand, taken }) =>
-                    taken ? (
-                      /* 잔상 프레임 — **라벨도 사유도 없다.** "채용됨/떠남"을 화면이 새로 판정하지
-                         않고, 그 사람이 그 자리였고 지금 명단에 없다는 사실만 그린다. 점선 테두리와
-                         탁한 종이 바탕이 "여기 종이가 있었다"를 말한다.
-                         ⚠️ **배경에 알파를 주지 않는다**(옛 `bg-paper-edge/45`) — 뒤가 어두운 모달
-                         (desk-2)이라 합성 결과가 종이도 desk도 아닌 중간색(#655e50)이 되고, 그 위
-                         흐린 잉크가 1.19:1까지 내려갔다(리뷰 2026-08-03 실측). 불투명 paper-edge는
-                         paper보다 탁해 "빈 자리" 톤 차이를 알파 없이도 낸다. */
-                      <article
-                        key={cand.slot}
-                        className="flex w-40 flex-col items-center justify-center gap-1 border border-dashed border-border-paper bg-paper-edge px-2 py-2"
-                      >
-                        {/* 잉크 단색 실루엣 — CSS 필터로 채도를 죽이고 어둡게 눌러 옅게 얹는다
-                            (SVG 그라디언트·id는 계약상 금지 · PixelSprite 머리말). */}
-                        <span className="h-14 w-14 opacity-25 grayscale brightness-[0.15]">
-                          <DoctorSprite dept={cand.dept} busy={false} variantKey={cand.name} />
-                        </span>
-                        <p className="w-full truncate text-center text-[11px] text-ink">{cand.name}</p>
-                      </article>
-                    ) : (
-                      <article key={cand.slot} className="paper-card flex w-40 flex-col gap-1.5 overflow-hidden pb-2">
-                        {/* 초상 스테이지 — 카드 폭 전체. 배경은 과 색을 종이 위에 15%로 얹은 워시라
-                            (`26` = 0x26/255) 과가 색으로 먼저 읽히고, 얼굴은 그 위에 크게 선다.
-                            얼굴 변주 키가 이름인 것이 계약이다(머리말) — 맵의 폰과 같은 값을 넣어야
-                            카드에서 고른 사람이 부지에도 그대로 선다. */}
-                        <div
-                          className="flex h-[72px] items-center justify-center"
-                          style={{ background: `${DEPT_COLOR[cand.dept]}26` }}
-                        >
-                          <span className="h-16 w-16">
-                            <DoctorSprite dept={cand.dept} busy={false} variantKey={cand.name} />
-                          </span>
-                        </div>
-                        <div className="flex flex-col gap-1.5 px-2.5">
-                          <p className="truncate text-base text-ink">{cand.name}</p>
-                          {/* 특성 칩 — 가운뎃점으로 잇던 한 줄을 칩 둘로 나눈다. 서류의 도장난처럼
-                              읽히라고 테두리를 두르되 색은 rule/ink-2까지다(종이 위 톤). */}
-                          <div className="flex flex-wrap gap-1">
-                            {cand.traits.map((t) => (
-                              <span key={t} className="border border-rule px-1.5 py-px text-[10px] text-ink-2">
-                                {TRAITS[t].label}
-                              </span>
-                            ))}
-                          </div>
-                          {/* 사연 한 줄 — 첫 특성의 story를 **그대로** 쓴다. 이름·과를 끼워 넣지 않는
-                              것이 traits.ts의 계약이다(보간값 뒤 조사 분기 · T-094). */}
-                          <p className="text-[11px] leading-relaxed text-ink-2">{TRAITS[cand.traits[0]].story}</p>
-                          {/* 보이는 라벨은 「채용」 하나로 족하다(카드 안에 이미 사람이 있다) — 그러나
-                              접근성 이름엔 사람이 실려야 한다: 스크린리더의 버튼 목록에서는 카드 맥락이
-                              사라져 「채용」 여덟 개만 남는다.
-                              hover는 **어둡게만** 한다 — 종이 위에서 밝히면 ink 글자의 4.5:1이
-                              런타임에 깨진다(T-142). */}
-                          <button
-                            type="button"
-                            aria-label={`${cand.name} 채용`}
-                            onClick={() => onHire(cand.dept, cand.slot)}
-                            className="border border-border-paper px-3 py-1 text-xs text-ink transition-colors hover:bg-ink/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-paper"
-                          >
-                            채용
-                          </button>
-                        </div>
-                      </article>
-                    ),
-                  )}
-
-                  {/* 두 문구는 선반 **안** 마지막 자리다 — 줄 아래 전폭 문단이면 가로 선반에서 줄이
-                      하나 더 늘어난다. 마지막 카드 옆에 서면 그 줄의 남는 폭이 곧 이 말의 자리다. */}
-                  {rest.length === 0 && (
-                    <p className="self-center border border-dashed border-frame px-2.5 py-3 text-[11px] text-alarm">
-                      전국에 남은 {spec.label} 의사가 없습니다.
-                    </p>
-                  )}
-                  {/* 바닥이 보이기 시작하는 지점 — 카드가 두 장 이하로 줄면 그 사실을 말한다.
-                      잔여 숫자는 위에 이미 있지만, 목록 끝에서 읽는 이 한 줄이 "다음 판에 또 뽑으면
-                      되지"라는 오해를 끊는다. */}
-                  {rest.length > 0 && rest.length <= 2 && (
-                    <p className="self-center px-2 text-[11px] text-on-desk-muted">이게 전부입니다</p>
-                  )}
-                </div>
-              </section>
+              <button
+                key={key}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setDept(key)}
+                /* 과 색 언더라인은 헤더에서 여기로 옮겨왔다 — 접힌 과도 색으로 먼저 읽힌다. */
+                className={`border-b-2 px-2.5 py-0.5 text-left transition-colors ${
+                  on ? "bg-frame text-on-desk" : "text-on-desk-muted hover:text-on-desk"
+                }`}
+                style={{ borderColor: DEPT_COLOR[key] }}
+              >
+                <span className="block text-sm">{spec.label}</span>
+                <span className="block font-mono text-xs tabular-nums">
+                  주급 {formatManwon(spec.weeklyCostManwon)} · 현재 {counts[key]}명 · 잔여{" "}
+                  {/* 소진은 접혀 있어도 보여야 한다 — 탭을 열어 봐야 아는 사실이면 그 과는
+                      "아직 뽑을 수 있는 과"로 계속 읽힌다. */}
+                  <span className={left === 0 ? "text-alarm" : undefined}>{left}명</span>
+                </span>
+              </button>
             );
           })}
+        </div>
+
+        {/* 고른 과의 **가로 선반** 하나. 과별 전국 풀이 8·5·3·2로 갈려 넷을 다 펴면 패널이 두
+            화면을 넘었다(그 전엔 세로 4열이라 짧은 과 아래가 통째로 비었다). 카드가 가로로
+            흐르다 넘치면 줄바꿈한다. `items-stretch`가 한 줄 안의 카드·잔상 높이를 맞춘다
+            (사연 길이가 달라 안 맞추면 줄이 들쭉날쭉해진다). 카드 폭은 양쪽 다 `w-40`으로
+            고정 — 폭이 갈리면 자리가 어긋난다. */}
+        <div className="flex flex-wrap items-stretch gap-2">
+          {seats.map(({ cand, taken }) =>
+            taken ? (
+              /* 잔상 프레임 — **라벨도 사유도 없다.** "채용됨/떠남"을 화면이 새로 판정하지
+                 않고, 그 사람이 그 자리였고 지금 명단에 없다는 사실만 그린다. 점선 테두리와
+                 탁한 종이 바탕이 "여기 종이가 있었다"를 말한다.
+                 ⚠️ **배경에 알파를 주지 않는다**(옛 `bg-paper-edge/45`) — 뒤가 어두운 모달
+                 (desk-2)이라 합성 결과가 종이도 desk도 아닌 중간색(#655e50)이 되고, 그 위
+                 흐린 잉크가 1.19:1까지 내려갔다(리뷰 2026-08-03 실측). 불투명 paper-edge는
+                 paper보다 탁해 "빈 자리" 톤 차이를 알파 없이도 낸다. */
+              <article
+                key={cand.slot}
+                className="flex w-40 flex-col items-center justify-center gap-1 border border-dashed border-border-paper bg-paper-edge px-2 py-2"
+              >
+                {/* 잉크 단색 실루엣 — CSS 필터로 채도를 죽이고 어둡게 눌러 옅게 얹는다
+                    (SVG 그라디언트·id는 계약상 금지 · PixelSprite 머리말). */}
+                <span className="h-14 w-14 opacity-25 grayscale brightness-[0.15]">
+                  <DoctorSprite dept={cand.dept} busy={false} variantKey={cand.name} />
+                </span>
+                <p className="w-full truncate text-center text-[11px] text-ink">{cand.name}</p>
+              </article>
+            ) : (
+              <article key={cand.slot} className="paper-card flex w-40 flex-col gap-1 overflow-hidden pb-1.5">
+                {/* 초상 스테이지 — 카드 폭 전체. 배경은 과 색을 종이 위에 15%로 얹은 워시라
+                    (`26` = 0x26/255) 과가 색으로 먼저 읽히고, 얼굴은 그 위에 크게 선다.
+                    얼굴 변주 키가 이름인 것이 계약이다(머리말) — 맵의 폰과 같은 값을 넣어야
+                    카드에서 고른 사람이 부지에도 그대로 선다. */}
+                <div
+                  className="flex h-14 items-center justify-center"
+                  style={{ background: `${DEPT_COLOR[cand.dept]}26` }}
+                >
+                  <span className="h-12 w-12">
+                    <DoctorSprite dept={cand.dept} busy={false} variantKey={cand.name} />
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1 px-2.5">
+                  <p className="truncate text-sm text-ink">{cand.name}</p>
+                  {/* 특성 칩 — 가운뎃점으로 잇던 한 줄을 칩 둘로 나눈다. 서류의 도장난처럼
+                      읽히라고 테두리를 두르되 색은 rule/ink-2까지다(종이 위 톤). */}
+                  <div className="flex flex-wrap gap-1">
+                    {cand.traits.map((t) => (
+                      <span key={t} className="border border-rule px-1.5 py-px text-[10px] text-ink-2">
+                        {TRAITS[t].label}
+                      </span>
+                    ))}
+                  </div>
+                  {/* 사연 한 줄 — 첫 특성의 story를 **그대로** 쓴다. 이름·과를 끼워 넣지 않는
+                      것이 traits.ts의 계약이다(보간값 뒤 조사 분기 · T-094). */}
+                  <p className="text-[11px] leading-relaxed text-ink-2">{TRAITS[cand.traits[0]].story}</p>
+                  {/* 보이는 라벨은 「채용」 하나로 족하다(카드 안에 이미 사람이 있다) — 그러나
+                      접근성 이름엔 사람이 실려야 한다: 스크린리더의 버튼 목록에서는 카드 맥락이
+                      사라져 「채용」 여덟 개만 남는다.
+                      hover는 **어둡게만** 한다 — 종이 위에서 밝히면 ink 글자의 4.5:1이
+                      런타임에 깨진다(T-142). */}
+                  <button
+                    type="button"
+                    aria-label={`${cand.name} 채용`}
+                    onClick={() => onHire(cand.dept, cand.slot)}
+                    className="border border-border-paper px-3 py-0.5 text-xs text-ink transition-colors hover:bg-ink/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-paper"
+                  >
+                    채용
+                  </button>
+                </div>
+              </article>
+            ),
+          )}
+
+          {/* 두 문구는 선반 **안** 마지막 자리다 — 줄 아래 전폭 문단이면 가로 선반에서 줄이
+              하나 더 늘어난다. 마지막 카드 옆에 서면 그 줄의 남는 폭이 곧 이 말의 자리다. */}
+          {rest.length === 0 && (
+            <p className="self-center border border-dashed border-frame px-2.5 py-3 text-[11px] text-alarm">
+              전국에 남은 {simDept(dept).label} 의사가 없습니다.
+            </p>
+          )}
+          {/* 바닥이 보이기 시작하는 지점 — 카드가 두 장 이하로 줄면 그 사실을 말한다.
+              잔여 숫자는 위에 이미 있지만, 목록 끝에서 읽는 이 한 줄이 "다음 판에 또 뽑으면
+              되지"라는 오해를 끊는다. */}
+          {rest.length > 0 && rest.length <= 2 && (
+            <p className="self-center px-2 text-[11px] text-on-desk-muted">이게 전부입니다</p>
+          )}
         </div>
 
         {/* 간호사 — 과 카드와 달리 **한 줄**이다: 간호사는 카탈로그 밖이라 전국 풀이 없고
             (pawn.hireNurse), 없는 제약을 후보 카드로 흉내 내면 화면이 시뮬에 없는 규칙을
             주장한다. 스타팅 게이트도 이 줄을 세지 않는다 — 개원 강제는 **의사만**이다
             (simHud.startingRosterMet 불변). 체크리스트가 대신 안내한다. */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-frame py-2.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-frame py-1.5">
           <span className="min-w-24 text-sm text-on-desk">간호사 · 수납 담당</span>
           {/* 기준을 인원 **바로 옆**에 놓는 것이 이 줄의 전부다 — 결산 화면이 이미 같은 형태로
               말하고 있는데(WeekEndOverlay 「간호 인력 (N명 · 기준 M명)」), 뽑는 자리에는 없어서
@@ -269,6 +301,12 @@ export default function HirePanel({
           >
             현재 {nursing.count}명 · 기준 {nursing.required}명
           </span>
+          {/* 해석 카피 없이 사실만 — 접수처 카운터에 간호사가 있어야 진료비가 걷힌다는 규칙 그대로.
+              전폭(`w-full`)이던 것을 **줄 안으로** 넣었다: 이 줄에 남는 가로가 곧 이 말의 자리라
+              한 줄을 통째로 아낀다(좁아지면 flex-wrap이 알아서 내린다). */}
+          <p className="text-[11px] text-on-desk-muted">
+            접수처 카운터에 간호사가 있어야 진료비를 받습니다.
+          </p>
           <span className="ml-auto font-mono text-xs tabular-nums text-on-desk-muted">
             주급 {formatManwon(NURSE_WEEKLY_COST_MANWON)}
           </span>
@@ -279,10 +317,6 @@ export default function HirePanel({
           >
             채용
           </button>
-          {/* 해석 카피 없이 사실만 — 접수처 카운터에 간호사가 있어야 진료비가 걷힌다는 규칙 그대로. */}
-          <p className="w-full text-[11px] text-on-desk-muted">
-            접수처 카운터에 간호사가 있어야 진료비를 받습니다.
-          </p>
         </div>
 
         <div className="flex items-baseline justify-between font-mono text-xs tabular-nums">
