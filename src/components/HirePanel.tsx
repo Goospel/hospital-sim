@@ -128,7 +128,10 @@ export default function HirePanel({
          내용이 뷰포트보다 길어지면 아이의 위쪽을 스크롤로 닿을 수 없는 곳으로 밀어낸다. */
       className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-desk/85 p-4"
     >
-      <div className="my-auto flex w-full max-w-5xl flex-col gap-3 border border-frame bg-desk-2 px-5 py-5">
+      {/* 세로 여백은 **후보 8명 판(미용)이 기준**이다 — 카드가 두 행이 되는 유일한 과라 이 판이
+          가장 높고, 그 판이 1280×720에 들어가면 나머지는 전부 들어간다. gap/py를 한 눈금씩
+          줄인 것이 그 예산의 일부다(2026-08-05). */}
+      <div className="my-auto flex w-full max-w-5xl flex-col gap-2 border border-frame bg-desk-2 px-5 py-3">
         <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-semibold text-on-desk">{title}</h2>
           <span className="font-mono text-xs tabular-nums text-on-desk-muted">
@@ -147,11 +150,11 @@ export default function HirePanel({
 
         {/* 해석 카피 없이 사실만 — "필수과는 적자입니다" 같은 문장을 쓰지 않는다. 주급이
             과마다 나란히 서 있으면 대조는 플레이어가 읽는다. */}
+        {/* 두 문장은 한 문단에 붙어 있다 — 문단을 나누면 줄 하나가 더 서는데, 그 높이가
+            미용 판에서는 카드 한 행의 예산을 갉는다. 문장 자체는 한 글자도 안 바꾼다. */}
         <p className="text-xs text-on-desk-muted">
-          채용에 일시금은 없습니다. 비용은 매주 결산에서 주급으로 청구됩니다.
-        </p>
-        <p className="text-xs text-on-desk-muted">
-          전국에 남은 사람이 이 화면의 전부입니다. 떠난 사람은 돌아오지 않습니다.
+          채용에 일시금은 없습니다. 비용은 매주 결산에서 주급으로 청구됩니다. 전국에 남은 사람이 이
+          화면의 전부입니다. 떠난 사람은 돌아오지 않습니다.
         </p>
 
         {/* 탭 줄 — 과 넷이 여기 다 선다. 한 탭이 두 줄인 것이 요점이다: 접힌 과의 **주급·현재·
@@ -171,7 +174,7 @@ export default function HirePanel({
                 aria-pressed={on}
                 onClick={() => setDept(key)}
                 /* 과 색 언더라인은 헤더에서 여기로 옮겨왔다 — 접힌 과도 색으로 먼저 읽힌다. */
-                className={`border-b-2 px-2.5 py-1 text-left transition-colors ${
+                className={`border-b-2 px-2.5 py-0.5 text-left transition-colors ${
                   on ? "bg-frame text-on-desk" : "text-on-desk-muted hover:text-on-desk"
                 }`}
                 style={{ borderColor: DEPT_COLOR[key] }}
@@ -215,21 +218,21 @@ export default function HirePanel({
                 <p className="w-full truncate text-center text-[11px] text-ink">{cand.name}</p>
               </article>
             ) : (
-              <article key={cand.slot} className="paper-card flex w-40 flex-col gap-1.5 overflow-hidden pb-2">
+              <article key={cand.slot} className="paper-card flex w-40 flex-col gap-1 overflow-hidden pb-1.5">
                 {/* 초상 스테이지 — 카드 폭 전체. 배경은 과 색을 종이 위에 15%로 얹은 워시라
                     (`26` = 0x26/255) 과가 색으로 먼저 읽히고, 얼굴은 그 위에 크게 선다.
                     얼굴 변주 키가 이름인 것이 계약이다(머리말) — 맵의 폰과 같은 값을 넣어야
                     카드에서 고른 사람이 부지에도 그대로 선다. */}
                 <div
-                  className="flex h-[72px] items-center justify-center"
+                  className="flex h-14 items-center justify-center"
                   style={{ background: `${DEPT_COLOR[cand.dept]}26` }}
                 >
-                  <span className="h-16 w-16">
+                  <span className="h-12 w-12">
                     <DoctorSprite dept={cand.dept} busy={false} variantKey={cand.name} />
                   </span>
                 </div>
-                <div className="flex flex-col gap-1.5 px-2.5">
-                  <p className="truncate text-base text-ink">{cand.name}</p>
+                <div className="flex flex-col gap-1 px-2.5">
+                  <p className="truncate text-sm text-ink">{cand.name}</p>
                   {/* 특성 칩 — 가운뎃점으로 잇던 한 줄을 칩 둘로 나눈다. 서류의 도장난처럼
                       읽히라고 테두리를 두르되 색은 rule/ink-2까지다(종이 위 톤). */}
                   <div className="flex flex-wrap gap-1">
@@ -251,7 +254,7 @@ export default function HirePanel({
                     type="button"
                     aria-label={`${cand.name} 채용`}
                     onClick={() => onHire(cand.dept, cand.slot)}
-                    className="border border-border-paper px-3 py-1 text-xs text-ink transition-colors hover:bg-ink/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-paper"
+                    className="border border-border-paper px-3 py-0.5 text-xs text-ink transition-colors hover:bg-ink/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-paper"
                   >
                     채용
                   </button>
@@ -279,7 +282,7 @@ export default function HirePanel({
             (pawn.hireNurse), 없는 제약을 후보 카드로 흉내 내면 화면이 시뮬에 없는 규칙을
             주장한다. 스타팅 게이트도 이 줄을 세지 않는다 — 개원 강제는 **의사만**이다
             (simHud.startingRosterMet 불변). 체크리스트가 대신 안내한다. */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-frame py-2.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-frame py-1.5">
           <span className="min-w-24 text-sm text-on-desk">간호사 · 수납 담당</span>
           {/* 기준을 인원 **바로 옆**에 놓는 것이 이 줄의 전부다 — 결산 화면이 이미 같은 형태로
               말하고 있는데(WeekEndOverlay 「간호 인력 (N명 · 기준 M명)」), 뽑는 자리에는 없어서
@@ -298,6 +301,12 @@ export default function HirePanel({
           >
             현재 {nursing.count}명 · 기준 {nursing.required}명
           </span>
+          {/* 해석 카피 없이 사실만 — 접수처 카운터에 간호사가 있어야 진료비가 걷힌다는 규칙 그대로.
+              전폭(`w-full`)이던 것을 **줄 안으로** 넣었다: 이 줄에 남는 가로가 곧 이 말의 자리라
+              한 줄을 통째로 아낀다(좁아지면 flex-wrap이 알아서 내린다). */}
+          <p className="text-[11px] text-on-desk-muted">
+            접수처 카운터에 간호사가 있어야 진료비를 받습니다.
+          </p>
           <span className="ml-auto font-mono text-xs tabular-nums text-on-desk-muted">
             주급 {formatManwon(NURSE_WEEKLY_COST_MANWON)}
           </span>
@@ -308,10 +317,6 @@ export default function HirePanel({
           >
             채용
           </button>
-          {/* 해석 카피 없이 사실만 — 접수처 카운터에 간호사가 있어야 진료비가 걷힌다는 규칙 그대로. */}
-          <p className="w-full text-[11px] text-on-desk-muted">
-            접수처 카운터에 간호사가 있어야 진료비를 받습니다.
-          </p>
         </div>
 
         <div className="flex items-baseline justify-between font-mono text-xs tabular-nums">
