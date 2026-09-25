@@ -47,13 +47,13 @@ promoted: 훅 승격        # 선택 — 승격했으면
 - [T-155](troubleshooting/T-155.md) · 팔레트·채용 UI를 리팩터하면 scripts/video/capture.mjs의 조작 하네스가 조용히 죽는다 — 셀렉터가 아코디언의 aria-expanded와 과별 section 헤딩에 묶여 있어서다. 테스트도 CI도 그 파일을 안 보므로 깨진 것은 「다음에 영상·스크린샷을 다시 찍는 날」에야 드러난다. 계층이 파생(paletteLevel)으로 바뀐 뒤의 이식 방법과, 하네스가 UI 계약의 소리 없는 소비자라는 사실을 남긴다
 - [T-154](troubleshooting/T-154.md) · 유휴 의사 동률 타이브레이크가 폰 인덱스뿐이면 등거리 배치에서 항상 같은 의사가 이겨 그 한 명만 피로 양성 피드백으로 소진된다 — 다만 #194(FATIGUE_REST 20→30)가 그 결과를 이미 닫아 코드 무변경으로 종결(균등화는 동시 사직 부작용도 실측). 진짜 교훈은 계측 절차다. stale-base 훅은 첫 Write에서만 울리는데 계측은 편집 전에 끝나므로, 측정 캠페인 전체가 낡은 base에서 무사히 완주할 수 있다
 - [T-153](troubleshooting/T-153.md) · 반투명 배경(bg-x/45) 위 텍스트의 대비를 토큰 쌍 수치로만 잠그면 뒤 레이어와의 합성이 계산에서 통째로 빠져, 화면에선 1.19:1로 안 읽히는데 테스트는 전부 초록이다. 알파 배경 위 대비는 실효 배경(합성값)으로 재거나 배경을 불투명 토큰으로 바꾸고, 대비 가드는 수치+마크업 클래스 쌍으로 잠근다
-- [T-152](troubleshooting/T-152.md) · 돌연변이 확인용 치환 스크립트가 CRLF 파일에서 아무것도 안 바꾸고 조용히 통과 — `\n`을 포함한 패턴은 CRLF 파일에 매치되지 않는다. 계측기가 무성 no-op이면 "돌연변이가 살아남았다"는 거짓 결론이 나온다. 치환은 반드시 바뀐 바이트 수를 확인하고 실패 시 크래시시켜라
+- [T-152](troubleshooting/T-152.md) · 돌연변이 확인용 치환 스크립트가 CRLF 파일에서 아무것도 안 바꾸고 조용히 통과 — `\n`을 포함한 패턴은 CRLF 파일에 매치되지 않는다. 계측기가 무성 no-op이면 "돌연변이가 살아남았다"는 거짓 결론이 나온다. 치환은 반드시 바뀐 바이트 수를 확인하고 실패 시 크래시시켜라 **→ hookify/warn-inplace-replace-crlf.md**
 - [T-151](troubleshooting/T-151.md) · region-balance-probe 하네스를 복사해 만든 이벤트 측정 프로브가 84일 내내 이벤트 0건 — 기존 프로브는 startNextDay/Week만 부르고 applyMorningEvent를 안 부른다(UI는 부른다). 헤드리스로 UI 동작을 재현할 땐 SimGame의 전이 호출렬을 그대로 복사해야 한다
 - [T-150](troubleshooting/T-150.md) · Playwright addInitScript로 Math.random을 전역 고정하면 게임의 모든 클릭이 에러 없이 무반응이 된다 — react-dom이 모듈 평가 시점에 Math.random으로 이벤트 프로퍼티 키를 만드는데, 상수를 주면 앱 react-dom과 next-devtools 내장 react-dom이 같은 키를 만들어 이벤트 위임이 핸들러에 못 닿는다. 결정론이 필요하면 전역 고정 대신 호출 지점 국소 패치
 - [T-149](troubleshooting/T-149.md) · NO_PEOPLE(사람이 바닥남) 엔딩은 구조적으로 도달 불가다 — 모든 지역 시작 풀에 미용이 있는데, 미용 의사는 하루 피로 증가 상한(5)이 하룻밤 회복(20)보다 작아 영원히 사직하지 않는다. 안 뽑으면 풀이 안 비고 뽑으면 안 떠나, 판정의 두 조건이 동시에 참이 될 수 없다. 코드프리즈 직전이라 코드 무변경 + 문서화로 결정(2026-08-03)
 - [T-148](troubleshooting/T-148.md) · vitest는 타입을 안 보고 트랜스파일만 한다 — 타입 에러가 있는 코드가 1596건 전건 초록으로 통과했고, 같은 트리에서 tsc는 TS2352로 죽었다. 로컬 게이트에 `npx tsc --noEmit`이 없으면 초록은 「컴파일된다」를 뜻하지 않는다
 - [T-147](troubleshooting/T-147.md) · 표시되지 않은 브라우저 창에서는 ResizeObserver 콜백이 아예 오지 않는다 — 레이아웃은 갱신돼 clientWidth가 새 값을 주므로, 리사이즈에 반응해야 할 코드를 「깨졌다」로 오판하기 딱 좋다
-- [T-146](troubleshooting/T-146.md) · 돌연변이 하네스가 제거된 vitest 리포터를 써서 테스트가 한 건도 돌기 전에 죽었는데, 크래시 출력에서 실패 이름을 못 찾아 「돌연변이 7종 전부 안 잡힘」으로 보고했다 — 계측기가 침묵을 「그물 없음」으로 오독한 것이라 결론이 정확히 반대로 나왔다
+- [T-146](troubleshooting/T-146.md) · 돌연변이 하네스가 제거된 vitest 리포터를 써서 테스트가 한 건도 돌기 전에 죽었는데, 크래시 출력에서 실패 이름을 못 찾아 「돌연변이 7종 전부 안 잡힘」으로 보고했다 — 계측기가 침묵을 「그물 없음」으로 오독한 것이라 결론이 정확히 반대로 나왔다 **→ hookify/warn-vitest-basic-reporter.md**
 - [T-145](troubleshooting/T-145.md) · 「두 테스트가 같은 코드 구간을 지나니 커버리지가 겹친다」는 추론은 틀리기 쉽다 — 겹침은 지나는 코드가 아니라 단언하는 값으로 정해지고, 판정 수단은 돌연변이뿐이다. 이 오판으로 유일한 가드를 삭제할 뻔했다
 - [T-144](troubleshooting/T-144.md) · 지역·집단별 비율을 「서로 다른 색의 종류 수」로 재면 분모 사고가 난다 — 항목 수가 적은 집단이 자동으로 1위가 되어, 실제로는 정반대인 옛 데이터도 서열 단언을 통과한다. 비율 서열은 격차 하한과 함께 걸어야 하고, 면적이 본질이면 면적을 재야 한다
 - [T-143](troubleshooting/T-143.md) · docs/superpowers/{specs,plans}/ 문서에서 claude-docs/를 링크할 때 상대 경로를 ../../로 쓰면 pre-commit LINKS-CHECK가 커밋을 거부한다 — 그 폴더는 저장소 루트에서 3단계라 ../../../가 맞다. 두 번 밟았다
@@ -62,14 +62,14 @@ promoted: 훅 승격        # 선택 — 승격했으면
 - [T-140](troubleshooting/T-140.md) · 곱셈 조명 모델에서 계수(base·pool·ao·cap)의 화면상 효과는 albedo에 비례한다 — 어두운 팔레트에서 조율한 상수를 밝은 팔레트로 옮기면 해집합이 공집합이 되거나 계조가 무너지거나 상수로 클램프된다. 가드는 계수가 아니라 휘도 포인트로 재야 대역과 무관해진다
 - [T-139](troubleshooting/T-139.md) · 텍스트 재작성 스크립트(perl -0pi·python)로 돌연변이를 심으면 CRLF 파일에서 `\n` 패턴이 안 맞아 치환이 0건인데 에러가 없다 — 테스트는 그대로 초록이고 그것이 "테스트가 못 잡는다"로 정반대로 읽힌다. 돌연변이는 Edit 부분 편집으로 심고 심은 뒤 치환 여부를 반드시 확인한다
 - [T-138](troubleshooting/T-138.md) · Git Bash의 GNU tar는 `C:\...`의 드라이브 콜론을 원격 아카이브 `host:path`로 해석해 DNS 조회에 실패한다 — 네이티브 바이너리를 내려받는 npm 전역 설치가 postinstall에서 죽는다. 에러가 "Cannot connect / resolve failed"라 네트워크 문제로 읽히는 게 함정. Windows System32의 bsdtar는 정상이니 PowerShell에서 설치한다
-- [T-137](troubleshooting/T-137.md) · 돌연변이 확인 중 `git checkout -- <file>`로 변조를 되돌리면 미커밋 구현까지 통째로 날아간다 — 복원 기준이 HEAD라 "방금 넣은 변조"와 "아직 커밋 안 한 작업"을 구별하지 않는다. 돌연변이 실험은 반드시 커밋 후에 시작한다(커밋이 곧 복원 지점)
+- [T-137](troubleshooting/T-137.md) · 돌연변이 확인 중 `git checkout -- <file>`로 변조를 되돌리면 미커밋 구현까지 통째로 날아간다 — 복원 기준이 HEAD라 "방금 넣은 변조"와 "아직 커밋 안 한 작업"을 구별하지 않는다. 돌연변이 실험은 반드시 커밋 후에 시작한다(커밋이 곧 복원 지점) **→ docs/claude-md-reference.md**
 - [T-136](troubleshooting/T-136.md) · .mjs/.js의 블록 주석 안에 glob 패턴 `**/`를 쓰면 별 두 개+슬래시가 주석 종료 토큰이라 주석이 거기서 끝난다 — eslint가 설정 파일 파싱 단계에서 죽고 에러 메시지는 원인(주석)과 무관해 보인다. glob을 언급하는 주석은 줄 주석(//)으로 쓴다
 - [T-115](troubleshooting/T-115.md) · 어두운 팔레트를 밝은 대역으로 옮길 때 채도를 함께 밀면 파랑 쪽으로 기운 색이 보라로 폭주한다 — 파랑의 휘도 가중치가 0.0722뿐이라 목표 휘도를 B 채널이 혼자 부담한다. 색조 보존은 「채널 비율을 그대로 곱하기」이고, 채도 상한은 밝은 면일수록 낮아야 한다
 - [T-114](troubleshooting/T-114.md) · Browser pane이 숨겨져 있으면 document.timeline이 멈춰 CSS 트랜지션이 시작색에 고정된다 — 계산색이 「클래스가 안 먹었다」와 똑같이 보이므로, 색을 재기 전에 getAnimations().finish()로 끝까지 민다
 - [T-113](troubleshooting/T-113.md) · 배율 훅에 심은 「시드에 곱하기」 돌연변이가 살아남았는데, 그건 테스트의 구멍이 아니라 그 돌연변이가 원본과 대수적으로 동일했기 때문이다 — 생존한 돌연변이는 먼저 등가성을 의심한다
-- [T-112](troubleshooting/T-112.md) · 돌연변이 원복을 `git checkout -- <file>`로 했더니 아직 커밋 안 한 구현까지 HEAD로 되돌아가 통째로 사라졌다 — 원복 기준은 HEAD가 아니라 「돌연변이 직전의 워킹 트리」다
+- [T-112](troubleshooting/T-112.md) · 돌연변이 원복을 `git checkout -- <file>`로 했더니 아직 커밋 안 한 구현까지 HEAD로 되돌아가 통째로 사라졌다 — 원복 기준은 HEAD가 아니라 「돌연변이 직전의 워킹 트리」다 **→ docs/claude-md-reference.md**
 - [T-111](troubleshooting/T-111.md) · 회귀 밴드의 기대값을 카탈로그에서 파생했더니 기대값과 실측이 같은 표를 보게 되어 튜닝 돌연변이가 통째로 살아남았다 — 값을 잠그는 테스트만은 그 값을 두 번째로 적어야 한다
-- [T-110](troubleshooting/T-110.md) · 워크트리에서 `gh pr merge --delete-branch` 가 로컬 checkout 단계에서 죽는다 — 머지는 이미 성공했는데 에러만 보여 실패로 오독하고, 원격 브랜치는 조용히 남는다
+- [T-110](troubleshooting/T-110.md) · 워크트리에서 `gh pr merge --delete-branch` 가 로컬 checkout 단계에서 죽는다 — 머지는 이미 성공했는데 에러만 보여 실패로 오독하고, 원격 브랜치는 조용히 남는다 **→ hookify/warn-worktree-pr-merge.md**
 - [T-109](troubleshooting/T-109.md) · transform div에 얹은 자식 캔버스가 부모 div의 background(부지 바닥·격자)를 통째로 가림 — 에러 0의 무성 실패
 - [T-108](troubleshooting/T-108.md) · 돌연변이 확인 스크립트가 vitest 출력을 파싱하려다 CP949 디코딩으로 죽었는데, 그 예외가 원복 줄보다 앞이라 소스가 부서진 채 남았다 — 판정은 종료 코드로, 원복은 try/finally로
 - [T-107](troubleshooting/T-107.md) · HMR이 남긴 useEffect deps 경고가 하드 리로드 뒤에도 콘솔에 남아 새 로드의 결함처럼 보였다 — 브라우저 콘솔 버퍼는 리로드를 건너 살아남는다
@@ -97,13 +97,13 @@ promoted: 훅 승격        # 선택 — 승격했으면
 - [T-085](troubleshooting/T-085.md) · 경계 오프바이원 돌연변이(`>=`→`>`)가 두 번 살아남았다 — 시드가 경계 분에 이벤트를 안 만들거나, 기준값을 경계 뒤에서 캡처하면 경계 분 발생분이 기준값에 섞여 테스트가 green인 채 계측력 0이 된다
 - [T-084](troubleshooting/T-084.md) · 1회 관측으로 "~할 방법이 없다"는 부정 결론을 내려 한 세션에서 3번 틀렸고 그중 하나는 CLAUDE.md에 박혀 다음 세션의 탐색을 차단할 뻔했다 — 부정 결론은 관측 부재이지 부재의 관측이 아니다
 - [T-083](troubleshooting/T-083.md) · PowerShell 함수가 요소 1개짜리 배열을 언랩해 반환하는 탓에 .Count가 사라져 "로그 0줄"로 보였고, 구현 결함으로 오인할 뻔했다 — 반환값을 @()로 감싸야 1건과 0건이 구분된다
-- [T-082](troubleshooting/T-082.md) · 조인 로직을 꺼도 테스트가 통과했다 — 픽스처가 두 출처에 같은 값을 넣어 "어느 쪽을 읽었는지"를 구분할 수 없었기 때문이며, 단정이 아니라 테스트 데이터 설계가 판별력을 죽인 경우다
+- [T-082](troubleshooting/T-082.md) · 조인 로직을 꺼도 테스트가 통과했다 — 픽스처가 두 출처에 같은 값을 넣어 "어느 쪽을 읽었는지"를 구분할 수 없었기 때문이며, 단정이 아니라 테스트 데이터 설계가 판별력을 죽인 경우다 **→ docs/claude-md-reference.md**
 - [T-081](troubleshooting/T-081.md) · whitelist를 .gitignore와 CI 정규식 두 곳에 이중 기재해 한쪽만 갱신되자 CI가 정상 파일을 오탐했고, 고칠 게 없는 빨간불이 5커밋 연속 이어져 게이트가 사실상 죽었다 — 목록을 베끼는 대신 git check-ignore로 .gitignore에서 파생해 해결
-- [T-080](troubleshooting/T-080.md) · 속성 단정(부등호·존재성)만으로 쓴 테스트가 규칙을 구현에서 지워도 통과했다 — 대조군 없는 단정은 "규칙의 결과"가 아니라 "데이터의 초기 분포"를 재기 때문이며, 한 슬라이스에서 3회 반복해 돌연변이 확인(규칙 임시 제거)으로만 잡혔다
+- [T-080](troubleshooting/T-080.md) · 속성 단정(부등호·존재성)만으로 쓴 테스트가 규칙을 구현에서 지워도 통과했다 — 대조군 없는 단정은 "규칙의 결과"가 아니라 "데이터의 초기 분포"를 재기 때문이며, 한 슬라이스에서 3회 반복해 돌연변이 확인(규칙 임시 제거)으로만 잡혔다 **→ docs/claude-md-reference.md**
 - [T-079](troubleshooting/T-079.md) · 파생값의 단위를 바꾸는 변경(점유 분 → 강도 가중 표준강도분)이 그 단위를 소비하는 상수(FATIGUE_FREE_MIN=360)를 조용히 사문화시켰다 — 상수 상대값 테스트는 전부 green이라 못 잡고, 결정론 프로브(7일 시뮬 계측)만이 "피로가 영원히 0"을 드러냈다
-- [T-078](troubleshooting/T-078.md) · block-fable-implement 훅이 Opus 서브에이전트의 코드 편집을 전부 오탐 차단했다 — 서브에이전트 턴이 부모 트랜스크립트에 기록되지 않아 훅이 항상 부모 모델(fable)을 읽기 때문이며, PreToolUse 입력의 agent_id로 판별하도록 고쳐 해결했다
+- [T-078](troubleshooting/T-078.md) · block-fable-implement 훅이 Opus 서브에이전트의 코드 편집을 전부 오탐 차단했다 — 서브에이전트 턴이 부모 트랜스크립트에 기록되지 않아 훅이 항상 부모 모델(fable)을 읽기 때문이며, PreToolUse 입력의 agent_id로 판별하도록 고쳐 해결했다 **→ hooks/block-fable-implement.ps1**
 - [T-077](troubleshooting/T-077.md) · 66커밋 pull 후 npm ci가 ENOTEMPTY(rmdir node_modules/caniuse-lite/...)로 실패했다 — npm ci가 node_modules를 통째로 지우는 첫 단계에서 Windows 파일 잠금과 경합하기 때문이고, 디렉터리를 직접 지운 뒤 재실행하면 통과한다
-- [T-076](troubleshooting/T-076.md) · 옵시디언이 설정 JSON을 LF로 되쓰는데 core.autocrlf=true는 CRLF로 체크아웃해, 내용이 한 글자도 안 바뀐 .obsidian/app.json이 git status에 유령 M으로 상주했다 — 인덱스 blob과 worktree 해시가 동일한데도
+- [T-076](troubleshooting/T-076.md) · 옵시디언이 설정 JSON을 LF로 되쓰는데 core.autocrlf=true는 CRLF로 체크아웃해, 내용이 한 글자도 안 바뀐 .obsidian/app.json이 git status에 유령 M으로 상주했다 — 인덱스 blob과 worktree 해시가 동일한데도 **→ hookify/warn-inplace-replace-crlf.md**
 - [T-075](troubleshooting/T-075.md) · 맵 전체를 덮는 아바타 레이어(absolute inset-0)에 pointer-events-none이 빠져 아래 방 버튼의 실제 클릭을 삼켰고, 검증을 JS .click()으로 해서 히트테스트를 우회해 버그를 놓친 채 배포됐다
 - [T-074](troubleshooting/T-074.md) · SDD 세션 중 워크트리가 이전 세션의 정리 실패로 .git을 잃고 메인 저장소의 하위 디렉토리로 편입돼, .gitignore 패턴에 걸려 파일이 조용히 무시되고 커밋이 거부됐다
 - [T-073](troubleshooting/T-073.md) · SDD 브라우저 검증 중 클릭이 전달 안 되고 15초 카운트다운이 멈춘 것처럼 보였다 — 코드 결함이 아니라 브라우저 페인이 표시되지 않는 환경(document.hidden)의 아티팩트였다
