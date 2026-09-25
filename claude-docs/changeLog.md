@@ -9,6 +9,12 @@ tags:
 > 날짜는 KST 절대일자. **PR 번호는 적지 않는다** — squash 머지 커밋 제목의 `(#N)`이 단일 출처다(이유: [CLAUDE.md 「changeLog 규약」](../CLAUDE.md)). PR을 찾으려면 제목으로 `git log --grep`.
 > 관련: [plan.md](plan.md) · [troubleshooting.md](troubleshooting.md)
 
+## 2026-09-25 · 트러블슈팅 검사기 legacy: 면제 반영
+
+**왜** — 전역 템플릿 검사기에 `legacy:` 면제(옛 형식 항목을 필수 필드 검사에서 제외)가 추가돼, 이 프로젝트 사본이 다시 뒤처졌다.
+
+**무엇을** — `scripts/rebuild-troubleshooting-index.ps1`만 템플릿 최신판으로 교체(`.githooks/pre-commit`은 템플릿 대비 프로젝트 고유 태그 검사 블록만 더 있어 그대로 둠). `-Check` OK 111건, summary를 뺀 사본에서 검사 실패 확인(양성 대조).
+
 ## 2026-09-25 · 트러블슈팅 검사기 최신 사본 동기화 + 승격 표시 소급
 
 **왜** — 전역 템플릿(`~/.claude/templates/troubleshooting-system/`)이 바뀌어 `guard:` 두 줄 항목(guard가 있으면 4필드 면제)·0건 허용·2회차 줄을 받아들이는데, 이 프로젝트의 옛 사본은 guard 항목을 「필수 필드 누락」으로 거부한다. 또 전역 가드·참조 문서가 근거로 인용하는 T 9건에 `promoted:` 표시가 없어 목차에서 승격 여부가 안 보였다.
